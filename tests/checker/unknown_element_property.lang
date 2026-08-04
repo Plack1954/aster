@@ -1,0 +1,12 @@
+using Aster.Html;
+
+int main() {
+    Html document =
+        <img
+            src=Url.relative("image.jpg")
+            alt="image"
+            unknown="value"
+        />;
+    print(HtmlRender(document));
+    return 0;
+}

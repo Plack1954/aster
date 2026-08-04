@@ -1,0 +1,1 @@
+<article class="card" data-id="<%= self.id %>"><h2><%= self.title %></h2><p>Customer #<%= self.id %> is <%= self.state %>.</p></article>

@@ -1,0 +1,11 @@
+struct Box<T> {
+    value: T,
+}
+
+void invalid(Box<Arena> arenaBox) {
+    Box<Arena> copy = arenaBox;
+}
+
+int main() {
+    return 0;
+}

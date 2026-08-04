@@ -1,0 +1,51 @@
+# Out-of-tree CMake builds and generated build products.
+/build*/
+/cmake-build-*/
+/out/
+
+# Accidental in-source CMake builds.
+/CMakeCache.txt
+/CMakeFiles/
+/CTestTestfile.cmake
+/Testing/
+/cmake_install.cmake
+/compile_commands.json
+/Makefile
+
+# Outputs from the command examples in README.md.
+/generated
+/generated.c
+/generated.ssa
+/issue-render.c
+/public/
+/sqlite_application_migrations/
+/streams_binary_surface.bin
+
+# Runtime state. Configuration and seed inputs remain tracked.
+/examples/issue_tracker/issues.db
+/examples/wasm_counter/build/
+/examples/wasm_counter/dist/
+
+# Coverage, profiling, sanitizer, and crash output.
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+__pycache__/
+*.pyc
+/core
+/core.*
+
+# Local editor and operating-system state.
+/.idea/
+/.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Local environment and secret files. Deliberate examples may use
+# `.env.example`.
+.env
+.env.*
+!.env.example

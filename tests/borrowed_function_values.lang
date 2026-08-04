@@ -1,0 +1,36 @@
+using System.Text;
+
+struct State
+{
+    string name;
+    int count;
+}
+
+delegate int Read(State state, int amount);
+delegate void Update(ref State state, int amount);
+
+int read(State state, int amount)
+{
+    return state.count + amount;
+}
+
+void update(ref State state, int amount)
+{
+    state.count += amount;
+}
+
+int main()
+{
+    State state = new()
+    {
+        name = "lime",
+        count = 1
+    };
+    Read reader = read;
+    Update updater = update;
+    print(reader(state, 2));
+    updater(state, 3);
+    print(reader(state, 2));
+    print(state.name);
+    return 0;
+}

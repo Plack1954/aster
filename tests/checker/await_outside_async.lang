@@ -1,0 +1,6 @@
+extern Task<int> LoadNumberAsync();
+
+int main()
+{
+    return await LoadNumberAsync();
+}

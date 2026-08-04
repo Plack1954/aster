@@ -1,0 +1,99 @@
+namespace App.Tests;
+
+using Docs.Assets;
+using Docs.Config;
+using Docs.Site;
+using AppHttp = Aster.Web.HttpApp;
+using Aster.Web.Middleware;
+using HtmlRouter = Aster.Web.Router;
+
+int main() {
+    Result<ServerConfig, string> parsed = ParseConfig(
+        "address=127.0.0.1\nport=8080\nmax_header_bytes=4096\nmax_body_bytes=8192\ntimeout_ms=2500\n"
+    );
+    switch (parsed) {
+        case Result.Ok(config): {
+            print(config.port);
+            print(config.timeoutMs);
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+
+    Result<ServerConfig, string> invalid =
+        ParseConfig("unknown=1\n");
+    switch (invalid) {
+        case Result.Ok(config): {
+            print("invalid configuration accepted");
+            return 1;
+        }
+        case Result.Err(error): {
+            print("invalid configuration rejected");
+        }
+    }
+
+    Result<long, string> markdown = CountMarkdown("docs");
+    switch (markdown) {
+        case Result.Ok(count): {
+            if (count < 1) {
+                print("documentation traversal found no files");
+                return 1;
+            }
+            print("documentation traversal passed");
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+
+    Result<string, string> asset =
+        LoadAsset("examples/docs_server/assets/site.css");
+    switch (asset) {
+        case Result.Ok(contents): {
+            print("static asset test passed");
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+
+    AppHttp.Router appRouter = ApplicationRouter();
+    AppHttp.Request request = new() {
+        method = "GET",
+        path = "/guide",
+        host = "test.local",
+        body = "",
+    };
+    AppHttp.Response response =
+        AppHttp.RouterDispatch(appRouter, request);
+    switch (response) {
+        case AppHttp.Response.Ok(page): {
+            string body = HtmlRender(page);
+            print("typed HTTP handler passed");
+        }
+        case AppHttp.Response.Redirect(location): {
+            print("typed HTTP handler unexpectedly redirected");
+            return 1;
+        }
+        case AppHttp.Response.NotFound(page): {
+            print("typed HTTP handler returned 404");
+            return 1;
+        }
+        case AppHttp.Response.InternalError(page): {
+            print("typed HTTP handler returned 500");
+            return 1;
+        }
+    }
+
+    HtmlRouter.Router router = SiteRouter();
+    MiddlewareChain middleware = SiteMiddleware();
+    Html page = RenderPath(router, middleware, "/missing");
+    string rendered = HtmlRender(page);
+    print(rendered);
+    print("docs smoke passed");
+    return 0;
+}

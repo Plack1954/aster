@@ -1,0 +1,6 @@
+name = "aster-testing-example"
+source_root = "src"
+
+[target.suite]
+kind = "test"
+entry = "Tests.Suite"

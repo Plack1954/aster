@@ -1,0 +1,9 @@
+namespace Nested.Dep;
+
+pub struct Helper {
+    handle: NativeHandle,
+}
+
+pub struct Wrapper {
+    helper: Helper,
+}

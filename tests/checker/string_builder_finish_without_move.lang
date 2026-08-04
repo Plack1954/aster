@@ -1,0 +1,7 @@
+int main() {
+    StringBuilder builder = new();
+    string value = builder.ToString();
+    print(builder);
+    print(value);
+    return 0;
+}

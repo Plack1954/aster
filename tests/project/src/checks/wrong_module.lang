@@ -1,0 +1,5 @@
+namespace Checks.DifferentName;
+
+pub long value() {
+    return 1;
+}

@@ -1,0 +1,47 @@
+struct Pair<A, B> {
+    A first;
+    B second;
+}
+
+struct Box<T> {
+    T value;
+}
+
+union Maybe<T> {
+    None,
+    Some(T),
+}
+
+void ConsumeBox(Box<string> value) {
+    print("owned box");
+}
+
+int main() {
+    Pair<long, string> pair = new() {
+        first = 42,
+        second = "answer",
+    };
+    print(pair.first);
+
+    Box<long> numbers = new() { value = 7 };
+    Box<long> numbersCopy = numbers;
+    print(numbersCopy.value);
+
+    Box<string> box = new() {
+        value = "resource",
+    };
+    Box<string> boxCopy = box;
+    ConsumeBox(box);
+    ConsumeBox(boxCopy);
+
+    Maybe<long> maybe = Maybe.Some(9);
+    switch (maybe) {
+        case Maybe.Some(value): {
+            print(value);
+        }
+        case Maybe.None: {
+            print(0);
+        }
+    }
+    return 0;
+}

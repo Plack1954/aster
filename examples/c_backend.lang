@@ -1,0 +1,17 @@
+int combine(int left, int right) {
+    return left * 2 + right;
+}
+
+int main() {
+    int value = 0;
+    int expected = combine(20, 2);
+
+    while (value < expected) {
+        value = value + 1;
+    }
+
+    if (value == 42) {
+        return 0;
+    }
+    return 1;
+}

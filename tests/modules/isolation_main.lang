@@ -1,0 +1,12 @@
+namespace Isolation.Main;
+
+using Isolation.Dep;
+
+long choose(long value) {
+    return value + 1;
+}
+
+int main() {
+    print(choose(41));
+    return 0;
+}

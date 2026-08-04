@@ -1,0 +1,327 @@
+namespace Lime.Static;
+
+using Lime;
+using System.IO;
+using System.Text;
+
+byte StaticAsciiLower(byte value)
+{
+    if (value >= 65 && value <= 90)
+    {
+        return value + 32;
+    }
+    return value;
+}
+
+bool StaticEndsWith(string value, string suffix)
+{
+    usize valueLength = value.Length;
+    usize suffixLength = suffix.Length;
+    if (suffixLength > valueLength)
+    {
+        return false;
+    }
+    usize start = valueLength - suffixLength;
+    for (usize index = 0; index < suffixLength; index++)
+    {
+        if (StaticAsciiLower(StringByteAt(value, start + index)) !=
+            StaticAsciiLower(StringByteAt(suffix, index)))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+public AssetKind StaticAssetKind(string path)
+{
+    if (StaticEndsWith(path, ".js")) { return AssetKind.JavaScript; }
+    if (StaticEndsWith(path, ".json")) { return AssetKind.Json; }
+    if (StaticEndsWith(path, ".xml")) { return AssetKind.Xml; }
+    if (StaticEndsWith(path, ".svg")) { return AssetKind.Svg; }
+    if (StaticEndsWith(path, ".png")) { return AssetKind.Png; }
+    if (StaticEndsWith(path, ".jpg") ||
+        StaticEndsWith(path, ".jpeg")) { return AssetKind.Jpeg; }
+    if (StaticEndsWith(path, ".gif")) { return AssetKind.Gif; }
+    if (StaticEndsWith(path, ".webp")) { return AssetKind.WebP; }
+    if (StaticEndsWith(path, ".ico")) { return AssetKind.Icon; }
+    if (StaticEndsWith(path, ".woff")) { return AssetKind.Woff; }
+    if (StaticEndsWith(path, ".woff2")) { return AssetKind.Woff2; }
+    if (StaticEndsWith(path, ".ttf")) { return AssetKind.Ttf; }
+    if (StaticEndsWith(path, ".wasm")) { return AssetKind.Wasm; }
+    return AssetKind.Binary;
+}
+
+bool StaticPathSafe(string path)
+{
+    usize length = path.Length;
+    if (length < 2 || StringByteAt(path, 0) != 47)
+    {
+        return false;
+    }
+
+    usize segmentStart = 1;
+    for (usize index = 1; index <= length; index++)
+    {
+        bool boundary = index == length ||
+            StringByteAt(path, index) == 47;
+        if (!boundary)
+        {
+            byte current = StringByteAt(path, index);
+            if (current == 0 || current == 58 || current == 92)
+            {
+                return false;
+            }
+            continue;
+        }
+
+        usize segmentLength = index - segmentStart;
+        if (segmentLength == 0 ||
+            (segmentLength == 1 &&
+             StringByteAt(path, segmentStart) == 46) ||
+            (segmentLength == 2 &&
+             StringByteAt(path, segmentStart) == 46 &&
+             StringByteAt(path, segmentStart + 1) == 46))
+        {
+            return false;
+        }
+        segmentStart = index + 1;
+    }
+    return true;
+}
+
+public Result<Response, string> StaticFile(
+    string root,
+    string requestPath
+)
+{
+    if (root.Length == 0)
+    {
+        return Result.Err("static root must not be empty");
+    }
+    if (!StaticPathSafe(requestPath))
+    {
+        return Result.Err("unsafe static asset path");
+    }
+
+    StringBuilder path = new();
+    path.Append(root);
+    if (StringByteAt(root, root.Length - 1) != 47)
+    {
+        path.Append("/");
+    }
+    path.Append(StringSlice(requestPath, 1, requestPath.Length));
+    string filePath = path.ToString();
+    NativeHandle file = try NativeFileOpen(filePath, "rb");
+    string bytes = try NativeFileReadAll(file);
+    if (StaticEndsWith(requestPath, ".css"))
+    {
+        return Result.Ok(Response.Css(bytes));
+    }
+    return Result.Ok(Response.Asset(
+        bytes,
+        StaticAssetKind(requestPath)
+    ));
+}
+
+bool StaticPrefixValid(string prefix)
+{
+    usize length = prefix.Length;
+    return length >= 3 &&
+        StringByteAt(prefix, 0) == 47 &&
+        StringByteAt(prefix, length - 1) == 47 &&
+        StaticPathSafe(StringSlice(prefix, 0, length - 1));
+}
+
+Option<Response> StaticResponseWithCache(
+    Response response,
+    StaticFileOptions options
+)
+{
+    if (options.MaxAgeSeconds == 0)
+    {
+        return Option.Some(response);
+    }
+    string value = $"public, max-age={options.MaxAgeSeconds}";
+    if (options.Immutable)
+    {
+        value = string.Concat(value, ", immutable");
+    }
+    switch (ResponseHeader("Cache-Control", value))
+    {
+        case Result.Ok(header): {
+            response.AddHeader(header);
+            return Option.Some(response);
+        }
+        case Result.Err(error): { return Option.None; }
+    }
+}
+
+Option<Response> ResolveStatic(
+    string urlPrefix,
+    string root,
+    StaticFileOptions options,
+    Request request
+)
+{
+    if (!request.path.StartsWith(urlPrefix))
+    {
+        return Option.None;
+    }
+    usize prefixLength = urlPrefix.Length;
+    if (request.path.Length <= prefixLength)
+    {
+        return Option.None;
+    }
+    string relative = StringSlice(
+        request.path, prefixLength - 1, request.path.Length
+    );
+    if (!StaticEndsWith(relative, ".css"))
+    {
+        StringBuilder path = new();
+        path.Append(root);
+        if (StringByteAt(root, root.Length - 1) != 47)
+        {
+            path.Append("/");
+        }
+        path.Append(StringSlice(relative, 1, relative.Length));
+        string filePath = path.ToString();
+        if (File.Exists(filePath))
+        {
+            Response response = Response.File(
+                filePath, StaticAssetKind(relative)
+            );
+            return StaticResponseWithCache(response, options);
+        }
+        return Option.None;
+    }
+    switch (StaticFile(root, relative))
+    {
+        case Result.Ok(response): {
+            return StaticResponseWithCache(response, options);
+        }
+        case Result.Err(error): { return Option.None; }
+    }
+}
+
+T StaticResultOrThrow<T>(Result<T, string> result)
+{
+    switch (result)
+    {
+        case Result.Ok(value): { return value; }
+        case Result.Err(error): { throw new Exception(error); }
+    }
+}
+
+public Result<bool, string> App.TryStatic(
+    ref App self,
+    string urlPrefix,
+    string root
+)
+{
+    return self.TryStatic(urlPrefix, root, StaticFileOptions());
+}
+
+public Result<bool, string> App.TryStatic(
+    ref App self,
+    string urlPrefix,
+    string root,
+    StaticFileOptions options
+)
+{
+    if (!StaticPrefixValid(urlPrefix))
+    {
+        return Result.Err(
+            "static URL prefix must begin and end with one safe / segment"
+        );
+    }
+    if (root.Length == 0)
+    {
+        return Result.Err("static directory root cannot be empty");
+    }
+    if (options.MaxAgeSeconds < 0 ||
+        (options.Immutable && options.MaxAgeSeconds == 0))
+    {
+        return Result.Err("invalid static cache policy");
+    }
+    self.MountStatic(urlPrefix, root, options, ResolveStatic);
+    return Result.Ok(true);
+}
+
+public void App.Static(
+    ref App self,
+    string urlPrefix,
+    string root
+)
+{
+    bool ignored = StaticResultOrThrow(self.TryStatic(urlPrefix, root));
+}
+
+public void App.Static(
+    ref App self,
+    string urlPrefix,
+    string root,
+    StaticFileOptions options
+)
+{
+    bool ignored = StaticResultOrThrow(
+        self.TryStatic(urlPrefix, root, options)
+    );
+}
+
+public Result<bool, string> StatefulApp.TryStatic<State>(
+    ref StatefulApp<State> self,
+    string urlPrefix,
+    string root
+)
+{
+    return self.TryStatic(urlPrefix, root, StaticFileOptions());
+}
+
+public Result<bool, string> StatefulApp.TryStatic<State>(
+    ref StatefulApp<State> self,
+    string urlPrefix,
+    string root,
+    StaticFileOptions options
+)
+{
+    if (!StaticPrefixValid(urlPrefix))
+    {
+        return Result.Err(
+            "static URL prefix must begin and end with one safe / segment"
+        );
+    }
+    if (root.Length == 0)
+    {
+        return Result.Err("static directory root cannot be empty");
+    }
+    if (options.MaxAgeSeconds < 0 ||
+        (options.Immutable && options.MaxAgeSeconds == 0))
+    {
+        return Result.Err("invalid static cache policy");
+    }
+    self.MountStatic(urlPrefix, root, options, ResolveStatic);
+    return Result.Ok(true);
+}
+
+public void StatefulApp.Static<State>(
+    ref StatefulApp<State> self,
+    string urlPrefix,
+    string root
+)
+{
+    bool ignored = StaticResultOrThrow(self.TryStatic(urlPrefix, root));
+}
+
+
+public void StatefulApp.Static<State>(
+    ref StatefulApp<State> self,
+    string urlPrefix,
+    string root,
+    StaticFileOptions options
+)
+{
+    bool ignored = StaticResultOrThrow(
+        self.TryStatic(urlPrefix, root, options)
+    );
+}

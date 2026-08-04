@@ -1,0 +1,17 @@
+using Count = uint;
+using BytePointer = byte*;
+using OptionalCount = Option<Count>;
+
+int main() {
+    Count count = 42;
+    OptionalCount option = Option.Some(count);
+    switch (option) {
+        case Option.Some(value): {
+            print(value);
+        }
+        case Option.None: {
+            print(0);
+        }
+    }
+    return 0;
+}

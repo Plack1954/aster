@@ -1,0 +1,23 @@
+using System.Text;
+
+struct Article {
+    string title;
+}
+
+int main() {
+    List<Article> articles = new();
+    articles.Add(new Article {
+        title = "First",
+    });
+    articles.Add(new Article {
+        title = "Second",
+    });
+
+    foreach (Article article in articles)
+    {
+        print(article.title);
+    }
+
+    print(articles.Count);
+    return 0;
+}

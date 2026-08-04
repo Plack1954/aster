@@ -1,0 +1,10 @@
+extern long NativeAdd(long left, long right);
+extern long NativeClock();
+extern NativeHandle NativeHandleOpen();
+
+int main() {
+    print(NativeAdd(20, 22));
+    long timestamp = NativeClock();
+    NativeHandle handle = NativeHandleOpen();
+    return 0;
+}

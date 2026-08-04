@@ -1,0 +1,7 @@
+namespace Checks.SelectiveError;
+
+using Lib.Math;
+
+long WholeNamespaceVisible() {
+    return answer();
+}

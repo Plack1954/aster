@@ -1,0 +1,17 @@
+using System.Text;
+
+struct Record {
+    name: string,
+}
+
+string ViewName(string value) {
+    return value;
+}
+
+int main() {
+    Record record = Record {
+        name: "borrowed field",
+    };
+    print(ViewName(record.name));
+    return 0;
+}

@@ -1,0 +1,12 @@
+struct Box<T> {
+    value: T,
+}
+
+int main() {
+    Box<string> original = Box {
+        value: "owned",
+    };
+    Box<string> invalid = original;
+    Box<string> invalidAgain = original;
+    return 0;
+}

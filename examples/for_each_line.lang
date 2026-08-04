@@ -1,0 +1,33 @@
+using System.IO;
+using Aster.Interop;
+using System.Text;
+
+Result<bool, string> InspectLine(string line) {
+    print(line.Length);
+    return Result.Ok(line != "stop");
+}
+
+Result<int, string> run() {
+    string path = try NativeProcessArg(0);
+    usize count = try ForEachLineBuffered(
+        path,
+        17,
+        InspectLine,
+    );
+    print(count);
+    return Result.Ok(0);
+}
+
+int main() {
+    Result<int, string> result = run();
+    switch (result) {
+        case Result.Ok(status): {
+            return status;
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+    return 1;
+}

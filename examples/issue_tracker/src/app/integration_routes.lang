@@ -1,0 +1,136 @@
+namespace App.IntegrationRoutes;
+
+using Issues.Model;
+using Issues.Pages;
+using Issues.Validation;
+using Aster.Net.Http;
+using Aster.Web.HttpApp;
+using Aster.Data.Sqlite;
+using System.Text;
+
+string DatabasePath() {
+    return "examples/issue_tracker/integration-test.db";
+}
+
+Response DatabaseError(SqliteError error) {
+    return Response.InternalError(
+        ErrorPage(error)
+    );
+}
+
+Response ListHandler(Request _request) {
+    var opened = SqliteOpen(DatabasePath());
+    switch (opened) {
+        case Result.Ok(database): {
+            var listed = ListIssues(database);
+            switch (listed) {
+                case Result.Ok(issues): {
+                    return Response.Ok(
+                        IssueListPage(issues)
+                    );
+                }
+                case Result.Err(error): {
+                    return DatabaseError(error);
+                }
+            }
+        }
+        case Result.Err(error): {
+            return DatabaseError(error);
+        }
+    }
+}
+
+Response ShowHandler(Request request) {
+    string id =
+        HttpPathParam("/issues/:id", request.path, "id");
+    var opened = SqliteOpen(DatabasePath());
+    switch (opened) {
+        case Result.Ok(database): {
+            var found = FindIssue(database, id);
+            switch (found) {
+                case Result.Ok(issue): {
+                    switch (issue) {
+                        case Option.Some(value): {
+                            return Response.Ok(
+                                IssueDetailPage(value)
+                            );
+                        }
+                        case Option.None: {
+                            return Response.NotFound(
+                                MissingPage(request.path)
+                            );
+                        }
+                    }
+                }
+                case Result.Err(error): {
+                    return DatabaseError(error);
+                }
+            }
+        }
+        case Result.Err(error): {
+            return DatabaseError(error);
+        }
+    }
+}
+
+Response CreateHandler(Request request) {
+    var decoded = HttpFormValue(request.body, "title");
+    switch (decoded) {
+        case Result.Ok(title): {
+            string source = title;
+            var valid = ValidateTitle(source, 80);
+            switch (valid) {
+                case Result.Ok(accepted): {
+                    var opened = SqliteOpen(DatabasePath());
+                    switch (opened) {
+                        case Result.Ok(database): {
+                            var schema = EnsureSchema(database);
+                            switch (schema) {
+                                case Result.Ok(value): {
+                                    var created =
+                                        CreateIssue(database, source);
+                                    switch (created) {
+                                        case Result.Ok(id): {
+                                            return Response.Redirect(
+                                                "/issues"
+                                            );
+                                        }
+                                        case Result.Err(error): {
+                                            return DatabaseError(
+                                                error
+                                            );
+                                        }
+                                    }
+                                }
+                                case Result.Err(error): {
+                                    return DatabaseError(error);
+                                }
+                            }
+                        }
+                        case Result.Err(error): {
+                            return DatabaseError(error);
+                        }
+                    }
+                }
+                case Result.Err(error): {
+                    return Response.InternalError(ErrorPage(error));
+                }
+            }
+        }
+        case Result.Err(error): {
+            return Response.InternalError(ErrorPage(error));
+        }
+    }
+}
+
+Response MissingHandler(Request request) {
+    return Response.NotFound(MissingPage(request.path));
+}
+
+public Router IntegrationRouter() {
+    Router router = RouterNew(MissingHandler);
+    RouterGetMut(router, "/issues/:id", ShowHandler);
+    RouterGetMut(router, "/issues", ListHandler);
+    RouterPostMut(router, "/issues", CreateHandler);
+    return router;
+}

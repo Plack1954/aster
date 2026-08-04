@@ -1,0 +1,14 @@
+int Parse(string value)
+{
+    return 1;
+}
+
+int Parse(string other)
+{
+    return 2;
+}
+
+int main()
+{
+    return Parse("aster");
+}

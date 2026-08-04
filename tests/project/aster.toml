@@ -1,0 +1,27 @@
+name = "project-model-test"
+source_root = "src"
+default_target = "app"
+
+[target.app]
+kind = "bin"
+entry = "App.Main"
+
+[target.math]
+kind = "lib"
+entry = "Lib.Math"
+
+[target.smoke]
+kind = "test"
+entry = "Tests.Smoke"
+
+[target.bad_selective]
+kind = "lib"
+entry = "Checks.SelectiveError"
+
+[target.bad_module]
+kind = "lib"
+entry = "Checks.WrongModule"
+
+[target.generic_app]
+kind = "bin"
+entry = "App.GenericMain"

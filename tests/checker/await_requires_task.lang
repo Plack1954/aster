@@ -1,0 +1,9 @@
+async Task<int> WrongAsync()
+{
+    return await 1;
+}
+
+int main()
+{
+    return 0;
+}

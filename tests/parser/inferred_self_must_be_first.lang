@@ -1,0 +1,11 @@
+struct Point {
+    x: long,
+}
+
+long Point.offset(long amount, self) {
+    self.x + amount
+}
+
+int main() {
+    0
+}

@@ -1,0 +1,12 @@
+namespace Types.ImportedDestructorCopy;
+
+using Types.TypeDep;
+
+int main() {
+    dep.Resource resource =
+        new dep.Resource { id = 1 };
+    dep.Resource invalidCopy = resource;
+    print(resource.id);
+    print(invalidCopy.id);
+    return 0;
+}

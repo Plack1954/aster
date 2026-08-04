@@ -1,0 +1,31 @@
+extern Task Task.Delay(int milliseconds);
+
+struct Tracked
+{
+    int Value;
+}
+
+~Tracked()
+{
+    print("cleaned");
+}
+
+async Task<int> FailAsync()
+{
+    Tracked value = new() { Value = 1 };
+    await Task.Delay(1);
+    throw new IOException("boom");
+}
+
+async Task<int> main()
+{
+    try
+    {
+        await FailAsync();
+    }
+    catch (IOException error)
+    {
+        print(error.Message);
+    }
+    return 0;
+}

@@ -1,0 +1,36 @@
+namespace App.IntegrationServer;
+
+using App.Server;
+using Docs.Config;
+using Aster.Net.Http;
+
+int main() {
+    Result<ServerConfig, string> loaded =
+        LoadConfig("examples/docs_server/docs-server.conf");
+    switch (loaded) {
+        case Result.Ok(config): {
+            Result<NativeHandle, string> opened =
+                HttpTryServerOpen(
+                    config.address,
+                    config.port,
+                    config.maxHeaderBytes,
+                    config.maxBodyBytes,
+                    config.timeoutMs,
+                    2,
+                );
+            switch (opened) {
+                case Result.Ok(server): {
+                    return ServeOpen(server, 1);
+                }
+                case Result.Err(error): {
+                    eprint(error);
+                    return 1;
+                }
+            }
+        }
+        case Result.Err(error): {
+            eprint(error);
+            return 1;
+        }
+    }
+}

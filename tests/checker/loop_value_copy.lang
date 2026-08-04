@@ -1,0 +1,8 @@
+int main() {
+    Buffer value = Buffer.allocate(8);
+    while (true) {
+        Buffer consumed = value;
+        print(consumed.len);
+    }
+    return 0;
+}

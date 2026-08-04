@@ -1,0 +1,14 @@
+long factorial(long n) {
+    long result = 1;
+    long value = n;
+    while (value > 1) {
+        result = result * value;
+        value = value - 1;
+    }
+    return result;
+}
+
+int main() {
+    print(factorial(6));
+    return 0;
+}

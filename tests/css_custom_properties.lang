@@ -1,0 +1,18 @@
+using Aster.Html;
+
+Html Card(string accent, int gap) {
+    return <article class="card" --accent=accent --gap=gap>
+        <style scoped>
+            .card {
+                color: var(--accent);
+                gap: var(--gap);
+            }
+        </style>
+        "Aster"
+    </article>;
+}
+
+int main() {
+    print(HtmlRender(<Card accent="#e45b20" gap=12 />));
+    return 0;
+}

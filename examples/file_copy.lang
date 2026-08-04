@@ -1,0 +1,28 @@
+using System.IO;
+using Aster.Interop;
+using System.Text;
+
+Result<usize, string> run() {
+    string source = try NativeProcessArg(0);
+    string destination = try NativeProcessArg(1);
+    return CopyFileBuffered(
+        source,
+        destination,
+        1024,
+    );
+}
+
+int main() {
+    Result<usize, string> result = run();
+    switch (result) {
+        case Result.Ok(bytes): {
+            print(bytes);
+            return 0;
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+    return 1;
+}

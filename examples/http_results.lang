@@ -1,0 +1,42 @@
+using Aster.Net.Http;
+
+int main() {
+    Result<NativeHandle, string> invalid =
+        HttpTryServerOpen(
+            "not-an-address",
+            0,
+            4096,
+            1024,
+            1000,
+            2,
+        );
+    switch (invalid) {
+        case Result.Ok(server): {
+            print("invalid address accepted");
+            return 1;
+        }
+        case Result.Err(error): {
+            print("HTTP error returned as Result");
+        }
+    }
+
+    Result<NativeHandle, string> opened =
+        HttpTryServerOpen(
+            "127.0.0.1",
+            0,
+            4096,
+            1024,
+            1000,
+            2,
+        );
+    switch (opened) {
+        case Result.Ok(server): {
+            print("HTTP server returned as Result");
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+    return 0;
+}

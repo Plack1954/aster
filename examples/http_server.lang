@@ -1,0 +1,96 @@
+using Aster.Html;
+using Aster.Net.Http;
+using Aster.Web.Middleware;
+using Aster.Web.Router;
+
+Html home(string path) {
+    return <section>
+        <h2>"Aster HTTP server"</h2>
+        <p>{path}</p>
+    </section>;
+}
+
+Html health(string path) {
+    return <strong>"healthy"</strong>;
+}
+
+Html NotFound(string path) {
+    return <section>
+        <h2>"Not found"</h2>
+        <p>{path}</p>
+    </section>;
+}
+
+Html frame(Html page) {
+    return <div>{page}</div>;
+}
+
+Html IdentityMiddleware(Html page) {
+    return page;
+}
+
+long RouteStatus(string path) {
+    if (path == "/") {
+        return 200;
+    }
+    if (path == "/health") {
+        return 200;
+    }
+    return 404;
+}
+
+Html RenderRequest(
+    string path,
+    Router router,
+    MiddlewareChain middleware
+) {
+    Html routed = RouterDispatch(router, path);
+    return MiddlewareApply(middleware, routed);
+}
+
+int main() {
+    NativeHandle server = HttpServerOpenKeepAlive(
+        "127.0.0.1",
+        0,
+        16384,
+        1048576,
+        5000,
+        100,
+    );
+    print("listening on 127.0.0.1, port:");
+    print(HttpServerPort(server));
+
+    Router router = RouterNew(NotFound);
+    router = RouterAdd(router, "/", home);
+    router = RouterAdd(router, "/health", health);
+    MiddlewareChain middleware =
+        MiddlewareChain(frame, IdentityMiddleware);
+
+    while (true) {
+        NativeHandle request = HttpAccept(server);
+        bool active = true;
+        while (active) {
+            string method = HttpRequestMethod(request);
+            string path = HttpRequestPath(request);
+            string host = HttpRequestHeader(request, "host");
+            string body = HttpRequestBody(request);
+            print(method);
+            print(host);
+            print(body);
+
+            long status = RouteStatus(path);
+            Html document =
+                RenderRequest(path, router, middleware);
+            string rendered = HtmlRender(document);
+            active = HttpRespondHtmlReuse(
+                request,
+                status,
+                rendered,
+            );
+            if (active) {
+                active = HttpRequestNext(request);
+            }
+        }
+    }
+    return 0;
+}

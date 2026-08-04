@@ -1,0 +1,17 @@
+namespace Types.Dep;
+
+pub struct Resource {
+    id: long,
+}
+
+~Resource() {
+    print(self.id);
+}
+
+pub Resource MakeResource(long id) {
+    return Resource { id: id };
+}
+
+pub void ConsumeResource(Resource value) {
+    print(value.id);
+}

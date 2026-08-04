@@ -1,0 +1,10 @@
+struct Loop<T> {
+    next: Loop<T>,
+}
+
+void invalid(Loop<long> value) {
+}
+
+int main() {
+    return 0;
+}

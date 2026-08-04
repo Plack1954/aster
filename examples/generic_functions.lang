@@ -1,0 +1,39 @@
+struct Box<T> {
+    T value;
+}
+
+T identity<T>(T value) {
+    return value;
+}
+
+T SumTo<T>(T value) {
+    if (value == 0) {
+        return value;
+    }
+    return value + SumTo(value - 1);
+}
+
+T unbox<T>(Box<T> value) {
+    return value.value;
+}
+
+int main() {
+    long number = identity(42);
+    print(number);
+
+    string text = "generic";
+    string returned = identity(text);
+    print(returned);
+
+    string item = "boxed";
+    Box<string> boxed = new() { value = item };
+    Box<string> returnedBox = identity(boxed);
+    print("boxed");
+
+    long total = SumTo(5);
+    print(total);
+
+    Box<long> numberBox = new() { value = 8 };
+    print(unbox(numberBox));
+    return 0;
+}

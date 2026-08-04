@@ -1,0 +1,6 @@
+extern long NativeAdd(long left, long right);
+
+int main() {
+    print(NativeAdd(20, 22));
+    return 0;
+}

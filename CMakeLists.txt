@@ -1,0 +1,2898 @@
+cmake_minimum_required(VERSION 3.16)
+project(aster_lang VERSION 0.1.0 LANGUAGES C)
+
+option(LANG_SANITIZE "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(LANG_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+option(LANG_VM_COMPUTED_GOTO
+    "Use the optional GCC/Clang computed-goto VM dispatch" OFF)
+set(ASTER_H2O_SOURCE_ROOT "" CACHE PATH
+    "Path to the pinned H2O source tree (enables Lime.H2O)")
+set(ASTER_H2O_BUILD_ROOT "" CACHE PATH
+    "Path containing the matching libh2o-evloop shared library")
+
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+
+function(lang_enable_warnings target)
+    target_compile_options(${target} PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wstrict-prototypes
+        -Wmissing-prototypes -Werror=implicit-function-declaration
+    )
+    if(LANG_WARNINGS_AS_ERRORS)
+        target_compile_options(${target} PRIVATE -Werror)
+    endif()
+endfunction()
+
+add_library(langlib
+    src/common.c
+    src/lexer.c
+    src/css.c
+    src/parser.c
+    src/parser_elements.c
+    src/checker.c
+    src/checker_calls.c
+    src/checker_types.c
+    src/checker_elements.c
+    src/checker_generics.c
+    src/checker_debug.c
+    src/ir.c
+    src/ir_statements.c
+    src/ir_html.c
+    src/ir_verify.c
+    src/ir_debug.c
+    src/ir_bytecode.c
+    src/c_backend.c
+    src/c_backend_module.c
+    src/c_backend_exports.c
+    src/c_backend_types.c
+    src/c_backend_html.c
+    src/c_backend_css.c
+    src/c_backend_runtime.c
+    src/c_backend_async.c
+    src/compiler.c
+    src/vm.c
+    src/vm_async.c
+    src/vm_values.c
+    src/vm_builtin_exec.c
+    src/vm_fast.c
+    src/vm_html.c
+    src/vm_builtins.c
+    src/vm_verify.c
+    src/http.c
+    src/h2o_adapter.c
+    src/sqlite.c
+    src/project.c
+    src/layout.c
+)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(src/vm.c PROPERTIES
+        COMPILE_OPTIONS "$<$<CONFIG:Release>:-O2>")
+endif()
+target_include_directories(langlib PUBLIC include)
+target_compile_definitions(langlib PRIVATE
+    ASTER_BROWSER_RUNTIME_DIR="${CMAKE_CURRENT_SOURCE_DIR}/runtime/browser")
+find_package(SQLite3 QUIET)
+if(SQLite3_FOUND)
+    target_compile_definitions(langlib PRIVATE LANG_HAVE_SQLITE3=1)
+    target_link_libraries(langlib PUBLIC SQLite::SQLite3)
+endif()
+set(LANG_HAVE_H2O OFF)
+if(ASTER_H2O_SOURCE_ROOT OR ASTER_H2O_BUILD_ROOT)
+    if(NOT ASTER_H2O_SOURCE_ROOT OR NOT ASTER_H2O_BUILD_ROOT)
+        message(FATAL_ERROR
+            "Lime.H2O requires both ASTER_H2O_SOURCE_ROOT and ASTER_H2O_BUILD_ROOT")
+    endif()
+    set(ASTER_H2O_LIBRARY
+        "${ASTER_H2O_BUILD_ROOT}/libh2o-evloop.so")
+    if(NOT EXISTS "${ASTER_H2O_SOURCE_ROOT}/include/h2o.h")
+        message(FATAL_ERROR
+            "ASTER_H2O_SOURCE_ROOT does not contain include/h2o.h")
+    endif()
+    if(NOT EXISTS "${ASTER_H2O_LIBRARY}")
+        message(FATAL_ERROR
+            "ASTER_H2O_BUILD_ROOT does not contain libh2o-evloop.so")
+    endif()
+    set(LANG_HAVE_H2O ON)
+    target_compile_definitions(langlib PRIVATE
+        LANG_HAVE_H2O=1 H2O_USE_LIBUV=0 _GNU_SOURCE=1)
+    target_include_directories(langlib SYSTEM PRIVATE
+        "${ASTER_H2O_SOURCE_ROOT}/include"
+        "${ASTER_H2O_SOURCE_ROOT}/deps/picotls/include"
+        "${ASTER_H2O_SOURCE_ROOT}/deps/quicly/include")
+    target_link_libraries(langlib PUBLIC "${ASTER_H2O_LIBRARY}")
+    message(STATUS "Lime.H2O enabled with ${ASTER_H2O_LIBRARY}")
+endif()
+if(LANG_VM_COMPUTED_GOTO)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        message(FATAL_ERROR
+            "LANG_VM_COMPUTED_GOTO requires GCC or Clang")
+    endif()
+    target_compile_definitions(langlib PRIVATE
+        LANG_VM_COMPUTED_GOTO=1)
+endif()
+lang_enable_warnings(langlib)
+if(LANG_VM_COMPUTED_GOTO)
+    target_compile_options(langlib PRIVATE -Wno-pedantic)
+endif()
+
+if(LANG_SANITIZE AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(langlib PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(langlib PUBLIC -fsanitize=address,undefined)
+endif()
+
+add_executable(lang src/main.c)
+target_link_libraries(lang PRIVATE langlib)
+lang_enable_warnings(lang)
+
+enable_testing()
+add_test(NAME language_tests COMMAND lang test)
+set_tests_properties(language_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME hello_run COMMAND lang run examples/hello.lang)
+set_tests_properties(hello_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "Hello, world."
+)
+add_test(NAME hello_check COMMAND lang check examples/hello.lang)
+set_tests_properties(hello_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME async_surface_check COMMAND lang check tests/async_surface.lang)
+set_tests_properties(async_surface_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME async_ir_dump COMMAND lang dump-ir tests/async_surface.lang)
+set_tests_properties(async_ir_dump PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "async function.*completes"
+)
+add_test(NAME async_vm_surface_execution
+    COMMAND lang run tests/async_surface.lang)
+set_tests_properties(async_vm_surface_execution PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME async_vm_execution
+    COMMAND lang run tests/async_generated_c.lang)
+set_tests_properties(async_vm_execution PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME async_exception_vm_execution
+    COMMAND lang run tests/async_exception_generated_c.lang)
+set_tests_properties(async_exception_vm_execution PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "cleaned"
+)
+add_test(NAME async_task_api_vm_execution
+    COMMAND lang run tests/async_task_api.lang)
+set_tests_properties(async_task_api_vm_execution PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME async_task_api_generated_c_execution
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/async_task_api.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/async-generated-c
+        -DOUTPUT_BASENAME=async_task_api
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME async_task_combinators_vm_execution
+    COMMAND lang run tests/async_task_combinators.lang)
+set_tests_properties(async_task_combinators_vm_execution PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "10[
+]40[
+]10[
+]20[
+]99[
+]0")
+add_test(NAME async_task_combinator_errors_vm_execution
+    COMMAND lang run tests/async_task_combinator_errors.lang)
+set_tests_properties(async_task_combinator_errors_vm_execution PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "settled[
+]failed input[
+]Task.WhenAny requires at least one Task")
+add_test(NAME async_task_combinators_generated_c_execution
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/async_task_combinators.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/async-combinators-generated-c
+        -DOUTPUT_BASENAME=async_task_combinators
+        -DEXPECTED_OUTPUT=10\n40\n10\n20\n99\n0\n
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME async_task_combinator_errors_generated_c_execution
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/async_task_combinator_errors.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/async-combinators-generated-c
+        -DOUTPUT_BASENAME=async_task_combinator_errors
+        -DEXPECTED_OUTPUT=settled\nfailed\ input\nTask.WhenAny\ requires\ at\ least\ one\ Task\n
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME async_cancellation_vm_execution
+    COMMAND lang run tests/async_cancellation.lang)
+set_tests_properties(async_cancellation_vm_execution PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "false[
+]true[
+]A task was canceled\.[
+]The operation was canceled\.[
+]false[
+]completed[
+]combined canceled")
+add_test(NAME async_cancellation_generated_c_execution
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/async_cancellation.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/async-cancellation-generated-c
+        -DOUTPUT_BASENAME=async_cancellation
+        -DEXPECTED_OUTPUT=false\ntrue\nA\ task\ was\ canceled.\nThe\ operation\ was\ canceled.\nfalse\ncompleted\ncombined\ canceled\n
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+file(MAKE_DIRECTORY
+    ${CMAKE_CURRENT_BINARY_DIR}/async-generated-c
+    ${CMAKE_CURRENT_BINARY_DIR}/async-exception-generated-c
+    ${CMAKE_CURRENT_BINARY_DIR}/async-object-results-generated-c
+    ${CMAKE_CURRENT_BINARY_DIR}/async-combinators-generated-c
+    ${CMAKE_CURRENT_BINARY_DIR}/async-cancellation-generated-c)
+add_test(NAME async_generated_c_execution
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/async_generated_c.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/async-generated-c
+        -DOUTPUT_BASENAME=async_generated_c
+        -DEXPECTED_OUTPUT=42\n
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME async_exception_generated_c_execution
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/async_exception_generated_c.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/async-exception-generated-c
+        -DOUTPUT_BASENAME=async_exception_generated_c
+        -DEXPECTED_OUTPUT=cleaned\nboom\n
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME async_object_results_generated_c_execution
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/async_object_results_generated_c.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}/async-object-results-generated-c
+        -DOUTPUT_BASENAME=async_object_results_generated_c
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME await_outside_async_rejected
+    COMMAND lang check tests/checker/await_outside_async.lang)
+set_tests_properties(await_outside_async_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME async_requires_task_rejected
+    COMMAND lang check tests/checker/async_requires_task.lang)
+set_tests_properties(async_requires_task_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME await_requires_task_rejected
+    COMMAND lang check tests/checker/await_requires_task.lang)
+set_tests_properties(await_requires_task_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME dump_tokens_cli
+    COMMAND lang dump-tokens examples/hello.lang)
+set_tests_properties(dump_tokens_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "identifier     int"
+)
+add_test(NAME dump_ast_cli COMMAND lang dump-ast examples/hello.lang)
+set_tests_properties(dump_ast_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "int main"
+)
+add_test(NAME dump_types_cli
+    COMMAND lang dump-types examples/hello.lang)
+set_tests_properties(dump_types_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "int main"
+)
+add_test(NAME dump_layout_cli
+    COMMAND lang dump-layout examples/structs.lang)
+set_tests_properties(dump_layout_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "Point size=16 align=8"
+)
+add_test(NAME extern_c_layout
+    COMMAND lang dump-layout examples/ffi_layout.lang)
+set_tests_properties(extern_c_layout PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "CPoint size=8 align=4 abi=c"
+)
+add_test(NAME invalid_extern_c_layout
+    COMMAND lang check tests/checker/invalid_extern_layout.lang)
+set_tests_properties(invalid_extern_c_layout PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME generic_types_run
+    COMMAND lang run examples/generic_types.lang)
+set_tests_properties(generic_types_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+7[\r\n]+owned box[\r\n]+owned box[\r\n]+9"
+)
+add_test(NAME generic_destructor_substitution_run
+    COMMAND lang run examples/generic_destructors.lang)
+set_tests_properties(generic_destructor_substitution_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "2[\r\n]+1"
+)
+add_test(NAME generic_functions_run
+    COMMAND lang run examples/generic_functions.lang)
+set_tests_properties(generic_functions_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+generic[\r\n]+boxed[\r\n]+15[\r\n]+8"
+)
+add_test(NAME function_values_run
+    COMMAND lang run examples/function_values.lang)
+set_tests_properties(function_values_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "5[\r\n]+10[\r\n]+21"
+)
+add_test(NAME aster_written_libraries_run
+    COMMAND lang run examples/aster_libraries.lang)
+set_tests_properties(aster_written_libraries_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+true[\r\n]+true[\r\n]+true[\r\n]+true[\r\n]+2[\r\n]+true[\r\n]+<strong>42</strong>[\r\n]+Aster libraries[\r\n]+<strong><section><p>content</p></section></strong>"
+)
+add_test(NAME http_result_api_run
+    COMMAND lang run examples/http_results.lang)
+set_tests_properties(http_result_api_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "HTTP error returned as Result[\r\n]+HTTP server returned as Result"
+)
+add_test(NAME multi_route_http_application
+    COMMAND lang run examples/http_router.lang)
+set_tests_properties(multi_route_http_application PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "<h2>home</h2>[\r\n]+<strong>42</strong>[\r\n]+<p>Aster</p>[\r\n]+<p>/users</p>"
+)
+if(SQLite3_FOUND)
+    add_test(NAME sqlite_application
+        COMMAND lang run examples/sqlite.lang)
+    set_tests_properties(sqlite_application PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION "42[\r\n]+Ada"
+    )
+    add_test(NAME sqlite_application_surface_vm
+        COMMAND lang run tests/sqlite_application_surface.lang)
+    set_tests_properties(sqlite_application_surface_vm PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME sqlite_application_surface_backend_differential
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/sqlite_application_surface.lang
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+    add_test(NAME sqlite_application_surface_generated_c
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+            -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/sqlite_application_surface.lang
+            -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+            -DOUTPUT_BASENAME=aster_sqlite_application_surface
+            -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+            -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+            -DGENERATED_SANITIZE=${LANG_SANITIZE}
+            "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+            -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+    add_test(NAME issue_tracker_render
+        COMMAND lang project run
+            examples/issue_tracker/aster.toml render)
+    set_tests_properties(issue_tracker_render PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION
+            "font-family: sans-serif.*color: #0645ad.*Add an export command.*Search results lose their sort order"
+    )
+    add_test(NAME issue_tracker_tests
+        COMMAND lang project test
+            examples/issue_tracker/aster.toml)
+    set_tests_properties(issue_tracker_tests PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION
+            "issue tracker model passed[\r\n]+issue tracker design passed"
+    )
+    add_test(NAME issue_tracker_application_proof
+        COMMAND lang project run
+            examples/issue_tracker/aster.toml proof)
+    set_tests_properties(issue_tracker_application_proof PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION
+            "configuration and file processing passed[\r\n]+validation and SQLite passed[\r\n]+routing and typed HTML passed"
+    )
+endif()
+foreach(function_value_failure
+        function_value_signature
+        function_value_arity
+        extern_function_value)
+    add_test(NAME ${function_value_failure}_diagnostic
+        COMMAND lang check tests/checker/${function_value_failure}.lang)
+    set_tests_properties(${function_value_failure}_diagnostic PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        WILL_FAIL TRUE
+    )
+endforeach()
+foreach(generic_failure
+        generic_arity
+        generic_type_mismatch
+        generic_extern_struct
+        generic_function_conflict
+        generic_function_uninferred
+        recursive_generic_inline
+        recursive_generic_expansion)
+    add_test(NAME ${generic_failure}_diagnostic
+        COMMAND lang check tests/checker/${generic_failure}.lang)
+    set_tests_properties(${generic_failure}_diagnostic PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        WILL_FAIL TRUE
+    )
+endforeach()
+add_test(NAME dump_bytecode_cli
+    COMMAND lang dump-bytecode examples/hello.lang)
+set_tests_properties(dump_bytecode_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "function main:"
+)
+add_test(NAME dump_ir_cli
+    COMMAND lang dump-ir examples/arithmetic.lang)
+set_tests_properties(dump_ir_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "mul_checked"
+)
+add_test(NAME dump_ir_aggregates_cli
+    COMMAND lang dump-ir examples/aggregate_mutation.lang)
+set_tests_properties(dump_ir_aggregates_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "local_field_set"
+)
+add_test(NAME dump_ir_result_try_cli
+    COMMAND lang dump-ir examples/result.lang)
+set_tests_properties(dump_ir_result_try_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "local_enum_payload_move"
+)
+add_test(NAME dump_ir_iteration_cli
+    COMMAND lang dump-ir examples/arrays.lang)
+set_tests_properties(dump_ir_iteration_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "local_iterator_next"
+)
+add_test(NAME dump_ir_raw_pointer_cli
+    COMMAND lang dump-ir examples/raw_pointer.lang)
+set_tests_properties(dump_ir_raw_pointer_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "raw_store"
+)
+add_test(NAME dump_ir_elements_cli
+    COMMAND lang dump-ir examples/component_children.lang)
+set_tests_properties(dump_ir_elements_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "local_element_append"
+)
+add_test(NAME dump_ir_element_control_flow_cli
+    COMMAND lang dump-ir examples/html_match.lang)
+set_tests_properties(dump_ir_element_control_flow_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "local_enum_is"
+)
+foreach(ir_scalar_example
+        hello
+        arithmetic
+        logical
+        bitwise
+        ranges
+        method_calls
+        function_values
+        ir_native
+        ir_aggregates
+        aggregate_mutation
+        structs
+        match
+        option
+        result
+        copyable_result
+        raii
+        arrays
+        vector
+        ir_iteration
+        raw_pointer
+        null_pointer
+        ir_arena
+        html
+        html_control
+        html_escaping
+        html_coverage
+        html_qualified
+        html_raw
+        html_collections
+        custom_element
+        components
+        component_children
+        html_match)
+    add_test(NAME ir_bytecode_${ir_scalar_example}_differential
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/${ir_scalar_example}.lang
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+endforeach()
+add_test(NAME dump_ir_bytecode_cli
+    COMMAND lang dump-ir-bytecode examples/arithmetic.lang)
+set_tests_properties(dump_ir_bytecode_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "MUL_I64"
+)
+add_test(NAME ir_bytecode_expired_pointer_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/vm/expired_arena_pointer.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME dump_ir_bytecode_elements_cli
+    COMMAND lang dump-ir-bytecode examples/component_children.lang)
+set_tests_properties(dump_ir_bytecode_elements_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "HTML_APPEND_LOCAL"
+)
+add_test(NAME emit_c_cli
+    COMMAND lang emit-c examples/c_backend.lang)
+set_tests_properties(emit_c_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "int64_t aster_fn_0"
+)
+
+find_program(ASTER_WASM_CLANG NAMES clang)
+find_program(ASTER_WASM_LINKER NAMES wasm-ld)
+find_program(ASTER_WASM_OPTIMIZER NAMES wasm-opt)
+find_program(ASTER_NODE_EXECUTABLE NAMES node)
+find_program(ASTER_CURL_EXECUTABLE NAMES curl)
+if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
+   ASTER_WASM_OPTIMIZER AND ASTER_NODE_EXECUTABLE)
+    add_test(NAME wasm_counter_trial
+        COMMAND bash examples/wasm_counter/build.sh)
+    set_tests_properties(wasm_counter_trial PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION
+            "wasm islands verified: typed exports, SSR counter, and two forms"
+    )
+endif()
+if(UNIX AND ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
+   ASTER_WASM_OPTIMIZER AND ASTER_CURL_EXECUTABLE AND SQLite3_FOUND)
+    add_test(NAME lime_browser_http_integration
+        COMMAND bash tests/lime_browser_integration.sh
+            $<TARGET_FILE:lang>
+            ${CMAKE_C_COMPILER}
+            $<TARGET_FILE:langlib>
+            ${SQLite3_LIBRARY}
+            ${CMAKE_CURRENT_BINARY_DIR}/lime-browser
+            $<IF:$<BOOL:${LANG_SANITIZE}>,on,off>)
+    set_tests_properties(lime_browser_http_integration PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        TIMEOUT 20
+    )
+endif()
+add_test(NAME c_backend_compile_and_run
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/c_backend.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_backend_success
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME csharp_surface_vm
+    COMMAND lang run tests/csharp_surface.lang)
+set_tests_properties(csharp_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+7[\r\n]+Aster[\r\n]+Aster[\r\n]+0"
+)
+add_test(NAME c_pointer_surface_vm
+    COMMAND lang run tests/c_pointer_surface.lang)
+set_tests_properties(c_pointer_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME csharp_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/csharp_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME text_surface_vm
+    COMMAND lang run tests/text_builder_c.lang)
+set_tests_properties(text_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME text_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/text_builder_c.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME text_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/text_builder_c.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_text_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME numeric_conversion_vm
+    COMMAND lang run tests/numeric_conversion.lang)
+set_tests_properties(numeric_conversion_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME numeric_conversion_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/numeric_conversion.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME numeric_conversion_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/numeric_conversion.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_numeric_conversion
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME unicode_text_surface_vm
+    COMMAND lang run tests/unicode_text_surface.lang)
+set_tests_properties(unicode_text_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME unicode_text_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/unicode_text_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME unicode_text_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/unicode_text_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_unicode_text_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME datetime_surface_vm
+    COMMAND lang run tests/datetime_surface.lang)
+set_tests_properties(datetime_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME datetime_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/datetime_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME datetime_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/datetime_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_datetime_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME list_surface_vm
+    COMMAND lang run tests/list_surface.lang)
+set_tests_properties(list_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME list_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/list_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME list_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/list_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_list_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME dictionary_surface_vm
+    COMMAND lang run tests/dictionary_surface.lang)
+set_tests_properties(dictionary_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME dictionary_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/dictionary_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME dictionary_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/dictionary_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_dictionary_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+
+add_test(NAME hash_set_surface_vm
+    COMMAND lang run tests/hash_set_surface.lang)
+set_tests_properties(hash_set_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME hash_set_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/hash_set_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME hash_set_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/hash_set_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_hash_set_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME queue_surface_vm
+    COMMAND lang run tests/queue_surface.lang)
+set_tests_properties(queue_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME queue_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/queue_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME queue_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/queue_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_queue_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME stack_surface_vm
+    COMMAND lang run tests/stack_surface.lang)
+set_tests_properties(stack_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME stack_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/stack_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME stack_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/stack_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_stack_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME json_document_surface_vm
+    COMMAND lang run tests/json_document_surface.lang)
+set_tests_properties(json_document_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME json_document_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/json_document_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME json_document_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/json_document_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_json_document_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME custom_indexer_surface_vm
+    COMMAND lang run tests/custom_indexer_surface.lang)
+set_tests_properties(custom_indexer_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME custom_indexer_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/custom_indexer_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME custom_indexer_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/custom_indexer_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_custom_indexer_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME out_parameter_surface_vm
+    COMMAND lang run tests/out_parameter_surface.lang)
+set_tests_properties(out_parameter_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME out_parameter_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/out_parameter_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_out_parameter_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME out_parameter_requires_out
+    COMMAND lang check tests/checker/out_parameter_requires_out.lang)
+set_tests_properties(out_parameter_requires_out PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} WILL_FAIL TRUE)
+add_test(NAME out_parameter_requires_place
+    COMMAND lang check tests/checker/out_parameter_requires_place.lang)
+set_tests_properties(out_parameter_requires_place PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} WILL_FAIL TRUE)
+add_test(NAME system_io_surface_vm
+    COMMAND lang run tests/system_io_surface.lang)
+set_tests_properties(system_io_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME system_io_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/system_io_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_system_io_surface
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME streams_binary_surface_vm
+    COMMAND lang run tests/streams_binary_surface.lang)
+set_tests_properties(streams_binary_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME streams_binary_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/streams_binary_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME streams_binary_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/streams_binary_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_streams_binary_surface
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME http_binary_surface_vm
+    COMMAND lang run tests/http_binary_surface.lang)
+set_tests_properties(http_binary_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME http_binary_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/http_binary_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_http_binary_surface
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME overload_surface_vm
+    COMMAND lang run tests/overloads.lang)
+set_tests_properties(overload_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "5[\r\n]+aster[\r\n]+5[\r\n]+9[\r\n]+15[\r\n]+21[\r\n]+5[\r\n]+115[\r\n]+2[\r\n]+9"
+)
+add_test(NAME overload_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/overloads.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME overload_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/overloads.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_overload_surface
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME duplicate_overload_signature_diagnostic
+    COMMAND lang check tests/checker/duplicate_overload.lang)
+set_tests_properties(duplicate_overload_signature_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME nullable_surface_vm
+    COMMAND lang run tests/nullable_surface.lang)
+set_tests_properties(nullable_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "nullable-null[\r\n]+nullable-present"
+)
+add_test(NAME nullable_surface_direct
+    COMMAND lang run-direct tests/nullable_surface.lang)
+set_tests_properties(nullable_surface_direct PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "nullable-null[\r\n]+nullable-present"
+)
+add_test(NAME nullable_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/nullable_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME exceptions_surface_vm
+    COMMAND lang run tests/exceptions_surface.lang)
+set_tests_properties(exceptions_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "cleaned[\r\n]+database unavailable[\r\n]+recovered"
+)
+add_test(NAME exceptions_surface_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/exceptions_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=exceptions_surface_generated
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME exceptions_finally_vm
+    COMMAND lang run tests/exceptions_finally.lang)
+set_tests_properties(exceptions_finally_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "normal[\r\n]+finally-normal[\r\n]+caught[\r\n]+finally-caught[\r\n]+finally-propagate[\r\n]+propagated[\r\n]+replacement[\r\n]+rethrown[\r\n]+finally-return[\r\n]+7[\r\n]+finally-break"
+)
+add_test(NAME exceptions_finally_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/exceptions_finally.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=exceptions_finally_generated
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME exceptions_native_vm
+    COMMAND lang run tests/exceptions_native.lang)
+set_tests_properties(exceptions_native_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "intentional native failure[\r\n]+native-recovered"
+)
+add_test(NAME exceptions_native_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/exceptions_native.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=exceptions_native_generated
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME exceptions_function_value_vm
+    COMMAND lang run tests/exceptions_function_value.lang)
+set_tests_properties(exceptions_function_value_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME exceptions_function_value_generated_c
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/exceptions_function_value.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=exceptions_function_value_generated
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME list_destination_vm
+    COMMAND lang run tests/list_destination.lang)
+set_tests_properties(list_destination_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "Reusable[\r\n]+1[\r\n]+2[\r\n]+Direct[\r\n]+0[\r\n]+7[\r\n]+Reusable[\r\n]+1[\r\n]+11"
+)
+add_test(NAME list_destination_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/list_destination.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME c_for_surface_vm
+    COMMAND lang run tests/c_for_surface.lang)
+set_tests_properties(c_for_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "10[\r\n]+8[\r\n]+3[\r\n]+3"
+)
+add_test(NAME c_array_surface_vm
+    COMMAND lang run tests/c_array_surface.lang)
+set_tests_properties(c_array_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "31[\r\n]+3[\r\n]+8"
+)
+add_test(NAME compound_place_surface_vm
+    COMMAND lang run tests/compound_place_surface.lang)
+set_tests_properties(compound_place_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "15[\r\n]+99[\r\n]+7[\r\n]+5"
+)
+add_test(NAME compound_place_surface_direct
+    COMMAND lang run-direct tests/compound_place_surface.lang)
+set_tests_properties(compound_place_surface_direct PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "15[\r\n]+99[\r\n]+7[\r\n]+5"
+)
+add_test(NAME compound_place_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/compound_place_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME compound_place_surface_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/compound_place_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_compound_place_surface
+        "-DEXPECTED_OUTPUT=15\n99\n7\n5\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME pointer_dereference_surface_vm
+    COMMAND lang run tests/pointer_dereference_surface.lang)
+set_tests_properties(pointer_dereference_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "99[\r\n]+42[\r\n]+0"
+)
+add_test(NAME pointer_dereference_surface_direct
+    COMMAND lang run-direct tests/pointer_dereference_surface.lang)
+set_tests_properties(pointer_dereference_surface_direct PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "99[\r\n]+42[\r\n]+0"
+)
+add_test(NAME pointer_dereference_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/pointer_dereference_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME pointer_dereference_surface_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/pointer_dereference_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_pointer_dereference_surface
+        "-DEXPECTED_OUTPUT=99\n42\n0\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_array_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_array_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME c_array_surface_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_array_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_array_surface
+        "-DEXPECTED_OUTPUT=31\n3\n8\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_for_surface_backend_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_for_surface.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME c_for_surface_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_for_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_for_surface
+        "-DEXPECTED_OUTPUT=10\n8\n3\n3\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME csharp_surface_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/csharp_surface.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_csharp_surface
+        "-DEXPECTED_OUTPUT=7\n7\nAster\nAster\n0\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME list_destination_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/list_destination.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_list_destination
+        "-DEXPECTED_OUTPUT=Reusable\n1\n2\nDirect\n0\n7\nReusable\n1\n11\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_logical_short_circuit
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/logical.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_logical
+        "-DEXPECTED_OUTPUT=3\n4\n5\n6\n7\n8\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_bitwise_operations
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_bitwise.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_bitwise
+        "-DEXPECTED_OUTPUT=1\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_static_method_call
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_method.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_method
+        "-DEXPECTED_OUTPUT=62\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_control_flow_expressions
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/control_flow_expressions.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_control_flow_expressions
+        "-DEXPECTED_OUTPUT=10\n20\n40\n7\n0\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_owned_text
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/text.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_owned_text
+        "-DEXPECTED_OUTPUT=Hello, Aster.\nowned text\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_function_values
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/function_values.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_function_values
+        "-DEXPECTED_OUTPUT=5\n10\n21\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_vector_runtime
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/vector.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_vector
+        "-DEXPECTED_OUTPUT=2\nAda\nLin\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_borrowed_vector_iteration
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/borrowed_iteration.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_borrowed_vector
+        "-DEXPECTED_OUTPUT=8\n2\n12\n4\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_html_runtime
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_html.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_html
+        "-DEXPECTED_C_COMPACT_PATTERN=aster_url\\*result=aster_allocate\\(sizeof\\(\\*result\\)\\).*result->references=1U"
+        "-DEXPECTED_OUTPUT=<section class=\"a&quot;&amp;&lt;b&gt;\"><h2>owned &amp; safe</h2><strong>Administrator</strong><em>trusted</em><a href=\"#\">Open</a></section>\n<section class=\"a&quot;&amp;&lt;b&gt;\"><h2>owned &amp; safe</h2><strong>Administrator</strong><em>trusted</em><a href=\"#\">Open</a></section>\n<section class=\"a&quot;&amp;&lt;b&gt;\"><h2>owned &amp; safe</h2><em>trusted</em><a href=\"#\">Open</a></section>\n<p>early</p>\n<div><p>late</p></div>\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_html_collections
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/html_collections.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_html_collections
+        "-DEXPECTED_OUTPUT=<section><strong>Optional</strong><h2>Array A</h2><h2>Array B</h2><ul><li>Ada</li><li>Lin</li></ul></section>\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_html_interpolation
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/native_html_attributes.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_html_interpolation
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_native_css
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/native_css.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_native_css
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_scoped_css
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/scoped_css.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_scoped_css
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME css_custom_properties_run
+    COMMAND lang run tests/css_custom_properties.lang)
+set_tests_properties(css_custom_properties_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "style=\"--accent: #e45b20; --gap: 12\"")
+add_test(NAME css_custom_properties_run_direct
+    COMMAND lang run-direct tests/css_custom_properties.lang)
+set_tests_properties(css_custom_properties_run_direct PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "style=\"--accent: #e45b20; --gap: 12\"")
+add_test(NAME css_custom_property_unsafe_vm
+    COMMAND lang run tests/css_custom_property_unsafe.lang)
+set_tests_properties(css_custom_property_unsafe_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} WILL_FAIL TRUE)
+add_test(NAME css_custom_property_unsafe_direct
+    COMMAND lang run-direct tests/css_custom_property_unsafe.lang)
+set_tests_properties(css_custom_property_unsafe_direct PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} WILL_FAIL TRUE)
+add_test(NAME css_custom_property_interpolation_rejected
+    COMMAND lang check tests/checker/css_custom_property_interpolation.lang)
+set_tests_properties(css_custom_property_interpolation_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} WILL_FAIL TRUE)
+add_test(NAME css_custom_property_static_rejections
+    COMMAND lang check tests/checker/css_custom_property_static_rejections.lang)
+set_tests_properties(css_custom_property_static_rejections PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} WILL_FAIL TRUE)
+add_test(NAME c_backend_css_custom_properties
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/css_custom_properties.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_css_custom_properties
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_css_custom_property_unsafe
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/css_custom_property_unsafe.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_css_custom_property_unsafe
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -DEXPECTED_RUN_STATUS=1
+        -DEXPECTED_ERROR=unsafe.CSS.custom.property.value
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_native_html_text
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/native_html_text.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_native_html_text
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_extracted_css
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/scoped_css.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_c_css.cmake)
+add_test(NAME c_backend_buffer_and_slice
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_buffer_slice.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_buffer_slice
+        "-DEXPECTED_OUTPUT=17\n0\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_integer_ranges
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_range.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_range
+        "-DEXPECTED_OUTPUT=24\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_checked_overflow
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_overflow.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_backend_overflow
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -DEXPECTED_RUN_STATUS=1
+        -DEXPECTED_ERROR=integer.overflow
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_aggregates_compile_and_run
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_aggregates.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_backend_aggregates
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME struct_deconstruction_vm
+    COMMAND lang run-ir tests/struct_deconstruction.lang)
+set_tests_properties(struct_deconstruction_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "201[\r\n]+created[\r\n]+1[\r\n]+201")
+add_test(NAME struct_deconstruction_direct_vm
+    COMMAND lang run-direct tests/struct_deconstruction.lang)
+set_tests_properties(struct_deconstruction_direct_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "201[\r\n]+created[\r\n]+1[\r\n]+201")
+add_test(NAME struct_deconstruction_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/struct_deconstruction.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_struct_deconstruction
+        "-DEXPECTED_OUTPUT=201\ncreated\n1\n201\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_enums_result_try_compile_and_run
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_enums.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_backend_enums
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_deterministic_cleanup
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_cleanup.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_backend_cleanup
+        "-DEXPECTED_OUTPUT=2\n1\n3\n4\n5\n6\n6\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_owning_field_replacement
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/aggregate_mutation.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_field_replacement
+        "-DEXPECTED_OUTPUT=10\n9\n1\n2\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_owned_html_emits
+    COMMAND lang emit-c examples/html.lang)
+set_tests_properties(c_backend_owned_html_emits PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME c_backend_html_coverage
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/html_coverage.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_html_coverage
+        -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html_coverage.out
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+function(add_ir_file_differential name source_file)
+    add_test(NAME ${name}
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/${source_file}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+endfunction()
+add_ir_file_differential(
+    ir_bytecode_module_import_differential examples/modules/main.lang)
+add_ir_file_differential(
+    ir_bytecode_qualified_module_differential tests/modules/qualified_main.lang)
+add_ir_file_differential(
+    ir_bytecode_module_isolation_differential tests/modules/isolation_main.lang)
+add_ir_file_differential(
+    ir_bytecode_type_isolation_differential
+    tests/modules/type_isolation_main.lang)
+add_ir_file_differential(
+    ir_bytecode_copy_identity_differential
+    tests/modules/type_copy_isolation_main.lang)
+add_ir_file_differential(
+    ir_bytecode_qualified_struct_differential
+    tests/modules/qualified_struct_main.lang)
+add_ir_file_differential(
+    ir_bytecode_qualified_enum_differential
+    tests/modules/qualified_enum_main.lang)
+add_ir_file_differential(
+    ir_bytecode_generic_types_differential examples/generic_types.lang)
+add_ir_file_differential(
+    ir_bytecode_generic_functions_differential examples/generic_functions.lang)
+add_ir_file_differential(
+    ir_bytecode_aster_libraries_differential examples/aster_libraries.lang)
+add_test(NAME ref_parameter_value_copy_vm
+    COMMAND lang run-ir tests/ref_value_copy.lang)
+set_tests_properties(ref_parameter_value_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "0[\r\n]+1"
+)
+add_test(NAME ref_parameter_value_copy_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/ref_value_copy.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_ref_parameter_value_copy
+        "-DEXPECTED_OUTPUT=0\n1\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME foreach_value_copy_vm
+    COMMAND lang run-ir tests/foreach_value_copy.lang)
+set_tests_properties(foreach_value_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "99[\r\n]+1[\r\n]+88[\r\n]+2[\r\n]+1"
+)
+add_test(NAME foreach_value_copy_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/foreach_value_copy.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_foreach_value_copy
+        "-DEXPECTED_OUTPUT=99\n1\n88\n2\n1\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME value_copy_isolation_vm
+    COMMAND lang run-ir tests/value_copy_isolation.lang)
+set_tests_properties(value_copy_isolation_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "1[\r\n]+2[\r\n]+1[\r\n]+2"
+)
+add_test(NAME value_copy_isolation_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/value_copy_isolation.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_value_copy_isolation
+        "-DEXPECTED_OUTPUT=1\n2\n1\n2\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME return_value_elision_vm
+    COMMAND lang run-ir tests/return_value_elision.lang)
+set_tests_properties(return_value_elision_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "1[\r\n]+<strong>Aster</strong>[\r\n]+1"
+)
+add_test(NAME return_value_elision_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/return_value_elision.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_return_value_elision
+        "-DEXPECTED_OUTPUT=1\n<strong>Aster</strong>\n1\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME return_value_elision_ir
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/return_value_elision.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_return_elision.cmake)
+set_tests_properties(return_value_elision_ir PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_ir_file_differential(
+    ir_bytecode_owned_temporary_differential
+    examples/temporary_values.lang)
+add_ir_file_differential(
+    ir_bytecode_html_interpolation_differential
+    tests/native_html_attributes.lang)
+add_ir_file_differential(
+    ir_bytecode_borrowed_component_html_differential
+    examples/borrowed_component_html.lang)
+add_ir_file_differential(
+    ir_bytecode_foreach_differential examples/foreach.lang)
+add_ir_file_differential(
+    ir_bytecode_foreach_resource_copy_differential
+    tests/foreach_resource_copy.lang)
+add_test(NAME c_backend_borrowed_component_html
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/borrowed_component_html.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_borrowed_component_html
+        "-DEXPECTED_OUTPUT=<article><h2>Aster &amp; HTML</h2></article>\nAster & HTML\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME c_backend_process_environment
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_environment.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_process_environment
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        "-DEXPECTED_OUTPUT=configured\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+set_tests_properties(c_backend_process_environment PROPERTIES
+    ENVIRONMENT "ASTER_C_ENV_TEST=configured")
+add_test(NAME c_backend_foreach
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/foreach.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_c_foreach
+        "-DEXPECTED_OUTPUT=First\nSecond\n2\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+add_test(NAME repl_cli
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/repl_input.txt
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_repl.cmake
+)
+add_test(NAME benchmark_cli COMMAND lang bench)
+set_tests_properties(benchmark_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "direct compiler(.|[\r\n])*IR compiler(.|[\r\n])*instructions/run"
+)
+add_test(NAME project_default_target
+    COMMAND lang project run tests/project/aster.toml)
+set_tests_properties(project_default_target PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "84"
+)
+add_test(NAME project_library_target_check
+    COMMAND lang project check tests/project/aster.toml math)
+set_tests_properties(project_library_target_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME project_local_dependency_run
+    COMMAND lang project run tests/local_dependency/aster.toml app)
+set_tests_properties(project_local_dependency_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "local dependency"
+)
+add_test(NAME project_local_dependency_emit_c
+    COMMAND lang project emit-c tests/local_dependency/aster.toml app)
+set_tests_properties(project_local_dependency_emit_c PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_library_check
+    COMMAND lang project check packages/lime/aster.toml library)
+set_tests_properties(lime_library_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_current_http_check
+    COMMAND lang project check packages/lime/aster.toml current_http)
+set_tests_properties(lime_current_http_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_h2o_check
+    COMMAND lang project check packages/lime/aster.toml h2o)
+set_tests_properties(lime_h2o_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_forms_check
+    COMMAND lang project check packages/lime/aster.toml forms)
+set_tests_properties(lime_forms_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_sessions_check
+    COMMAND lang project check packages/lime/aster.toml sessions)
+set_tests_properties(lime_sessions_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_static_check
+    COMMAND lang project check packages/lime/aster.toml static)
+set_tests_properties(lime_static_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_content_check
+    COMMAND lang project check packages/lime/aster.toml content)
+set_tests_properties(lime_content_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_markdown_check
+    COMMAND lang project check packages/lime/aster.toml markdown)
+set_tests_properties(lime_markdown_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_smoke
+    COMMAND lang project test packages/lime/aster.toml)
+set_tests_properties(lime_smoke PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "Lime"
+)
+if(UNIX)
+    add_test(NAME lime_ssg_integration
+        COMMAND bash tests/lime_ssg_integration.sh
+            $<TARGET_FILE:lang>
+            ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(lime_ssg_integration PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+endif()
+add_test(NAME lime_blog_fixture_c_backend
+    COMMAND lang project emit-c packages/lime/aster.toml blog_fixture_server)
+set_tests_properties(lime_blog_fixture_c_backend PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME lime_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+        -DTARGET_NAME=smoke
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        "-DEXPECTED_OUTPUT=<h1>Stateful Lime</h1>\n<p>Stateful Lime:missing</p>\n<section><h1>Lime</h1><p>Small, explicit, and written in Aster.</p></section>\n<article>first-post</article>\n<p>two words!:new</p>\n<h1>Method not allowed</h1>\n/\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+add_test(NAME lime_async_response_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+        -DTARGET_NAME=async_response
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        "-DEXPECTED_OUTPUT=200\n200\n<article><h1>Async Lime response</h1></article>\n<article><h1>Async Lime response</h1></article>\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+add_test(NAME project_c_backend_compile_and_run
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/project/aster.toml
+        -DTARGET_NAME=app
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        "-DEXPECTED_OUTPUT=84\n"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+add_test(NAME docs_server_c_backend_compile_and_run
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/docs_server/aster.toml
+        -DTARGET_NAME=render
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+if(SQLite3_FOUND)
+    add_test(NAME issue_tracker_c_backend_compile_and_run
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+            -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/aster.toml
+            -DTARGET_NAME=render
+            -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+            -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+            -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+            -DGENERATED_SANITIZE=${LANG_SANITIZE}
+            "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+            -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+    add_test(NAME issue_tracker_proof_c_backend_compile_and_run
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+            -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/aster.toml
+            -DTARGET_NAME=proof
+            -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+            -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+            -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+            -DGENERATED_SANITIZE=${LANG_SANITIZE}
+            "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+            "-DEXPECTED_OUTPUT=configuration and file processing passed\nvalidation and SQLite passed\nrouting and typed HTML passed\n"
+            -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+    add_test(NAME issue_tracker_generated_c_http_integration
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+            -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/aster.toml
+            -DTARGET_NAME=integration_server
+            -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+            -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+            -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+            -DDRIVER_EXECUTABLE=$<TARGET_FILE:generated_http_integration_test>
+            -DGENERATED_SANITIZE=${LANG_SANITIZE}
+            "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+            -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+    set_tests_properties(
+        issue_tracker_generated_c_http_integration PROPERTIES
+        RESOURCE_LOCK issue_tracker_integration_database)
+endif()
+add_test(NAME project_test_targets
+    COMMAND lang project test tests/project/aster.toml)
+set_tests_properties(project_test_targets PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "\\[pass\\] smoke"
+)
+add_test(NAME lime_sessions_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+        -DTARGET_NAME=sessions_smoke
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+set_tests_properties(lime_sessions_c_backend PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME project_whole_namespace_using
+    COMMAND lang project check tests/project/aster.toml bad_selective)
+set_tests_properties(project_whole_namespace_using PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME project_module_path_identity
+    COMMAND lang project check tests/project/aster.toml bad_module)
+set_tests_properties(project_module_path_identity PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME project_generic_canonical_identity
+    COMMAND lang project run tests/project/aster.toml generic_app)
+set_tests_properties(project_generic_canonical_identity PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "22[\r\n]+14[\r\n]+3[\r\n]+5"
+)
+add_test(NAME docs_server_render
+    COMMAND lang project run examples/docs_server/aster.toml render)
+set_tests_properties(docs_server_render PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "configuration parsed(.|[\r\n])*documentation directory traversed[\r\n]+static asset loaded"
+)
+add_test(NAME docs_server_check
+    COMMAND lang project check examples/docs_server/aster.toml server)
+set_tests_properties(docs_server_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME docs_server_aster_tests
+    COMMAND lang project test examples/docs_server/aster.toml)
+set_tests_properties(docs_server_aster_tests PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "\\[pass\\] smoke"
+)
+function(add_ir_project_differential name manifest target)
+    add_test(NAME ${name}
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/${manifest}
+            -DTARGET_NAME=${target}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_project_backends.cmake)
+endfunction()
+add_ir_project_differential(
+    ir_project_default_differential tests/project/aster.toml app)
+add_ir_project_differential(
+    ir_project_generic_differential tests/project/aster.toml generic_app)
+add_ir_project_differential(
+    ir_project_smoke_differential tests/project/aster.toml smoke)
+add_ir_project_differential(
+    ir_docs_server_render_differential
+    examples/docs_server/aster.toml render)
+add_ir_project_differential(
+    ir_docs_server_smoke_differential
+    examples/docs_server/aster.toml smoke)
+add_test(NAME html_run COMMAND lang run examples/html.lang)
+set_tests_properties(html_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "&amp;.*&lt;simple&gt;"
+)
+add_test(NAME html_control_run COMMAND lang run examples/html_control.lang)
+set_tests_properties(html_control_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "<strong>Visible</strong>.*<li>Ada</li><li>Lin</li>"
+)
+add_test(NAME html_render_golden
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/html.lang
+        -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html.out
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_golden.cmake
+)
+add_test(NAME html_control_golden
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/html_control.lang
+        -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html_control.out
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_golden.cmake
+)
+add_test(NAME html_all_escaping_golden
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/html_escaping.lang
+        -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html_escaping.out
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_golden.cmake
+)
+add_test(NAME html_coverage_golden
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/html_coverage.lang
+        -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html_coverage.out
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_golden.cmake
+)
+add_test(NAME html_qualified_names_golden
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/html_qualified.lang
+        -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html_qualified.out
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_golden.cmake
+)
+add_test(NAME unknown_element_property_diagnostic
+    COMMAND lang check tests/checker/unknown_element_property.lang)
+set_tests_properties(unknown_element_property_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME duplicate_element_property_diagnostic
+    COMMAND lang check tests/checker/duplicate_element_property.lang)
+set_tests_properties(duplicate_element_property_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME element_disallows_children_diagnostic
+    COMMAND lang check tests/checker/element_disallows_children.lang)
+set_tests_properties(element_disallows_children_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME unknown_element_diagnostic
+    COMMAND lang check tests/checker/unknown_element.lang)
+set_tests_properties(unknown_element_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME mismatched_element_closing_diagnostic
+    COMMAND lang check tests/parser/mismatched_element.lang)
+set_tests_properties(mismatched_element_closing_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME recursion_run COMMAND lang run examples/recursion.lang)
+set_tests_properties(recursion_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "55"
+)
+add_test(NAME expression_return_run
+    COMMAND lang run examples/expression_return.lang)
+set_tests_properties(expression_return_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME result_try_run COMMAND lang run examples/result.lang)
+set_tests_properties(result_try_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME structurally_copyable_result_run
+    COMMAND lang run examples/copyable_result.lang)
+set_tests_properties(structurally_copyable_result_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME module_import_run COMMAND lang run examples/modules/main.lang)
+set_tests_properties(module_import_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME qualified_module_function_run
+    COMMAND lang run tests/modules/qualified_main.lang)
+set_tests_properties(qualified_module_function_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "true[\r\n]+false"
+)
+add_test(NAME module_namespace_isolation
+    COMMAND lang run tests/modules/isolation_main.lang)
+set_tests_properties(module_namespace_isolation PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "^42[\r\n]+$"
+)
+add_test(NAME ambiguous_public_import_diagnostic
+    COMMAND lang check tests/modules/ambiguous_main.lang)
+set_tests_properties(ambiguous_public_import_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME module_type_and_destructor_isolation
+    COMMAND lang run tests/modules/type_isolation_main.lang)
+set_tests_properties(module_type_and_destructor_isolation PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "102[\r\n]+1"
+)
+add_test(NAME same_named_module_types_are_distinct
+    COMMAND lang check tests/modules/type_mismatch_main.lang)
+set_tests_properties(same_named_module_types_are_distinct PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME module_copy_metadata_isolation
+    COMMAND lang run tests/modules/type_copy_isolation_main.lang)
+set_tests_properties(module_copy_metadata_isolation PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME temporary_value_cleanup
+    COMMAND lang run examples/temporary_values.lang)
+set_tests_properties(temporary_value_cleanup PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "temporary clone[\r\n]+20[\r\n]+3"
+)
+add_test(NAME imported_nested_type_isolation_identity
+    COMMAND lang check tests/modules/nested_type_isolation_main.lang)
+set_tests_properties(imported_nested_type_isolation_identity PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME qualified_struct_runtime_identity
+    COMMAND lang run tests/modules/qualified_struct_main.lang)
+set_tests_properties(qualified_struct_runtime_identity PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7"
+)
+add_test(NAME imported_destructor_copy_check
+    COMMAND lang check tests/modules/imported_destructor_copy.lang)
+set_tests_properties(imported_destructor_copy_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME qualified_enum_runtime_identity
+    COMMAND lang run tests/modules/qualified_enum_main.lang)
+set_tests_properties(qualified_enum_runtime_identity PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+0"
+)
+add_test(NAME arena_run COMMAND lang run examples/arena.lang)
+set_tests_properties(arena_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME source_ffi_run COMMAND lang run examples/ffi.lang)
+set_tests_properties(source_ffi_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME mutable_slice_ffi_run COMMAND lang run examples/ffi_slice.lang)
+set_tests_properties(mutable_slice_ffi_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "16"
+)
+add_test(NAME native_result_ffi_run COMMAND lang run examples/ffi_result.lang)
+set_tests_properties(native_result_ffi_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME file_raii_run COMMAND lang run examples/file.lang)
+set_tests_properties(file_raii_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "Hello, world\\."
+)
+add_test(
+    NAME process_arguments_and_environment
+    COMMAND lang run examples/process.lang -- aster-argument)
+set_tests_properties(process_arguments_and_environment PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    ENVIRONMENT "ASTER_PROCESS_TEST=aster-environment"
+    PASS_REGULAR_EXPRESSION
+        "1[\r\n]+aster-argument[\r\n]+aster-environment"
+)
+add_test(
+    NAME filesystem_application_operations
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG=$<TARGET_FILE:lang>
+        -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/filesystem.lang
+        -DROOT=${CMAKE_CURRENT_BINARY_DIR}/filesystem-test
+        -DWORKING=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_filesystem.cmake
+)
+add_test(
+    NAME directory_discovery_vm
+    COMMAND lang run tests/directory_discovery.lang
+)
+set_tests_properties(directory_discovery_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "packages/lime/test_content/a.md[\r\n]+packages/lime/test_content/b.md"
+)
+add_test(
+    NAME directory_discovery_c_backend
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/directory_discovery.lang
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DOUTPUT_BASENAME=aster_directory_discovery
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        "-DEXPECTED_OUTPUT=packages/lime/test_content/a.md\npackages/lime/test_content/b.md\n"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake
+)
+set_tests_properties(directory_discovery_c_backend PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(
+    NAME cli_parser_application
+    COMMAND lang run examples/cli.lang --
+        --verbose --output=report.txt input.lang --
+        --literal -x
+)
+set_tests_properties(cli_parser_application PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "flag[\r\n]+verbose[\r\n]+named[\r\n]+output[\r\n]+report.txt[\r\n]+positional[\r\n]+input.lang[\r\n]+positional[\r\n]+--literal[\r\n]+positional[\r\n]+-x"
+)
+add_test(
+    NAME text_utility_application
+    COMMAND lang run examples/text_utilities.lang
+)
+set_tests_properties(text_utility_application PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "true[\r\n]+true[\r\n]+true[\r\n]+-9223372036854775808[\r\n]+18446744073709551615"
+)
+add_test(
+    NAME aster_testing_project
+    COMMAND lang project test
+        examples/testing_project/aster.toml
+)
+set_tests_properties(aster_testing_project PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "\\[pass\\][\r\n]+addition[\r\n]+\\[pass\\][\r\n]+greeting.*\\[pass\\] suite.*1 project tests, 0 failures"
+)
+add_test(
+    NAME aster_testing_failure_output
+    COMMAND lang run examples/testing_failure.lang
+)
+set_tests_properties(aster_testing_failure_output PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(
+    NAME buffered_file_copy
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG=$<TARGET_FILE:lang>
+        -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/file_copy.lang
+        -DROOT=${CMAKE_CURRENT_BINARY_DIR}/file-copy-test
+        -DWORKING=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_file_copy.cmake
+)
+add_test(
+    NAME buffered_line_reader
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG=$<TARGET_FILE:lang>
+        -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/read_lines.lang
+        -DROOT=${CMAKE_CURRENT_BINARY_DIR}/read-lines-test
+        -DWORKING=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_read_lines.cmake
+)
+
+add_test(
+    NAME callback_line_reader
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG=$<TARGET_FILE:lang>
+        -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/for_each_line.lang
+        -DROOT=${CMAKE_CURRENT_BINARY_DIR}/callback-line-reader
+        -DWORKING=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_for_each_line.cmake
+)
+add_test(
+    NAME callback_line_reader_error
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG=$<TARGET_FILE:lang>
+        -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/for_each_line_error.lang
+        -DROOT=${CMAKE_CURRENT_BINARY_DIR}/callback-line-reader-error
+        -DWORKING=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_for_each_line_error.cmake
+)
+add_test(NAME raii_cleanup_run COMMAND lang run examples/raii.lang)
+set_tests_properties(raii_cleanup_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "21[\r\n]+2134"
+)
+add_test(NAME component_element_run COMMAND lang run examples/components.lang)
+set_tests_properties(component_element_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "<h2>Ada</h2><strong>Administrator</strong>.*<h2>Lin</h2>"
+)
+add_test(NAME loop_cleanup_run COMMAND lang run examples/loop_cleanup.lang)
+set_tests_properties(loop_cleanup_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "12[\r\n]+123"
+)
+add_test(NAME enum_match_run COMMAND lang run examples/match.lang)
+set_tests_properties(enum_match_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+0"
+)
+add_test(NAME html_match_run COMMAND lang run examples/html_match.lang)
+set_tests_properties(html_match_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "<section><strong>Loaded</strong></section>"
+)
+add_test(NAME raw_pointer_run COMMAND lang run examples/raw_pointer.lang)
+set_tests_properties(raw_pointer_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME null_pointer_run COMMAND lang run examples/null_pointer.lang)
+set_tests_properties(null_pointer_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "null"
+)
+add_test(NAME nested_array_types_run
+    COMMAND lang run examples/nested_arrays.lang)
+set_tests_properties(nested_array_types_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "3[\r\n]+null element"
+)
+add_test(NAME component_children_run
+    COMMAND lang run examples/component_children.lang)
+set_tests_properties(component_children_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "<section class=\"panel\"><h2>People</h2><strong>Featured</strong><ul><li>Ada</li><li>Lin</li></ul></section>"
+)
+add_test(NAME borrowed_native_run COMMAND lang run examples/borrowed_native.lang)
+set_tests_properties(borrowed_native_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+7[\r\n]+0[\r\n]+7"
+)
+add_test(NAME field_value_copy_run
+    COMMAND lang run tests/checker/field_value_copy.lang)
+set_tests_properties(field_value_copy_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "borrowed field"
+)
+add_test(NAME mutable_borrowed_parameter_run
+    COMMAND lang run tests/checker/mutable_borrowed_parameter.lang)
+set_tests_properties(mutable_borrowed_parameter_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME immutable_mutable_borrow_diagnostic
+    COMMAND lang check tests/checker/immutable_mutable_borrow.lang)
+set_tests_properties(immutable_mutable_borrow_diagnostic PROPERTIES
+    WILL_FAIL TRUE
+    PASS_REGULAR_EXPRESSION
+        "mutable borrowed argument requires a `mut` local"
+)
+add_test(NAME aggregate_cleanup_run
+    COMMAND lang run examples/aggregate_cleanup.lang)
+set_tests_properties(aggregate_cleanup_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "0[\r\n]+0[\r\n]+5"
+)
+add_test(NAME aggregate_mutation_run
+    COMMAND lang run examples/aggregate_mutation.lang)
+set_tests_properties(aggregate_mutation_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "10[\r\n]+9[\r\n]+1[\r\n]+2"
+)
+add_test(NAME native_handle_field_borrow_run
+    COMMAND lang run examples/native_handle_field.lang)
+set_tests_properties(native_handle_field_borrow_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+0[\r\n]+7"
+)
+add_test(NAME language_destructors_run
+    COMMAND lang run examples/destructors.lang)
+set_tests_properties(language_destructors_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "2[\r\n]+1[\r\n]+21[\r\n]+3[\r\n]+213[\r\n]+4[\r\n]+2134"
+)
+add_test(NAME mutable_destructor_receiver_run
+    COMMAND lang run examples/destructor_mutation.lang)
+set_tests_properties(mutable_destructor_receiver_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME nested_destructors_run
+    COMMAND lang run examples/nested_destructors.lang)
+set_tests_properties(nested_destructors_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+7[\r\n]+8[\r\n]+8[\r\n]+9[\r\n]+9[\r\n]+10"
+)
+add_test(NAME numeric_types_run
+    COMMAND lang run examples/numeric_types.lang)
+set_tests_properties(numeric_types_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+65535[\r\n]+2.5[\r\n]+20[\r\n]+18446744073709551615[\r\n]+-9223372036854775808[\r\n]+42[\r\n]+42[\r\n]+65"
+)
+add_test(NAME integer_shifts_run COMMAND lang run examples/shifts.lang)
+set_tests_properties(integer_shifts_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "12[\r\n]+-2[\r\n]+1[\r\n]+12[\r\n]+42"
+)
+add_test(NAME option_run COMMAND lang run examples/option.lang)
+set_tests_properties(option_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+0"
+)
+add_test(NAME type_alias_run COMMAND lang run examples/type_alias.lang)
+set_tests_properties(type_alias_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME text_runtime_run COMMAND lang run examples/text.lang)
+set_tests_properties(text_runtime_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "Hello, Aster\\.[\r\n]+owned text"
+)
+add_test(NAME decoded_string_escapes_run
+    COMMAND lang run examples/string_escapes.lang)
+set_tests_properties(decoded_string_escapes_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "3[\r\n]+line[\r\n]+\"quote\"\\\\[\r\n]+3[\r\n]+3"
+)
+add_test(NAME vector_runtime_run COMMAND lang run examples/vector.lang)
+set_tests_properties(vector_runtime_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "2[\r\n]+Ada[\r\n]+Lin"
+)
+add_test(NAME custom_element_run COMMAND lang run examples/custom_element.lang)
+set_tests_properties(custom_element_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "<notice tone=\"warning\"><strong>Careful</strong></notice>"
+)
+add_test(NAME explicit_raw_html_run COMMAND lang run examples/html_raw.lang)
+set_tests_properties(explicit_raw_html_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "<section><em>trusted</em></section>"
+)
+add_test(NAME native_css_run COMMAND lang run tests/native_css.lang)
+set_tests_properties(native_css_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "@future-layout experimental\\(value\\).*future-property: unknown-function\\(1 / 2\\)"
+)
+add_test(NAME native_css_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/native_css.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME scoped_css_run COMMAND lang run tests/scoped_css.lang)
+set_tests_properties(scoped_css_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "\\.card\\[data-aster-scope-[0-9a-f]+\\].*@keyframes reveal.*from \\{ opacity: 0; \\}.*<aside class=\"card\"><style>\\.card \\{ color: aster; \\}</style>Plain</aside>"
+)
+add_test(NAME scoped_css_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/scoped_css.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME native_html_text_run
+    COMMAND lang run tests/native_html_text.lang)
+set_tests_properties(native_html_text_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "<h1>A&amp;B</h1><p>Benchmark content &amp; escaping.</p><p>Hello <strong>Aster</strong> world.</p><span>Shown</span><code>if \\(condition\\) \\{ \\.\\.\\. \\}</code>")
+add_test(NAME native_html_text_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/native_html_text.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME invalid_native_css_diagnostic
+    COMMAND lang check tests/checker/invalid_native_css.lang)
+set_tests_properties(invalid_native_css_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME html_child_collections_run
+    COMMAND lang run examples/html_collections.lang)
+set_tests_properties(html_child_collections_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "<section><strong>Optional</strong><h2>Array A</h2><h2>Array B</h2><ul><li>Ada</li><li>Lin</li></ul></section>"
+)
+add_test(NAME expired_arena_pointer_trap
+    COMMAND lang run tests/vm/expired_arena_pointer.lang)
+set_tests_properties(expired_arena_pointer_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME unregistered_native_trap
+    COMMAND lang run tests/vm/unregistered_native.lang)
+set_tests_properties(unregistered_native_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME native_failure_cleanup
+    COMMAND lang run tests/vm/native_failure_cleanup.lang)
+set_tests_properties(native_failure_cleanup PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME module_cycle_diagnostic
+    COMMAND lang check tests/modules/cycle_a.lang)
+set_tests_properties(module_cycle_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+
+add_executable(ffi_registration_test tests/ffi_registration.c)
+target_link_libraries(ffi_registration_test PRIVATE langlib)
+lang_enable_warnings(ffi_registration_test)
+add_test(NAME ffi_registration COMMAND ffi_registration_test)
+
+add_executable(ast_shape_test tests/ast_shape.c)
+target_include_directories(ast_shape_test PRIVATE src)
+target_link_libraries(ast_shape_test PRIVATE langlib)
+lang_enable_warnings(ast_shape_test)
+add_test(NAME element_control_ast_shape COMMAND ast_shape_test)
+set_tests_properties(element_control_ast_shape PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_executable(css_ast_test tests/css_ast.c)
+target_include_directories(css_ast_test PRIVATE src)
+target_link_libraries(css_ast_test PRIVATE langlib)
+lang_enable_warnings(css_ast_test)
+add_test(NAME native_css_ast_shape COMMAND css_ast_test)
+set_tests_properties(native_css_ast_shape PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_executable(lexer_unit_test tests/lexer_test.c)
+target_include_directories(lexer_unit_test PRIVATE src)
+target_link_libraries(lexer_unit_test PRIVATE langlib)
+lang_enable_warnings(lexer_unit_test)
+add_test(NAME lexer_tokens_comments_and_spans COMMAND lexer_unit_test)
+
+add_executable(parser_recovery_test tests/parser_recovery.c)
+target_include_directories(parser_recovery_test PRIVATE src)
+target_link_libraries(parser_recovery_test PRIVATE langlib)
+lang_enable_warnings(parser_recovery_test)
+add_test(NAME parser_reports_multiple_errors COMMAND parser_recovery_test)
+set_tests_properties(parser_reports_multiple_errors PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME enum_multiple_payloads_diagnostic
+    COMMAND lang check tests/parser/enum_multiple_payloads.lang)
+set_tests_properties(enum_multiple_payloads_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME explicit_function_return_and_struct_shorthand
+    COMMAND lang run tests/parser/function_tail_expression.lang)
+set_tests_properties(explicit_function_return_and_struct_shorthand PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42"
+)
+add_test(NAME control_flow_expressions_run
+    COMMAND lang run tests/control_flow_expressions.lang)
+set_tests_properties(control_flow_expressions_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "10[\r\n]+20[\r\n]+40[\r\n]+7[\r\n]+0"
+)
+add_test(NAME borrowed_iteration_run
+    COMMAND lang run tests/borrowed_iteration.lang)
+set_tests_properties(borrowed_iteration_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "8[\r\n]+2"
+)
+add_test(NAME borrowed_function_values_run
+    COMMAND lang run tests/borrowed_function_values.lang)
+set_tests_properties(borrowed_function_values_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "3[\r\n]+6[\r\n]+lime"
+)
+add_test(NAME borrowed_function_values_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/borrowed_function_values.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME buffer_slice_runtime_run
+    COMMAND lang run tests/c_backend_buffer_slice.lang)
+set_tests_properties(buffer_slice_runtime_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "17[\r\n]+0")
+add_test(NAME buffer_slice_runtime_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_buffer_slice.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME borrowed_iteration_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/borrowed_iteration.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+add_test(NAME control_flow_expressions_differential
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/control_flow_expressions.lang
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compare_backends.cmake)
+
+add_test(NAME ignored_binding_drops_immediately
+    COMMAND lang run tests/immediate_discard_cleanup.lang)
+set_tests_properties(ignored_binding_drops_immediately PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+8"
+)
+add_test(NAME compound_assignment_and_based_integers
+    COMMAND lang run tests/parser/compound_assignment_and_bases.lang)
+set_tests_properties(compound_assignment_and_based_integers PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "4"
+)
+add_test(NAME invalid_based_integer_diagnostic
+    COMMAND lang check tests/lexer/invalid_based_integer.lang)
+set_tests_properties(invalid_based_integer_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME compound_assignment_rejects_complex_place
+    COMMAND lang check tests/parser/compound_assignment_place.lang)
+set_tests_properties(compound_assignment_rejects_complex_place PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME logical_short_circuit_run
+    COMMAND lang run examples/logical.lang)
+set_tests_properties(logical_short_circuit_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "3[\r\n]+4[\r\n]+5[\r\n]+6[\r\n]+7[\r\n]+8"
+)
+add_test(NAME invalid_logical_operand_diagnostic
+    COMMAND lang check tests/checker/invalid_logical_operand.lang)
+set_tests_properties(invalid_logical_operand_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME bitwise_operations_and_compound_assignment
+    COMMAND lang run examples/bitwise.lang)
+set_tests_properties(bitwise_operations_and_compound_assignment PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "8[\r\n]+15[\r\n]+6[\r\n]+243[\r\n]+5[\r\n]+15[\r\n]+7"
+)
+add_test(NAME invalid_bitwise_operand_diagnostic
+    COMMAND lang check tests/checker/invalid_bitwise_operand.lang)
+set_tests_properties(invalid_bitwise_operand_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME static_method_call_sugar
+    COMMAND lang run examples/method_calls.lang)
+set_tests_properties(static_method_call_sugar PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "42[\r\n]+2[\r\n]+9[\r\n]+method calls[\r\n]+41[\r\n]+42[\r\n]+42"
+)
+add_test(NAME inferred_self_requires_qualified_owner
+    COMMAND lang check tests/parser/inferred_self_requires_owner.lang)
+set_tests_properties(inferred_self_requires_qualified_owner PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME inferred_self_must_be_first
+    COMMAND lang check tests/parser/inferred_self_must_be_first.lang)
+set_tests_properties(inferred_self_must_be_first PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME integer_range_loop
+    COMMAND lang run examples/ranges.lang)
+set_tests_properties(integer_range_loop PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "100[\r\n]+200[\r\n]+11[\r\n]+6[\r\n]+254"
+)
+add_test(NAME range_rejects_float_bounds
+    COMMAND lang check tests/checker/invalid_float_range.lang)
+set_tests_properties(range_rejects_float_bounds PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME range_rejects_inclusive_syntax
+    COMMAND lang check tests/parser/inclusive_range.lang)
+set_tests_properties(range_rejects_inclusive_syntax PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+
+add_executable(typed_ast_resolution_test tests/typed_ast_test.c)
+target_include_directories(typed_ast_resolution_test PRIVATE src)
+target_link_libraries(typed_ast_resolution_test PRIVATE langlib)
+lang_enable_warnings(typed_ast_resolution_test)
+add_test(NAME typed_ast_retains_resolved_function
+    COMMAND typed_ast_resolution_test)
+set_tests_properties(typed_ast_retains_resolved_function PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_executable(generic_identity_test tests/generic_identity_test.c)
+target_include_directories(generic_identity_test PRIVATE src)
+target_link_libraries(generic_identity_test PRIVATE langlib)
+lang_enable_warnings(generic_identity_test)
+add_test(NAME generic_instantiation_pointer_identity
+    COMMAND generic_identity_test)
+set_tests_properties(generic_instantiation_pointer_identity PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_executable(ir_structure_test tests/ir_test.c)
+target_include_directories(ir_structure_test PRIVATE src)
+target_link_libraries(ir_structure_test PRIVATE langlib)
+lang_enable_warnings(ir_structure_test)
+add_test(NAME typed_ir_structure_and_verifier COMMAND ir_structure_test)
+set_tests_properties(typed_ir_structure_and_verifier PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME typed_ast_local_shadowing_run
+    COMMAND lang run tests/typed_ast_test.lang)
+set_tests_properties(typed_ast_local_shadowing_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "2[\r\n]+42"
+)
+
+add_executable(http_integration_test tests/http_integration.c)
+target_link_libraries(http_integration_test PRIVATE langlib)
+lang_enable_warnings(http_integration_test)
+add_test(NAME http_fixed_response COMMAND http_integration_test)
+
+add_executable(http_request_integration_test tests/http_request_integration.c)
+target_link_libraries(http_request_integration_test PRIVATE langlib)
+lang_enable_warnings(http_request_integration_test)
+add_test(NAME http_request_exposure COMMAND http_request_integration_test)
+
+add_executable(http_keep_alive_integration_test
+    tests/http_keep_alive_integration.c)
+target_link_libraries(http_keep_alive_integration_test PRIVATE langlib)
+lang_enable_warnings(http_keep_alive_integration_test)
+add_test(NAME http_keep_alive_reuse
+    COMMAND http_keep_alive_integration_test)
+
+add_executable(docs_server_integration_test
+    tests/docs_server_integration.c)
+target_link_libraries(docs_server_integration_test PRIVATE langlib)
+lang_enable_warnings(docs_server_integration_test)
+add_test(NAME docs_server_http_application
+    COMMAND docs_server_integration_test ir)
+set_tests_properties(docs_server_http_application PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_executable(http_language_integration_test
+    tests/http_language_integration.c)
+target_link_libraries(http_language_integration_test PRIVATE langlib)
+lang_enable_warnings(http_language_integration_test)
+add_test(NAME http_language_handler_loop
+    COMMAND http_language_integration_test)
+set_tests_properties(http_language_handler_loop PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    TIMEOUT 10
+)
+add_test(NAME ir_http_language_handler_loop
+    COMMAND http_language_integration_test ir)
+set_tests_properties(ir_http_language_handler_loop PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    TIMEOUT 10
+)
+
+add_executable(generated_http_integration_test
+    tests/generated_http_integration.c)
+target_link_libraries(generated_http_integration_test PRIVATE langlib)
+lang_enable_warnings(generated_http_integration_test)
+
+add_executable(lime_http_integration_test
+    tests/lime_http_integration.c)
+target_link_libraries(lime_http_integration_test PRIVATE langlib)
+lang_enable_warnings(lime_http_integration_test)
+add_test(NAME lime_current_http_vm_integration
+    COMMAND lime_http_integration_test vm)
+set_tests_properties(lime_current_http_vm_integration PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    TIMEOUT 10
+)
+add_test(NAME lime_current_http_c_integration
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+        -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+        -DTARGET_NAME=current_http_server
+        -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+        -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+        -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+        -DDRIVER_EXECUTABLE=$<TARGET_FILE:lime_http_integration_test>
+        -DGENERATED_SANITIZE=${LANG_SANITIZE}
+        "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
+        -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+set_tests_properties(lime_current_http_c_integration PROPERTIES
+    TIMEOUT 10
+)
+if(LANG_HAVE_H2O AND UNIX)
+    add_executable(lime_h2o_integration_test
+        tests/lime_h2o_integration.c)
+    target_link_libraries(lime_h2o_integration_test PRIVATE langlib)
+    lang_enable_warnings(lime_h2o_integration_test)
+    add_test(NAME lime_h2o_vm_integration
+        COMMAND lime_h2o_integration_test vm)
+    set_tests_properties(lime_h2o_vm_integration PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        TIMEOUT 15
+        ENVIRONMENT "LD_LIBRARY_PATH=${ASTER_H2O_BUILD_ROOT}"
+    )
+    add_test(NAME lime_h2o_c_integration
+        COMMAND ${CMAKE_COMMAND}
+            -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
+            -DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+            -DTARGET_NAME=h2o_http_server
+            -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
+            -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+            -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
+            -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
+            -DDRIVER_EXECUTABLE=$<TARGET_FILE:lime_h2o_integration_test>
+            -DGENERATED_SANITIZE=${LANG_SANITIZE}
+            "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES};${ASTER_H2O_LIBRARY}"
+            -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+    set_tests_properties(lime_h2o_c_integration PROPERTIES
+        TIMEOUT 15
+        ENVIRONMENT "LD_LIBRARY_PATH=${ASTER_H2O_BUILD_ROOT}"
+    )
+endif()
+if(SQLite3_FOUND)
+    add_test(NAME issue_tracker_vm_http_integration
+        COMMAND generated_http_integration_test vm)
+    set_tests_properties(issue_tracker_vm_http_integration PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        TIMEOUT 10
+        RESOURCE_LOCK issue_tracker_integration_database
+    )
+endif()
+
+add_executable(trap_destructor_test tests/trap_destructor.c)
+target_link_libraries(trap_destructor_test PRIVATE langlib)
+lang_enable_warnings(trap_destructor_test)
+add_test(NAME trap_language_destructor COMMAND trap_destructor_test)
+set_tests_properties(trap_language_destructor PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_executable(stack_trace_test tests/stack_trace.c)
+target_link_libraries(stack_trace_test PRIVATE langlib)
+lang_enable_warnings(stack_trace_test)
+add_test(NAME runtime_stack_trace_locations COMMAND stack_trace_test)
+set_tests_properties(runtime_stack_trace_locations PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_executable(malformed_bytecode_test tests/malformed_bytecode.c)
+target_include_directories(malformed_bytecode_test PRIVATE src)
+target_link_libraries(malformed_bytecode_test PRIVATE langlib)
+lang_enable_warnings(malformed_bytecode_test)
+add_test(NAME malformed_bytecode_rejected COMMAND malformed_bytecode_test)
+
+add_test(NAME http_language_router_check
+    COMMAND lang check examples/http_server.lang)
+set_tests_properties(http_language_router_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_test(NAME division_by_zero_trap COMMAND lang run tests/vm/division_by_zero.lang)
+set_tests_properties(division_by_zero_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME index_out_of_bounds_trap
+    COMMAND lang run tests/vm/index_out_of_bounds.lang)
+set_tests_properties(index_out_of_bounds_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME constant_index_out_of_bounds_diagnostic
+    COMMAND lang check tests/checker/constant_index_out_of_bounds.lang)
+set_tests_properties(constant_index_out_of_bounds_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME index_assignment_out_of_bounds_trap
+    COMMAND lang run tests/vm/index_assignment_out_of_bounds.lang)
+set_tests_properties(index_assignment_out_of_bounds_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME null_pointer_load_trap
+    COMMAND lang run tests/vm/null_pointer_load.lang)
+set_tests_properties(null_pointer_load_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME i8_overflow_trap
+    COMMAND lang run tests/vm/i8_overflow.lang)
+set_tests_properties(i8_overflow_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME u8_underflow_trap
+    COMMAND lang run tests/vm/u8_underflow.lang)
+set_tests_properties(u8_underflow_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME invalid_shift_count_trap
+    COMMAND lang run tests/vm/shift_count.lang)
+set_tests_properties(invalid_shift_count_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME negative_shift_count_trap
+    COMMAND lang run tests/vm/negative_shift_count.lang)
+set_tests_properties(negative_shift_count_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME shift_overflow_trap
+    COMMAND lang run tests/vm/shift_overflow.lang)
+set_tests_properties(shift_overflow_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME cast_out_of_range_trap
+    COMMAND lang run tests/vm/cast_out_of_range.lang)
+set_tests_properties(cast_out_of_range_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME explicit_panic_trap COMMAND lang run tests/vm/panic.lang)
+set_tests_properties(explicit_panic_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME recursion_depth_trap
+    COMMAND lang run tests/vm/recursion_depth.lang)
+set_tests_properties(recursion_depth_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+
+add_custom_target(bench
+    COMMAND lang bench
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS lang
+)

@@ -1,0 +1,25 @@
+using Aster.Html;
+
+Html page(string title, bool show) {
+    return <main>
+        <h1>{title}</h1>
+        <p>Benchmark content &amp; escaping.</p>
+        <p>Hello <strong>Aster</strong> world.</p>
+        <p>
+            Multiple
+            words.
+        </p>
+        // Formatting comments are Aster trivia, not output.
+        <p>#1 — okay?</p>
+        if (show) {
+            <span>Shown</span>
+        }
+        <code>{"if (condition) { ... }"}</code>
+        <p>{title}#1</p>
+    </main>;
+}
+
+int main() {
+    print(HtmlRender(page("A&B", true)));
+    return 0;
+}

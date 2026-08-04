@@ -1,0 +1,11 @@
+struct Box<T> {
+    value: T,
+}
+
+int main() {
+    Box<string> text = Box {
+        value: "text",
+    };
+    Box<long> number = text;
+    return 0;
+}

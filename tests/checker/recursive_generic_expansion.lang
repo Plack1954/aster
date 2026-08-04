@@ -1,0 +1,10 @@
+struct Grow<T> {
+    next: Grow<List<T>>,
+}
+
+void invalid(Grow<long> value) {
+}
+
+int main() {
+    return 0;
+}

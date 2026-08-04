@@ -1,0 +1,21 @@
+struct Collection
+{
+    List<int> Values;
+}
+
+int main()
+{
+    List<int> original = new();
+    original.Add(1);
+    List<int> copied = original;
+    copied.Add(2);
+    print(original.Count);
+    print(copied.Count);
+
+    Collection first = new() { Values = original };
+    Collection second = first;
+    second.Values.Add(3);
+    print(first.Values.Count);
+    print(second.Values.Count);
+    return 0;
+}

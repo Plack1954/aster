@@ -1,0 +1,6 @@
+int main() {
+    byte zero = 0;
+    byte one = 1;
+    print(zero - one);
+    return 0;
+}

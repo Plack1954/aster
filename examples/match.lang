@@ -1,0 +1,21 @@
+union Status {
+    Ready(long),
+    Empty,
+}
+
+long describe(Status status) {
+    switch (status) {
+        case Status.Ready(value): {
+            return value;
+        }
+        case Status.Empty: {
+            return 0;
+        }
+    }
+}
+
+int main() {
+    print(describe(Status.Ready(42)));
+    print(describe(Status.Empty));
+    return 0;
+}

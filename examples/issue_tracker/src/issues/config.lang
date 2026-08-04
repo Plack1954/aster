@@ -1,0 +1,102 @@
+namespace Issues.Config;
+
+using System.IO;
+using System.Text;
+
+public struct AppConfig {
+    string databasePath;
+    usize maxTitleBytes;
+}
+
+bool IsSpace(byte value) {
+    return value == 32 || value == 9 || value == 13;
+}
+
+string trim(string value) {
+    usize start = 0;
+    usize end = value.Length;
+    while (start < end && IsSpace(StringByteAt(value, start))) {
+        start += 1;
+    }
+    while (end > start && IsSpace(StringByteAt(value, end - 1))) {
+        end -= 1;
+    }
+    return StringSlice(value, start, end);
+}
+
+Result<usize, string> ParseLimit(string value) {
+    string text = trim(value);
+    usize length = text.Length;
+    if (length == 0) {
+        return Result.Err("expected a decimal limit");
+    }
+    usize result = 0;
+    for (usize index = 0; index < length; index++) {
+        byte byte = StringByteAt(text, index);
+        if (byte < 48 || byte > 57) {
+            return Result.Err("invalid decimal limit");
+        }
+        result = result * 10 + (usize)(byte - 48);
+    }
+    return Result.Ok(result);
+}
+
+public Result<AppConfig, string> ParseConfig(string source) {
+    string databasePath = ":memory:";
+    usize maxTitleBytes = 120;
+    usize length = source.Length;
+    usize cursor = 0;
+
+    while (cursor < length) {
+        usize end = cursor;
+        while (end < length && StringByteAt(source, end) != 10) {
+            end += 1;
+        }
+        string line = trim(StringSlice(source, cursor, end));
+        usize lineLength = line.Length;
+        if (lineLength > 0 && StringByteAt(line, 0) != 35) {
+            usize equals = 0;
+            while (equals < lineLength &&
+                  StringByteAt(line, equals) != 61) {
+                equals += 1;
+            }
+            if (equals >= lineLength) {
+                return Result.Err(
+                    "configuration line requires `key=value`"
+                );
+            }
+            string key = trim(StringSlice(line, 0, equals));
+            string value =
+                trim(StringSlice(line, equals + 1, lineLength));
+            if (key == "database_path") {
+                if (value.Length == 0) {
+                    return Result.Err("database path cannot be empty");
+                }
+                databasePath = value;
+            } else if (key == "max_title_bytes") {
+                maxTitleBytes = try ParseLimit(value);
+            } else {
+                return Result.Err("unknown configuration key");
+            }
+        }
+        if (end < length) {
+            cursor = end + 1;
+        } else {
+            cursor = length;
+        }
+    }
+
+    if (maxTitleBytes == 0 || maxTitleBytes > 1024) {
+        return Result.Err("title limit is outside its valid range");
+    }
+    return Result.Ok(new AppConfig {
+        databasePath = databasePath,
+        maxTitleBytes = maxTitleBytes,
+    });
+}
+
+public Result<AppConfig, string> LoadConfig(string path) {
+    NativeHandle file = try NativeFileOpen(path, "rb");
+    string contents = try NativeFileReadAll(file);
+    return ParseConfig(contents);
+}

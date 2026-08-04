@@ -1,0 +1,7 @@
+extern struct CBox<T> {
+    value: T,
+}
+
+int main() {
+    return 0;
+}

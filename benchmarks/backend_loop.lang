@@ -1,0 +1,15 @@
+int main() {
+    long value = 1;
+    long iteration = 0;
+    while (iteration < 20000000) {
+        value = value + iteration + 1;
+        if (value > 1000000000) {
+            value = value - 1000000000;
+        }
+        iteration = iteration + 1;
+    }
+    if (value == 10000001) {
+        return 0;
+    }
+    return 1;
+}

@@ -1,0 +1,42 @@
+extern NativeHandle NativeHandleOpenId(long id);
+extern long NativeHandleDropLog();
+
+struct Handles {
+    NativeHandle first;
+    NativeHandle second;
+}
+
+union Resource {
+    Handle(NativeHandle),
+    Empty,
+}
+
+void ConsumeHandles(Handles value) {
+}
+
+void ConsumeArray(NativeHandle value[2]) {
+}
+
+int main() {
+    NativeHandle first = NativeHandleOpenId(1);
+    NativeHandle second = NativeHandleOpenId(2);
+    Handles handles = new() {
+        first = first,
+        second = second,
+    };
+    ConsumeHandles(handles);
+    print(NativeHandleDropLog());
+
+    NativeHandle third = NativeHandleOpenId(3);
+    NativeHandle fourth = NativeHandleOpenId(4);
+    NativeHandle array[2] = [third, fourth];
+    ConsumeArray(array);
+    print(NativeHandleDropLog());
+
+    {
+        NativeHandle fifth = NativeHandleOpenId(5);
+        Resource resource = Resource.Handle(fifth);
+    }
+    print(NativeHandleDropLog());
+    return 0;
+}

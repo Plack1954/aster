@@ -1,0 +1,13 @@
+struct Resource {
+    id: long,
+}
+
+~Resource() {
+    print(self.id);
+}
+
+int main() {
+    var _ = Resource { id: 7 };
+    print(8);
+    return 0;
+}

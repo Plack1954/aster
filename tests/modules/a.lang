@@ -1,0 +1,5 @@
+namespace Ambiguity.A;
+
+pub long shared(long value) {
+    return value;
+}

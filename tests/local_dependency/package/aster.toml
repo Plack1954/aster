@@ -1,0 +1,6 @@
+name = "dependency"
+source_root = "src"
+
+[target.library]
+kind = "lib"
+entry = "Dependency.Message"

@@ -1,0 +1,13 @@
+extern NativeHandle NativeHandleOpenId(long id);
+
+struct Owner {
+    handle: NativeHandle,
+}
+
+int main() {
+    NativeHandle handle = NativeHandleOpenId(1);
+    Owner owner = Owner { handle: handle };
+    Owner copied = owner;
+    print(owner.handle);
+    return 0;
+}

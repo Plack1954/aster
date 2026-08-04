@@ -1,0 +1,10 @@
+using Aster.Html;
+
+int main() {
+    Html stylesheet = <style>
+        .card {
+            color: aster;
+    </style>;
+    print(HtmlRender(stylesheet));
+    return 0;
+}

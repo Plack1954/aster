@@ -1,0 +1,17 @@
+namespace Types.Mismatch;
+
+using Types.TypeDep;
+
+struct Resource {
+    id: long,
+}
+
+~Resource() {
+    print(self.id);
+}
+
+int main() {
+    var local = Resource { id: 2 };
+    ConsumeResource(local);
+    return 0;
+}

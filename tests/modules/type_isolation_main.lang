@@ -1,0 +1,17 @@
+namespace Types.Main;
+
+using Types.TypeDep;
+
+struct Resource {
+    id: long,
+}
+
+~Resource() {
+    print(self.id + 100);
+}
+
+int main() {
+    var foreign = MakeResource(1);
+    var local = Resource { id: 2 };
+    return 0;
+}

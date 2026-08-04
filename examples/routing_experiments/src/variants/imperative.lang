@@ -1,0 +1,27 @@
+namespace Variants.Imperative;
+
+using Aster.Net.Http;
+using Aster.Web.HttpApp;
+using Site.View;
+
+Response dispatch(Request request) {
+    if (request.method == "GET" && request.path == "/") {
+        return home(request);
+    }
+    if (request.method == "GET" && request.path == "/about/") {
+        return about(request);
+    }
+    if (request.method == "GET" &&
+       HttpPathMatches("/article/:slug/", request.path)) {
+        return article(request);
+    }
+    return missing(request);
+}
+
+int main() {
+    PrintResponse(dispatch(request("/")));
+    PrintResponse(dispatch(request("/about/")));
+    PrintResponse(dispatch(request("/article/hello-world/")));
+    PrintResponse(dispatch(request("/missing/")));
+    return 0;
+}

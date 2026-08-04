@@ -1,0 +1,21 @@
+using System.IO;
+
+Result<string, IoError> load(string path) {
+    NativeHandle file = try NativeFileOpen(path, "rb");
+    string contents = try NativeFileReadAll(file);
+    return Result.Ok(contents);
+}
+
+int main() {
+    Result<string, IoError> contents =
+        load("examples/hello.lang");
+    switch (contents) {
+        case Result.Ok(text): {
+            print(text);
+        }
+        case Result.Err(error): {
+            print(error);
+        }
+    }
+    return 0;
+}

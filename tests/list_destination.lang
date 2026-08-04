@@ -1,0 +1,49 @@
+using System.Text;
+
+union Badge
+{
+    None,
+    Text(string),
+}
+
+struct Article
+{
+    string title;
+    List<string> tags;
+    Badge badge;
+    int views;
+}
+
+int main()
+{
+    List<Article> articles = new();
+    articles.Add(new()
+    {
+        title = "Direct",
+        tags = new(),
+        badge = Badge.None,
+        views = 7
+    });
+
+    List<string> tags = new();
+    tags.Add("aster");
+    Article reusable = new()
+    {
+        title = "Reusable",
+        tags = tags,
+        badge = Badge.Text("Featured"),
+        views = 11
+    };
+    articles.Add(reusable);
+
+    print(reusable.title);
+    print(reusable.tags.Count);
+    print(articles.Count);
+    foreach (Article article in articles)
+    {
+        print(article.title);
+        print(article.tags.Count);
+        print(article.views);
+    }
+    return 0;
+}

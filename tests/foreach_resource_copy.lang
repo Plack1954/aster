@@ -1,0 +1,26 @@
+extern NativeHandle NativeHandleOpenId(long id);
+extern long NativeHandleId(NativeHandle handle);
+extern long NativeHandleDropLog();
+
+struct ArticleResource {
+    handle: NativeHandle,
+}
+
+int main() {
+    {
+        List<ArticleResource> articles = new();
+        articles.Add(ArticleResource {
+            handle: NativeHandleOpenId(7),
+        });
+
+        foreach (ArticleResource article in articles)
+        {
+            print(NativeHandleId(article.handle));
+        }
+
+        print(articles.Count);
+        print(NativeHandleDropLog());
+    }
+    print(NativeHandleDropLog());
+    return 0;
+}

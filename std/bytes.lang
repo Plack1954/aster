@@ -1,0 +1,24 @@
+namespace Aster.Memory;
+
+public using ByteError = string;
+
+public extern usize ByteSliceLen(Slice<byte> bytes);
+
+public extern byte ByteSliceAt(
+    Slice<byte> bytes,
+    usize index
+);
+
+public extern void ByteSliceSet(
+    Slice<byte> bytes,
+    usize index,
+    byte value
+);
+
+// Copies the half-open byte range into one owned string. string storage is
+// UTF-8-oriented, but this low-level operation does not validate encoding.
+public extern Result<string, ByteError> ByteSliceToString(
+    Slice<byte> bytes,
+    usize start,
+    usize end
+);

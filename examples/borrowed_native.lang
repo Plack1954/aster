@@ -1,0 +1,15 @@
+extern NativeHandle NativeHandleOpenId(long id);
+extern long NativeHandleId(NativeHandle handle);
+extern long NativeHandleDropLog();
+
+int main() {
+    {
+        NativeHandle handle = NativeHandleOpenId(7);
+        print(NativeHandleId(handle));
+        print(NativeHandleId(handle));
+        print(NativeHandleDropLog());
+    }
+
+    print(NativeHandleDropLog());
+    return 0;
+}

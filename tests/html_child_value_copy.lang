@@ -1,0 +1,9 @@
+using Aster.Html;
+
+int main() {
+    Html heading = <h2>"Title"</h2>;
+    Html page = <section>{heading}</section>;
+    print(HtmlRender(heading));
+    print(HtmlRender(page));
+    return 0;
+}

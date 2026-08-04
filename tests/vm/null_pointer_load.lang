@@ -1,0 +1,7 @@
+int main() {
+    const long* pointer = null;
+    unsafe {
+        print(*pointer);
+    }
+    return 0;
+}

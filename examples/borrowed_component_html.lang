@@ -1,0 +1,19 @@
+using Aster.Html;
+using System.Text;
+
+struct Article {
+    string title;
+}
+
+Html ArticleCard(Article article) {
+    return <article><h2>{article.title}</h2></article>;
+}
+
+int main() {
+    Article article = new() {
+        title = "Aster & HTML",
+    };
+    print(HtmlRender(<ArticleCard article=article />));
+    print(article.title);
+    return 0;
+}

@@ -1,0 +1,121 @@
+void Fail(string message)
+{
+    throw new Exception(message);
+}
+
+void PropagateThroughFinally()
+{
+    try
+    {
+        Fail("propagated");
+    }
+    finally
+    {
+        print("finally-propagate");
+    }
+}
+
+int ReturnThroughFinally()
+{
+    try
+    {
+        return 7;
+    }
+    finally
+    {
+        print("finally-return");
+    }
+}
+
+void ReplaceExceptionInFinally()
+{
+    try
+    {
+        Fail("original");
+    }
+    finally
+    {
+        throw new Exception("replacement");
+    }
+}
+
+void RethrowCurrentException()
+{
+    try
+    {
+        Fail("rethrown");
+    }
+    catch (Exception error)
+    {
+        throw;
+    }
+}
+
+int main()
+{
+    try
+    {
+        print("normal");
+    }
+    finally
+    {
+        print("finally-normal");
+    }
+
+    try
+    {
+        Fail("caught");
+    }
+    catch (Exception error)
+    {
+        print(error.Message);
+    }
+    finally
+    {
+        print("finally-caught");
+    }
+
+    try
+    {
+        PropagateThroughFinally();
+    }
+    catch (Exception error)
+    {
+        print(error.Message);
+    }
+
+    try
+    {
+        ReplaceExceptionInFinally();
+    }
+    catch (Exception error)
+    {
+        print(error.Message);
+    }
+
+    try
+    {
+        RethrowCurrentException();
+    }
+    catch (Exception error)
+    {
+        print(error.Message);
+    }
+
+    int value = ReturnThroughFinally();
+    print(value);
+
+    while (true)
+    {
+        try
+        {
+            break;
+        }
+        finally
+        {
+            print("finally-break");
+        }
+    }
+
+    return 0;
+}

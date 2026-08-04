@@ -1,0 +1,17 @@
+int main()
+{
+    string? missing = null;
+    string? present = "present";
+    if (missing == null)
+    {
+        print("nullable-null");
+    }
+    if (present != null)
+    {
+        print("nullable-present");
+    }
+
+    string value = present.Value;
+    print(value);
+    return 0;
+}

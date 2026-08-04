@@ -1,0 +1,9 @@
+extern NativeHandle NativeHandleOpenId(long id);
+extern long NativeHandleId(NativeHandle handle);
+
+int main() {
+    NativeHandle handle = NativeHandleOpenId(1);
+    NativeHandle moved = handle;
+    print(NativeHandleId(handle));
+    return 0;
+}

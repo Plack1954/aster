@@ -1,0 +1,30 @@
+void AcceptNested(Result<Option<long>, Option<long>> value) {
+    print(0);
+}
+
+int main() {
+    sbyte small = 3;
+    print(small << 2);
+
+    long negative = -8;
+    print(negative >> 2);
+
+    byte bits = 128;
+    print(bits >> 7);
+
+    long precedence = 1 + 2 << 2;
+    print(precedence);
+
+    Result<Option<long>, Option<long>> nested =
+        Result.Ok(Option.Some(42));
+    switch (nested) {
+        case Result.Ok(value): {
+            switch (value) {
+                case Option.Some(number): { print(number); }
+                case Option.None: { print(0); }
+            }
+        }
+        case Result.Err(error): { print(0); }
+    }
+    return 0;
+}

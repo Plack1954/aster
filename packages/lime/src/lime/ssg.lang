@@ -1,0 +1,475 @@
+namespace Lime.Ssg;
+
+using Lime;
+using System.IO;
+using Aster.Html;
+using System.Text;
+
+public struct SiteBuild
+{
+    int files;
+}
+
+struct SsgResponse
+{
+    string bytes;
+    bool html;
+}
+
+bool SsgStringsContains(List<string> values, string value)
+{
+    foreach (string existing in values)
+    {
+        if (existing == value) { return true; }
+    }
+    return false;
+}
+
+Result<bool, string> SsgEnsureDirectory(string path)
+{
+    bool exists = try NativePathExists(path);
+    if (exists)
+    {
+        if (!(try NativePathIsDirectory(path)))
+        {
+            return Result.Err("SSG output path component is not a directory");
+        }
+        return Result.Ok(true);
+    }
+    try NativeCreateDirectory(path);
+    return Result.Ok(true);
+}
+
+Result<bool, string> SsgEnsureTree(string path)
+{
+    usize length = path.Length;
+    if (length == 0) { return Result.Err("SSG output root cannot be empty"); }
+    if (length == 1 && StringByteAt(path, 0) == 47)
+    {
+        return Result.Err("SSG output root cannot be /");
+    }
+    usize segmentStart = 0;
+    if (StringByteAt(path, 0) == 47)
+    {
+        segmentStart = 1;
+    }
+    for (usize index = segmentStart; index <= length; index++)
+    {
+        bool boundary = index == length || StringByteAt(path, index) == 47;
+        if (!boundary) { continue; }
+        if (index == segmentStart)
+        {
+            if (index == length) { return Result.Ok(true); }
+            return Result.Err("SSG output path contains an empty segment");
+        }
+        try SsgEnsureDirectory(StringSlice(path, 0, index));
+        segmentStart = index + 1;
+    }
+    return Result.Ok(true);
+}
+
+bool SsgPathEndsSlash(string path)
+{
+    return path.Length != 0 &&
+        StringByteAt(path, path.Length - 1) == 47;
+}
+
+string SsgOutputPath(
+    string outputRoot,
+    string url,
+    bool html,
+    bool directHtml
+)
+{
+    StringBuilder output = new();
+    output.Append(outputRoot);
+    if (StringByteAt(outputRoot, outputRoot.Length - 1) == 47)
+    {
+        output.Append(StringSlice(url, 1, url.Length));
+    }
+    else
+    {
+        output.Append(url);
+    }
+    if (html && !directHtml) { output.Append("index.html"); }
+    return output.ToString();
+}
+
+Result<bool, string> SsgEnsureParent(string path)
+{
+    usize separator = 0;
+    for (usize index = 0; index < path.Length; index++)
+    {
+        if (StringByteAt(path, index) == 47) { separator = index; }
+    }
+    if (separator == 0) { return Result.Ok(true); }
+    return SsgEnsureTree(StringSlice(path, 0, separator));
+}
+
+Result<bool, string> SsgWrite(string path, string bytes)
+{
+    try SsgEnsureParent(path);
+    NativeHandle output = try NativeFileOpen(path, "wb");
+    usize written = try NativeFileWrite(output, bytes);
+    if (written != bytes.Length)
+    {
+        return Result.Err("SSG output write was incomplete");
+    }
+    return Result.Ok(true);
+}
+
+Result<SsgResponse, string> SsgResponseBytes(
+    string url,
+    int expectedStatus,
+    bool directHtml,
+    Response response
+)
+{
+    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
+    if (status != expectedStatus)
+    {
+        return Result.Err("SSG page returned an unexpected HTTP status");
+    }
+    if (headers.Count != 0)
+    {
+        return Result.Err("SSG responses cannot contain runtime headers");
+    }
+    switch (body)
+    {
+        case ResponseBody.Html(page): {
+            if (!directHtml && url != "/" && !SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG HTML page URL must end with /");
+            }
+            if (directHtml && SsgPathEndsSlash(url))
+            {
+                return Result.Err("direct SSG HTML output cannot end with /");
+            }
+            return Result.Ok(new()
+            {
+                bytes = HtmlRender(page),
+                html = true
+            });
+        }
+        case ResponseBody.Text(text): {
+            if (SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG file response URL cannot end with /");
+            }
+            return Result.Ok(new() { bytes = text, html = false });
+        }
+        case ResponseBody.Css(text): {
+            if (SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG file response URL cannot end with /");
+            }
+            return Result.Ok(new() { bytes = text, html = false });
+        }
+        case ResponseBody.Asset(asset): {
+            if (SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG file response URL cannot end with /");
+            }
+            (string bytes, AssetKind kind) = asset;
+            return Result.Ok(new() { bytes = bytes, html = false });
+        }
+        case ResponseBody.Stream(streamBody): {
+            if (SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG file response URL cannot end with /");
+            }
+            (Stream stream, AssetKind kind) = streamBody;
+            StringBuilder bytes = new();
+            bool reading = true;
+            while (reading)
+            {
+                List<byte> chunk = stream.Read(65536);
+                if (chunk.Count == 0) { reading = false; }
+                else
+                {
+                    foreach (byte value in chunk) { bytes.AppendByte(value); }
+                }
+            }
+            stream.Close();
+            return Result.Ok(new()
+            {
+                bytes = bytes.ToString(),
+                html = false
+            });
+        }
+        case ResponseBody.File(fileBody): {
+            if (SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG file response URL cannot end with /");
+            }
+            (string path, AssetKind kind) = fileBody;
+            FileStream stream = File.OpenRead(path);
+            StringBuilder bytes = new();
+            try
+            {
+                while (true)
+                {
+                    List<byte> chunk = stream.Read(65536);
+                    if (chunk.Count == 0) { break; }
+                    foreach (byte value in chunk)
+                    {
+                        bytes.AppendByte(value);
+                    }
+                }
+            }
+            finally
+            {
+                stream.Close();
+            }
+            return Result.Ok(new()
+            {
+                bytes = bytes.ToString(),
+                html = false
+            });
+        }
+    }
+}
+
+Result<bool, string> SsgMaterialize(
+    string url,
+    string outputRoot,
+    int expectedStatus,
+    bool directHtml,
+    Response response,
+    ref List<string> urls,
+    ref List<string> outputs
+)
+{
+    if (SsgStringsContains(urls, url))
+    {
+        return Result.Err("duplicate SSG page URL");
+    }
+    SsgResponse output = try SsgResponseBytes(
+        url, expectedStatus, directHtml, response
+    );
+    string outputPath = SsgOutputPath(
+        outputRoot, url, output.html, directHtml
+    );
+    if (SsgStringsContains(outputs, outputPath))
+    {
+        return Result.Err("two SSG pages map to the same output file");
+    }
+    try SsgWrite(outputPath, output.bytes);
+    urls.Add(url);
+    outputs.Add(outputPath);
+    return Result.Ok(true);
+}
+
+string SsgJoinPath(string root, string relative)
+{
+    StringBuilder path = new();
+    path.Append(root);
+    if (StringByteAt(root, root.Length - 1) != 47)
+    {
+        path.Append("/");
+    }
+    path.Append(relative);
+    return path.ToString();
+}
+
+string SsgJoinRelative(string parent, string name)
+{
+    if (parent.Length == 0) { return name; }
+    StringBuilder path = new();
+    path.Append(parent);
+    path.Append("/");
+    path.Append(name);
+    return path.ToString();
+}
+
+string SsgStaticUrl(string prefix, string relative)
+{
+    StringBuilder url = new();
+    url.Append(prefix);
+    url.Append(relative);
+    return url.ToString();
+}
+
+Result<int, string> SsgCopyStaticTree(
+    StaticDirectory mounted,
+    string relative,
+    string outputRoot,
+    ref List<string> urls,
+    ref List<string> outputs
+)
+{
+    string sourcePath = if (relative.Length == 0)
+    {
+        mounted.root
+    }
+    else
+    {
+        SsgJoinPath(mounted.root, relative)
+    };
+    DirectoryStream source = try NativeDirectoryOpen(sourcePath);
+    int files = 0;
+    for (;;)
+    {
+        switch (NativeDirectoryNext(source))
+        {
+            case Result.Err(error): {
+                if (error == "end of directory")
+                {
+                    return Result.Ok(files);
+                }
+                return Result.Err(error);
+            }
+            case Result.Ok(name): {
+                string childRelative = SsgJoinRelative(relative, name);
+                string childPath = SsgJoinPath(mounted.root, childRelative);
+                if (try NativePathIsDirectory(childPath))
+                {
+                    files += try SsgCopyStaticTree(
+                        mounted,
+                        childRelative,
+                        outputRoot,
+                        urls,
+                        outputs
+                    );
+                    continue;
+                }
+                if (!(try NativePathIsFile(childPath)))
+                {
+                    continue;
+                }
+                string url = SsgStaticUrl(
+                    mounted.urlPrefix, childRelative
+                );
+                Request request = RequestNew(
+                    "GET", url, "", "", "", ""
+                );
+                StaticResolver resolver = mounted.resolver;
+                switch (resolver(
+                    mounted.urlPrefix, mounted.root,
+                    mounted.options, request
+                ))
+                {
+                    case Option.None: {
+                        return Result.Err(
+                            "static directory resolver rejected a discovered file"
+                        );
+                    }
+                    case Option.Some(response): {
+                        try SsgMaterialize(
+                            url, outputRoot, 200, false,
+                            response, urls, outputs
+                        );
+                        files += 1;
+                    }
+                }
+            }
+        }
+    }
+    return Result.Ok(files);
+}
+
+Result<int, string> SsgCopyStaticDirectories(
+    List<StaticDirectory> directories,
+    string outputRoot,
+    ref List<string> urls,
+    ref List<string> outputs
+)
+{
+    int files = 0;
+    foreach (StaticDirectory directory in directories)
+    {
+        if (!(try NativePathIsDirectory(directory.root)))
+        {
+            return Result.Err("static directory root does not exist");
+        }
+        files += try SsgCopyStaticTree(
+            directory, "", outputRoot, urls, outputs
+        );
+    }
+    return Result.Ok(files);
+}
+
+Result<SiteBuild, string> SsgBuildAppPages(
+    List<BuildPage> pages,
+    App app,
+    string outputRoot
+)
+{
+    try SsgEnsureTree(outputRoot);
+    List<string> urls = new();
+    List<string> outputs = new();
+    int files = 0;
+    foreach (BuildPage page in pages)
+    {
+        string path = page.path;
+        Request request = RequestNew("GET", path, "", "", "", "");
+        try SsgMaterialize(
+            path, outputRoot, 200, false,
+            app.dispatch(request), urls, outputs
+        );
+        files += 1;
+    }
+    files += try SsgCopyStaticDirectories(
+        app.staticDirectories, outputRoot, urls, outputs
+    );
+    Request missing = RequestNew("GET", "/404.html", "", "", "", "");
+    try SsgMaterialize(
+        "/404.html", outputRoot, 404, true,
+        app.dispatchFallback(missing), urls, outputs
+    );
+    files += 1;
+    return Result.Ok(new() { files = files });
+}
+
+Result<SiteBuild, string> SsgBuildStatefulPages<State>(
+    List<BuildPage> pages,
+    StatefulApp<State> app,
+    string outputRoot
+)
+{
+    try SsgEnsureTree(outputRoot);
+    List<string> urls = new();
+    List<string> outputs = new();
+    int files = 0;
+    foreach (BuildPage page in pages)
+    {
+        string path = page.path;
+        Request request = RequestNew("GET", path, "", "", "", "");
+        try SsgMaterialize(
+            path,
+            outputRoot,
+            200,
+            false,
+            app.dispatch(request),
+            urls,
+            outputs
+        );
+        files += 1;
+    }
+    files += try SsgCopyStaticDirectories(
+        app.staticDirectories, outputRoot, urls, outputs
+    );
+    Request missing = RequestNew("GET", "/404.html", "", "", "", "");
+    try SsgMaterialize(
+        "/404.html", outputRoot, 404, true,
+        app.dispatchFallback(missing), urls, outputs
+    );
+    files += 1;
+    return Result.Ok(new() { files = files });
+}
+
+public Result<SiteBuild, string> SiteBuild(
+    App app,
+    string outputRoot
+)
+{
+    return SsgBuildAppPages(app.pages, app, outputRoot);
+}
+
+public Result<SiteBuild, string> SiteBuildStateful<State>(
+    StatefulApp<State> app,
+    string outputRoot
+)
+{
+    return SsgBuildStatefulPages(app.pages, app, outputRoot);
+}

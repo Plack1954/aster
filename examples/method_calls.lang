@@ -1,0 +1,58 @@
+struct Point {
+    long x;
+    long y;
+}
+
+long Point.sum(Point self, long offset) {
+    return self.x + self.y + offset;
+}
+
+struct Counter {
+    long value;
+}
+
+~Counter() {
+}
+
+void Counter.Add(ref Counter self, long amount) {
+    self.value = self.value + amount;
+}
+
+long Counter.read(Counter self) {
+    return self.value;
+}
+
+long Counter.consume(Counter self) {
+    self.value = self.value + 1;
+    return self.value;
+}
+
+long IncrementTwice(long value) {
+    value += 1;
+    value += 1;
+    return value;
+}
+
+int main() {
+    var point = new Point { x = 10, y = 20 };
+    print(point.sum(12));
+
+    List<long> values = new();
+    values.Add(7);
+    values.Add(9);
+    print(values.Count);
+    print(values[1]);
+
+    StringBuilder builder = new();
+    builder.Append("method");
+    builder.Append(" calls");
+    var output = (builder).ToString();
+    print(output);
+
+    var counter = new Counter { value = 39 };
+    counter.Add(2);
+    print(counter.read());
+    print((counter).consume());
+    print(IncrementTwice(40));
+    return 0;
+}

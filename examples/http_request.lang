@@ -1,0 +1,29 @@
+using Aster.Html;
+
+extern NativeHandle HttpServerOpen(string address, long port);
+extern NativeHandle HttpAccept(NativeHandle server);
+extern string HttpRequestMethod(NativeHandle request);
+extern string HttpRequestPath(NativeHandle request);
+extern string HttpRequestHeader(
+    NativeHandle request,
+    string name
+);
+extern long HttpRespondHtml(
+    NativeHandle request,
+    long status,
+    string body
+);
+
+int main() {
+    NativeHandle server = HttpServerOpen("127.0.0.1", 8080);
+    NativeHandle request = HttpAccept(server);
+
+    print(HttpRequestMethod(request));
+    print(HttpRequestPath(request));
+    print(HttpRequestHeader(request, "host"));
+
+    Html document = <h2>"Version B response"</h2>;
+    string body = HtmlRender(document);
+    HttpRespondHtml(request, 200, body);
+    return 0;
+}

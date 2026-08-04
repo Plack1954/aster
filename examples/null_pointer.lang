@@ -1,0 +1,7 @@
+int main() {
+    long* pointer = null;
+    if (pointer == null) {
+        print("null");
+    }
+    return 0;
+}

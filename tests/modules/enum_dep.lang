@@ -1,0 +1,6 @@
+namespace Qualified.Enums;
+
+pub union Status {
+    Ready(long),
+    Empty,
+}

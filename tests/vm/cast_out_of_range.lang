@@ -1,0 +1,6 @@
+int main() {
+    long wide = 300;
+    byte byte = wide as byte;
+    print(byte);
+    return 0;
+}

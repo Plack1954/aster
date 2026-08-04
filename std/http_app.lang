@@ -1,0 +1,151 @@
+namespace Aster.Web.HttpApp;
+
+using Aster.Net.Http;
+using System.Text;
+
+// All fields are borrowed views into the socket-owning NativeHandle. Aster
+// deliberately has no checker: handlers must not retain this value
+// after the request handle advances or is destroyed.
+public struct Request {
+    string method;
+    string path;
+    string host;
+    string body;
+}
+
+// Fixed variants keep the initial response model ownership-safe without
+// requiring partial moves from a `{ status, body }` aggregate.
+public union Response {
+    Ok(Html),
+    Redirect(string),
+    NotFound(Html),
+    InternalError(Html),
+}
+
+public delegate Response Handler(Request request);
+
+public struct Route {
+    string method;
+    string path;
+    Handler handler;
+}
+
+public struct Router {
+    List<Route> routes;
+    Handler fallback;
+}
+
+public Router RouterNew(Handler fallback) {
+    List<Route> routes = new();
+    return new() {
+        routes = routes,
+        fallback = fallback,
+    };
+}
+
+public Router RouterAdd(
+    Router router,
+    string method,
+    string path,
+    Handler handler
+) {
+    Router output = router;
+    List<Route> routes = output.routes;
+    routes.Add(new() {
+        method = method,
+        path = path,
+        handler = handler,
+    });
+    output.routes = routes;
+    return output;
+}
+
+public Router RouterGet(
+    Router router,
+    string path,
+    Handler handler
+) {
+    return RouterAdd(router, "GET", path, handler);
+}
+
+public Router RouterPost(
+    Router router,
+    string path,
+    Handler handler
+) {
+    return RouterAdd(router, "POST", path, handler);
+}
+
+public void RouterAddMut(
+    ref Router router,
+    string method,
+    string path,
+    Handler handler
+) {
+    router.routes.Add(new() {
+        method = method,
+        path = path,
+        handler = handler,
+    });
+}
+
+public void RouterGetMut(
+    ref Router router,
+    string path,
+    Handler handler
+) {
+    RouterAddMut(router, "GET", path, handler);
+}
+
+public void RouterPostMut(
+    ref Router router,
+    string path,
+    Handler handler
+) {
+    RouterAddMut(router, "POST", path, handler);
+}
+
+public Response RouterDispatch(
+    Router router,
+    Request request
+) {
+    usize length = router.routes.Count;
+    for (usize index = 0; index < length; index++) {
+        Route route = router.routes[index];
+        if (route.method == request.method &&
+         HttpPathMatches(route.path, request.path)) {
+            Handler handler = route.handler;
+            return handler(request);
+        }
+    }
+    Handler fallback = router.fallback;
+    return fallback(request);
+}
+
+public Result<bool, string> ResponseSend(
+    NativeHandle request,
+    Response response
+) {
+    switch (response) {
+        case Response.Ok(page): {
+            return HttpTryRespondHtml(
+                request, 200, page
+            );
+        }
+        case Response.Redirect(location): {
+            return HttpTryRespondRedirectReuse(
+                request, location
+            );
+        }
+        case Response.NotFound(page): {
+            return HttpTryRespondHtml(
+                request, 404, page
+            );
+        }
+        case Response.InternalError(page): {
+            return HttpTryRespondHtml(
+                request, 500, page
+            );
+        }
+    }
+}

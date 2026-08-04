@@ -1,0 +1,1042 @@
+#include "c_backend_internal.h"
+
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static bool function_supported(CEmitter *emitter,
+                               const IrFunction *function) {
+    LangSpan span = function->declaration != NULL
+                  ? function->declaration->span
+                  : (LangSpan){NULL, 0U, 0U};
+    if (!c_backend_async_function_supported(emitter, function))
+        return false;
+    if (!c_backend_type_is_supported(
+            emitter->ir, function->return_type)) {
+        c_backend_unsupported(emitter, span, "this function return type");
+        return false;
+    }
+    for (size_t p = 0U; p < function->parameter_count; ++p)
+        if (!c_backend_type_is_supported(
+                emitter->ir, function->parameter_types[p])) {
+            c_backend_unsupported(emitter, span, "this function parameter type");
+            return false;
+        }
+    for (size_t l = 0U; l < function->local_count; ++l)
+        if (!c_backend_type_is_supported(
+                emitter->ir, function->locals[l].type)) {
+            c_backend_unsupported(emitter, span, "this local type");
+            return false;
+        }
+    for (size_t v = 0U; v < function->value_count; ++v)
+        if (!c_backend_type_is_supported(
+                emitter->ir, function->value_types[v])) {
+            c_backend_unsupported(emitter, span, "this virtual value type");
+            return false;
+        }
+    for (size_t b = 0U; b < function->block_count; ++b) {
+        const IrBlock *block = &function->blocks[b];
+        for (size_t i = 0U;
+             i < block->instruction_count; ++i) {
+            const IrInstruction *instruction =
+                &block->instructions[i];
+            if (instruction->opcode == IR_OP_VALUE_CLONE &&
+                (emitter->ir->types[
+                    instruction->result_type].requires_cleanup ||
+                 emitter->ir->types[
+                    instruction->result_type].managed) &&
+                !c_backend_type_clone_supported(
+                    emitter->ir,
+                    instruction->result_type)) {
+                c_backend_unsupported(
+                    emitter, instruction->span,
+                    "copying a cleanup-managed value without a lowered copy function");
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool function_uses_utc_clock(const IrFunction *function) {
+    for (size_t b = 0U; b < function->block_count; ++b) {
+        const IrBlock *block = &function->blocks[b];
+        for (size_t i = 0U; i < block->instruction_count; ++i) {
+            const IrInstruction *instruction = &block->instructions[i];
+            if (instruction->symbol != NULL &&
+                strcmp(instruction->symbol,
+                       "NativeUtcNowUnixMilliseconds") == 0)
+                return true;
+        }
+    }
+    return false;
+}
+
+static void emit_function_signature(CEmitter *emitter, size_t index,
+                                    bool prototype) {
+    const IrFunction *function = &emitter->ir->functions[index];
+    c_backend_emit_type(emitter, function->return_type);
+    fprintf(emitter->output, " aster_fn_%zu(", index);
+    if (function->parameter_count == 0U) {
+        fputs("void", emitter->output);
+    } else {
+        for (size_t p = 0U; p < function->parameter_count; ++p) {
+            if (p != 0U) fputs(", ", emitter->output);
+            c_backend_emit_type(emitter, function->parameter_types[p]);
+            if (function->declaration != NULL &&
+                p < function->declaration->as.function.param_count &&
+                function->declaration->as.function.params[p].borrowed)
+                fputs(" *", emitter->output);
+            fprintf(emitter->output, " p%zu", p);
+        }
+    }
+    fputs(prototype ? ");\n" : ") {\n", emitter->output);
+}
+
+static void emit_render_function_signature(
+    CEmitter *emitter, size_t index, bool prototype) {
+    const IrFunction *function = &emitter->ir->functions[index];
+    c_backend_emit_type(emitter, function->return_type);
+    fprintf(
+        emitter->output,
+        " aster_fn_%zu_into("
+        "aster_element_builder *render_destination",
+        index);
+    for (size_t p = 0U; p < function->parameter_count; ++p) {
+        fputs(", ", emitter->output);
+        c_backend_emit_type(emitter, function->parameter_types[p]);
+        if (function->declaration != NULL &&
+            p < function->declaration->as.function.param_count &&
+            function->declaration->as.function.params[p].borrowed)
+            fputs(" *", emitter->output);
+        fprintf(emitter->output, " p%zu", p);
+    }
+    fputs(prototype ? ");\n" : ") {\n", emitter->output);
+}
+
+static void emit_direct_append_signature(
+    CEmitter *emitter, size_t index, bool prototype) {
+    const IrFunction *function = &emitter->ir->functions[index];
+    fprintf(
+        emitter->output,
+        "static void aster_fn_%zu_append("
+        "aster_string_builder *render_builder",
+        index);
+    for (size_t p = 0U; p < function->parameter_count; ++p) {
+        fputs(", ", emitter->output);
+        c_backend_emit_type(emitter, function->parameter_types[p]);
+        if (function->declaration != NULL &&
+            p < function->declaration->as.function.param_count &&
+            function->declaration->as.function.params[p].borrowed)
+            fputs(" *", emitter->output);
+        fprintf(emitter->output, " p%zu", p);
+    }
+    fputs(prototype ? ");\n" : ") {\n", emitter->output);
+}
+
+static void emit_direct_render_signature(
+    CEmitter *emitter, size_t index, bool prototype) {
+    const IrFunction *function = &emitter->ir->functions[index];
+    fprintf(emitter->output,
+            "aster_string *aster_fn_%zu_render(", index);
+    if (function->parameter_count == 0U) {
+        fputs("void", emitter->output);
+    } else {
+        for (size_t p = 0U; p < function->parameter_count; ++p) {
+            if (p != 0U) fputs(", ", emitter->output);
+            c_backend_emit_type(emitter, function->parameter_types[p]);
+            if (function->declaration != NULL &&
+                p < function->declaration->as.function.param_count &&
+                function->declaration->as.function.params[p].borrowed)
+                fputs(" *", emitter->output);
+            fprintf(emitter->output, " p%zu", p);
+        }
+    }
+    fputs(prototype ? ");\n" : ") {\n", emitter->output);
+}
+
+static void emit_function_variant(
+    CEmitter *emitter, size_t index, bool render_into,
+    bool render_direct) {
+    const IrFunction *function = &emitter->ir->functions[index];
+    bool previous_render_into = emitter->render_into;
+    bool previous_render_direct = emitter->render_direct;
+    const char **previous_direct_local_tags =
+        emitter->direct_local_tags;
+    size_t *previous_direct_local_tag_lengths =
+        emitter->direct_local_tag_lengths;
+    const char **direct_local_tags = NULL;
+    size_t *direct_local_tag_lengths = NULL;
+    LangSpan previous_render_root_span =
+        emitter->render_root_span;
+    if (render_direct && function->local_count != 0U) {
+        direct_local_tags = calloc(
+            function->local_count, sizeof(*direct_local_tags));
+        direct_local_tag_lengths = calloc(
+            function->local_count, sizeof(*direct_local_tag_lengths));
+        if (direct_local_tags == NULL ||
+            direct_local_tag_lengths == NULL) {
+            free(direct_local_tags);
+            free(direct_local_tag_lengths);
+            c_backend_unsupported(
+                emitter, function->render_root_span,
+                "direct HTML render allocation");
+            return;
+        }
+        for (size_t b = 0U; b < function->block_count; ++b)
+            for (size_t i = 0U;
+                 i < function->blocks[b].instruction_count; ++i) {
+                const IrInstruction *store =
+                    &function->blocks[b].instructions[i];
+                if (store->opcode != IR_OP_LOCAL_STORE ||
+                    store->index >= function->local_count ||
+                    store->operand_count == 0U ||
+                    emitter->ir->types[
+                        function->locals[store->index].type].shape !=
+                        IR_TYPE_ELEMENT_BUILDER)
+                    continue;
+                const IrInstruction *begin = c_backend_find_value_producer(
+                    function, store->operands[0]);
+                if (begin == NULL || begin->opcode != IR_OP_ELEMENT_BEGIN)
+                    continue;
+                direct_local_tags[store->index] = begin->symbol;
+                direct_local_tag_lengths[store->index] =
+                    begin->symbol_length;
+            }
+    }
+    emitter->render_into = render_into;
+    emitter->render_direct = render_direct;
+    emitter->direct_local_tags = direct_local_tags;
+    emitter->direct_local_tag_lengths = direct_local_tag_lengths;
+    emitter->render_root_span =
+        render_into ? function->render_root_span : (LangSpan){0};
+    if (render_direct)
+        emit_direct_append_signature(emitter, index, false);
+    else if (render_into)
+        emit_render_function_signature(emitter, index, false);
+    else
+        emit_function_signature(emitter, index, false);
+    for (size_t l = 0U; l < function->local_count; ++l) {
+        fputs("    ", emitter->output);
+        c_backend_emit_type(emitter, function->locals[l].type);
+        fprintf(emitter->output, " l%zu = {0};\n", l);
+        fprintf(emitter->output, "    (void)l%zu;\n", l);
+        if (c_backend_local_tracks_drop(
+                emitter, function, (uint32_t)l) &&
+            !(render_direct && emitter->ir->types[
+                function->locals[l].type].shape ==
+                IR_TYPE_ELEMENT_BUILDER))
+            fprintf(emitter->output,
+                    "    bool l%zu_live = false;\n", l);
+        if (render_direct && emitter->ir->types[
+                function->locals[l].type].shape ==
+                IR_TYPE_ELEMENT_BUILDER)
+            fprintf(emitter->output,
+                    "    bool l%zu_direct_open = false;\n", l);
+    }
+    for (size_t v = 0U; v < function->value_count; ++v) {
+        fputs("    ", emitter->output);
+        c_backend_emit_type(emitter, function->value_types[v]);
+        fprintf(emitter->output, " v%zu = {0};\n", v);
+        fprintf(emitter->output, "    (void)v%zu;\n", v);
+    }
+    /*
+     * Typed IR retains structurally valid unreachable merge blocks. Mention
+     * every label from a dead branch so warning-clean C can still emit those
+     * blocks without backend-specific CFG deletion.
+     */
+    for (size_t b = 0U; b < function->block_count; ++b)
+        fprintf(emitter->output,
+                "    if (false) goto b%zu;\n", b);
+    fprintf(emitter->output, "    goto b%" PRIu32 ";\n",
+            function->entry_block);
+    for (size_t b = 0U; b < function->block_count; ++b) {
+        /* A C label must precede a statement, not a declaration. The empty
+         * statement keeps blocks valid when their first IR instruction emits
+         * a small temporary local. */
+        fprintf(emitter->output, "b%zu: ;\n", b);
+        const IrBlock *block = &function->blocks[b];
+        for (size_t i = 0U; i < block->instruction_count; ++i) {
+            c_backend_emit_instruction(emitter, function,
+                             &block->instructions[i]);
+            if (emitter->failed) {
+                free(direct_local_tags);
+                free(direct_local_tag_lengths);
+                emitter->render_into = previous_render_into;
+                emitter->render_direct = previous_render_direct;
+                emitter->direct_local_tags = previous_direct_local_tags;
+                emitter->direct_local_tag_lengths =
+                    previous_direct_local_tag_lengths;
+                emitter->render_root_span =
+                    previous_render_root_span;
+                return;
+            }
+        }
+        c_backend_emit_terminator(emitter, function, &block->terminator);
+        if (emitter->failed) {
+            free(direct_local_tags);
+            free(direct_local_tag_lengths);
+            emitter->render_into = previous_render_into;
+            emitter->render_direct = previous_render_direct;
+            emitter->direct_local_tags = previous_direct_local_tags;
+            emitter->direct_local_tag_lengths =
+                previous_direct_local_tag_lengths;
+            emitter->render_root_span =
+                previous_render_root_span;
+            return;
+        }
+    }
+    fputs("}\n\n", emitter->output);
+    free(direct_local_tags);
+    free(direct_local_tag_lengths);
+    emitter->render_into = previous_render_into;
+    emitter->render_direct = previous_render_direct;
+    emitter->direct_local_tags = previous_direct_local_tags;
+    emitter->direct_local_tag_lengths =
+        previous_direct_local_tag_lengths;
+    emitter->render_root_span =
+        previous_render_root_span;
+}
+
+static void emit_function(CEmitter *emitter, size_t index) {
+    if (emitter->ir->functions[index].is_async)
+        c_backend_emit_async_function(emitter, index);
+    else
+        emit_function_variant(emitter, index, false, false);
+}
+
+static void emit_direct_render_wrapper(
+    CEmitter *emitter, size_t index) {
+    const IrFunction *function = &emitter->ir->functions[index];
+    size_t initial_capacity = c_backend_direct_render_initial_capacity(
+        emitter->ir, index);
+    emit_direct_render_signature(emitter, index, false);
+    fprintf(emitter->output,
+            "    aster_string_builder *render_builder = "
+            "aster_builder_with_capacity(%zuU);\n",
+            initial_capacity);
+    fprintf(emitter->output, "    aster_fn_%zu_append(render_builder", index);
+    for (size_t p = 0U; p < function->parameter_count; ++p)
+        fprintf(emitter->output, ", p%zu", p);
+    fputs(");\n    return aster_builder_finish(render_builder);\n"
+          "}\n\n", emitter->output);
+}
+
+static void emit_drop_helper_prototypes(CEmitter *emitter) {
+    for (size_t type = 0U;
+         type < emitter->ir->type_count; ++type) {
+        if (!emitter->used_types[type] ||
+            !c_backend_type_needs_drop(
+                emitter, (IrTypeId)type))
+            continue;
+        fputs("void aster_drop_", emitter->output);
+        fprintf(emitter->output, "%zu(", type);
+        c_backend_emit_type(emitter, (IrTypeId)type);
+        fputs(" *value);\n", emitter->output);
+    }
+}
+
+static void emit_clone_helper_prototypes(CEmitter *emitter) {
+    for (size_t type = 0U;
+         type < emitter->ir->type_count; ++type) {
+        if (!emitter->used_types[type] ||
+            (!emitter->ir->types[type].requires_cleanup &&
+             !emitter->ir->types[type].managed) ||
+            !c_backend_type_clone_supported(
+                emitter->ir, (IrTypeId)type))
+            continue;
+        c_backend_emit_type(emitter, (IrTypeId)type);
+        fprintf(emitter->output,
+                " aster_clone_%zu(", type);
+        c_backend_emit_type(emitter, (IrTypeId)type);
+        fputs(" value);\n", emitter->output);
+    }
+}
+
+static void emit_clone_helper(
+    CEmitter *emitter, IrTypeId type_id
+) {
+    const IrType *type = &emitter->ir->types[type_id];
+    c_backend_emit_type(emitter, type_id);
+    fprintf(emitter->output,
+            " aster_clone_%" PRIu32 "(", type_id);
+    c_backend_emit_type(emitter, type_id);
+    fputs(" value) {\n", emitter->output);
+    if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
+        strcmp(type->name, "string") == 0) {
+        fputs("    return aster_string_clone(value);\n",
+              emitter->output);
+    } else if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
+               strcmp(type->name, "StringBuilder") == 0) {
+        fputs("    return aster_builder_clone(value);\n",
+              emitter->output);
+    } else if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
+               strcmp(type->name, "Html") == 0) {
+        fputs("    return aster_html_clone(value);\n",
+              emitter->output);
+    } else if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
+               strcmp(type->name, "Url") == 0) {
+        fputs("    return (aster_url *)aster_string_clone("
+              "(const aster_string *)value);\n",
+              emitter->output);
+    } else if (c_backend_type_is_native_handle(type)) {
+        fputs(
+            "    if (value == NULL) return NULL;\n"
+            "    if (value->references == SIZE_MAX)\n"
+            "        aster_trap(\"native handle reference count overflow\");\n"
+            "    ++value->references;\n"
+            "    return value;\n",
+            emitter->output);
+    } else if (c_backend_type_is_buffer(type)) {
+        fputs(
+            "    if (value == NULL) return NULL;\n"
+            "    aster_buffer *result = aster_allocate(sizeof(*result));\n"
+            "    result->length = value->length;\n"
+            "    result->data = aster_allocate(value->length);\n"
+            "    if (value->length != 0U)\n"
+            "        memcpy(result->data, value->data, value->length);\n"
+            "    return result;\n",
+            emitter->output);
+    } else if (c_backend_type_is_task(type)) {
+        fputs(
+            "    return aster_task_retain(value);\n",
+            emitter->output);
+    } else if (c_backend_type_is_cancellation(type)) {
+        fputs(
+            "    return aster_cancellation_retain(value);\n",
+            emitter->output);
+    } else if (c_backend_type_is_vec(type)) {
+        fputs("    if (value == NULL) return NULL;\n    ",
+              emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fprintf(emitter->output,
+                " result = aster_allocate(sizeof(*result));\n"
+                "    *result = (aster_vec_%" PRIu32 "){0};\n",
+                type_id);
+        fprintf(emitter->output,
+                "    result->length = value->length;\n"
+                "    result->capacity = value->length;\n"
+                "    if (value->length != 0U) {\n"
+                "        result->data = aster_allocate("
+                "value->length * sizeof(*result->data));\n"
+                "        for (size_t i = 0U; i < value->length; ++i)\n");
+        if (c_backend_type_needs_drop(emitter, type->element_type))
+            fprintf(emitter->output,
+                    "            result->data[i] = aster_clone_%" PRIu32
+                    "(value->data[i]);\n",
+                    type->element_type);
+        else
+            fputs("            result->data[i] = value->data[i];\n",
+                  emitter->output);
+        fputs("    }\n    return result;\n", emitter->output);
+    } else if (c_backend_type_is_queue(type)) {
+        fputs("    if (value == NULL) return NULL;\n    ",
+              emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fprintf(emitter->output,
+                " result = aster_allocate(sizeof(*result));\n"
+                "    *result = (aster_queue_%" PRIu32 "){0};\n"
+                "    result->length = value->length;\n"
+                "    result->capacity = value->length;\n"
+                "    if (value->length != 0U) {\n"
+                "        result->data = aster_allocate("
+                "value->length * sizeof(*result->data));\n"
+                "        for (size_t i = 0U; i < value->length; ++i)\n",
+                type_id);
+        if (c_backend_type_needs_drop(emitter, type->element_type))
+            fprintf(emitter->output,
+                    "            result->data[i] = aster_clone_%" PRIu32
+                    "(value->data[(value->head + i) %% value->capacity]);\n",
+                    type->element_type);
+        else
+            fputs("            result->data[i] = "
+                  "value->data[(value->head + i) % value->capacity];\n",
+                  emitter->output);
+        fputs("    }\n    return result;\n", emitter->output);
+    } else if (c_backend_type_is_dictionary(type)) {
+        fputs("    if (value == NULL) return NULL;\n    ",
+              emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fprintf(emitter->output,
+                " result = aster_allocate(sizeof(*result));\n"
+                "    *result = (aster_dictionary_%" PRIu32 "){0};\n"
+                "    result->length = value->length;\n"
+                "    result->capacity = value->length;\n"
+                "    if (value->length != 0U) {\n"
+                "        result->keys = aster_allocate("
+                "value->length * sizeof(*result->keys));\n"
+                "        result->values = aster_allocate("
+                "value->length * sizeof(*result->values));\n"
+                "        result->hashes = aster_allocate("
+                "value->length * sizeof(*result->hashes));\n"
+                "        memcpy(result->hashes, value->hashes, "
+                "value->length * sizeof(*result->hashes));\n"
+                "        for (size_t i = 0U; i < value->length; ++i) {\n",
+                type_id);
+        if (c_backend_type_needs_drop(emitter, type->element_type))
+            fprintf(emitter->output,
+                    "            result->keys[i] = aster_clone_%" PRIu32
+                    "(value->keys[i]);\n",
+                    type->element_type);
+        else
+            fputs("            result->keys[i] = value->keys[i];\n",
+                  emitter->output);
+        if (c_backend_type_needs_drop(emitter, type->error_type))
+            fprintf(emitter->output,
+                    "            result->values[i] = aster_clone_%" PRIu32
+                    "(value->values[i]);\n",
+                    type->error_type);
+        else
+            fputs("            result->values[i] = value->values[i];\n",
+                  emitter->output);
+        fprintf(emitter->output,
+                "        }\n    }\n"
+                "    aster_dictionary_rebuild_%" PRIu32 "(result);\n"
+                "    return result;\n",
+                type_id);
+    } else if (type->shape == IR_TYPE_STRUCT) {
+        fputs("    ", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fputs(" result = value;\n", emitter->output);
+        for (size_t field = 0U; field < type->field_count; ++field) {
+            IrTypeId field_type = type->field_types[field];
+            if (!c_backend_type_needs_drop(emitter, field_type))
+                continue;
+            fprintf(emitter->output,
+                    "    result.f%zu = aster_clone_%" PRIu32
+                    "(value.f%zu);\n",
+                    field, field_type, field);
+        }
+        fputs("    return result;\n", emitter->output);
+    } else if (type->shape == IR_TYPE_ARRAY) {
+        fputs("    ", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fputs(" result = value;\n", emitter->output);
+        if (c_backend_type_needs_drop(emitter, type->element_type))
+            fprintf(emitter->output,
+                    "    for (size_t i = 0U; i < %zuU; ++i)\n"
+                    "        result.items[i] = aster_clone_%" PRIu32
+                    "(value.items[i]);\n",
+                    type->array_length, type->element_type);
+        fputs("    return result;\n", emitter->output);
+    } else if (type->shape == IR_TYPE_UNION) {
+        fputs("    ", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fputs(" result = value;\n    switch (value.tag) {\n",
+              emitter->output);
+        for (size_t variant = 0U;
+             variant < type->variant_count; ++variant) {
+            IrTypeId payload =
+                type->variant_payload_types[variant];
+            if (payload == IR_INVALID_ID ||
+                !c_backend_type_needs_drop(emitter, payload))
+                continue;
+            fprintf(emitter->output,
+                    "        case UINT32_C(%zu):\n"
+                    "            result.payload.v%zu = "
+                    "aster_clone_%" PRIu32
+                    "(value.payload.v%zu);\n"
+                    "            break;\n",
+                    variant, variant, payload, variant);
+        }
+        fputs("        default: break;\n"
+              "    }\n    return result;\n",
+              emitter->output);
+    } else {
+        fputs("    return value;\n", emitter->output);
+    }
+    fputs("}\n\n", emitter->output);
+}
+
+static void emit_clone_helpers(CEmitter *emitter) {
+    for (size_t type = 0U;
+         type < emitter->ir->type_count; ++type)
+        if (emitter->used_types[type] &&
+            (emitter->ir->types[type].requires_cleanup ||
+             emitter->ir->types[type].managed) &&
+            c_backend_type_clone_supported(
+                emitter->ir, (IrTypeId)type))
+            emit_clone_helper(emitter, (IrTypeId)type);
+}
+
+static void emit_drop_helper(
+    CEmitter *emitter, IrTypeId type_id) {
+    const IrType *type = &emitter->ir->types[type_id];
+    fprintf(emitter->output,
+            "void aster_drop_%" PRIu32 "(",
+            type_id);
+    c_backend_emit_type(emitter, type_id);
+    fputs(" *value) {\n", emitter->output);
+    if (c_backend_type_is_vec(type)) {
+        fputs("    if (*value != NULL) {\n", emitter->output);
+        if (c_backend_type_needs_drop(emitter, type->element_type))
+            fprintf(
+                emitter->output,
+                "        for (size_t i = (*value)->length; i > 0U; --i)\n"
+                "            aster_drop_%" PRIu32
+                "(&(*value)->data[i - 1U]);\n",
+                type->element_type);
+        fputs(
+            "        free((*value)->data);\n"
+            "        free(*value);\n"
+            "        *value = NULL;\n"
+            "    }\n",
+            emitter->output);
+    } else if (c_backend_type_is_dictionary(type)) {
+        fputs("    if (*value != NULL) {\n", emitter->output);
+        if (c_backend_type_needs_drop(emitter, type->element_type))
+            fprintf(emitter->output,
+                    "        for (size_t i = (*value)->length; i > 0U; --i)\n"
+                    "            aster_drop_%" PRIu32
+                    "(&(*value)->keys[i - 1U]);\n",
+                    type->element_type);
+        if (c_backend_type_needs_drop(emitter, type->error_type))
+            fprintf(emitter->output,
+                    "        for (size_t i = (*value)->length; i > 0U; --i)\n"
+                    "            aster_drop_%" PRIu32
+                    "(&(*value)->values[i - 1U]);\n",
+                    type->error_type);
+        fputs("        free((*value)->keys);\n"
+              "        free((*value)->values);\n"
+              "        free((*value)->hashes);\n"
+              "        free((*value)->buckets);\n"
+              "        free(*value);\n"
+              "        *value = NULL;\n"
+              "    }\n",
+              emitter->output);
+    } else if (c_backend_type_is_queue(type)) {
+        fputs("    if (*value != NULL) {\n", emitter->output);
+        if (c_backend_type_needs_drop(emitter, type->element_type))
+            fprintf(emitter->output,
+                    "        for (size_t i = (*value)->length; i > 0U; --i)\n"
+                    "            aster_drop_%" PRIu32
+                    "(&(*value)->data[((*value)->head + i - 1U) %% "
+                    "(*value)->capacity]);\n",
+                    type->element_type);
+        fputs("        free((*value)->data);\n"
+              "        free(*value);\n"
+              "        *value = NULL;\n"
+              "    }\n",
+              emitter->output);
+    } else if (type->shape == IR_TYPE_ITERATOR) {
+        const IrType *source =
+            &emitter->ir->types[type->argument_types[0]];
+        if (c_backend_type_is_vec(source)) {
+            if (c_backend_type_needs_drop(emitter, type->element_type))
+                fprintf(
+                    emitter->output,
+                    "    if (value->vector != NULL && !value->borrowed)\n"
+                    "        for (size_t i = value->vector->length;\n"
+                    "             i > value->index; --i)\n"
+                    "            aster_drop_%" PRIu32
+                    "(&value->vector->data[i - 1U]);\n",
+                    type->element_type);
+            fputs(
+                "    if (value->vector != NULL && !value->borrowed) {\n"
+                "        free(value->vector->data);\n"
+                "        free(value->vector);\n"
+                "    }\n"
+                "    value->vector = NULL;\n",
+                emitter->output);
+        } else if (source->shape == IR_TYPE_ARRAY) {
+            if (c_backend_type_needs_drop(emitter, type->element_type))
+                fprintf(
+                    emitter->output,
+                    "    if (!value->borrowed)\n"
+                    "        for (size_t i = %zuU; i > value->index; --i)\n"
+                    "            aster_drop_%" PRIu32
+                    "(&value->owned_array.items[i - 1U]);\n",
+                    source->array_length, type->element_type);
+            fputs("    value->borrowed_array = NULL;\n",
+                  emitter->output);
+        } else if (source->shape == IR_TYPE_BUILTIN_OBJECT &&
+                   strcmp(source->name, "string") == 0) {
+            fputs("    if (value->slice != NULL && !value->borrowed)\n"
+                  "        aster_string_drop(value->slice);\n"
+                  "    value->slice = NULL;\n",
+                  emitter->output);
+        } else {
+            fputs("    value->slice.data = NULL;\n"
+                  "    value->slice.length = 0U;\n",
+                  emitter->output);
+        }
+    } else if (c_backend_type_is_native_handle(type)) {
+        fputs(
+            "    aster_native_handle_drop(*value);\n"
+            "    *value = NULL;\n",
+            emitter->output);
+    } else if (c_backend_type_is_buffer(type)) {
+        fputs(
+            "    if (*value != NULL) {\n"
+            "        free((*value)->data);\n"
+            "        free(*value);\n"
+            "        *value = NULL;\n"
+            "    }\n",
+            emitter->output);
+    } else if (c_backend_type_is_arena(type)) {
+        fputs(
+            "    aster_arena_drop(*value);\n"
+            "    *value = NULL;\n",
+            emitter->output);
+    } else if (c_backend_type_is_task(type)) {
+        fputs(
+            "    aster_task_drop(*value);\n"
+            "    *value = NULL;\n",
+            emitter->output);
+    } else if (c_backend_type_is_cancellation(type)) {
+        fputs(
+            "    aster_cancellation_drop(*value);\n"
+            "    *value = NULL;\n",
+            emitter->output);
+    } else if (type->shape == IR_TYPE_ELEMENT_BUILDER) {
+        fputs(
+            "    aster_html_drop(*value);\n"
+            "    *value = NULL;\n",
+            emitter->output);
+    } else if (type->shape == IR_TYPE_BUILTIN_OBJECT) {
+        const char *drop =
+            strcmp(type->name, "StringBuilder") == 0
+                ? "aster_builder_drop"
+            : strcmp(type->name, "Html") == 0
+                ? "aster_html_drop"
+                : "aster_string_drop";
+        fprintf(
+            emitter->output,
+            "    %s(*value);\n"
+            "    *value = NULL;\n",
+            drop);
+    }
+    if (type->destructor_function != IR_INVALID_ID)
+        fprintf(
+            emitter->output,
+            "    (void)aster_fn_%" PRIu32 "(*value);\n",
+            type->destructor_function);
+    if (type->shape == IR_TYPE_STRUCT) {
+        for (size_t field = type->field_count;
+             field > 0U; --field) {
+            IrTypeId field_type =
+                type->field_types[field - 1U];
+            if (!c_backend_type_needs_drop(
+                    emitter, field_type))
+                continue;
+            fprintf(
+                emitter->output,
+                "    aster_drop_%" PRIu32
+                "(&value->f%zu);\n",
+                field_type, field - 1U);
+        }
+    } else if (type->shape == IR_TYPE_ARRAY) {
+        if (c_backend_type_needs_drop(
+                emitter, type->element_type))
+            fprintf(
+                emitter->output,
+                "    for (size_t i = %zu; i > 0; --i)\n"
+                "        aster_drop_%" PRIu32
+                "(&value->items[i - 1]);\n",
+                type->array_length, type->element_type);
+    } else if (type->shape == IR_TYPE_UNION) {
+        fputs("    switch (value->tag) {\n",
+              emitter->output);
+        for (size_t variant = 0U;
+             variant < type->variant_count; ++variant) {
+            IrTypeId payload =
+                type->variant_payload_types[variant];
+            if (!c_backend_type_needs_drop(emitter, payload))
+                continue;
+            fprintf(
+                emitter->output,
+                "        case UINT32_C(%zu):\n"
+                "            aster_drop_%" PRIu32
+                "(&value->payload.v%zu);\n"
+                "            break;\n",
+                variant, payload, variant);
+        }
+        fputs("        default: break;\n"
+              "    }\n", emitter->output);
+    }
+    fputs("}\n\n", emitter->output);
+}
+
+static void emit_drop_helpers(CEmitter *emitter) {
+    for (size_t type = 0U;
+         type < emitter->ir->type_count; ++type)
+        if (emitter->used_types[type] &&
+            c_backend_type_needs_drop(
+                emitter, (IrTypeId)type))
+            emit_drop_helper(
+                emitter, (IrTypeId)type);
+}
+
+static bool c_emit_module(const IrModule *ir,
+                          LangDiagnostics *diagnostics,
+                          FILE *output,
+                          const char *css_directory) {
+    if (ir == NULL || diagnostics == NULL || output == NULL)
+        return false;
+    CEmitter emitter = {
+        .ir=ir,
+        .diagnostics=diagnostics,
+        .output=output
+    };
+    emitter.reachable_functions =
+        calloc(ir->function_count, sizeof(*emitter.reachable_functions));
+    emitter.used_types =
+        calloc(ir->type_count, sizeof(*emitter.used_types));
+    if ((ir->function_count != 0U &&
+         emitter.reachable_functions == NULL) ||
+        (ir->type_count != 0U && emitter.used_types == NULL)) {
+        free(emitter.reachable_functions);
+        free(emitter.used_types);
+        fputs("fatal: out of memory\n", stderr);
+        exit(2);
+    }
+    size_t entry = ir->function_count;
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        if (ir->functions[f].is_entry) entry = f;
+    if (entry == ir->function_count) {
+        lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                  "C backend requires an entry function");
+        free(emitter.reachable_functions);
+        free(emitter.used_types);
+        return false;
+    }
+    if (ir->functions[entry].parameter_count != 0U) {
+        LangSpan span = ir->functions[entry].declaration != NULL
+                      ? ir->functions[entry].declaration->span
+                      : (LangSpan){NULL, 0U, 0U};
+        lang_diag(diagnostics, span,
+                  "C backend entry function cannot have parameters");
+        free(emitter.reachable_functions);
+        free(emitter.used_types);
+        return false;
+    }
+    c_backend_mark_function(&emitter, (IrFunctionId)entry);
+    for (size_t function = 0U;
+         function < ir->function_count; ++function)
+        if (c_backend_function_is_entry_module_export(
+                ir, function, entry))
+            c_backend_mark_function(
+                &emitter, (IrFunctionId)function);
+    bool needs_async = false;
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        if (emitter.reachable_functions[f] &&
+            ir->functions[f].is_async) {
+            needs_async = true;
+            break;
+        }
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        if (emitter.reachable_functions[f] &&
+            !function_supported(&emitter, &ir->functions[f])) {
+            free(emitter.reachable_functions);
+            free(emitter.used_types);
+            return false;
+        }
+    if (css_directory != NULL) {
+        emitter.css_asset_href = c_backend_emit_static_css_asset(
+            &emitter, css_directory);
+        if (emitter.failed) {
+            free(emitter.css_asset_href);
+            free(emitter.reachable_functions);
+            free(emitter.used_types);
+            return false;
+        }
+    }
+    c_backend_emit_prelude(output, emitter.needs_native_runtime);
+    bool needs_utc_clock = false;
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        if (emitter.reachable_functions[f] &&
+            function_uses_utc_clock(&ir->functions[f])) {
+            needs_utc_clock = true;
+            break;
+        }
+    if (needs_utc_clock)
+        fputs(
+            "#include <time.h>\n\n"
+            "static int64_t aster_utc_now_unix_milliseconds(void) {\n"
+            "    struct timespec value;\n"
+            "    if (timespec_get(&value, TIME_UTC) != TIME_UTC) {\n"
+            "        fputs(\"could not read the UTC system clock\\n\", stderr);\n"
+            "        exit(1);\n"
+            "    }\n"
+            "    return (int64_t)value.tv_sec * INT64_C(1000) +\n"
+            "           (int64_t)value.tv_nsec / INT64_C(1000000);\n"
+            "}\n\n",
+            output);
+    c_backend_emit_html_prelude(output, emitter.css_asset_href);
+    if (!c_backend_emit_aggregate_types(&emitter)) {
+        lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                  "C backend cannot order recursive inline aggregate types");
+        free(emitter.reachable_functions);
+        free(emitter.used_types);
+        free(emitter.css_asset_href);
+        return false;
+    }
+    fputs("static bool aster_exception_pending = false;\n"
+          "static aster_string *aster_exception_message = NULL;\n"
+          "const char *aster_exception_type = NULL;\n\n",
+          output);
+    if (needs_async)
+        c_backend_emit_async_runtime(output);
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        if (emitter.reachable_functions[f] &&
+            ir->functions[f].is_async)
+            c_backend_emit_async_frame_declaration(&emitter, f);
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        if (emitter.reachable_functions[f]) {
+            if (c_backend_function_needs_normal_variant(&emitter, f))
+                emit_function_signature(&emitter, f, true);
+            if (ir->functions[f].is_async)
+                c_backend_emit_async_step_prototype(&emitter, f);
+            if (c_backend_function_needs_render_into_variant(&emitter, f)) {
+                emit_render_function_signature(
+                    &emitter, f, true);
+            }
+            if (c_backend_function_supports_direct_render(ir, f)) {
+                emit_direct_append_signature(
+                    &emitter, f, true);
+                emit_direct_render_signature(
+                    &emitter, f, true);
+            }
+        }
+    emit_clone_helper_prototypes(&emitter);
+    emit_drop_helper_prototypes(&emitter);
+    fputc('\n', output);
+    if (needs_async)
+        c_backend_emit_async_result_helpers(&emitter);
+    if (needs_async)
+        c_backend_emit_async_combinator_helpers(&emitter);
+    for (size_t f = 0U; f < ir->function_count; ++f) {
+        if (!emitter.reachable_functions[f]) continue;
+        if (c_backend_function_needs_normal_variant(&emitter, f))
+            emit_function(&emitter, f);
+        if (!emitter.failed &&
+            c_backend_function_needs_render_into_variant(&emitter, f))
+            emit_function_variant(
+                &emitter, f, true, false);
+        if (!emitter.failed &&
+            c_backend_function_supports_direct_render(ir, f)) {
+            emit_function_variant(
+                &emitter, f, false, true);
+            if (!emitter.failed)
+                emit_direct_render_wrapper(&emitter, f);
+        }
+        if (emitter.failed) {
+            free(emitter.reachable_functions);
+            free(emitter.used_types);
+            free(emitter.css_asset_href);
+            return false;
+        }
+    }
+    emit_clone_helpers(&emitter);
+    emit_drop_helpers(&emitter);
+    for (size_t function = 0U;
+         function < ir->function_count; ++function)
+        if (emitter.reachable_functions[function] &&
+            c_backend_function_is_entry_module_export(
+                ir, function, entry))
+        {
+            c_backend_emit_public_export_wrapper(&emitter, function);
+            c_backend_emit_public_aggregate_accessors(&emitter, function);
+        }
+    if (c_backend_web_exports_use_strings(ir, entry))
+        c_backend_emit_web_string_abi(output);
+    if (c_backend_web_exports_use_html_result(ir, entry))
+        c_backend_emit_web_html_abi(output);
+    if (ir->functions[entry].is_async) {
+        if (emitter.needs_native_runtime)
+            fputs("int main(void) {\n"
+                  "    aster_vm = lang_vm_new();\n"
+                  "    if (aster_vm == NULL) return 2;\n"
+                  "    lang_vm_register_builtins(aster_vm);\n",
+                  output);
+        else
+            fputs("int main(void) {\n", output);
+        fprintf(output,
+                "    aster_task *entry_task = aster_fn_%zu();\n"
+                "    aster_task_run_until(entry_task);\n"
+                "    int status = 1;\n"
+                "    if (entry_task->state == ASTER_TASK_SUCCEEDED) {\n"
+                "        if (entry_task->result_size != sizeof(int64_t))\n"
+                "            aster_trap(\"async main must complete with int\");\n"
+                "        status = *(int64_t *)entry_task->result == 0 ? 0 : 1;\n"
+                "    } else if (entry_task->state == ASTER_TASK_FAULTED ||\n"
+                "               entry_task->state == ASTER_TASK_CANCELED) {\n"
+                "        aster_task_restore_fault(entry_task);\n"
+                "    }\n"
+                "    aster_task_drop(entry_task);\n"
+                "    if (aster_exception_pending) {\n"
+                "        fputs(\"unhandled Aster Exception: \", stderr);\n"
+                "        if (aster_exception_message != NULL)\n"
+                "            (void)fwrite(aster_exception_message->data, 1U, "
+                "aster_exception_message->length, stderr);\n"
+                "        fputc('\\n', stderr);\n"
+                "        aster_string_drop(aster_exception_message);\n"
+                "        aster_exception_message = NULL;\n"
+                "        status = 1;\n"
+                "    }\n",
+                entry);
+        if (emitter.needs_native_runtime)
+            fputs("    lang_vm_free(aster_vm);\n"
+                  "    aster_vm = NULL;\n", output);
+        fputs("    return status;\n}\n", output);
+    } else if (emitter.needs_native_runtime)
+        fprintf(output,
+                "int main(void) {\n"
+                "    aster_vm = lang_vm_new();\n"
+                "    if (aster_vm == NULL) return 2;\n"
+                "    lang_vm_register_builtins(aster_vm);\n"
+                "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"
+                "    if (aster_exception_pending) {\n"
+                "        fputs(\"unhandled Aster Exception: \", stderr);\n"
+                "        if (aster_exception_message != NULL)\n"
+                "            (void)fwrite(aster_exception_message->data, 1U, "
+                "aster_exception_message->length, stderr);\n"
+                "        fputc('\\n', stderr);\n"
+                "        aster_string_drop(aster_exception_message);\n"
+                "        aster_exception_message = NULL;\n"
+                "        status = 1;\n"
+                "    }\n"
+                "    lang_vm_free(aster_vm);\n"
+                "    aster_vm = NULL;\n"
+                "    return status;\n"
+                "}\n",
+                entry);
+    else
+        fprintf(output,
+                "int main(void) {\n"
+                "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"
+                "    if (aster_exception_pending) {\n"
+                "        fputs(\"unhandled Aster Exception: \", stderr);\n"
+                "        if (aster_exception_message != NULL)\n"
+                "            (void)fwrite(aster_exception_message->data, 1U, "
+                "aster_exception_message->length, stderr);\n"
+                "        fputc('\\n', stderr);\n"
+                "        aster_string_drop(aster_exception_message);\n"
+                "        status = 1;\n"
+                "    }\n"
+                "    return status;\n"
+                "}\n",
+                entry);
+    bool ok = !emitter.failed && ferror(output) == 0;
+    free(emitter.reachable_functions);
+    free(emitter.used_types);
+    free(emitter.css_asset_href);
+    return ok;
+}
+
+bool lang_c_emit_module(const IrModule *ir,
+                        LangDiagnostics *diagnostics,
+                        FILE *output) {
+    return c_emit_module(ir, diagnostics, output, NULL);
+}
+
+bool lang_c_emit_site(const IrModule *ir,
+                      LangDiagnostics *diagnostics,
+                      FILE *output,
+                      const char *css_directory) {
+    if (css_directory == NULL) return false;
+    return c_emit_module(ir, diagnostics, output, css_directory);
+}

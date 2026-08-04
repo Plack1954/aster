@@ -1,0 +1,11 @@
+struct Pair<A, B> {
+    first: A,
+    second: B,
+}
+
+void invalid(Pair<long> value) {
+}
+
+int main() {
+    return 0;
+}

@@ -1,0 +1,25 @@
+namespace App.GenericMain;
+
+using Generic = Shared.Generics;
+using First = Consumers.A;
+using Second = Consumers.B;
+
+int main() {
+    Generic.Box<long> value = new Generic.Box<long> { value = 11 };
+    print(First.read(value) + Second.read(value));
+    print(First.echo(7) + Second.echo(7));
+    long(long) callback = First.echo;
+    print(callback(3));
+
+    Generic.Maybe<long> maybe =
+        Generic.Maybe.Some(5);
+    switch (maybe) {
+        case Generic.Maybe.Some(payload): {
+            print(payload);
+        }
+        case Generic.Maybe.None: {
+            print(0);
+        }
+    }
+    return 0;
+}

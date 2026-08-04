@@ -1,0 +1,33 @@
+int main() {
+    int total = 0;
+    for (int i = 0; i < 5; i++) {
+        total += i;
+    }
+    print(total);
+
+    int skipped = 0;
+    for (int i = 0; i < 5; i++) {
+        if (i == 2) {
+            continue;
+        }
+        skipped += i;
+    }
+    print(skipped);
+
+    int stopped = 0;
+    for (int i = 0; i < 10; i++) {
+        if (i == 3) {
+            break;
+        }
+        stopped += i;
+    }
+    print(stopped);
+
+    int i = 0;
+    int external = 0;
+    for (; i < 3; i++) {
+        external += i;
+    }
+    print(external);
+    return 0;
+}

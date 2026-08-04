@@ -1,0 +1,60 @@
+extern Task Task.Delay(int milliseconds);
+extern Task Task.Delay(
+    int milliseconds,
+    CancellationToken cancellationToken
+);
+
+async Task<int> main()
+{
+    CancellationTokenSource source = new();
+    CancellationToken token = source.Token;
+    if (token.IsCancellationRequested) { print("true"); }
+    else { print("false"); }
+
+    Task delayed = Task.Delay(1000, token);
+    source.Cancel();
+    if (source.IsCancellationRequested) { print("true"); }
+    else { print("false"); }
+
+    try
+    {
+        await delayed;
+        print("not canceled");
+    }
+    catch (OperationCanceledException error)
+    {
+        print(error.Message);
+    }
+
+    try
+    {
+        token.ThrowIfCancellationRequested();
+    }
+    catch (OperationCanceledException error)
+    {
+        print(error.Message);
+    }
+
+    CancellationToken none = CancellationToken.None;
+    if (none.IsCancellationRequested) { print("true"); }
+    else { print("false"); }
+    await Task.Delay(1, none);
+    print("completed");
+
+    CancellationTokenSource combinedSource = new();
+    CancellationToken combinedToken = combinedSource.Token;
+    List<Task> work = new();
+    work.Add(Task.Delay(1000, combinedToken));
+    work.Add(Task.Delay(1));
+    combinedSource.Cancel();
+    try
+    {
+        await Task.WhenAll(work);
+        print("not combined canceled");
+    }
+    catch (OperationCanceledException error)
+    {
+        print("combined canceled");
+    }
+    return 0;
+}

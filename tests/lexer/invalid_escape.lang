@@ -1,0 +1,4 @@
+int main() {
+    print("bad\qescape");
+    return 0;
+}

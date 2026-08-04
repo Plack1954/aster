@@ -1,0 +1,308 @@
+namespace Lime.Content;
+
+using Aster.Content;
+using System.IO;
+using System.Text;
+
+public struct ContentField
+{
+    string name;
+    string value;
+}
+
+public struct ContentDocument
+{
+    string path;
+    List<ContentField> fields;
+    string body;
+}
+
+bool ContentSpace(byte value)
+{
+    return value == 32 || value == 9 || value == 13;
+}
+
+string ContentTrim(string value)
+{
+    usize start = 0;
+    usize end = value.Length;
+    while (start < end && ContentSpace(StringByteAt(value, start)))
+    {
+        start += 1;
+    }
+    while (end > start && ContentSpace(StringByteAt(value, end - 1)))
+    {
+        end -= 1;
+    }
+    return StringSlice(value, start, end);
+}
+
+Result<string, string> ContentScalar(string raw)
+{
+    usize length = raw.Length;
+    if (length >= 2 && StringByteAt(raw, 0) == 34 &&
+        StringByteAt(raw, length - 1) == 34)
+    {
+        return Result.Ok(StringSlice(raw, 1, length - 1));
+    }
+    if (length > 0 && (StringByteAt(raw, 0) == 34 ||
+        StringByteAt(raw, length - 1) == 34))
+    {
+        return Result.Err("unterminated quoted frontmatter value");
+    }
+    return Result.Ok(raw);
+}
+
+bool ContentFieldsContain(List<ContentField> fields, string name)
+{
+    foreach (ContentField field in fields)
+    {
+        if (field.name == name) { return true; }
+    }
+    return false;
+}
+
+Result<ContentDocument, string> ParseContentDocument(
+    string path,
+    string source
+)
+{
+    usize length = source.Length;
+    usize firstEnd = 0;
+    while (firstEnd < length && StringByteAt(source, firstEnd) != 10)
+    {
+        firstEnd += 1;
+    }
+    if (ContentTrim(StringSlice(source, 0, firstEnd)) != "+++")
+    {
+        return Result.Err("content file must begin with `+++`");
+    }
+
+    List<ContentField> fields = new();
+    usize cursor = if (firstEnd < length) { firstEnd + 1 } else { length };
+    while (cursor < length)
+    {
+        usize end = cursor;
+        while (end < length && StringByteAt(source, end) != 10)
+        {
+            end += 1;
+        }
+        string line = ContentTrim(StringSlice(source, cursor, end));
+        if (line == "+++")
+        {
+            usize bodyStart = if (end < length) { end + 1 } else { length };
+            return Result.Ok(new()
+            {
+                path = path,
+                fields = fields,
+                body = StringSlice(source, bodyStart, length)
+            });
+        }
+        if (line.Length != 0)
+        {
+            usize equals = 0;
+            while (equals < line.Length &&
+                   StringByteAt(line, equals) != 61)
+            {
+                equals += 1;
+            }
+            if (equals == line.Length)
+            {
+                return Result.Err("frontmatter field requires `=`");
+            }
+            string name = ContentTrim(StringSlice(line, 0, equals));
+            if (name.Length == 0)
+            {
+                return Result.Err("frontmatter field name cannot be empty");
+            }
+            if (ContentFieldsContain(fields, name))
+            {
+                return Result.Err("duplicate frontmatter field");
+            }
+            string raw = ContentTrim(StringSlice(
+                line, equals + 1, line.Length
+            ));
+            fields.Add(new()
+            {
+                name = name,
+                value = try ContentScalar(raw)
+            });
+        }
+        cursor = if (end < length) { end + 1 } else { length };
+    }
+    return Result.Err("content file requires closing `+++`");
+}
+
+Result<string, string> ContentRequiredFrom(
+    List<ContentField> fields,
+    string name
+)
+{
+    foreach (ContentField field in fields)
+    {
+        if (field.name == name) { return Result.Ok(field.value); }
+    }
+    return Result.Err("missing required frontmatter field");
+}
+
+T ContentResultOrThrow<T>(Result<T, string> result)
+{
+    switch (result)
+    {
+        case Result.Ok(value): { return value; }
+        case Result.Err(error): { throw new Exception(error); }
+    }
+}
+
+public Result<string, string> ContentDocument.TryRequired(
+    ContentDocument self,
+    string name
+)
+{
+    return ContentRequiredFrom(self.fields, name);
+}
+
+public string ContentDocument.Required(
+    ContentDocument self,
+    string name
+)
+{
+    return ContentResultOrThrow(ContentRequiredFrom(self.fields, name));
+}
+
+Result<List<string>, string> ContentStringList(string raw)
+{
+    usize length = raw.Length;
+    if (length < 2 || StringByteAt(raw, 0) != 91 ||
+        StringByteAt(raw, length - 1) != 93)
+    {
+        return Result.Err("frontmatter string list requires `[...]`");
+    }
+    List<string> values = new();
+    usize cursor = 1;
+    while (cursor + 1 < length)
+    {
+        while (cursor + 1 < length &&
+               (ContentSpace(StringByteAt(raw, cursor)) ||
+                StringByteAt(raw, cursor) == 44))
+        {
+            cursor += 1;
+        }
+        if (cursor + 1 == length) { break; }
+        if (StringByteAt(raw, cursor) != 34)
+        {
+            return Result.Err("frontmatter string list requires quoted values");
+        }
+        usize start = cursor + 1;
+        cursor = start;
+        while (cursor < length && StringByteAt(raw, cursor) != 34)
+        {
+            cursor += 1;
+        }
+        if (cursor >= length)
+        {
+            return Result.Err("unterminated frontmatter string list value");
+        }
+        values.Add(StringSlice(raw, start, cursor));
+        cursor += 1;
+        while (cursor + 1 < length && ContentSpace(StringByteAt(raw, cursor)))
+        {
+            cursor += 1;
+        }
+        if (cursor + 1 < length && StringByteAt(raw, cursor) != 44)
+        {
+            return Result.Err("frontmatter string list values require `,`");
+        }
+    }
+    return Result.Ok(values);
+}
+
+public Result<List<string>, string> ContentDocument.TryStrings(
+    ContentDocument self,
+    string name
+)
+{
+    return ContentStringList(try ContentRequiredFrom(self.fields, name));
+}
+
+public List<string> ContentDocument.Strings(
+    ContentDocument self,
+    string name
+)
+{
+    return ContentResultOrThrow(ContentStringList(
+        ContentResultOrThrow(ContentRequiredFrom(self.fields, name))
+    ));
+}
+
+public Result<ContentDocument, string> TryLoadContentDocument(string path)
+{
+    NativeHandle file = try NativeFileOpen(path, "rb");
+    string source = try NativeFileReadAll(file);
+    return ParseContentDocument(path, source);
+}
+
+public ContentDocument LoadContentDocument(string path)
+{
+    return ContentResultOrThrow(
+        ParseContentDocument(path, File.ReadAllText(path))
+    );
+}
+
+public Result<List<ContentDocument>, string> TryLoadContentDirectory(
+    string root,
+    string suffix
+)
+{
+    List<string> paths = try DiscoverFiles(root, suffix);
+    List<ContentDocument> documents = new();
+    foreach (string path in paths)
+    {
+        documents.Add(try TryLoadContentDocument(path));
+    }
+    return Result.Ok(documents);
+}
+
+public List<ContentDocument> LoadContentDirectory(
+    string root,
+    string suffix
+)
+{
+    List<string> paths = ContentResultOrThrow(DiscoverFiles(root, suffix));
+    List<ContentDocument> documents = new();
+    foreach (string path in paths)
+    {
+        documents.Add(LoadContentDocument(path));
+    }
+    return documents;
+}
+
+public Result<List<T>, string> TryDecodeContentDirectory<T>(
+    string root,
+    string suffix,
+    Result<T, string>(ContentDocument) decoder
+)
+{
+    List<ContentDocument> documents = try TryLoadContentDirectory(root, suffix);
+    List<T> values = new();
+    foreach (ContentDocument document in documents)
+    {
+        values.Add(try decoder(document));
+    }
+    return Result.Ok(values);
+}
+
+public List<T> DecodeContentDirectory<T>(
+    string root,
+    string suffix,
+    T(ContentDocument) decoder
+)
+{
+    List<ContentDocument> documents = LoadContentDirectory(root, suffix);
+    List<T> values = new();
+    foreach (ContentDocument document in documents)
+    {
+        values.Add(decoder(document));
+    }
+    return values;
+}

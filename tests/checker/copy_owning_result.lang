@@ -1,0 +1,8 @@
+int main() {
+    Result<string, long> first =
+        Result.Ok("owned");
+    Result<string, long> second = first;
+    Result<string, long> third = first;
+    print(0);
+    return 0;
+}

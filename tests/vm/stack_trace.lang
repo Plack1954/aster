@@ -1,0 +1,12 @@
+long inner(long value) {
+    return value / 0;
+}
+
+long middle(long value) {
+    return inner(value);
+}
+
+int main() {
+    print(middle(42));
+    return 0;
+}

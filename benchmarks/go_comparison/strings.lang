@@ -1,0 +1,19 @@
+String record(long index, bool active) {
+    return $"customer-{index}:active={active}:balance={index * 3}";
+}
+
+int main() {
+    print(record(0, true));
+
+    usize total = 0;
+    long index = 0;
+    bool active = true;
+    while (index < 300000) {
+        String value = record(index, active);
+        total = total + TextLen(value);
+        active = !active;
+        index = index + 1;
+    }
+    print(total);
+    return 0;
+}

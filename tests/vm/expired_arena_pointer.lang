@@ -1,0 +1,9 @@
+int main() {
+    Arena arena = Arena.new();
+    unsafe {
+        long* pointer = ArenaAlloc(arena, 8);
+        ArenaReset(arena);
+        print(*pointer);
+    }
+    return 0;
+}

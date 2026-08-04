@@ -1,0 +1,59 @@
+namespace Tests.Suite;
+
+using App.Math;
+using Aster.Testing;
+using System.Text;
+
+TestResult AdditionTest() {
+    bool checked =
+        try AssertEqI64(add(20, 22), 42, "addition");
+    return TestPass();
+}
+
+TestResult GreetingTest() {
+    string greetingText = greeting("Aster");
+    string view = greetingText;
+    bool exact = try AssertEqStr(
+        view,
+        "Hello, Aster",
+        "greeting text",
+    );
+    bool contains = try AssertContains(
+        view,
+        "Aster",
+        "greeting name",
+    );
+    return TestPass();
+}
+
+TestResult PrimitiveTest() {
+    bool truth = try AssertTrue(true, "true assertion");
+    bool falsehood =
+        try AssertFalse(false, "false assertion");
+    bool unsigned = try AssertEqU64(
+        18446744073709551615,
+        18446744073709551615,
+        "unsigned equality",
+    );
+    return TestPass();
+}
+
+int main() {
+    TestSummary summary = TestSummary();
+    summary = TestRecord(
+        summary,
+        "addition",
+        AdditionTest(),
+    );
+    summary = TestRecord(
+        summary,
+        "greeting",
+        GreetingTest(),
+    );
+    summary = TestRecord(
+        summary,
+        "primitive assertions",
+        PrimitiveTest(),
+    );
+    return TestFinish(summary);
+}

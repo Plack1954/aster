@@ -1,0 +1,10 @@
+using Aster.Html;
+
+int main() {
+    Html document =
+        <section class="a\"&<b>">
+            "\"quoted\" & <tag>"
+        </section>;
+    print(HtmlRender(document));
+    return 0;
+}

@@ -1,0 +1,11 @@
+bool TryRead(out int value)
+{
+    value = 1;
+    return true;
+}
+
+int main()
+{
+    TryRead(out 1);
+    return 0;
+}

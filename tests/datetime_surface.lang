@@ -1,0 +1,99 @@
+using System;
+
+int main()
+{
+    TimeSpan hour = TimeSpan.FromHours(1.0);
+    TimeSpan half = TimeSpan.FromMinutes(30.0);
+    TimeSpan combined = hour.Add(half);
+    if (combined.Ticks() != 54000000000 ||
+        combined.TotalMinutes() != 90.0 ||
+        combined.Subtract(hour).TotalMinutes() != 30.0)
+        { return 1; }
+
+    DateTimeOffset epoch = DateTimeOffset.FromUnixTimeSeconds(0);
+    DateTimeOffset later = epoch.Add(TimeSpan.FromMilliseconds(1500.0));
+    if (later.ToUnixTimeMilliseconds() != 1500 ||
+        later.ToUnixTimeSeconds() != 1 ||
+        later.Subtract(epoch).TotalMilliseconds() != 1500.0)
+        { return 2; }
+    if (epoch.ToString() != "1970-01-01T00:00:00.000Z") { return 5; }
+
+    DateTimeOffset leap =
+        DateTimeOffset.Parse("2024-02-29T23:07:08.009Z");
+    if (leap.Year() != 2024 || leap.Month() != 2 || leap.Day() != 29 ||
+        leap.Hour() != 23 || leap.Minute() != 7 || leap.Second() != 8 ||
+        leap.Millisecond() != 9 ||
+        leap.ToString() != "2024-02-29T23:07:08.009Z") { return 6; }
+    DateTimeOffset parsed = DateTimeOffset.FromUnixTimeMilliseconds(0);
+    if (!DateTimeOffset.TryParse(
+            "2000-01-01T00:00:00.000Z",
+            out parsed
+        ) || parsed.Year() != 2000) { return 7; }
+    if (DateTimeOffset.TryParse("2023-02-29T00:00:00.000Z", out parsed))
+        { return 8; }
+    DateTimeOffset melbourne =
+        DateTimeOffset.Parse("2024-01-02T03:04:05.006+11:00");
+    if (melbourne.ToString() != "2024-01-02T03:04:05.006+11:00" ||
+        melbourne.Offset().TotalHours() != 11.0 ||
+        melbourne.ToUnixTimeMilliseconds() != 1704125045006)
+        { return 11; }
+    DateTimeOffset utcView = melbourne.ToOffset(TimeSpan.FromHours(0.0));
+    if (utcView.ToString() != "2024-01-01T16:04:05.006Z" ||
+        utcView.ToUnixTimeMilliseconds() != melbourne.ToUnixTimeMilliseconds())
+        { return 12; }
+    DateTimeOffset west = utcView.ToOffset(TimeSpan.FromMinutes(-90.0));
+    if (west.ToString() != "2024-01-01T14:34:05.006-01:30")
+        { return 13; }
+    if (DateTimeOffset.TryParse("2024-01-01T00:00:00.000+14:01", out parsed))
+        { return 14; }
+
+    DateTime utc = later.UtcDateTime();
+    DateTime advanced = utc.Add(TimeSpan.FromSeconds(2.0));
+    if (advanced.Subtract(utc).TotalSeconds() != 2.0) { return 3; }
+    DateTime parsedDateTime = DateTime.Parse("1969-12-31T23:59:59.999Z");
+    if (parsedDateTime.Year() != 1969 || parsedDateTime.Month() != 12 ||
+        parsedDateTime.Day() != 31 ||
+        parsedDateTime.ToString() != "1969-12-31T23:59:59.999Z")
+        { return 9; }
+    if (parsedDateTime.AddDays(1.0).Day() != 1) { return 10; }
+
+    DateOnly date = DateOnly.Parse("2024-02-29");
+    if (date.Year() != 2024 || date.Month() != 2 || date.Day() != 29 ||
+        date.ToString() != "2024-02-29" ||
+        date.AddDays(1).ToString() != "2024-03-01") { return 15; }
+    DateOnly parsedDate = DateOnly.Parse("0001-01-01");
+    if (!DateOnly.TryParse("2000-02-29", out parsedDate) ||
+        parsedDate.ToString() != "2000-02-29" ||
+        parsedDate.DayNumber() !=
+            DateOnly.Parse("2000-02-28").DayNumber() + 1) { return 16; }
+    if (DateOnly.TryParse("2023-02-29", out parsedDate)) { return 17; }
+
+    TimeOnly time = TimeOnly.Parse("23:59:59.125");
+    if (time.Hour() != 23 || time.Minute() != 59 || time.Second() != 59 ||
+        time.Millisecond() != 125 ||
+        time.ToString() != "23:59:59.125") { return 18; }
+    TimeOnly parsedTime = TimeOnly.Parse("00:00");
+    if (!TimeOnly.TryParse("03:04:05", out parsedTime) ||
+        parsedTime.ToString() != "03:04:05.000" ||
+        TimeOnly.TryParse("24:00", out parsedTime)) { return 19; }
+    if (TimeOnly.Parse("23:30").Add(TimeSpan.FromHours(2.0)).ToString() !=
+        "01:30:00.000" ||
+        TimeOnly.Parse("00:30").Add(TimeSpan.FromHours(-2.0)).ToString() !=
+        "22:30:00.000") { return 20; }
+
+    DateTime combinedDateTime = date.ToDateTime(time);
+    if (DateOnly.FromDateTime(combinedDateTime).ToString() !=
+            "2024-02-29" ||
+        TimeOnly.FromDateTime(combinedDateTime).ToString() !=
+            "23:59:59.125" ||
+        combinedDateTime.Date().ToString() !=
+            "2024-02-29T00:00:00.000Z" ||
+        combinedDateTime.TimeOfDay().Ticks() != time.Ticks()) { return 21; }
+    if (TimeOnly.FromTimeSpan(time.ToTimeSpan()).ToString() !=
+        time.ToString()) { return 22; }
+
+    long now = DateTimeOffset.UtcNow().ToUnixTimeMilliseconds();
+    if (now < 1577836800000) { return 4; }
+    DateTime.UtcNow();
+    return 0;
+}

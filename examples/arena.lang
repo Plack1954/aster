@@ -1,0 +1,13 @@
+int main() {
+    Arena arena = Arena.new();
+    unsafe {
+        byte* first = ArenaAlloc(arena, 128);
+        byte* second = ArenaAlloc(arena, 256);
+        print(first);
+        print(second);
+        ArenaReset(arena);
+        byte* third = ArenaAlloc(arena, 64);
+        print(third);
+    }
+    return 0;
+}

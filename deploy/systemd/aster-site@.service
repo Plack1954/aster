@@ -1,0 +1,31 @@
+[Unit]
+Description=Aster/Lime site %i
+After=network.target
+
+[Service]
+Type=simple
+User=aster
+Group=aster
+WorkingDirectory=/srv/aster/%i/current
+EnvironmentFile=-/etc/aster/%i.env
+ExecStart=/srv/aster/%i/current/server
+StateDirectory=aster/%i
+StateDirectoryMode=0750
+
+Restart=on-failure
+RestartSec=2s
+KillSignal=SIGTERM
+TimeoutStopSec=40s
+LimitNOFILE=65536
+UMask=0027
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=-/srv/aster/%i/shared
+ReadWritePaths=-/var/lib/aster/%i
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

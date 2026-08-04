@@ -1,0 +1,8 @@
+int multiply(int left, int right) {
+    return left * right;
+}
+
+int main() {
+    print(multiply(6, 7));
+    return 0;
+}

@@ -1,0 +1,6 @@
+int main() {
+    sbyte maximum = 127;
+    sbyte one = 1;
+    print(maximum + one);
+    return 0;
+}

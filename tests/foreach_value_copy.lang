@@ -1,0 +1,41 @@
+struct Article
+{
+    int Views;
+}
+
+struct ArticleSet
+{
+    List<Article> Items;
+}
+
+int main()
+{
+    List<Article> articles = new();
+    articles.Add(new() { Views = 1 });
+
+    foreach (Article article in articles)
+    {
+        article.Views = 99;
+        print(article.Views);
+    }
+
+    foreach (Article article in articles)
+    {
+        print(article.Views);
+    }
+
+    Article fixedArticles[1] = [new() { Views = 2 }];
+    foreach (Article article in fixedArticles)
+    {
+        article.Views = 88;
+        print(article.Views);
+    }
+    print(fixedArticles[0].Views);
+
+    ArticleSet set = new() { Items = articles };
+    foreach (Article article in set.Items)
+    {
+        print(article.Views);
+    }
+    return 0;
+}

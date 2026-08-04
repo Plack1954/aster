@@ -1,0 +1,9 @@
+namespace App.Main;
+
+using Dependency.Message;
+
+int main()
+{
+    print(Message());
+    return 0;
+}

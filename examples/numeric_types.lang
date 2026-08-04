@@ -1,0 +1,36 @@
+sbyte AddI8(sbyte left, sbyte right) {
+    return left + right;
+}
+
+ushort AddU16(ushort left, ushort right) {
+    return left + right;
+}
+
+float half(float value) {
+    return value / 2.0;
+}
+
+int main() {
+    sbyte signed = AddI8(20, 22);
+    ushort unsigned = AddU16(65000, 535);
+    float floating = half(5.0);
+    usize index = 1;
+    int values[2] = [10, 20];
+    ulong maximum = 18446744073709551615;
+    long minimum = -9223372036854775808;
+    long wide = 42;
+    byte narrowed = (byte)wide;
+    float convertedFloat = (float)narrowed;
+    char scalar = (char)65;
+
+    print(signed);
+    print(unsigned);
+    print(floating);
+    print(values[index]);
+    print(maximum);
+    print(minimum);
+    print(narrowed);
+    print(convertedFloat);
+    print(scalar);
+    return 0;
+}

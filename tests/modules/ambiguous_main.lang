@@ -1,0 +1,9 @@
+namespace Ambiguity.Main;
+
+using Ambiguity.A;
+using Ambiguity.B;
+
+int main() {
+    print(shared(1));
+    return 0;
+}

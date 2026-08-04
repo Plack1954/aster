@@ -1,0 +1,29 @@
+long increment(long value) {
+    long offset = 1;
+    {
+        long offset = 2;
+        print(offset);
+    }
+    return value + offset;
+}
+
+Result<long, long> CleanupPlan(bool flag) {
+    Buffer buffer = Buffer.allocate(8);
+    if (flag) {
+        return Result.Err(1);
+    }
+    long value = try Result.Ok(42);
+    return Result.Ok(value);
+}
+
+long UnsafeIndexIntent() {
+    long values[1] = [7];
+    unsafe {
+        return values[0];
+    }
+}
+
+int main() {
+    print(increment(41));
+    return 0;
+}

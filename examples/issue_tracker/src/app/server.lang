@@ -1,0 +1,94 @@
+namespace App.Server;
+
+using App.Routes;
+using Aster.Net.Http;
+using Aster.Web.HttpApp;
+
+public int ServeRouter(
+    NativeHandle server,
+    Router router,
+    long maxConnections
+) {
+    print(HttpServerPort(server));
+    bool running = true;
+    long connectionCount = 0;
+    while (running) {
+        Result<NativeHandle, string> accepted =
+            HttpTryAccept(server);
+        switch (accepted) {
+            case Result.Ok(request): {
+                bool active = true;
+                while (active) {
+                    Request input = new() {
+                        method = HttpRequestMethod(request),
+                        path = HttpRequestPath(request),
+                        host = HttpRequestHeader(request, "host"),
+                        body = HttpRequestBody(request),
+                    };
+                    Response response =
+                        RouterDispatch(router, input);
+                    var sent = ResponseSend(
+                        request, response
+                    );
+                    switch (sent) {
+                        case Result.Ok(reuse): {
+                            active = reuse;
+                        }
+                        case Result.Err(error): {
+                            eprint(error);
+                            active = false;
+                        }
+                    }
+                    if (active) {
+                        Result<bool, string> next =
+                            HttpTryRequestNext(request);
+                        switch (next) {
+                            case Result.Ok(available): {
+                                active = available;
+                            }
+                            case Result.Err(error): {
+                                eprint(error);
+                                active = false;
+                            }
+                        }
+                    }
+                }
+            }
+            case Result.Err(error): {
+                eprint(error);
+            }
+        }
+        connectionCount += 1;
+        if (maxConnections > 0 &&
+         connectionCount >= maxConnections) {
+            running = false;
+        }
+    }
+    return 0;
+}
+
+int main() {
+    Result<NativeHandle, string> opened =
+        HttpTryServerOpen(
+            "127.0.0.1",
+            8081,
+            16384,
+            1048576,
+            5000,
+            100,
+        );
+    switch (opened) {
+        case Result.Ok(server): {
+            Router router = ApplicationRouter();
+            return ServeRouter(
+                server,
+                router,
+                0,
+            );
+        }
+        case Result.Err(error): {
+            eprint(error);
+            return 1;
+        }
+    }
+}

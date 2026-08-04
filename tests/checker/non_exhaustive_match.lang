@@ -1,0 +1,13 @@
+union State {
+    Ready(long),
+    Empty,
+}
+
+int main() {
+    switch (State.Ready(1)) {
+        case State.Ready(value): {
+            print(value);
+        }
+    }
+    return 0;
+}

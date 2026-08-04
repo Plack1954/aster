@@ -1,0 +1,27 @@
+using Aster.Html;
+
+extern NativeHandle HttpServerOpen(string address, long port);
+extern long HttpServerPort(NativeHandle server);
+extern long HttpServeOnce(
+    NativeHandle server,
+    string body
+);
+
+Html page() {
+    <section>
+        <h2>"Aster HTTP server"</h2>
+        <p>"This response was rendered by the bytecode VM."</p>
+    </section>
+}
+
+int main() {
+    NativeHandle server = HttpServerOpen("127.0.0.1", 8080);
+    print(HttpServerPort(server));
+
+    Html document = page();
+    string body = HtmlRender(document);
+
+    // Blocks until one GET or HEAD request has been served.
+    print(HttpServeOnce(server, body));
+    return 0;
+}

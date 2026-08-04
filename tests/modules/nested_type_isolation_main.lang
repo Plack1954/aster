@@ -1,0 +1,22 @@
+namespace Nested.Main;
+
+using Nested.NestedOwnershipDep;
+
+extern NativeHandle NativeHandleOpen();
+
+struct Helper {
+    id: long,
+}
+
+int main() {
+    dep.Helper importedHelper =
+        new dep.Helper {
+            handle = NativeHandleOpen(),
+        };
+    Wrapper wrapper = Wrapper {
+        helper: importedHelper,
+    };
+    Wrapper invalidCopy = wrapper;
+    print(invalidCopy.helper.handle);
+    return 0;
+}

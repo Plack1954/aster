@@ -1,0 +1,9 @@
+int main() {
+    string text = "temporary clone";
+    long item = [10, 20][1];
+
+    print(text);
+    print(item);
+    print(Buffer.allocate(3).len);
+    return 0;
+}

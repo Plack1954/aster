@@ -1,0 +1,728 @@
+namespace System;
+
+using System.Text;
+
+public struct TimeSpan { long ticks; }
+public struct DateTime { long unixTicks; }
+public struct DateTimeOffset { long unixTicks; short offsetMinutes; }
+public struct DateOnly { int dayNumber; }
+public struct TimeOnly { long ticks; }
+
+struct DateParts
+{
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
+    int millisecond;
+}
+
+extern long NativeUtcNowUnixMilliseconds();
+
+long DaysFromCivil(int year, int month, int day)
+{
+    int adjustedYear = year - if (month <= 2) { 1 } else { 0 };
+    long era = (long)adjustedYear / 400;
+    long yearOfEra = (long)adjustedYear - era * 400;
+    int shiftedMonth = month + if (month > 2) { -3 } else { 9 };
+    long dayOfYear =
+        (153 * (long)shiftedMonth + 2) / 5 + (long)day - 1;
+    long dayOfEra = yearOfEra * 365 + yearOfEra / 4 -
+        yearOfEra / 100 + dayOfYear;
+    return era * 146097 + dayOfEra - 719468;
+}
+
+DateParts DatePartsFromUnixTicks(long unixTicks)
+{
+    long milliseconds = unixTicks / 10000;
+    long days = milliseconds / 86400000;
+    long dayMilliseconds = milliseconds % 86400000;
+    if (dayMilliseconds < 0)
+    {
+        dayMilliseconds += 86400000;
+        days -= 1;
+    }
+    long shiftedDays = days + 719468;
+    long era = if (shiftedDays >= 0)
+    {
+        shiftedDays / 146097
+    }
+    else
+    {
+        (shiftedDays - 146096) / 146097
+    };
+    long dayOfEra = shiftedDays - era * 146097;
+    long yearOfEra = (dayOfEra - dayOfEra / 1460 +
+        dayOfEra / 36524 - dayOfEra / 146096) / 365;
+    int year = (int)(yearOfEra + era * 400);
+    long dayOfYear = dayOfEra -
+        (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100);
+    long shiftedMonth = (5 * dayOfYear + 2) / 153;
+    int day = (int)(dayOfYear - (153 * shiftedMonth + 2) / 5 + 1);
+    int month = (int)(shiftedMonth + if (shiftedMonth < 10)
+    {
+        (long)3
+    }
+    else
+    {
+        (long)-9
+    });
+    year += if (month <= 2) { 1 } else { 0 };
+
+    int hour = (int)(dayMilliseconds / 3600000);
+    dayMilliseconds %= 3600000;
+    int minute = (int)(dayMilliseconds / 60000);
+    dayMilliseconds %= 60000;
+    int second = (int)(dayMilliseconds / 1000);
+    int millisecond = (int)(dayMilliseconds % 1000);
+    return new()
+    {
+        year = year,
+        month = month,
+        day = day,
+        hour = hour,
+        minute = minute,
+        second = second,
+        millisecond = millisecond
+    };
+}
+
+void AppendTwoDigits(ref StringBuilder builder, int value)
+{
+    builder.AppendByte((byte)(48 + value / 10));
+    builder.AppendByte((byte)(48 + value % 10));
+}
+
+void AppendThreeDigits(ref StringBuilder builder, int value)
+{
+    builder.AppendByte((byte)(48 + value / 100));
+    builder.AppendByte((byte)(48 + value / 10 % 10));
+    builder.AppendByte((byte)(48 + value % 10));
+}
+
+void AppendFourDigits(ref StringBuilder builder, int value)
+{
+    builder.AppendByte((byte)(48 + value / 1000));
+    builder.AppendByte((byte)(48 + value / 100 % 10));
+    builder.AppendByte((byte)(48 + value / 10 % 10));
+    builder.AppendByte((byte)(48 + value % 10));
+}
+
+string FormatDateTime(long unixTicks, short offsetMinutes)
+{
+    long displayTicks = unixTicks + (long)offsetMinutes * 600000000;
+    DateParts parts = DatePartsFromUnixTicks(displayTicks);
+    if (parts.year < 1 || parts.year > 9999)
+    {
+        throw new OverflowException("DateTime value is outside the supported range");
+    }
+    StringBuilder builder = new();
+    AppendFourDigits(ref builder, parts.year);
+    builder.AppendByte(45);
+    AppendTwoDigits(ref builder, parts.month);
+    builder.AppendByte(45);
+    AppendTwoDigits(ref builder, parts.day);
+    builder.AppendByte(84);
+    AppendTwoDigits(ref builder, parts.hour);
+    builder.AppendByte(58);
+    AppendTwoDigits(ref builder, parts.minute);
+    builder.AppendByte(58);
+    AppendTwoDigits(ref builder, parts.second);
+    builder.AppendByte(46);
+    AppendThreeDigits(ref builder, parts.millisecond);
+    if (offsetMinutes == 0)
+    {
+        builder.AppendByte(90);
+    }
+    else
+    {
+        int offset = (int)offsetMinutes;
+        if (offset < 0)
+        {
+            builder.AppendByte(45);
+            offset = -offset;
+        }
+        else
+        {
+            builder.AppendByte(43);
+        }
+        AppendTwoDigits(ref builder, offset / 60);
+        builder.AppendByte(58);
+        AppendTwoDigits(ref builder, offset % 60);
+    }
+    return builder.ToString();
+}
+
+int DateDigit(string value, usize index)
+{
+    byte digit = value[index];
+    if (digit < 48 || digit > 57)
+    {
+        throw new FormatException("String was not recognized as a valid DateTime.");
+    }
+    return (int)(digit - 48);
+}
+
+int DateTwoDigits(string value, usize index)
+{
+    return DateDigit(value, index) * 10 + DateDigit(value, index + 1);
+}
+
+bool IsLeapYear(int year)
+{
+    return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+int DaysInMonth(int year, int month)
+{
+    if (month == 2) { return if (IsLeapYear(year)) { 29 } else { 28 }; }
+    if (month == 4 || month == 6 || month == 9 || month == 11) { return 30; }
+    return 31;
+}
+
+DateTimeOffset ParseDateTimeOffset(string value)
+{
+    bool utc = value.Length == 24 && value[23] == 90;
+    bool explicitOffset = value.Length == 29 &&
+        (value[23] == 43 || value[23] == 45) && value[26] == 58;
+    if ((!utc && !explicitOffset) || value[4] != 45 || value[7] != 45 ||
+        value[10] != 84 || value[13] != 58 || value[16] != 58 ||
+        value[19] != 46)
+    {
+        throw new FormatException("String was not recognized as a valid DateTime.");
+    }
+    int year = DateDigit(value, 0) * 1000 + DateDigit(value, 1) * 100 +
+        DateDigit(value, 2) * 10 + DateDigit(value, 3);
+    int month = DateTwoDigits(value, 5);
+    int day = DateTwoDigits(value, 8);
+    int hour = DateTwoDigits(value, 11);
+    int minute = DateTwoDigits(value, 14);
+    int second = DateTwoDigits(value, 17);
+    int millisecond = DateDigit(value, 20) * 100 +
+        DateDigit(value, 21) * 10 + DateDigit(value, 22);
+    int offsetHours = if (utc) { 0 } else { DateTwoDigits(value, 24) };
+    int offsetMinutePart = if (utc) { 0 } else { DateTwoDigits(value, 27) };
+    if (year < 1 || month < 1 || month > 12 || day < 1 ||
+        day > DaysInMonth(year, month) || hour > 23 || minute > 59 ||
+        second > 59 || offsetHours > 14 || offsetMinutePart > 59 ||
+        (offsetHours == 14 && offsetMinutePart != 0))
+    {
+        throw new FormatException("String was not recognized as a valid DateTime.");
+    }
+    int offset = offsetHours * 60 + offsetMinutePart;
+    if (!utc && value[23] == 45) { offset = -offset; }
+    long localMilliseconds = DaysFromCivil(year, month, day) * 86400000 +
+        (long)hour * 3600000 + (long)minute * 60000 +
+        (long)second * 1000 + (long)millisecond;
+    return new()
+    {
+        unixTicks = (localMilliseconds - (long)offset * 60000) * 10000,
+        offsetMinutes = (short)offset
+    };
+}
+
+DateOnly ParseDateOnly(string value)
+{
+    if (value.Length != 10 || value[4] != 45 || value[7] != 45)
+    {
+        throw new FormatException("String was not recognized as a valid DateOnly.");
+    }
+    int year = DateDigit(value, 0) * 1000 + DateDigit(value, 1) * 100 +
+        DateDigit(value, 2) * 10 + DateDigit(value, 3);
+    int month = DateTwoDigits(value, 5);
+    int day = DateTwoDigits(value, 8);
+    if (year < 1 || month < 1 || month > 12 || day < 1 ||
+        day > DaysInMonth(year, month))
+    {
+        throw new FormatException("String was not recognized as a valid DateOnly.");
+    }
+    return new()
+    {
+        dayNumber = (int)(DaysFromCivil(year, month, day) + 719162)
+    };
+}
+
+TimeOnly ParseTimeOnly(string value)
+{
+    bool minutePrecision = value.Length == 5 && value[2] == 58;
+    bool secondPrecision = value.Length == 8 &&
+        value[2] == 58 && value[5] == 58;
+    bool millisecondPrecision = value.Length == 12 &&
+        value[2] == 58 && value[5] == 58 && value[8] == 46;
+    if (!minutePrecision && !secondPrecision && !millisecondPrecision)
+    {
+        throw new FormatException("String was not recognized as a valid TimeOnly.");
+    }
+    int hour = DateTwoDigits(value, 0);
+    int minute = DateTwoDigits(value, 3);
+    int second = if (minutePrecision) { 0 } else { DateTwoDigits(value, 6) };
+    int millisecond = if (millisecondPrecision)
+    {
+        DateDigit(value, 9) * 100 + DateDigit(value, 10) * 10 +
+            DateDigit(value, 11)
+    }
+    else
+    {
+        0
+    };
+    if (hour > 23 || minute > 59 || second > 59)
+    {
+        throw new FormatException("String was not recognized as a valid TimeOnly.");
+    }
+    return new()
+    {
+        ticks = (long)hour * 36000000000 +
+            (long)minute * 600000000 +
+            (long)second * 10000000 +
+            (long)millisecond * 10000
+    };
+}
+
+public TimeSpan TimeSpan.FromTicks(long value)
+{
+    return new() { ticks = value };
+}
+
+public TimeSpan TimeSpan.FromMilliseconds(double value)
+{
+    return TimeSpan.FromTicks(Convert.ToInt64(value * 10000.0));
+}
+
+public TimeSpan TimeSpan.FromSeconds(double value)
+{
+    return TimeSpan.FromMilliseconds(value * 1000.0);
+}
+
+public TimeSpan TimeSpan.FromMinutes(double value)
+{
+    return TimeSpan.FromSeconds(value * 60.0);
+}
+
+public TimeSpan TimeSpan.FromHours(double value)
+{
+    return TimeSpan.FromMinutes(value * 60.0);
+}
+
+public TimeSpan TimeSpan.FromDays(double value)
+{
+    return TimeSpan.FromHours(value * 24.0);
+}
+
+public long TimeSpan.Ticks(TimeSpan self) { return self.ticks; }
+public double TimeSpan.TotalMilliseconds(TimeSpan self)
+{
+    return (double)self.ticks / 10000.0;
+}
+public double TimeSpan.TotalSeconds(TimeSpan self)
+{
+    return (double)self.ticks / 10000000.0;
+}
+public double TimeSpan.TotalMinutes(TimeSpan self)
+{
+    return (double)self.ticks / 600000000.0;
+}
+public double TimeSpan.TotalHours(TimeSpan self)
+{
+    return (double)self.ticks / 36000000000.0;
+}
+public double TimeSpan.TotalDays(TimeSpan self)
+{
+    return (double)self.ticks / 864000000000.0;
+}
+
+public TimeSpan TimeSpan.Add(TimeSpan self, TimeSpan value)
+{
+    return TimeSpan.FromTicks(self.ticks + value.ticks);
+}
+
+public TimeSpan TimeSpan.Subtract(TimeSpan self, TimeSpan value)
+{
+    return TimeSpan.FromTicks(self.ticks - value.ticks);
+}
+
+public TimeSpan TimeSpan.Negate(TimeSpan self)
+{
+    return TimeSpan.FromTicks(-self.ticks);
+}
+
+public DateTime DateTime.UtcNow()
+{
+    return new() { unixTicks = NativeUtcNowUnixMilliseconds() * 10000 };
+}
+
+public DateTime DateTime.Add(DateTime self, TimeSpan value)
+{
+    return new() { unixTicks = self.unixTicks + value.ticks };
+}
+
+public DateTime DateTime.AddDays(DateTime self, double value)
+{
+    return self.Add(TimeSpan.FromDays(value));
+}
+
+public int DateTime.Year(DateTime self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks).year;
+}
+public int DateTime.Month(DateTime self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks).month;
+}
+public int DateTime.Day(DateTime self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks).day;
+}
+public int DateTime.Hour(DateTime self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks).hour;
+}
+public int DateTime.Minute(DateTime self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks).minute;
+}
+public int DateTime.Second(DateTime self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks).second;
+}
+public int DateTime.Millisecond(DateTime self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks).millisecond;
+}
+
+public string DateTime.ToString(DateTime self)
+{
+    return FormatDateTime(self.unixTicks, 0);
+}
+
+public DateTime DateTime.Parse(string value)
+{
+    return ParseDateTimeOffset(value).UtcDateTime();
+}
+
+public bool DateTime.TryParse(string value, out DateTime result)
+{
+    result = new() { unixTicks = 0 };
+    try { result = DateTime.Parse(value); return true; }
+    catch (Exception error) { return false; }
+}
+
+public DateTime DateTime.Subtract(DateTime self, TimeSpan value)
+{
+    return new() { unixTicks = self.unixTicks - value.ticks };
+}
+
+public TimeSpan DateTime.Subtract(DateTime self, DateTime value)
+{
+    return TimeSpan.FromTicks(self.unixTicks - value.unixTicks);
+}
+
+public DateTime DateTime.Date(DateTime self)
+{
+    DateParts parts = DatePartsFromUnixTicks(self.unixTicks);
+    return new()
+    {
+        unixTicks = DaysFromCivil(parts.year, parts.month, parts.day) *
+            864000000000
+    };
+}
+
+public TimeSpan DateTime.TimeOfDay(DateTime self)
+{
+    DateTime date = self.Date();
+    return TimeSpan.FromTicks(self.unixTicks - date.unixTicks);
+}
+
+public DateTimeOffset DateTimeOffset.UtcNow()
+{
+    return new()
+    {
+        unixTicks = NativeUtcNowUnixMilliseconds() * 10000,
+        offsetMinutes = 0
+    };
+}
+
+public DateTimeOffset DateTimeOffset.FromUnixTimeMilliseconds(long milliseconds)
+{
+    return new()
+    {
+        unixTicks = milliseconds * 10000,
+        offsetMinutes = 0
+    };
+}
+
+public DateTimeOffset DateTimeOffset.FromUnixTimeSeconds(long seconds)
+{
+    return DateTimeOffset.FromUnixTimeMilliseconds(seconds * 1000);
+}
+
+public long DateTimeOffset.ToUnixTimeMilliseconds(DateTimeOffset self)
+{
+    return self.unixTicks / 10000;
+}
+
+public long DateTimeOffset.ToUnixTimeSeconds(DateTimeOffset self)
+{
+    return self.unixTicks / 10000000;
+}
+
+public DateTime DateTimeOffset.UtcDateTime(DateTimeOffset self)
+{
+    return new() { unixTicks = self.unixTicks };
+}
+
+public TimeSpan DateTimeOffset.Offset(DateTimeOffset self)
+{
+    return TimeSpan.FromMinutes((double)self.offsetMinutes);
+}
+
+public DateTimeOffset DateTimeOffset.ToOffset(
+    DateTimeOffset self,
+    TimeSpan offset
+)
+{
+    if (offset.ticks % 600000000 != 0)
+    {
+        throw new ArgumentException("Offset must be specified in whole minutes.");
+    }
+    long minutes = offset.ticks / 600000000;
+    if (minutes < -840 || minutes > 840)
+    {
+        throw new ArgumentException("Offset must be within plus or minus 14 hours.");
+    }
+    return new()
+    {
+        unixTicks = self.unixTicks,
+        offsetMinutes = (short)minutes
+    };
+}
+
+public DateTimeOffset DateTimeOffset.Add(DateTimeOffset self, TimeSpan value)
+{
+    return new()
+    {
+        unixTicks = self.unixTicks + value.ticks,
+        offsetMinutes = self.offsetMinutes
+    };
+}
+
+public DateTimeOffset DateTimeOffset.AddDays(
+    DateTimeOffset self,
+    double value
+)
+{
+    return self.Add(TimeSpan.FromDays(value));
+}
+
+public int DateTimeOffset.Year(DateTimeOffset self)
+{
+    return DatePartsFromUnixTicks(
+        self.unixTicks + (long)self.offsetMinutes * 600000000
+    ).year;
+}
+public int DateTimeOffset.Month(DateTimeOffset self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks +
+        (long)self.offsetMinutes * 600000000).month;
+}
+public int DateTimeOffset.Day(DateTimeOffset self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks +
+        (long)self.offsetMinutes * 600000000).day;
+}
+public int DateTimeOffset.Hour(DateTimeOffset self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks +
+        (long)self.offsetMinutes * 600000000).hour;
+}
+public int DateTimeOffset.Minute(DateTimeOffset self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks +
+        (long)self.offsetMinutes * 600000000).minute;
+}
+public int DateTimeOffset.Second(DateTimeOffset self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks +
+        (long)self.offsetMinutes * 600000000).second;
+}
+public int DateTimeOffset.Millisecond(DateTimeOffset self)
+{
+    return DatePartsFromUnixTicks(self.unixTicks +
+        (long)self.offsetMinutes * 600000000).millisecond;
+}
+
+public string DateTimeOffset.ToString(DateTimeOffset self)
+{
+    return FormatDateTime(self.unixTicks, self.offsetMinutes);
+}
+
+public DateTimeOffset DateTimeOffset.Parse(string value)
+{
+    return ParseDateTimeOffset(value);
+}
+
+public bool DateTimeOffset.TryParse(
+    string value,
+    out DateTimeOffset result
+)
+{
+    result = DateTimeOffset.FromUnixTimeMilliseconds(0);
+    try { result = DateTimeOffset.Parse(value); return true; }
+    catch (Exception error) { return false; }
+}
+
+public DateTimeOffset DateTimeOffset.Subtract(
+    DateTimeOffset self,
+    TimeSpan value
+)
+{
+    return new()
+    {
+        unixTicks = self.unixTicks - value.ticks,
+        offsetMinutes = self.offsetMinutes
+    };
+}
+
+public TimeSpan DateTimeOffset.Subtract(
+    DateTimeOffset self,
+    DateTimeOffset value
+)
+{
+    return TimeSpan.FromTicks(self.unixTicks - value.unixTicks);
+}
+
+DateParts DateOnlyParts(DateOnly self)
+{
+    return DatePartsFromUnixTicks(
+        ((long)self.dayNumber - 719162) * 864000000000
+    );
+}
+
+public DateOnly DateOnly.FromDateTime(DateTime dateTime)
+{
+    DateParts parts = DatePartsFromUnixTicks(dateTime.unixTicks);
+    return new()
+    {
+        dayNumber = (int)(
+            DaysFromCivil(parts.year, parts.month, parts.day) + 719162
+        )
+    };
+}
+
+public DateOnly DateOnly.Parse(string value)
+{
+    return ParseDateOnly(value);
+}
+
+public bool DateOnly.TryParse(string value, out DateOnly result)
+{
+    result = new() { dayNumber = 0 };
+    try { result = DateOnly.Parse(value); return true; }
+    catch (Exception error) { return false; }
+}
+
+public int DateOnly.Year(DateOnly self) { return DateOnlyParts(self).year; }
+public int DateOnly.Month(DateOnly self) { return DateOnlyParts(self).month; }
+public int DateOnly.Day(DateOnly self) { return DateOnlyParts(self).day; }
+public int DateOnly.DayNumber(DateOnly self) { return self.dayNumber; }
+
+public DateOnly DateOnly.AddDays(DateOnly self, int value)
+{
+    int result = self.dayNumber + value;
+    if (result < 0 || result > 3652058)
+    {
+        throw new OverflowException("DateOnly value is outside the supported range");
+    }
+    return new() { dayNumber = result };
+}
+
+public string DateOnly.ToString(DateOnly self)
+{
+    DateParts parts = DateOnlyParts(self);
+    StringBuilder builder = new();
+    AppendFourDigits(ref builder, parts.year);
+    builder.AppendByte(45);
+    AppendTwoDigits(ref builder, parts.month);
+    builder.AppendByte(45);
+    AppendTwoDigits(ref builder, parts.day);
+    return builder.ToString();
+}
+
+public DateTime DateOnly.ToDateTime(DateOnly self, TimeOnly time)
+{
+    return new()
+    {
+        unixTicks = ((long)self.dayNumber - 719162) * 864000000000 +
+            time.ticks
+    };
+}
+
+public TimeOnly TimeOnly.FromDateTime(DateTime dateTime)
+{
+    return new() { ticks = dateTime.TimeOfDay().ticks };
+}
+
+public TimeOnly TimeOnly.FromTimeSpan(TimeSpan timeSpan)
+{
+    if (timeSpan.ticks < 0 || timeSpan.ticks >= 864000000000)
+    {
+        throw new ArgumentException("TimeSpan must describe a time within one day");
+    }
+    return new() { ticks = timeSpan.ticks };
+}
+
+public TimeOnly TimeOnly.Parse(string value)
+{
+    return ParseTimeOnly(value);
+}
+
+public bool TimeOnly.TryParse(string value, out TimeOnly result)
+{
+    result = new() { ticks = 0 };
+    try { result = TimeOnly.Parse(value); return true; }
+    catch (Exception error) { return false; }
+}
+
+public int TimeOnly.Hour(TimeOnly self)
+{
+    return (int)(self.ticks / 36000000000);
+}
+public int TimeOnly.Minute(TimeOnly self)
+{
+    return (int)(self.ticks / 600000000 % 60);
+}
+public int TimeOnly.Second(TimeOnly self)
+{
+    return (int)(self.ticks / 10000000 % 60);
+}
+public int TimeOnly.Millisecond(TimeOnly self)
+{
+    return (int)(self.ticks / 10000 % 1000);
+}
+public long TimeOnly.Ticks(TimeOnly self) { return self.ticks; }
+
+public TimeSpan TimeOnly.ToTimeSpan(TimeOnly self)
+{
+    return TimeSpan.FromTicks(self.ticks);
+}
+
+public TimeOnly TimeOnly.Add(TimeOnly self, TimeSpan value)
+{
+    long ticks = (self.ticks + value.ticks) % 864000000000;
+    if (ticks < 0) { ticks += 864000000000; }
+    return new() { ticks = ticks };
+}
+
+public string TimeOnly.ToString(TimeOnly self)
+{
+    StringBuilder builder = new();
+    AppendTwoDigits(ref builder, self.Hour());
+    builder.AppendByte(58);
+    AppendTwoDigits(ref builder, self.Minute());
+    builder.AppendByte(58);
+    AppendTwoDigits(ref builder, self.Second());
+    builder.AppendByte(46);
+    AppendThreeDigits(ref builder, self.Millisecond());
+    return builder.ToString();
+}

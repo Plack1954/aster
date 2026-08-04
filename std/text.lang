@@ -1,0 +1,1540 @@
+namespace System.Text;
+
+public enum StringSplitOptions
+{
+    None,
+    RemoveEmptyEntries,
+    TrimEntries,
+}
+
+public enum Base64FormattingOptions
+{
+    None,
+    InsertLineBreaks,
+}
+
+public struct Convert {}
+
+public struct Encoding { byte marker; }
+public struct UTF8Encoding { byte marker; }
+
+extern char UnicodeToUpper(char value);
+extern char UnicodeToLower(char value);
+extern ulong UnicodeSpecialUpper(char value);
+extern ulong UnicodeSpecialLower(char value);
+extern bool UnicodeIsLetter(char value);
+extern bool UnicodeIsDigit(char value);
+extern bool UnicodeIsUpper(char value);
+extern bool UnicodeIsLower(char value);
+extern bool UnicodeIsWhiteSpace(char value);
+extern ulong UnicodeDecodeScalar(string value, usize index);
+
+// Aster strings are immutable, reference-counted UTF-8 values. The public
+// member names follow System.String, while positions and Length count bytes.
+// These primitives remain available for parsers and runtime-facing code.
+
+public extern usize StringLen(string value);
+
+public extern byte StringByteAt(
+    string value,
+    usize index
+);
+
+public extern string StringSlice(
+    string value,
+    usize start,
+    usize end
+);
+
+public extern string I64ToString(long value);
+
+public extern string U64ToString(ulong value);
+
+public extern string F32ToString(float value);
+
+public extern string F64ToString(double value);
+
+void AppendUnicodeScalar(ref StringBuilder builder, char value)
+{
+    uint scalar = (uint)value;
+    if (scalar <= 127)
+    {
+        builder.AppendByte((byte)scalar);
+    }
+    else if (scalar <= 2047)
+    {
+        builder.AppendByte((byte)(192 | (scalar >> 6)));
+        builder.AppendByte((byte)(128 | (scalar & 63)));
+    }
+    else if (scalar <= 65535)
+    {
+        builder.AppendByte((byte)(224 | (scalar >> 12)));
+        builder.AppendByte((byte)(128 | ((scalar >> 6) & 63)));
+        builder.AppendByte((byte)(128 | (scalar & 63)));
+    }
+    else
+    {
+        builder.AppendByte((byte)(240 | (scalar >> 18)));
+        builder.AppendByte((byte)(128 | ((scalar >> 12) & 63)));
+        builder.AppendByte((byte)(128 | ((scalar >> 6) & 63)));
+        builder.AppendByte((byte)(128 | (scalar & 63)));
+    }
+}
+
+void AppendSpecialCasing(ref StringBuilder builder, ulong packed)
+{
+    while (packed != 0)
+    {
+        AppendUnicodeScalar(ref builder, (char)(uint)(packed & 2097151));
+        packed >>= 21;
+    }
+}
+
+char DecodeUnicodeScalar(string value, usize index, out usize length)
+{
+    ulong decoded = UnicodeDecodeScalar(value, index);
+    if (decoded == ~(ulong)0)
+    {
+        throw new FormatException("String contains invalid UTF-8 data.");
+    }
+    length = (usize)(decoded >> 32);
+    return (char)(uint)(decoded & 4294967295);
+}
+
+public char char.ToUpperInvariant(char value)
+{
+    return UnicodeToUpper(value);
+}
+
+public char char.ToLowerInvariant(char value)
+{
+    return UnicodeToLower(value);
+}
+
+public bool char.IsLetter(char value) { return UnicodeIsLetter(value); }
+public bool char.IsDigit(char value) { return UnicodeIsDigit(value); }
+public bool char.IsUpper(char value) { return UnicodeIsUpper(value); }
+public bool char.IsLower(char value) { return UnicodeIsLower(value); }
+public bool char.IsWhiteSpace(char value)
+{
+    return UnicodeIsWhiteSpace(value);
+}
+public bool char.IsLetterOrDigit(char value)
+{
+    return char.IsLetter(value) || char.IsDigit(value);
+}
+
+public List<char> string.ToCharArray(string self)
+{
+    List<char> result = new();
+    usize index = 0;
+    while (index < self.Length)
+    {
+        usize length = 0;
+        char scalar = DecodeUnicodeScalar(self, index, out length);
+        result.Add(scalar);
+        index += length;
+    }
+    return result;
+}
+
+public string string.ToUpperInvariant(string self)
+{
+    StringBuilder result = new();
+    usize index = 0;
+    while (index < self.Length)
+    {
+        usize length = 0;
+        char scalar = DecodeUnicodeScalar(self, index, out length);
+        ulong special = UnicodeSpecialUpper(scalar);
+        if (special != 0) { AppendSpecialCasing(ref result, special); }
+        else { AppendUnicodeScalar(ref result, char.ToUpperInvariant(scalar)); }
+        index += length;
+    }
+    return result.ToString();
+}
+
+public string string.ToLowerInvariant(string self)
+{
+    StringBuilder result = new();
+    usize index = 0;
+    while (index < self.Length)
+    {
+        usize length = 0;
+        char scalar = DecodeUnicodeScalar(self, index, out length);
+        ulong special = UnicodeSpecialLower(scalar);
+        if (special != 0) { AppendSpecialCasing(ref result, special); }
+        else { AppendUnicodeScalar(ref result, char.ToLowerInvariant(scalar)); }
+        index += length;
+    }
+    return result.ToString();
+}
+
+public UTF8Encoding Encoding.UTF8()
+{
+    return new() { marker = 0 };
+}
+
+public List<byte> UTF8Encoding.GetBytes(UTF8Encoding self, string value)
+{
+    // Validate while copying so arbitrary invalid byte strings cannot silently
+    // enter a Unicode-facing API.
+    value.ToCharArray();
+    List<byte> bytes = new();
+    for (usize index = 0; index < value.Length; index += 1)
+    {
+        bytes.Add(value[index]);
+    }
+    return bytes;
+}
+
+public string UTF8Encoding.GetString(
+    UTF8Encoding self,
+    List<byte> bytes
+)
+{
+    StringBuilder result = new();
+    foreach (byte value in bytes)
+    {
+        result.AppendByte(value);
+    }
+    string text = result.ToString();
+    text.ToCharArray();
+    return text;
+}
+
+public string sbyte.ToString(sbyte self) { return I64ToString((long)self); }
+public string short.ToString(short self) { return I64ToString((long)self); }
+public string int.ToString(int self) { return I64ToString((long)self); }
+public string long.ToString(long self) { return I64ToString(self); }
+public string isize.ToString(isize self) { return I64ToString((long)self); }
+public string byte.ToString(byte self) { return U64ToString((ulong)self); }
+public string ushort.ToString(ushort self) { return U64ToString((ulong)self); }
+public string uint.ToString(uint self) { return U64ToString((ulong)self); }
+public string ulong.ToString(ulong self) { return U64ToString(self); }
+public string usize.ToString(usize self) { return U64ToString((ulong)self); }
+public string float.ToString(float self) { return F32ToString(self); }
+public string double.ToString(double self) { return F64ToString(self); }
+
+void BooleanFormatError()
+{
+    throw new FormatException("String was not recognized as a valid Boolean.");
+}
+
+bool ParseBoolean(string value)
+{
+    string text = value.Trim();
+    if (text.Length == 4 &&
+        (text[0] | 32) == 116 &&
+        (text[1] | 32) == 114 &&
+        (text[2] | 32) == 117 &&
+        (text[3] | 32) == 101) { return true; }
+    if (text.Length == 5 &&
+        (text[0] | 32) == 102 &&
+        (text[1] | 32) == 97 &&
+        (text[2] | 32) == 108 &&
+        (text[3] | 32) == 115 &&
+        (text[4] | 32) == 101) { return false; }
+    BooleanFormatError();
+    return false;
+}
+
+sbyte ConvertSignedToSByte(long value)
+{
+    if (value < -128 || value > 127) { NumericOverflowError(); }
+    return (sbyte)value;
+}
+
+sbyte ConvertUnsignedToSByte(ulong value)
+{
+    if (value > 127) { NumericOverflowError(); }
+    return (sbyte)value;
+}
+
+short ConvertSignedToInt16(long value)
+{
+    if (value < -32768 || value > 32767) { NumericOverflowError(); }
+    return (short)value;
+}
+
+short ConvertUnsignedToInt16(ulong value)
+{
+    if (value > 32767) { NumericOverflowError(); }
+    return (short)value;
+}
+
+int ConvertSignedToInt32(long value)
+{
+    if (value < -2147483647 - 1 || value > 2147483647)
+        { NumericOverflowError(); }
+    return (int)value;
+}
+
+int ConvertUnsignedToInt32(ulong value)
+{
+    if (value > 2147483647) { NumericOverflowError(); }
+    return (int)value;
+}
+
+long ConvertUnsignedToInt64(ulong value)
+{
+    if (value > 9223372036854775807) { NumericOverflowError(); }
+    return (long)value;
+}
+
+byte ConvertSignedToByte(long value)
+{
+    if (value < 0 || value > 255) { NumericOverflowError(); }
+    return (byte)value;
+}
+
+byte ConvertUnsignedToByte(ulong value)
+{
+    if (value > 255) { NumericOverflowError(); }
+    return (byte)value;
+}
+
+ushort ConvertSignedToUInt16(long value)
+{
+    if (value < 0 || value > 65535) { NumericOverflowError(); }
+    return (ushort)value;
+}
+
+ushort ConvertUnsignedToUInt16(ulong value)
+{
+    if (value > 65535) { NumericOverflowError(); }
+    return (ushort)value;
+}
+
+uint ConvertSignedToUInt32(long value)
+{
+    if (value < 0 || value > 4294967295) { NumericOverflowError(); }
+    return (uint)value;
+}
+
+uint ConvertUnsignedToUInt32(ulong value)
+{
+    if (value > 4294967295) { NumericOverflowError(); }
+    return (uint)value;
+}
+
+ulong ConvertSignedToUInt64(long value)
+{
+    if (value < 0) { NumericOverflowError(); }
+    return (ulong)value;
+}
+
+long RoundConvertToInt64(double value)
+{
+    if (value != value ||
+        value < -9223372036854775808.0 ||
+        value >= 9223372036854775808.0)
+    {
+        NumericOverflowError();
+    }
+    long whole = (long)value;
+    double remainder = value - (double)whole;
+    if (remainder > 0.5 ||
+        (remainder == 0.5 && whole % 2 != 0))
+    {
+        return whole + 1;
+    }
+    if (remainder < -0.5 ||
+        (remainder == -0.5 && whole % 2 != 0))
+    {
+        return whole - 1;
+    }
+    return whole;
+}
+
+ulong RoundConvertToUInt64(double value)
+{
+    if (value != value || value <= -1.0 ||
+        value >= 18446744073709551616.0)
+    {
+        NumericOverflowError();
+    }
+    if (value < 9223372036854775808.0)
+    {
+        return ConvertSignedToUInt64(RoundConvertToInt64(value));
+    }
+    return (ulong)value;
+}
+
+public bool Convert.ToBoolean(bool value) { return value; }
+public bool Convert.ToBoolean(sbyte value) { return value != 0; }
+public bool Convert.ToBoolean(short value) { return value != 0; }
+public bool Convert.ToBoolean(int value) { return value != 0; }
+public bool Convert.ToBoolean(long value) { return value != 0; }
+public bool Convert.ToBoolean(byte value) { return value != 0; }
+public bool Convert.ToBoolean(ushort value) { return value != 0; }
+public bool Convert.ToBoolean(uint value) { return value != 0; }
+public bool Convert.ToBoolean(ulong value) { return value != 0; }
+public bool Convert.ToBoolean(float value) { return value != 0.0; }
+public bool Convert.ToBoolean(double value) { return value != 0.0; }
+public bool Convert.ToBoolean(string value) { return ParseBoolean(value); }
+
+public sbyte Convert.ToSByte(bool value) { return if (value) { 1 } else { 0 }; }
+public sbyte Convert.ToSByte(sbyte value) { return value; }
+public sbyte Convert.ToSByte(short value) { return ConvertSignedToSByte((long)value); }
+public sbyte Convert.ToSByte(int value) { return ConvertSignedToSByte((long)value); }
+public sbyte Convert.ToSByte(long value) { return ConvertSignedToSByte(value); }
+public sbyte Convert.ToSByte(byte value) { return ConvertUnsignedToSByte((ulong)value); }
+public sbyte Convert.ToSByte(ushort value) { return ConvertUnsignedToSByte((ulong)value); }
+public sbyte Convert.ToSByte(uint value) { return ConvertUnsignedToSByte((ulong)value); }
+public sbyte Convert.ToSByte(ulong value) { return ConvertUnsignedToSByte(value); }
+public sbyte Convert.ToSByte(float value) { return ConvertSignedToSByte(RoundConvertToInt64((double)value)); }
+public sbyte Convert.ToSByte(double value) { return ConvertSignedToSByte(RoundConvertToInt64(value)); }
+public sbyte Convert.ToSByte(string value) { return sbyte.Parse(value); }
+
+public short Convert.ToInt16(bool value) { return if (value) { 1 } else { 0 }; }
+public short Convert.ToInt16(sbyte value) { return (short)value; }
+public short Convert.ToInt16(short value) { return value; }
+public short Convert.ToInt16(int value) { return ConvertSignedToInt16((long)value); }
+public short Convert.ToInt16(long value) { return ConvertSignedToInt16(value); }
+public short Convert.ToInt16(byte value) { return (short)value; }
+public short Convert.ToInt16(ushort value) { return ConvertUnsignedToInt16((ulong)value); }
+public short Convert.ToInt16(uint value) { return ConvertUnsignedToInt16((ulong)value); }
+public short Convert.ToInt16(ulong value) { return ConvertUnsignedToInt16(value); }
+public short Convert.ToInt16(float value) { return ConvertSignedToInt16(RoundConvertToInt64((double)value)); }
+public short Convert.ToInt16(double value) { return ConvertSignedToInt16(RoundConvertToInt64(value)); }
+public short Convert.ToInt16(string value) { return short.Parse(value); }
+
+public int Convert.ToInt32(bool value) { return if (value) { 1 } else { 0 }; }
+public int Convert.ToInt32(sbyte value) { return (int)value; }
+public int Convert.ToInt32(short value) { return (int)value; }
+public int Convert.ToInt32(int value) { return value; }
+public int Convert.ToInt32(long value) { return ConvertSignedToInt32(value); }
+public int Convert.ToInt32(byte value) { return (int)value; }
+public int Convert.ToInt32(ushort value) { return (int)value; }
+public int Convert.ToInt32(uint value) { return ConvertUnsignedToInt32((ulong)value); }
+public int Convert.ToInt32(ulong value) { return ConvertUnsignedToInt32(value); }
+public int Convert.ToInt32(float value) { return ConvertSignedToInt32(RoundConvertToInt64((double)value)); }
+public int Convert.ToInt32(double value) { return ConvertSignedToInt32(RoundConvertToInt64(value)); }
+public int Convert.ToInt32(string value) { return int.Parse(value); }
+
+public long Convert.ToInt64(bool value) { return if (value) { 1 } else { 0 }; }
+public long Convert.ToInt64(sbyte value) { return (long)value; }
+public long Convert.ToInt64(short value) { return (long)value; }
+public long Convert.ToInt64(int value) { return (long)value; }
+public long Convert.ToInt64(long value) { return value; }
+public long Convert.ToInt64(byte value) { return (long)value; }
+public long Convert.ToInt64(ushort value) { return (long)value; }
+public long Convert.ToInt64(uint value) { return (long)value; }
+public long Convert.ToInt64(ulong value) { return ConvertUnsignedToInt64(value); }
+public long Convert.ToInt64(float value) { return RoundConvertToInt64((double)value); }
+public long Convert.ToInt64(double value) { return RoundConvertToInt64(value); }
+public long Convert.ToInt64(string value) { return long.Parse(value); }
+
+public byte Convert.ToByte(bool value) { return if (value) { 1 } else { 0 }; }
+public byte Convert.ToByte(sbyte value) { return ConvertSignedToByte((long)value); }
+public byte Convert.ToByte(short value) { return ConvertSignedToByte((long)value); }
+public byte Convert.ToByte(int value) { return ConvertSignedToByte((long)value); }
+public byte Convert.ToByte(long value) { return ConvertSignedToByte(value); }
+public byte Convert.ToByte(byte value) { return value; }
+public byte Convert.ToByte(ushort value) { return ConvertUnsignedToByte((ulong)value); }
+public byte Convert.ToByte(uint value) { return ConvertUnsignedToByte((ulong)value); }
+public byte Convert.ToByte(ulong value) { return ConvertUnsignedToByte(value); }
+public byte Convert.ToByte(float value) { return ConvertSignedToByte(RoundConvertToInt64((double)value)); }
+public byte Convert.ToByte(double value) { return ConvertSignedToByte(RoundConvertToInt64(value)); }
+public byte Convert.ToByte(string value) { return byte.Parse(value); }
+
+public ushort Convert.ToUInt16(bool value) { return if (value) { 1 } else { 0 }; }
+public ushort Convert.ToUInt16(sbyte value) { return ConvertSignedToUInt16((long)value); }
+public ushort Convert.ToUInt16(short value) { return ConvertSignedToUInt16((long)value); }
+public ushort Convert.ToUInt16(int value) { return ConvertSignedToUInt16((long)value); }
+public ushort Convert.ToUInt16(long value) { return ConvertSignedToUInt16(value); }
+public ushort Convert.ToUInt16(byte value) { return (ushort)value; }
+public ushort Convert.ToUInt16(ushort value) { return value; }
+public ushort Convert.ToUInt16(uint value) { return ConvertUnsignedToUInt16((ulong)value); }
+public ushort Convert.ToUInt16(ulong value) { return ConvertUnsignedToUInt16(value); }
+public ushort Convert.ToUInt16(float value) { return ConvertSignedToUInt16(RoundConvertToInt64((double)value)); }
+public ushort Convert.ToUInt16(double value) { return ConvertSignedToUInt16(RoundConvertToInt64(value)); }
+public ushort Convert.ToUInt16(string value) { return ushort.Parse(value); }
+
+public uint Convert.ToUInt32(bool value) { return if (value) { 1 } else { 0 }; }
+public uint Convert.ToUInt32(sbyte value) { return ConvertSignedToUInt32((long)value); }
+public uint Convert.ToUInt32(short value) { return ConvertSignedToUInt32((long)value); }
+public uint Convert.ToUInt32(int value) { return ConvertSignedToUInt32((long)value); }
+public uint Convert.ToUInt32(long value) { return ConvertSignedToUInt32(value); }
+public uint Convert.ToUInt32(byte value) { return (uint)value; }
+public uint Convert.ToUInt32(ushort value) { return (uint)value; }
+public uint Convert.ToUInt32(uint value) { return value; }
+public uint Convert.ToUInt32(ulong value) { return ConvertUnsignedToUInt32(value); }
+public uint Convert.ToUInt32(float value) { return ConvertSignedToUInt32(RoundConvertToInt64((double)value)); }
+public uint Convert.ToUInt32(double value) { return ConvertSignedToUInt32(RoundConvertToInt64(value)); }
+public uint Convert.ToUInt32(string value) { return uint.Parse(value); }
+
+public ulong Convert.ToUInt64(bool value) { return if (value) { 1 } else { 0 }; }
+public ulong Convert.ToUInt64(sbyte value) { return ConvertSignedToUInt64((long)value); }
+public ulong Convert.ToUInt64(short value) { return ConvertSignedToUInt64((long)value); }
+public ulong Convert.ToUInt64(int value) { return ConvertSignedToUInt64((long)value); }
+public ulong Convert.ToUInt64(long value) { return ConvertSignedToUInt64(value); }
+public ulong Convert.ToUInt64(byte value) { return (ulong)value; }
+public ulong Convert.ToUInt64(ushort value) { return (ulong)value; }
+public ulong Convert.ToUInt64(uint value) { return (ulong)value; }
+public ulong Convert.ToUInt64(ulong value) { return value; }
+public ulong Convert.ToUInt64(float value) { return RoundConvertToUInt64((double)value); }
+public ulong Convert.ToUInt64(double value) { return RoundConvertToUInt64(value); }
+public ulong Convert.ToUInt64(string value) { return ulong.Parse(value); }
+
+public float Convert.ToSingle(bool value) { return if (value) { 1.0 } else { 0.0 }; }
+public float Convert.ToSingle(sbyte value) { return (float)value; }
+public float Convert.ToSingle(short value) { return (float)value; }
+public float Convert.ToSingle(int value) { return (float)value; }
+public float Convert.ToSingle(long value) { return (float)value; }
+public float Convert.ToSingle(byte value) { return (float)value; }
+public float Convert.ToSingle(ushort value) { return (float)value; }
+public float Convert.ToSingle(uint value) { return (float)value; }
+public float Convert.ToSingle(ulong value) { return (float)value; }
+public float Convert.ToSingle(float value) { return value; }
+public float Convert.ToSingle(double value) { return (float)value; }
+public float Convert.ToSingle(string value) { return float.Parse(value); }
+
+public double Convert.ToDouble(bool value) { return if (value) { 1.0 } else { 0.0 }; }
+public double Convert.ToDouble(sbyte value) { return (double)value; }
+public double Convert.ToDouble(short value) { return (double)value; }
+public double Convert.ToDouble(int value) { return (double)value; }
+public double Convert.ToDouble(long value) { return (double)value; }
+public double Convert.ToDouble(byte value) { return (double)value; }
+public double Convert.ToDouble(ushort value) { return (double)value; }
+public double Convert.ToDouble(uint value) { return (double)value; }
+public double Convert.ToDouble(ulong value) { return (double)value; }
+public double Convert.ToDouble(float value) { return (double)value; }
+public double Convert.ToDouble(double value) { return value; }
+public double Convert.ToDouble(string value) { return double.Parse(value); }
+
+public string Convert.ToString(bool value)
+{
+    return if (value) { "True" } else { "False" };
+}
+public string Convert.ToString(sbyte value) { return value.ToString(); }
+public string Convert.ToString(short value) { return value.ToString(); }
+public string Convert.ToString(int value) { return value.ToString(); }
+public string Convert.ToString(long value) { return value.ToString(); }
+public string Convert.ToString(byte value) { return value.ToString(); }
+public string Convert.ToString(ushort value) { return value.ToString(); }
+public string Convert.ToString(uint value) { return value.ToString(); }
+public string Convert.ToString(ulong value) { return value.ToString(); }
+public string Convert.ToString(float value) { return value.ToString(); }
+public string Convert.ToString(double value) { return value.ToString(); }
+public string Convert.ToString(string value) { return value; }
+
+byte Base64Digit(byte value)
+{
+    if (value < 26) { return 65 + value; }
+    if (value < 52) { return 97 + value - 26; }
+    if (value < 62) { return 48 + value - 52; }
+    return if (value == 62) { 43 } else { 47 };
+}
+
+int Base64Value(byte value)
+{
+    if (value >= 65 && value <= 90) { return (int)(value - 65); }
+    if (value >= 97 && value <= 122) { return (int)(value - 97 + 26); }
+    if (value >= 48 && value <= 57) { return (int)(value - 48 + 52); }
+    if (value == 43) { return 62; }
+    if (value == 47) { return 63; }
+    return -1;
+}
+
+bool IsBase64WhiteSpace(byte value)
+{
+    return value == 32 || value == 9 || value == 13 || value == 10;
+}
+
+void Base64FormatError()
+{
+    throw new FormatException("The input is not a valid Base-64 string.");
+}
+
+public string Convert.ToBase64String(List<byte> inArray)
+{
+    return Convert.ToBase64String(
+        inArray,
+        0,
+        (int)inArray.Count,
+        Base64FormattingOptions.None
+    );
+}
+
+public string Convert.ToBase64String(
+    List<byte> inArray,
+    Base64FormattingOptions options
+)
+{
+    return Convert.ToBase64String(inArray, 0, (int)inArray.Count, options);
+}
+
+public string Convert.ToBase64String(
+    List<byte> inArray,
+    int offset,
+    int length
+)
+{
+    return Convert.ToBase64String(
+        inArray,
+        offset,
+        length,
+        Base64FormattingOptions.None
+    );
+}
+
+void AppendBase64Character(
+    ref StringBuilder builder,
+    byte value,
+    ref int lineLength,
+    bool insertLineBreaks
+)
+{
+    if (insertLineBreaks && lineLength == 76)
+    {
+        builder.AppendByte(13);
+        builder.AppendByte(10);
+        lineLength = 0;
+    }
+    builder.AppendByte(value);
+    lineLength += 1;
+}
+
+public string Convert.ToBase64String(
+    List<byte> inArray,
+    int offset,
+    int length,
+    Base64FormattingOptions options
+)
+{
+    if (offset < 0 || length < 0 ||
+        (usize)offset > inArray.Count ||
+        (usize)length > inArray.Count - (usize)offset)
+    {
+        throw new ArgumentException("offset and length must identify a valid range");
+    }
+    if (options != Base64FormattingOptions.None &&
+        options != Base64FormattingOptions.InsertLineBreaks)
+    {
+        throw new ArgumentException("options contains an invalid value");
+    }
+    bool insertLineBreaks =
+        options == Base64FormattingOptions.InsertLineBreaks;
+    StringBuilder builder = new();
+    int lineLength = 0;
+    usize index = (usize)offset;
+    usize end = index + (usize)length;
+    while (index + 3 <= end)
+    {
+        uint bits = ((uint)inArray[index] << 16) |
+            ((uint)inArray[index + 1] << 8) |
+            (uint)inArray[index + 2];
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 18) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 12) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 6) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)(bits & 63)),
+            ref lineLength, insertLineBreaks);
+        index += 3;
+    }
+    usize remaining = end - index;
+    if (remaining == 1)
+    {
+        uint bits = (uint)inArray[index] << 16;
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 18) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 12) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder, 61,
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder, 61,
+            ref lineLength, insertLineBreaks);
+    }
+    else if (remaining == 2)
+    {
+        uint bits = ((uint)inArray[index] << 16) |
+            ((uint)inArray[index + 1] << 8);
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 18) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 12) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder,
+            Base64Digit((byte)((bits >> 6) & 63)),
+            ref lineLength, insertLineBreaks);
+        AppendBase64Character(ref builder, 61,
+            ref lineLength, insertLineBreaks);
+    }
+    return builder.ToString();
+}
+
+public List<byte> Convert.FromBase64String(string value)
+{
+    List<byte> symbols = new();
+    for (usize index = 0; index < value.Length; index++)
+    {
+        byte symbol = value[index];
+        if (!IsBase64WhiteSpace(symbol)) { symbols.Add(symbol); }
+    }
+    if (symbols.Count % 4 != 0) { Base64FormatError(); }
+
+    List<byte> bytes = new();
+    usize index = 0;
+    while (index < symbols.Count)
+    {
+        byte first = symbols[index];
+        byte second = symbols[index + 1];
+        byte third = symbols[index + 2];
+        byte fourth = symbols[index + 3];
+        int firstValue = Base64Value(first);
+        int secondValue = Base64Value(second);
+        int thirdValue = if (third == 61) { 0 } else { Base64Value(third) };
+        int fourthValue = if (fourth == 61) { 0 } else { Base64Value(fourth) };
+        bool finalQuartet = index + 4 == symbols.Count;
+        if (firstValue < 0 || secondValue < 0 ||
+            thirdValue < 0 || fourthValue < 0 ||
+            third == 61 && (fourth != 61 || !finalQuartet) ||
+            fourth == 61 && !finalQuartet)
+        {
+            Base64FormatError();
+        }
+        uint bits = ((uint)firstValue << 18) |
+            ((uint)secondValue << 12) |
+            ((uint)thirdValue << 6) |
+            (uint)fourthValue;
+        bytes.Add((byte)((bits >> 16) & 255));
+        if (third != 61) { bytes.Add((byte)((bits >> 8) & 255)); }
+        if (fourth != 61) { bytes.Add((byte)(bits & 255)); }
+        index += 4;
+    }
+    return bytes;
+}
+
+bool IsAsciiWhiteSpace(byte value)
+{
+    return value == 32 || (value >= 9 && value <= 13);
+}
+
+usize WhiteSpaceLengthAt(string value, usize index)
+{
+    byte first = value[index];
+    if (IsAsciiWhiteSpace(first)) { return 1; }
+    if (first == 194 && index + 1 < value.Length)
+    {
+        byte second = value[index + 1];
+        if (second == 133 || second == 160) { return 2; }
+    }
+    if (index + 2 >= value.Length) { return 0; }
+    byte second = value[index + 1];
+    byte third = value[index + 2];
+    if (first == 225 && second == 154 && third == 128) { return 3; }
+    if (first == 226 && second == 128 &&
+        ((third >= 128 && third <= 138) ||
+         third == 168 || third == 169 || third == 175)) { return 3; }
+    if (first == 226 && second == 129 && third == 159) { return 3; }
+    if (first == 227 && second == 128 && third == 128) { return 3; }
+    return 0;
+}
+
+usize WhiteSpaceLengthBefore(string value, usize end)
+{
+    byte last = value[end - 1];
+    if (IsAsciiWhiteSpace(last)) { return 1; }
+    if (end >= 2 && value[end - 2] == 194 &&
+        (last == 133 || last == 160)) { return 2; }
+    if (end < 3) { return 0; }
+    byte first = value[end - 3];
+    byte second = value[end - 2];
+    if (first == 225 && second == 154 && last == 128) { return 3; }
+    if (first == 226 && second == 128 &&
+        ((last >= 128 && last <= 138) ||
+         last == 168 || last == 169 || last == 175)) { return 3; }
+    if (first == 226 && second == 129 && last == 159) { return 3; }
+    if (first == 227 && second == 128 && last == 128) { return 3; }
+    return 0;
+}
+
+void NumericFormatError()
+{
+    throw new FormatException("Input string was not in a correct format.");
+}
+
+void NumericOverflowError()
+{
+    throw new OverflowException("Value was either too large or too small.");
+}
+
+long ParseSignedDecimal(
+    string text,
+    ulong positiveLimit,
+    ulong negativeLimit
+)
+{
+    usize start = 0;
+    usize end = text.Length;
+    while (start < end && IsAsciiWhiteSpace(text[start]))
+    {
+        start += 1;
+    }
+    while (end > start && IsAsciiWhiteSpace(text[end - 1]))
+    {
+        end -= 1;
+    }
+    if (start == end) { NumericFormatError(); }
+
+    bool negative = false;
+    if (text[start] == 43 || text[start] == 45)
+    {
+        negative = text[start] == 45;
+        start += 1;
+    }
+    if (start == end) { NumericFormatError(); }
+
+    ulong limit = if (negative) { negativeLimit } else { positiveLimit };
+    ulong value = 0;
+    for (usize index = start; index < end; index++)
+    {
+        byte current = text[index];
+        if (current < 48 || current > 57) { NumericFormatError(); }
+        ulong digit = (ulong)(current - 48);
+        if (value > (limit - digit) / 10) { NumericOverflowError(); }
+        value = value * 10 + digit;
+    }
+    if (!negative) { return (long)value; }
+    ulong minimumMagnitude = 9223372036854775808;
+    if (value == minimumMagnitude)
+    {
+        return -9223372036854775807 - 1;
+    }
+    return -(long)value;
+}
+
+ulong ParseUnsignedDecimal(string text, ulong limit)
+{
+    usize start = 0;
+    usize end = text.Length;
+    while (start < end && IsAsciiWhiteSpace(text[start]))
+    {
+        start += 1;
+    }
+    while (end > start && IsAsciiWhiteSpace(text[end - 1]))
+    {
+        end -= 1;
+    }
+    if (start == end) { NumericFormatError(); }
+
+    bool negative = false;
+    if (text[start] == 43 || text[start] == 45)
+    {
+        negative = text[start] == 45;
+        start += 1;
+    }
+    if (start == end) { NumericFormatError(); }
+
+    ulong value = 0;
+    for (usize index = start; index < end; index++)
+    {
+        byte current = text[index];
+        if (current < 48 || current > 57) { NumericFormatError(); }
+        ulong digit = (ulong)(current - 48);
+        if (value > (limit - digit) / 10) { NumericOverflowError(); }
+        value = value * 10 + digit;
+    }
+    if (negative && value != 0) { NumericOverflowError(); }
+    return value;
+}
+
+double ParseInvariantFloating(string text)
+{
+    usize start = 0;
+    usize end = text.Length;
+    while (start < end && IsAsciiWhiteSpace(text[start]))
+    {
+        start += 1;
+    }
+    while (end > start && IsAsciiWhiteSpace(text[end - 1]))
+    {
+        end -= 1;
+    }
+    if (start == end) { NumericFormatError(); }
+
+    bool negative = false;
+    if (text[start] == 43 || text[start] == 45)
+    {
+        negative = text[start] == 45;
+        start += 1;
+    }
+
+    double value = 0.0;
+    bool hasDigit = false;
+    while (start < end && text[start] >= 48 && text[start] <= 57)
+    {
+        value = value * 10.0 + (double)(text[start] - 48);
+        hasDigit = true;
+        start += 1;
+    }
+    if (start < end && text[start] == 46)
+    {
+        start += 1;
+        double scale = 0.1;
+        while (start < end && text[start] >= 48 && text[start] <= 57)
+        {
+            value += (double)(text[start] - 48) * scale;
+            scale *= 0.1;
+            hasDigit = true;
+            start += 1;
+        }
+    }
+    if (!hasDigit) { NumericFormatError(); }
+
+    bool exponentNegative = false;
+    ulong exponent = 0;
+    if (start < end && (text[start] == 69 || text[start] == 101))
+    {
+        start += 1;
+        if (start < end && (text[start] == 43 || text[start] == 45))
+        {
+            exponentNegative = text[start] == 45;
+            start += 1;
+        }
+        usize exponentStart = start;
+        while (start < end && text[start] >= 48 && text[start] <= 57)
+        {
+            if (exponent < 400)
+            {
+                exponent = exponent * 10 + (ulong)(text[start] - 48);
+            }
+            start += 1;
+        }
+        if (start == exponentStart) { NumericFormatError(); }
+    }
+    if (start != end) { NumericFormatError(); }
+
+    if (exponent > 400) { exponent = 400; }
+    for (ulong power = 0; power < exponent; power++)
+    {
+        if (exponentNegative) { value /= 10.0; }
+        else { value *= 10.0; }
+    }
+    return if (negative) { -value } else { value };
+}
+
+public sbyte sbyte.Parse(string text)
+{
+    return (sbyte)ParseSignedDecimal(text, 127, 128);
+}
+
+public short short.Parse(string text)
+{
+    return (short)ParseSignedDecimal(text, 32767, 32768);
+}
+
+public int int.Parse(string text)
+{
+    return (int)ParseSignedDecimal(text, 2147483647, 2147483648);
+}
+
+public long long.Parse(string text)
+{
+    return ParseSignedDecimal(
+        text, 9223372036854775807, 9223372036854775808
+    );
+}
+
+public isize isize.Parse(string text)
+{
+    return (isize)long.Parse(text);
+}
+
+public byte byte.Parse(string text)
+{
+    return (byte)ParseUnsignedDecimal(text, 255);
+}
+
+public ushort ushort.Parse(string text)
+{
+    return (ushort)ParseUnsignedDecimal(text, 65535);
+}
+
+public uint uint.Parse(string text)
+{
+    return (uint)ParseUnsignedDecimal(text, 4294967295);
+}
+
+public ulong ulong.Parse(string text)
+{
+    return ParseUnsignedDecimal(text, 18446744073709551615);
+}
+
+public usize usize.Parse(string text)
+{
+    return (usize)ulong.Parse(text);
+}
+
+public float float.Parse(string text)
+{
+    return (float)ParseInvariantFloating(text);
+}
+
+public double double.Parse(string text)
+{
+    return ParseInvariantFloating(text);
+}
+
+public bool sbyte.TryParse(string text, out sbyte result)
+{
+    result = 0;
+    try { result = sbyte.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool short.TryParse(string text, out short result)
+{
+    result = 0;
+    try { result = short.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool int.TryParse(string text, out int result)
+{
+    result = 0;
+    try { result = int.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool long.TryParse(string text, out long result)
+{
+    result = 0;
+    try { result = long.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool isize.TryParse(string text, out isize result)
+{
+    result = 0;
+    try { result = isize.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool byte.TryParse(string text, out byte result)
+{
+    result = 0;
+    try { result = byte.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool ushort.TryParse(string text, out ushort result)
+{
+    result = 0;
+    try { result = ushort.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool uint.TryParse(string text, out uint result)
+{
+    result = 0;
+    try { result = uint.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool ulong.TryParse(string text, out ulong result)
+{
+    result = 0;
+    try { result = ulong.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool usize.TryParse(string text, out usize result)
+{
+    result = 0;
+    try { result = usize.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool float.TryParse(string text, out float result)
+{
+    result = 0.0;
+    try { result = float.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public bool double.TryParse(string text, out double result)
+{
+    result = 0.0;
+    try { result = double.Parse(text); return true; }
+    catch (Exception error) { return false; }
+}
+
+public Option<usize> StringFindByte(string value, byte byte)
+{
+    for (usize index = 0; index < value.Length; index++)
+    {
+        if (value[index] == byte)
+        {
+            return Option.Some(index);
+        }
+    }
+    return Option.None;
+}
+
+public bool string.StartsWith(string self, string value)
+{
+    if (value.Length > self.Length)
+    {
+        return false;
+    }
+    for (usize index = 0; index < value.Length; index++)
+    {
+        if (self[index] != value[index])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+public bool string.EndsWith(string self, string value)
+{
+    if (value.Length > self.Length)
+    {
+        return false;
+    }
+    usize start = self.Length - value.Length;
+    for (usize index = 0; index < value.Length; index++)
+    {
+        if (self[start + index] != value[index])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+public long string.IndexOf(string self, string value)
+{
+    return self.IndexOf(value, 0);
+}
+
+public long string.IndexOf(
+    string self,
+    string value,
+    usize startIndex
+)
+{
+    if (value.Length == 0)
+    {
+        return (long)startIndex;
+    }
+    if (startIndex > self.Length || value.Length > self.Length - startIndex)
+    {
+        return -1;
+    }
+    usize start = startIndex;
+    while (start + value.Length <= self.Length)
+    {
+        if (StringSlice(self, start, start + value.Length) == value)
+        {
+            return (long)start;
+        }
+        start += 1;
+    }
+    return -1;
+}
+
+public long string.LastIndexOf(string self, string value)
+{
+    if (value.Length == 0)
+    {
+        return (long)self.Length;
+    }
+    if (value.Length > self.Length)
+    {
+        return -1;
+    }
+    usize start = self.Length - value.Length;
+    while (true)
+    {
+        if (StringSlice(self, start, start + value.Length) == value)
+        {
+            return (long)start;
+        }
+        if (start == 0)
+        {
+            break;
+        }
+        start -= 1;
+    }
+    return -1;
+}
+
+public bool string.Contains(string self, string value)
+{
+    return self.IndexOf(value) != -1;
+}
+
+public string string.Substring(string self, usize startIndex)
+{
+    return StringSlice(self, startIndex, self.Length);
+}
+
+public string string.Substring(
+    string self,
+    usize startIndex,
+    usize length
+)
+{
+    return StringSlice(self, startIndex, startIndex + length);
+}
+
+public string string.Insert(
+    string self,
+    usize startIndex,
+    string value
+)
+{
+    return string.Concat(
+        self.Substring(0, startIndex),
+        value,
+        self.Substring(startIndex)
+    );
+}
+
+public string string.Remove(string self, usize startIndex)
+{
+    return self.Substring(0, startIndex);
+}
+
+public string string.Remove(
+    string self,
+    usize startIndex,
+    usize count
+)
+{
+    return string.Concat(
+        self.Substring(0, startIndex),
+        self.Substring(startIndex + count)
+    );
+}
+
+public string string.Replace(
+    string self,
+    string oldValue,
+    string newValue
+)
+{
+    if (oldValue.Length == 0)
+    {
+        throw new ArgumentException("oldValue cannot be empty");
+    }
+    long first = self.IndexOf(oldValue);
+    if (first == -1)
+    {
+        return self;
+    }
+
+    StringBuilder builder = new();
+    usize cursor = 0;
+    long found = first;
+    while (found != -1)
+    {
+        usize position = (usize)found;
+        builder.Append(self.Substring(cursor, position - cursor));
+        builder.Append(newValue);
+        cursor = position + oldValue.Length;
+        found = self.IndexOf(oldValue, cursor);
+    }
+    builder.Append(self.Substring(cursor));
+    return builder.ToString();
+}
+
+public bool string.IsNullOrEmpty(string? value)
+{
+    if (value == null)
+    {
+        return true;
+    }
+    string present = value.Value;
+    return present.Length == 0;
+}
+
+public bool string.IsNullOrWhiteSpace(string? value)
+{
+    if (value == null)
+    {
+        return true;
+    }
+    string present = value.Value;
+    usize index = 0;
+    while (index < present.Length)
+    {
+        usize width = WhiteSpaceLengthAt(present, index);
+        if (width == 0)
+        {
+            return false;
+        }
+        index += width;
+    }
+    return true;
+}
+
+public string string.TrimStart(string self)
+{
+    usize start = 0;
+    while (start < self.Length)
+    {
+        usize width = WhiteSpaceLengthAt(self, start);
+        if (width == 0) { break; }
+        start += width;
+    }
+    return self.Substring(start);
+}
+
+public string string.TrimEnd(string self)
+{
+    usize end = self.Length;
+    while (end > 0)
+    {
+        usize width = WhiteSpaceLengthBefore(self, end);
+        if (width == 0) { break; }
+        end -= width;
+    }
+    return self.Substring(0, end);
+}
+
+public string string.Trim(string self)
+{
+    usize start = 0;
+    usize end = self.Length;
+    while (start < end)
+    {
+        usize width = WhiteSpaceLengthAt(self, start);
+        if (width == 0) { break; }
+        start += width;
+    }
+    while (end > start)
+    {
+        usize width = WhiteSpaceLengthBefore(self, end);
+        if (width == 0) { break; }
+        end -= width;
+    }
+    return self.Substring(start, end - start);
+}
+
+bool HasSplitOption(
+    StringSplitOptions options,
+    StringSplitOptions option
+)
+{
+    return (options & option) != StringSplitOptions.None;
+}
+
+void AddSplitEntry(
+    ref List<string> parts,
+    string value,
+    StringSplitOptions options
+)
+{
+    string entry = if (HasSplitOption(
+        options,
+        StringSplitOptions.TrimEntries
+    ))
+    {
+        value.Trim()
+    }
+    else
+    {
+        value
+    };
+    if (!HasSplitOption(
+            options,
+            StringSplitOptions.RemoveEmptyEntries
+        ) || entry.Length != 0)
+    {
+        parts.Add(entry);
+    }
+}
+
+public List<string> string.Split(string self, string separator)
+{
+    return self.Split(separator, 2147483647, StringSplitOptions.None);
+}
+
+public List<string> string.Split(
+    string self,
+    string separator,
+    StringSplitOptions options
+)
+{
+    return self.Split(separator, 2147483647, options);
+}
+
+public List<string> string.Split(
+    string self,
+    string separator,
+    int count,
+    StringSplitOptions options
+)
+{
+    if (count < 0)
+    {
+        throw new ArgumentException("count cannot be negative");
+    }
+    StringSplitOptions supported =
+        StringSplitOptions.RemoveEmptyEntries |
+        StringSplitOptions.TrimEntries;
+    if ((options & ~supported) != StringSplitOptions.None)
+    {
+        throw new ArgumentException("options contains an invalid value");
+    }
+
+    List<string> parts = new();
+    if (count == 0) { return parts; }
+    if (separator.Length == 0)
+    {
+        AddSplitEntry(ref parts, self, options);
+        return parts;
+    }
+    usize start = 0;
+    long found = self.IndexOf(separator);
+    while (found != -1 && parts.Count < (usize)(count - 1))
+    {
+        usize position = (usize)found;
+        AddSplitEntry(
+            ref parts,
+            self.Substring(start, position - start),
+            options
+        );
+        start = position + separator.Length;
+        found = self.IndexOf(separator, start);
+    }
+    AddSplitEntry(ref parts, self.Substring(start), options);
+    return parts;
+}
+
+public List<string> string.Split(string self)
+{
+    List<string> parts = new();
+    usize start = 0;
+    usize index = 0;
+    while (index < self.Length)
+    {
+        usize width = WhiteSpaceLengthAt(self, index);
+        if (width == 0)
+        {
+            index += 1;
+            continue;
+        }
+        parts.Add(self.Substring(start, index - start));
+        index += width;
+        start = index;
+    }
+    parts.Add(self.Substring(start));
+    return parts;
+}
+
+public string string.Concat(string first, string second)
+{
+    StringBuilder builder = new();
+    builder.Append(first);
+    builder.Append(second);
+    return builder.ToString();
+}
+
+public string string.Concat(
+    string first,
+    string second,
+    string third
+)
+{
+    StringBuilder builder = new();
+    builder.Append(first);
+    builder.Append(second);
+    builder.Append(third);
+    return builder.ToString();
+}
+
+public string string.Concat(
+    string first,
+    string second,
+    string third,
+    string fourth
+)
+{
+    StringBuilder builder = new();
+    builder.Append(first);
+    builder.Append(second);
+    builder.Append(third);
+    builder.Append(fourth);
+    return builder.ToString();
+}
+
+public string string.Concat(List<string> values)
+{
+    StringBuilder builder = new();
+    foreach (string value in values)
+    {
+        builder.Append(value);
+    }
+    return builder.ToString();
+}
+
+public string string.Join(string separator, List<string> values)
+{
+    StringBuilder builder = new();
+    bool first = true;
+    foreach (string value in values)
+    {
+        if (!first)
+        {
+            builder.Append(separator);
+        }
+        builder.Append(value);
+        first = false;
+    }
+    return builder.ToString();
+}
+
+public int string.CompareOrdinal(string first, string second)
+{
+    usize shared = if (first.Length < second.Length)
+    {
+        first.Length
+    }
+    else
+    {
+        second.Length
+    };
+    for (usize index = 0; index < shared; index++)
+    {
+        if (first[index] < second[index]) { return -1; }
+        if (first[index] > second[index]) { return 1; }
+    }
+    if (first.Length < second.Length) { return -1; }
+    if (first.Length > second.Length) { return 1; }
+    return 0;
+}
+
+public bool string.Equals(string first, string second)
+{
+    return first == second;
+}
+
+public void StringBuilder.AppendLine(ref StringBuilder self)
+{
+    self.Append("\n");
+}
+
+public void StringBuilder.AppendLine(
+    ref StringBuilder self,
+    string value
+)
+{
+    self.Append(value);
+    self.Append("\n");
+}

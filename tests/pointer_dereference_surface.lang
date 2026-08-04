@@ -1,0 +1,18 @@
+long* SelectedPointer(long* pointer) {
+    print(99);
+    return pointer;
+}
+
+int main() {
+    Arena arena = Arena.new();
+    unsafe {
+        long* pointer = ArenaAlloc(arena, 8);
+        *pointer = 40;
+        *SelectedPointer(pointer) += 2;
+        print(*pointer);
+
+        const long* readable = ArenaAlloc(arena, 8);
+        print(*readable);
+    }
+    return 0;
+}

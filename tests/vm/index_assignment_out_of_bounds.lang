@@ -1,0 +1,6 @@
+int main() {
+    [long; 2] values = [1, 2];
+    long index = 3;
+    values[index] = 9;
+    return 0;
+}

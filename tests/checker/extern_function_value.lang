@@ -1,0 +1,6 @@
+extern long NativeClock();
+
+int main() {
+    long() clock = nativeClock;
+    return 0;
+}

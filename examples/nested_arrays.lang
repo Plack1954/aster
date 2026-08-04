@@ -1,0 +1,19 @@
+using Thousand = long[1_000];
+
+void AcceptLarge(Thousand value) {
+    print(value[0]);
+}
+
+int main() {
+    long matrix[2][2] = [
+        [1, 2],
+        [3, 4],
+    ];
+    print(matrix[1][0]);
+
+    const long* pointers[2] = [null, null];
+    if (pointers[0] == null) {
+        print("null element");
+    }
+    return 0;
+}

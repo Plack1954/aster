@@ -1,0 +1,349 @@
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const islandStates = new WeakMap();
+const hydratedSources = new WeakSet();
+
+function targetFor(scope, name) {
+    return scope.querySelector(`[name="${CSS.escape(name)}"]`);
+}
+
+function targetValue(source, scope, type, name) {
+    const selector = `[name="${CSS.escape(name)}"]`;
+    const target = source.matches(selector) ? source : targetFor(scope, name);
+    if (target === null)
+        throw new Error(`Aster state target is missing: ${name}`);
+    if (type === "s")
+        return "value" in target ? target.value : target.textContent ?? "";
+    let value;
+    if (target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement) {
+        if (target instanceof HTMLInputElement && target.type === "checkbox")
+            value = target.checked ? 1 : 0;
+        else if (target instanceof HTMLInputElement && target.type === "number")
+            value = Number(target.value);
+        else
+            value = target.value.length;
+    } else {
+        value = Number.parseInt(target.textContent ?? "0", 10);
+    }
+    if (type === "b") return value === 0 ? 0 : 1;
+    if (type === "l") return BigInt(value);
+    return value;
+}
+
+function eventScope(source, root) {
+    return source.closest("form") ?? source.closest("[id]") ?? root;
+}
+
+function stateFor(scope) {
+    let state = islandStates.get(scope);
+    if (state === undefined) {
+        state = new Map();
+        islandStates.set(scope, state);
+    }
+    return state;
+}
+
+function stateKey(type, name) {
+    return `${type}:${name}`;
+}
+
+function stateValue(source, scope, state, type, name) {
+    if (type === "s") return targetValue(source, scope, type, name);
+    const key = stateKey(type, name);
+    if (state.has(key)) return state.get(key);
+    let value;
+    const ariaName = `aria-${name.replaceAll("_", "-")}`;
+    if (type === "b" && source.hasAttribute(ariaName))
+        value = source.getAttribute(ariaName) === "true" ? 1 : 0;
+    else
+        value = targetValue(source, scope, type, name);
+    state.set(key, value);
+    return value;
+}
+
+function marshalArguments(source, scope, state, parameters, exports, memory) {
+    const args = [];
+    const allocations = [];
+    for (const [type, name] of parameters) {
+        const value = stateValue(source, scope, state, type, name);
+        if (type !== "s") {
+            args.push(value);
+            continue;
+        }
+        const bytes = encoder.encode(value);
+        const pointer = Number(exports.aster_export_memory_alloc(bytes.length));
+        if (pointer === 0) throw new Error("Aster Wasm input allocation failed");
+        new Uint8Array(memory.buffer, pointer, bytes.length).set(bytes);
+        args.push(pointer, bytes.length);
+        allocations.push(pointer);
+    }
+    return {args, allocations};
+}
+
+function decodeOwnedString(handle, exports, memory) {
+    if (handle === 0) throw new Error("Aster returned a null String");
+    try {
+        const pointer = Number(exports.aster_export_string_data(handle));
+        const length = Number(exports.aster_export_string_length(handle));
+        return decoder.decode(new Uint8Array(memory.buffer, pointer, length));
+    } finally {
+        exports.aster_export_string_drop(handle);
+    }
+}
+
+function updateText(scope, name, value) {
+    const target = targetFor(scope, name);
+    if (target === null) return;
+    if (target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement)
+        target.value = String(value);
+    else
+        target.textContent = String(value);
+}
+
+function updateValidity(source, valid) {
+    source.setAttribute("aria-invalid", valid ? "false" : "true");
+    const describedBy = source.getAttribute("aria-describedby");
+    if (describedBy === null) return;
+    for (const id of describedBy.split(/\s+/)) {
+        const message = document.getElementById(id);
+        if (message !== null) message.hidden = valid;
+    }
+}
+
+function updateBooleanState(source, name, value) {
+    const ariaName = `aria-${name.replaceAll("_", "-")}`;
+    if (source.hasAttribute(ariaName))
+        source.setAttribute(ariaName, value ? "true" : "false");
+    const controlledId = source.getAttribute("aria-controls");
+    if (controlledId === null) return;
+    const controlled = document.getElementById(controlledId);
+    if (controlled !== null) controlled.hidden = !value;
+}
+
+function commitScalarState(
+    source, scope, state, resultType, parameters, result
+) {
+    if (parameters.length === 0 || parameters[0][0] !== resultType)
+        return false;
+    const [, name] = parameters[0];
+    const value = resultType === "b" ? (result !== 0 ? 1 : 0) : result;
+    state.set(stateKey(resultType, name), value);
+    if (resultType === "b")
+        updateBooleanState(source, name, value !== 0);
+    else
+        updateText(scope, name, value);
+    return true;
+}
+
+function controlledTarget(source) {
+    const controlledId = source.getAttribute("aria-controls");
+    return controlledId === null ? null : document.getElementById(controlledId);
+}
+
+function collectionFor(source, state) {
+    const controlled = controlledTarget(source);
+    if (controlled === null) return null;
+    const key = `collection:${controlled.id}`;
+    let collection = state.get(key);
+    if (collection === undefined) {
+        collection = new Map();
+        for (const child of controlled.children)
+            if (child.id !== "") collection.set(child.id, child);
+        state.set(key, collection);
+    }
+    return {controlled, collection};
+}
+
+function applyKeyedHtml(source, state, html, hydrateWithin) {
+    const destination = collectionFor(source, state);
+    if (destination === null)
+        throw new Error("Aster aggregate Html requires an aria-controls target");
+    const {controlled, collection} = destination;
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    for (const child of [...template.content.children]) {
+        const existing = child.id === "" ? null : collection.get(child.id);
+        if (existing === null || existing === undefined || !existing.isConnected)
+            controlled.append(child);
+        else
+            existing.replaceWith(child);
+        if (child.id !== "") collection.set(child.id, child);
+    }
+    hydrateWithin(controlled);
+}
+
+function removeControlledKey(source, state, key) {
+    const destination = collectionFor(source, state);
+    if (destination === null) return false;
+    const item = destination.collection.get(key);
+    if (item === undefined) return false;
+    item.remove();
+    destination.collection.delete(key);
+    return true;
+}
+
+function applyAggregateResult(
+    handle, fields, drop, source, scope, state, exports, memory,
+    hydrateWithin
+) {
+    try {
+        for (const {type, name, accessor} of fields) {
+            if (type === "h") {
+                const htmlHandle = Number(accessor(handle));
+                const stringHandle = Number(
+                    exports.aster_export_html_render(htmlHandle)
+                );
+                applyKeyedHtml(
+                    source, state,
+                    decodeOwnedString(stringHandle, exports, memory),
+                    hydrateWithin
+                );
+            } else if (type === "o") {
+                const value = decodeOwnedString(
+                    Number(accessor(handle)), exports, memory
+                );
+                state.set(stateKey(type, name), value);
+                updateText(scope, name, value);
+            } else {
+                const value = accessor(handle);
+                commitScalarState(
+                    source, scope, state, type, [[type, name]], value
+                );
+            }
+        }
+    } finally {
+        drop(handle);
+    }
+}
+
+function updateSubmission(form, message) {
+    const accepted = message.length !== 0;
+    const success = document.getElementById(`${form.id}-success`);
+    const error = document.getElementById(`${form.id}-error`);
+    if (success !== null) {
+        if (accepted) success.textContent = message;
+        success.hidden = !accepted;
+    }
+    if (error !== null) error.hidden = accepted;
+}
+
+export async function hydrateAster({wasmUrl, root = document}) {
+    let memory;
+    const imports = {
+        aster: {
+            trap(pointer, length) {
+                const bytes = new Uint8Array(memory.buffer, pointer, length);
+                throw new Error(decoder.decode(bytes));
+            }
+        }
+    };
+    const response = await fetch(wasmUrl);
+    const {instance} = await WebAssembly.instantiateStreaming(response, imports);
+    memory = instance.exports.memory;
+
+    function hydrateWithin(container) {
+      for (const source of container.querySelectorAll("[data-aster-event]")) {
+        if (hydratedSources.has(source)) continue;
+        const [eventName, handlerName, resultType, ...parameterBindings] =
+            source.dataset.asterEvent.split("|");
+        const handler = instance.exports[`aster_export_${handlerName}`];
+        if (typeof handler !== "function")
+            throw new Error(`Aster Wasm export is missing: ${handlerName}`);
+        const parameters = parameterBindings.map((binding) => {
+            const separator = binding.indexOf(":");
+            return [binding.slice(0, separator), binding.slice(separator + 1)];
+        });
+        const aggregatePrefix =
+            `aster_export_${handlerName}_result_`;
+        const aggregateFields = resultType === "a"
+            ? Object.entries(instance.exports).flatMap(([name, accessor]) => {
+                if (!name.startsWith(aggregatePrefix) ||
+                    name.endsWith("_drop"))
+                    return [];
+                const descriptor = name.slice(aggregatePrefix.length);
+                return [{
+                    type: descriptor[0],
+                    name: descriptor.slice(2),
+                    accessor
+                }];
+            })
+            : [];
+        const aggregateDrop = resultType === "a"
+            ? instance.exports[`${aggregatePrefix}drop`]
+            : null;
+        collectionFor(
+            source, stateFor(eventScope(source, root))
+        );
+
+        source.addEventListener(eventName, (event) => {
+            const form = source.closest("form");
+            const scope = eventScope(source, root);
+            const state = stateFor(scope);
+            const marshalled = marshalArguments(
+                source, scope, state, parameters, instance.exports, memory
+            );
+            let result;
+            try {
+                result = handler(...marshalled.args);
+            } finally {
+                for (const pointer of marshalled.allocations)
+                    instance.exports.aster_export_memory_free(pointer);
+            }
+            // Keep ordinary form submission as the failure path. The default
+            // is cancelled only after the synchronous Aster transition
+            // returns successfully.
+            if (eventName === "submit") event.preventDefault();
+            if (resultType === "o") {
+                const message = decodeOwnedString(
+                    Number(result), instance.exports, memory
+                );
+                if (eventName === "submit" && form !== null)
+                    updateSubmission(form, message);
+                else
+                    removeControlledKey(source, state, message);
+            } else if (resultType === "h") {
+                const stringHandle = Number(
+                    instance.exports.aster_export_html_render(
+                        Number(result)
+                    )
+                );
+                applyKeyedHtml(
+                    source, state,
+                    decodeOwnedString(
+                        stringHandle, instance.exports, memory
+                    ),
+                    hydrateWithin
+                );
+            } else if (resultType === "a") {
+                if (typeof aggregateDrop !== "function")
+                    throw new Error(
+                        `Aster aggregate drop export is missing: ${handlerName}`
+                    );
+                applyAggregateResult(
+                    Number(result), aggregateFields, aggregateDrop,
+                    source, scope, state, instance.exports, memory,
+                    hydrateWithin
+                );
+            } else if (resultType === "b") {
+                const accepted = result !== 0;
+                if (eventName === "submit" && form !== null)
+                    updateSubmission(form, accepted ? "Accepted" : "");
+                else if (!commitScalarState(
+                    source, scope, state, resultType, parameters, result
+                ))
+                    updateValidity(source, accepted);
+            } else if (resultType !== "v")
+                commitScalarState(
+                    source, scope, state, resultType, parameters, result
+                );
+        });
+        hydratedSources.add(source);
+      }
+    }
+    hydrateWithin(root);
+    return instance;
+}

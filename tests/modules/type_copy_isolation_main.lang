@@ -1,0 +1,14 @@
+namespace Types.CloneIsolation;
+
+using Types.Dep;
+
+struct Resource {
+    id: long,
+}
+
+int main() {
+    Resource local = Resource { id: 42 };
+    Resource copy = local;
+    print(copy.id);
+    return 0;
+}

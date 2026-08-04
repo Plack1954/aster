@@ -1,0 +1,15 @@
+using Aster.Html;
+
+element Html notice {
+    string tone;
+    Html children;
+}
+
+int main() {
+    Html document = <notice tone="warning">
+        <strong>"Careful"</strong>
+    </notice>;
+    string output = HtmlRender(document);
+    print(output);
+    return 0;
+}

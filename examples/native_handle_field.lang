@@ -1,0 +1,20 @@
+extern NativeHandle NativeHandleOpenId(long id);
+extern long NativeHandleDropLog();
+
+struct Wrapper {
+    NativeHandle handle;
+    long label;
+}
+
+int main() {
+    {
+        var wrapper = new Wrapper {
+            handle = NativeHandleOpenId(7),
+            label = 42,
+        };
+        print(wrapper.label);
+        print(NativeHandleDropLog());
+    }
+    print(NativeHandleDropLog());
+    return 0;
+}

@@ -1,0 +1,28 @@
+using Aster.Interop;
+
+int main() {
+    print(NativeProcessArgCount());
+
+    Result<string, ProcessError> argument =
+        NativeProcessArg(0);
+    switch (argument) {
+        case Result.Ok(value): {
+            print(value);
+        }
+        case Result.Err(error): {
+            print(error);
+        }
+    }
+
+    Result<string, ProcessError> environment =
+        NativeProcessEnvironment("ASTER_PROCESS_TEST");
+    switch (environment) {
+        case Result.Ok(value): {
+            print(value);
+        }
+        case Result.Err(error): {
+            print(error);
+        }
+    }
+    return 0;
+}

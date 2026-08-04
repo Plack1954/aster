@@ -1,0 +1,6 @@
+int main() {
+    for (value in 0.0..3.0) {
+        print(value);
+    }
+    0
+}

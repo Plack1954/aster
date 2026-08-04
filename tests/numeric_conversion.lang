@@ -1,0 +1,249 @@
+using System.Text;
+
+bool RejectsInvalidInteger()
+{
+    try
+    {
+        int.Parse("12x");
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("correct format");
+    }
+    return false;
+}
+
+bool RejectsIntegerOverflow()
+{
+    try
+    {
+        int.Parse("2147483648");
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("too large");
+    }
+    return false;
+}
+
+bool RejectsInvalidDouble()
+{
+    try
+    {
+        double.Parse("1.2.3");
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("correct format");
+    }
+    return false;
+}
+
+bool RejectsConvertOverflow()
+{
+    try
+    {
+        Convert.ToByte(256);
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("too large");
+    }
+    return false;
+}
+
+bool RejectsRoundedConvertOverflow()
+{
+    try
+    {
+        Convert.ToByte(255.5);
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("too large");
+    }
+    return false;
+}
+
+bool RejectsInt64ConvertOverflow()
+{
+    try
+    {
+        Convert.ToInt64(9223372036854775808.0);
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("too large");
+    }
+    return false;
+}
+
+bool RejectsUInt64ConvertOverflow()
+{
+    try
+    {
+        Convert.ToUInt64(18446744073709551616.0);
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("too large");
+    }
+    return false;
+}
+
+bool RejectsNegativeUInt64ConvertOverflow()
+{
+    try
+    {
+        Convert.ToUInt64(-0.6);
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("too large");
+    }
+    return false;
+}
+
+bool RejectsInvalidBase64()
+{
+    try
+    {
+        Convert.FromBase64String("Aster===");
+    }
+    catch (Exception error)
+    {
+        return error.Message.Contains("Base-64");
+    }
+    return false;
+}
+
+int main()
+{
+    int minimumInt = (int)-2147483647 - 1;
+    ulong maximumUlong = 18446744073709551615;
+    if (int.Parse("  +42\t") != 42) { return 1; }
+    if (int.Parse("-2147483648") != minimumInt) { return 2; }
+    if (long.Parse("9223372036854775807") != 9223372036854775807)
+        { return 3; }
+    if (long.Parse("-9223372036854775808") !=
+        -9223372036854775807 - 1) { return 4; }
+    if (ulong.Parse("18446744073709551615") != maximumUlong) { return 5; }
+    if (uint.Parse("4294967295") != 4294967295) { return 6; }
+    if (byte.Parse("255") != 255) { return 7; }
+    if (ushort.Parse("65535") != 65535) { return 8; }
+    if (ulong.Parse("-0") != 0) { return 9; }
+
+    double parsedDouble = double.Parse(" -12.5e2 ");
+    if (parsedDouble != -1250.0) { return 10; }
+    double fraction = double.Parse(".125");
+    if (fraction != 0.125) { return 11; }
+    float parsedFloat = float.Parse("1.25");
+    if (parsedFloat != 1.25) { return 12; }
+
+    if ((42).ToString() != "42") { return 13; }
+    double formattedDouble = 1.25;
+    float formattedFloat = 1.25;
+    if (formattedDouble.ToString() != "1.25") { return 14; }
+    if (formattedFloat.ToString() != "1.25") { return 15; }
+
+    if (!RejectsInvalidInteger()) { return 16; }
+    if (!RejectsIntegerOverflow()) { return 17; }
+    if (!RejectsInvalidDouble()) { return 18; }
+
+    int parsedInt = -1;
+    if (!int.TryParse("  -42 ", out parsedInt) || parsedInt != -42)
+        { return 19; }
+    if (int.TryParse("12x", out parsedInt) || parsedInt != 0)
+        { return 20; }
+    if (int.TryParse("2147483648", out parsedInt) || parsedInt != 0)
+        { return 21; }
+
+    ulong parsedUlong = 1;
+    if (!ulong.TryParse("18446744073709551615", out parsedUlong) ||
+        parsedUlong != maximumUlong) { return 22; }
+    if (ulong.TryParse("-1", out parsedUlong) || parsedUlong != 0)
+        { return 23; }
+
+    double triedDouble = -1.0;
+    if (!double.TryParse("1.25e2", out triedDouble) || triedDouble != 125.0)
+        { return 24; }
+    if (double.TryParse("1.2.3", out triedDouble) || triedDouble != 0.0)
+        { return 25; }
+
+    byte triedByte = 1;
+    if (!byte.TryParse("255", out triedByte) || triedByte != 255)
+        { return 26; }
+    if (byte.TryParse("256", out triedByte) || triedByte != 0)
+        { return 27; }
+    if (Convert.ToInt32("42") != 42) { return 28; }
+    if (Convert.ToInt32((short)-12) != -12) { return 29; }
+    if (Convert.ToUInt64((byte)255) != 255) { return 30; }
+    if (Convert.ToByte(true) != 1 || Convert.ToByte(false) != 0)
+        { return 31; }
+    if (!Convert.ToBoolean(" true ") ||
+        Convert.ToBoolean("FALSE") ||
+        Convert.ToBoolean(0) ||
+        !Convert.ToBoolean(-1)) { return 32; }
+    if (Convert.ToSingle("1.25") != 1.25 ||
+        Convert.ToDouble((int)-42) != -42.0) { return 33; }
+    if (Convert.ToString(true) != "True" ||
+        Convert.ToString(false) != "False" ||
+        Convert.ToString(42) != "42") { return 34; }
+    if (!RejectsConvertOverflow()) { return 35; }
+    if (Convert.ToInt32(4.5) != 4 || Convert.ToInt32(5.5) != 6 ||
+        Convert.ToInt32(-4.5) != -4 || Convert.ToInt32(-5.5) != -6)
+        { return 36; }
+    if (Convert.ToByte(-0.5) != 0 ||
+        Convert.ToUInt32(12.6) != 13) { return 37; }
+    float roundedFloat = 6.5;
+    if (Convert.ToInt16(roundedFloat) != 6) { return 38; }
+    if (!RejectsRoundedConvertOverflow()) { return 39; }
+    if (Convert.ToInt64(6.5) != 6 || Convert.ToInt64(7.5) != 8 ||
+        Convert.ToInt64(-7.5) != -8) { return 40; }
+    if (Convert.ToInt64(9223372036854774784.0) !=
+        9223372036854774784) { return 41; }
+    if (Convert.ToInt64(-9223372036854775808.0) !=
+        -9223372036854775807 - 1) { return 44; }
+    ulong nearMaximumUlong = 18446744073709549568;
+    if (Convert.ToUInt64(-0.5) != 0 ||
+        Convert.ToUInt64(18446744073709549568.0) !=
+        nearMaximumUlong) { return 42; }
+    if (!RejectsInt64ConvertOverflow() ||
+        !RejectsUInt64ConvertOverflow() ||
+        !RejectsNegativeUInt64ConvertOverflow()) { return 43; }
+    List<byte> base64Bytes = new();
+    base64Bytes.Add(2);
+    base64Bytes.Add(4);
+    base64Bytes.Add(6);
+    base64Bytes.Add(8);
+    base64Bytes.Add(10);
+    base64Bytes.Add(12);
+    if (Convert.ToBase64String(base64Bytes) != "AgQGCAoM")
+        { return 45; }
+    if (Convert.ToBase64String(base64Bytes, 1, 4) != "BAYICg==")
+        { return 46; }
+    List<byte> decoded = Convert.FromBase64String(" AgQG\r\nCAoM\t");
+    if (decoded.Count != base64Bytes.Count) { return 47; }
+    for (usize index = 0; index < decoded.Count; index++)
+    {
+        if (decoded[index] != base64Bytes[index]) { return 48; }
+    }
+    List<byte> oneByte = Convert.FromBase64String("TQ==");
+    List<byte> twoBytes = Convert.FromBase64String("TWE=");
+    if (oneByte.Count != 1 || oneByte[0] != 77 ||
+        twoBytes.Count != 2 || twoBytes[0] != 77 || twoBytes[1] != 97)
+        { return 49; }
+    if (!RejectsInvalidBase64()) { return 50; }
+    List<byte> lineBytes = new();
+    for (int index = 0; index < 58; index++) { lineBytes.Add(0); }
+    string wrapped = Convert.ToBase64String(
+        lineBytes,
+        Base64FormattingOptions.InsertLineBreaks
+    );
+    if (wrapped.Length != 82 ||
+        wrapped.Substring(76, 2) != "\r\n" ||
+        wrapped.Substring(78) != "AA==") { return 51; }
+    List<byte> unwrapped = Convert.FromBase64String(wrapped);
+    if (unwrapped.Count != 58) { return 52; }
+    return 0;
+}

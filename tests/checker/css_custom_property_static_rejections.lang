@@ -1,0 +1,13 @@
+using Aster.Html;
+
+Html UnsafeLiteral() {
+    return <article --accent="red;display:none">"Aster"</article>;
+}
+
+Html DynamicStyle(string value) {
+    return <article style=value>"Aster"</article>;
+}
+
+int main() {
+    return 0;
+}

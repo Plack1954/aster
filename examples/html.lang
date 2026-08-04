@@ -1,0 +1,22 @@
+using Aster.Html;
+
+Html page() {
+    return <section>
+        <div>
+            <img src=Url.relative("image.jpg") alt="Example & image" />
+            <div>
+                <h2>"Section Title"</h2>
+                <p>"Some <simple> text goes here."</p>
+                <a href=Url.fragment("")>
+                    "Learn more"
+                </a>
+            </div>
+        </div>
+    </section>;
+}
+
+int main() {
+    Html pageHtml = page();
+    print(HtmlRender(pageHtml));
+    return 0;
+}

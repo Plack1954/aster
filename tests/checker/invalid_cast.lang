@@ -1,0 +1,4 @@
+int main() {
+    long number = "text" as long;
+    return 0;
+}

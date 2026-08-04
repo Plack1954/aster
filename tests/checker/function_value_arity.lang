@@ -1,0 +1,9 @@
+long AddOne(long value) {
+    return value + 1;
+}
+
+int main() {
+    long(long) operation = AddOne;
+    print(operation(1, 2));
+    return 0;
+}

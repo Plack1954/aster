@@ -1,0 +1,55 @@
+namespace App.Render;
+
+using Docs.Assets;
+using Docs.Config;
+using Docs.Site;
+using Aster.Web.Middleware;
+using Aster.Web.Router;
+
+int main() {
+    Router router = SiteRouter();
+    MiddlewareChain middleware = SiteMiddleware();
+
+    Html home = RenderPath(router, middleware, "/");
+    string homeText = HtmlRender(home);
+    print(homeText);
+
+    Html guide = RenderPath(router, middleware, "/guide");
+    string guideText = HtmlRender(guide);
+    print(guideText);
+
+    Result<ServerConfig, string> loaded =
+        LoadConfig("examples/docs_server/docs-server.conf");
+    switch (loaded) {
+        case Result.Ok(config): {
+            print(config.timeoutMs);
+            print("configuration parsed");
+        }
+        case Result.Err(error): {
+            print(error);
+        }
+    }
+
+    Result<long, string> traversed = CountMarkdown("docs");
+    switch (traversed) {
+        case Result.Ok(count): {
+            print(count);
+            print("documentation directory traversed");
+        }
+        case Result.Err(error): {
+            print(error);
+        }
+    }
+
+    Result<string, string> asset =
+        LoadAsset("examples/docs_server/assets/site.css");
+    switch (asset) {
+        case Result.Ok(contents): {
+            print("static asset loaded");
+        }
+        case Result.Err(error): {
+            print(error);
+        }
+    }
+    return 0;
+}

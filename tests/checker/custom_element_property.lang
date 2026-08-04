@@ -1,0 +1,9 @@
+element meter -> Html {
+    value: long,
+}
+
+int main() {
+    Html node = <meter value="wrong" />;
+    print(node);
+    return 0;
+}

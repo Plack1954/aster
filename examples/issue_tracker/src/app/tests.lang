@@ -1,0 +1,132 @@
+namespace App.Tests;
+
+using Issues.Config;
+using Issues.Model;
+using Issues.Pages;
+using Issues.Validation;
+using Aster.Net.Http;
+using Aster.Web.HttpApp;
+using Aster.Data.Sqlite;
+using System.Text;
+
+Result<int, SqliteError> run() {
+    var parsed = ParseConfig(
+        "database_path=:memory:\nmax_title_bytes=80\n"
+    );
+    switch (parsed) {
+        case Result.Ok(config): {
+            if (config.databasePath != ":memory:") {
+                return Result.Err(
+                    "configuration path mismatch"
+                );
+            }
+            if (config.maxTitleBytes != 80) {
+                return Result.Err(
+                    "configuration limit mismatch"
+                );
+            }
+        }
+        case Result.Err(error): {
+            return Result.Err(error);
+        }
+    }
+    var invalidConfig = ParseConfig("unknown=value\n");
+    switch (invalidConfig) {
+        case Result.Ok(config): {
+            return Result.Err(
+                "invalid configuration accepted"
+            );
+        }
+        case Result.Err(error): {
+            }
+    }
+    var invalidTitle = ValidateTitle("", 80);
+    switch (invalidTitle) {
+        case Result.Ok(valid): {
+            return Result.Err(
+                "empty title accepted"
+            );
+        }
+        case Result.Err(error): {
+            }
+    }
+    var database = try SqliteOpen(":memory:");
+    try EnsureSchema(database);
+    var id = try CreateIssue(database, "Compact layout");
+    if (id != 1) {
+        return Result.Err("unexpected issue id");
+    }
+    var count = try CountIssues(database);
+    if (count != 1) {
+        return Result.Err("issue count mismatch");
+    }
+    var closed = try CloseIssue(database, "1");
+    if (!closed) {
+        return Result.Err("issue did not close");
+    }
+    var issues = try ListIssues(database);
+    var page = IssueListPage(issues);
+    var rendered = HtmlRender(page);
+    var source = rendered;
+    if (!source.Contains("font-family: sans-serif")) {
+        return Result.Err("sans-serif CSS missing");
+    }
+    if (!source.Contains("color: #0645ad")) {
+        return Result.Err("blue link CSS missing");
+    }
+    if (!source.Contains("Compact layout")) {
+        return Result.Err("issue title missing");
+    }
+    if (!source.Contains("closed")) {
+        return Result.Err("closed status missing");
+    }
+    var decodedResult =
+        HttpFormValue("title=Blue+links%2C+small+type", "title");
+    switch (decodedResult) {
+        case Result.Ok(decoded): {
+            if (decoded != "Blue links, small type") {
+                return Result.Err(
+                    "form decoding mismatch"
+                );
+            }
+        }
+        case Result.Err(error): {
+            return Result.Err(error);
+        }
+    }
+    var redirect = Response.Redirect("/issues");
+    switch (redirect) {
+        case Response.Redirect(location): {
+            if (location != "/issues") {
+                return Result.Err(
+                    "redirect location mismatch"
+                );
+            }
+        }
+        case Response.Ok(page): {
+            return Result.Err("expected redirect");
+        }
+        case Response.NotFound(page): {
+            return Result.Err("expected redirect");
+        }
+        case Response.InternalError(page): {
+            return Result.Err("expected redirect");
+        }
+    }
+    print("issue tracker model passed");
+    print("issue tracker design passed");
+    return Result.Ok(0);
+}
+
+int main() {
+    var result = run();
+    switch (result) {
+        case Result.Ok(status): {
+            return status;
+        }
+        case Result.Err(error): {
+            eprint(error);
+            return 1;
+        }
+    }
+}

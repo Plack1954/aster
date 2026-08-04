@@ -1,0 +1,735 @@
+namespace Aster.Data.Sqlite;
+
+using Aster.Memory;
+using System.IO;
+using System.Text;
+
+public using SqliteError = string;
+
+public struct Database
+{
+    NativeHandle Handle;
+}
+
+public struct Statement
+{
+    NativeHandle Handle;
+}
+
+public struct Row
+{
+    Statement Statement;
+}
+
+// Field order is deliberate: the transaction state is destroyed before its
+// database reference. Its native destructor rolls back exactly once when an
+// active transaction leaves scope without Commit or Rollback.
+public struct Transaction
+{
+    Database Database;
+    NativeHandle State;
+}
+
+public enum Step
+{
+    Done,
+    Row,
+}
+
+public enum ColumnType
+{
+    Integer,
+    Float,
+    Text,
+    Blob,
+    Null,
+}
+
+public enum TransactionMode
+{
+    Deferred,
+    Immediate,
+    Exclusive,
+}
+
+extern Result<NativeHandle, SqliteError> NativeSqliteOpen(string path);
+extern Result<unit, SqliteError> NativeSqliteExecute(
+    NativeHandle database,
+    string sql
+);
+extern Result<NativeHandle, SqliteError> NativeSqlitePrepare(
+    NativeHandle database,
+    string sql
+);
+extern Result<unit, SqliteError> NativeSqliteBindI64(
+    NativeHandle statement,
+    long index,
+    long value
+);
+extern Result<unit, SqliteError> NativeSqliteBindText(
+    NativeHandle statement,
+    long index,
+    string value
+);
+extern Result<unit, SqliteError> NativeSqliteBindDouble(
+    NativeHandle statement,
+    long index,
+    double value
+);
+extern Result<unit, SqliteError> NativeSqliteBindNull(
+    NativeHandle statement,
+    long index
+);
+extern Result<unit, SqliteError> NativeSqliteBindBlob(
+    NativeHandle statement,
+    long index,
+    Slice<byte> value
+);
+extern Result<long, SqliteError> NativeSqliteParameterIndex(
+    NativeHandle statement,
+    string name
+);
+extern Result<bool, SqliteError> NativeSqliteStep(NativeHandle statement);
+extern Result<long, SqliteError> NativeSqliteColumnI64(
+    NativeHandle statement,
+    long index
+);
+extern Result<string, SqliteError> NativeSqliteColumnText(
+    NativeHandle statement,
+    long index
+);
+extern Result<double, SqliteError> NativeSqliteColumnDouble(
+    NativeHandle statement,
+    long index
+);
+extern Result<long, SqliteError> NativeSqliteColumnType(
+    NativeHandle statement,
+    long index
+);
+extern Result<long, SqliteError> NativeSqliteColumnCount(
+    NativeHandle statement
+);
+extern Result<string, SqliteError> NativeSqliteColumnName(
+    NativeHandle statement,
+    long index
+);
+extern Result<long, SqliteError> NativeSqliteColumnBlobLength(
+    NativeHandle statement,
+    long index
+);
+extern Result<unit, SqliteError> NativeSqliteColumnBlobCopy(
+    NativeHandle statement,
+    long index,
+    Slice<byte> destination
+);
+extern Result<unit, SqliteError> NativeSqliteReset(NativeHandle statement);
+extern Result<unit, SqliteError> NativeSqliteClearBindings(
+    NativeHandle statement
+);
+extern Result<long, SqliteError> NativeSqliteStatementChanges(
+    NativeHandle statement
+);
+extern Result<long, SqliteError> NativeSqliteChanges(NativeHandle database);
+extern Result<long, SqliteError> NativeSqliteLastInsertId(
+    NativeHandle database
+);
+extern Result<NativeHandle, SqliteError> NativeSqliteBeginTransaction(
+    NativeHandle database,
+    long mode
+);
+extern Result<unit, SqliteError> NativeSqliteCommitTransaction(
+    NativeHandle transaction
+);
+extern Result<unit, SqliteError> NativeSqliteRollbackTransaction(
+    NativeHandle transaction
+);
+
+T SqliteResultOrThrow<T>(Result<T, SqliteError> result)
+{
+    switch (result)
+    {
+        case Result.Ok(value): { return value; }
+        case Result.Err(error): { throw new SqliteException(error); }
+    }
+}
+
+long Statement.ParameterIndex(Statement self, string name)
+{
+    return SqliteResultOrThrow(
+        NativeSqliteParameterIndex(self.Handle, name)
+    );
+}
+
+long Row.ColumnIndex(Row self, string name)
+{
+    long count = self.Statement.ColumnCount();
+    for (long index = 0; index < count; index += 1)
+    {
+        if (self.Statement.GetName(index) == name) { return index; }
+    }
+    throw new SqliteException($"SQLite result has no column named '{name}'.");
+}
+
+public Database Database.Open(string path)
+{
+    NativeHandle handle = SqliteResultOrThrow(NativeSqliteOpen(path));
+    return new() { Handle = handle };
+}
+
+public void Database.Execute(Database self, string sql)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteExecute(self.Handle, sql)
+    );
+}
+
+public Statement Database.Prepare(Database self, string sql)
+{
+    NativeHandle handle = SqliteResultOrThrow(
+        NativeSqlitePrepare(self.Handle, sql)
+    );
+    return new() { Handle = handle };
+}
+
+public long Database.Changes(Database self)
+{
+    return SqliteResultOrThrow(NativeSqliteChanges(self.Handle));
+}
+
+public long Database.LastInsertRowId(Database self)
+{
+    return SqliteResultOrThrow(NativeSqliteLastInsertId(self.Handle));
+}
+
+public void Statement.Bind(Statement self, long index, long value)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteBindI64(self.Handle, index, value)
+    );
+}
+
+public void Statement.Bind(Statement self, long index, int value)
+{
+    self.Bind(index, (long)value);
+}
+
+public void Statement.Bind(Statement self, long index, bool value)
+{
+    long encoded = if (value) { 1 } else { 0 };
+    self.Bind(index, encoded);
+}
+
+public void Statement.Bind(Statement self, long index, double value)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteBindDouble(self.Handle, index, value)
+    );
+}
+
+public void Statement.Bind(Statement self, long index, float value)
+{
+    self.Bind(index, (double)value);
+}
+
+public void Statement.Bind(Statement self, long index, string value)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteBindText(self.Handle, index, value)
+    );
+}
+
+public void Statement.BindNull(Statement self, long index)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteBindNull(self.Handle, index)
+    );
+}
+
+public void Statement.Bind(Statement self, long index, List<byte> value)
+{
+    Buffer buffer = Buffer.allocate((long)value.Count);
+    unsafe
+    {
+        Slice<byte> bytes = BufferAsMutSlice(buffer);
+        for (usize at = 0; at < value.Count; at += 1)
+        {
+            ByteSliceSet(bytes, at, value[at]);
+        }
+        unit ignored = SqliteResultOrThrow(
+            NativeSqliteBindBlob(self.Handle, index, bytes)
+        );
+    }
+}
+
+public void Statement.Bind(Statement self, string name, long value)
+{
+    self.Bind(self.ParameterIndex(name), value);
+}
+
+public void Statement.Bind(Statement self, string name, int value)
+{
+    self.Bind(self.ParameterIndex(name), value);
+}
+
+public void Statement.Bind(Statement self, string name, bool value)
+{
+    self.Bind(self.ParameterIndex(name), value);
+}
+
+public void Statement.Bind(Statement self, string name, double value)
+{
+    self.Bind(self.ParameterIndex(name), value);
+}
+
+public void Statement.Bind(Statement self, string name, float value)
+{
+    self.Bind(self.ParameterIndex(name), value);
+}
+
+public void Statement.Bind(Statement self, string name, string value)
+{
+    self.Bind(self.ParameterIndex(name), value);
+}
+
+public void Statement.Bind(Statement self, string name, List<byte> value)
+{
+    self.Bind(self.ParameterIndex(name), value);
+}
+
+public void Statement.BindNull(Statement self, string name)
+{
+    self.BindNull(self.ParameterIndex(name));
+}
+
+public Step Statement.Step(Statement self)
+{
+    if (SqliteResultOrThrow(NativeSqliteStep(self.Handle)))
+    {
+        return Step.Row;
+    }
+    return Step.Done;
+}
+
+public bool Statement.Read(Statement self)
+{
+    return self.Step() == Step.Row;
+}
+
+public Row Statement.CurrentRow(Statement self)
+{
+    return new() { Statement = self };
+}
+
+public long Statement.Execute(Statement self)
+{
+    if (self.Step() != Step.Done)
+    {
+        throw new SqliteException(
+            "Command returned rows; use Read for a query."
+        );
+    }
+    return SqliteResultOrThrow(
+        NativeSqliteStatementChanges(self.Handle)
+    );
+}
+
+public void Statement.Reset(Statement self)
+{
+    unit ignored = SqliteResultOrThrow(NativeSqliteReset(self.Handle));
+}
+
+public void Statement.ClearBindings(Statement self)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteClearBindings(self.Handle)
+    );
+}
+
+public long Statement.ColumnCount(Statement self)
+{
+    return SqliteResultOrThrow(NativeSqliteColumnCount(self.Handle));
+}
+
+public string Statement.GetName(Statement self, long index)
+{
+    return SqliteResultOrThrow(
+        NativeSqliteColumnName(self.Handle, index)
+    );
+}
+
+public ColumnType Statement.GetColumnType(Statement self, long index)
+{
+    long value = SqliteResultOrThrow(
+        NativeSqliteColumnType(self.Handle, index)
+    );
+    if (value == 1) { return ColumnType.Integer; }
+    if (value == 2) { return ColumnType.Float; }
+    if (value == 3) { return ColumnType.Text; }
+    if (value == 4) { return ColumnType.Blob; }
+    return ColumnType.Null;
+}
+
+public bool Statement.IsNull(Statement self, long index)
+{
+    return self.GetColumnType(index) == ColumnType.Null;
+}
+
+public long Statement.GetInt64(Statement self, long index)
+{
+    return SqliteResultOrThrow(
+        NativeSqliteColumnI64(self.Handle, index)
+    );
+}
+
+public int Statement.GetInt32(Statement self, long index)
+{
+    long value = self.GetInt64(index);
+    if (value < -2147483648 || value > 2147483647)
+    {
+        throw new OverflowException("SQLite integer does not fit in int.");
+    }
+    return (int)value;
+}
+
+public bool Statement.GetBoolean(Statement self, long index)
+{
+    return self.GetInt64(index) != 0;
+}
+
+public double Statement.GetDouble(Statement self, long index)
+{
+    return SqliteResultOrThrow(
+        NativeSqliteColumnDouble(self.Handle, index)
+    );
+}
+
+public string Statement.GetString(Statement self, long index)
+{
+    return SqliteResultOrThrow(
+        NativeSqliteColumnText(self.Handle, index)
+    );
+}
+
+public List<byte> Statement.GetBytes(Statement self, long index)
+{
+    long length = SqliteResultOrThrow(
+        NativeSqliteColumnBlobLength(self.Handle, index)
+    );
+    Buffer buffer = Buffer.allocate(length);
+    List<byte> result = new();
+    unsafe
+    {
+        Slice<byte> bytes = BufferAsMutSlice(buffer);
+        unit ignored = SqliteResultOrThrow(
+            NativeSqliteColumnBlobCopy(self.Handle, index, bytes)
+        );
+        for (usize at = 0; at < (usize)length; at += 1)
+        {
+            result.Add(ByteSliceAt(bytes, at));
+        }
+    }
+    return result;
+}
+
+public long Row.GetInt64(Row self, long index)
+{
+    return self.Statement.GetInt64(index);
+}
+
+public int Row.GetInt32(Row self, long index)
+{
+    return self.Statement.GetInt32(index);
+}
+
+public bool Row.GetBoolean(Row self, long index)
+{
+    return self.Statement.GetBoolean(index);
+}
+
+public double Row.GetDouble(Row self, long index)
+{
+    return self.Statement.GetDouble(index);
+}
+
+public string Row.GetString(Row self, long index)
+{
+    return self.Statement.GetString(index);
+}
+
+public List<byte> Row.GetBytes(Row self, long index)
+{
+    return self.Statement.GetBytes(index);
+}
+
+public bool Row.IsNull(Row self, long index)
+{
+    return self.Statement.IsNull(index);
+}
+
+public long Row.GetInt64(Row self, string name)
+{
+    return self.GetInt64(self.ColumnIndex(name));
+}
+
+public int Row.GetInt32(Row self, string name)
+{
+    return self.GetInt32(self.ColumnIndex(name));
+}
+
+public bool Row.GetBoolean(Row self, string name)
+{
+    return self.GetBoolean(self.ColumnIndex(name));
+}
+
+public double Row.GetDouble(Row self, string name)
+{
+    return self.GetDouble(self.ColumnIndex(name));
+}
+
+public string Row.GetString(Row self, string name)
+{
+    return self.GetString(self.ColumnIndex(name));
+}
+
+public List<byte> Row.GetBytes(Row self, string name)
+{
+    return self.GetBytes(self.ColumnIndex(name));
+}
+
+public bool Row.IsNull(Row self, string name)
+{
+    return self.IsNull(self.ColumnIndex(name));
+}
+
+public string? Row.GetNullableString(Row self, long index)
+{
+    return if (self.IsNull(index)) { null } else { self.GetString(index) };
+}
+
+public string? Row.GetNullableString(Row self, string name)
+{
+    return self.GetNullableString(self.ColumnIndex(name));
+}
+
+public long? Row.GetNullableInt64(Row self, long index)
+{
+    return if (self.IsNull(index)) { null } else { self.GetInt64(index) };
+}
+
+public long? Row.GetNullableInt64(Row self, string name)
+{
+    return self.GetNullableInt64(self.ColumnIndex(name));
+}
+
+public Transaction Database.BeginTransaction(Database self)
+{
+    return self.BeginTransaction(TransactionMode.Deferred);
+}
+
+public Transaction Database.BeginTransaction(
+    Database self,
+    TransactionMode mode
+)
+{
+    long nativeMode = 0;
+    switch (mode)
+    {
+        case TransactionMode.Deferred: { nativeMode = 0; }
+        case TransactionMode.Immediate: { nativeMode = 1; }
+        case TransactionMode.Exclusive: { nativeMode = 2; }
+    }
+    NativeHandle state = SqliteResultOrThrow(
+        NativeSqliteBeginTransaction(self.Handle, nativeMode)
+    );
+    return new() { Database = self, State = state };
+}
+
+public void Transaction.Commit(Transaction self)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteCommitTransaction(self.State)
+    );
+}
+
+public void Transaction.Rollback(Transaction self)
+{
+    unit ignored = SqliteResultOrThrow(
+        NativeSqliteRollbackTransaction(self.State)
+    );
+}
+
+List<string> MigrationFiles(string directory)
+{
+    List<string> files = Directory.GetFiles(directory);
+    List<string> selected = new();
+    List<string> sorted = new();
+    foreach (string file in files)
+    {
+        if (file.EndsWith(".sql")) { selected.Add(file); }
+    }
+    while (sorted.Count < selected.Count)
+    {
+        string next = "";
+        bool found = false;
+        foreach (string file in selected)
+        {
+            if (!sorted.Contains(file) &&
+                (!found || string.CompareOrdinal(file, next) < 0))
+            {
+                next = file;
+                found = true;
+            }
+        }
+        sorted.Add(next);
+    }
+    return sorted;
+}
+
+public void Database.Migrate(Database self, string directory)
+{
+    self.Execute(
+        "CREATE TABLE IF NOT EXISTS AsterMigrations (Name TEXT PRIMARY KEY, Sql TEXT NOT NULL)"
+    );
+    List<string> migrations = MigrationFiles(directory);
+    foreach (string path in migrations)
+    {
+        string name = Path.GetFileName(path);
+        string sql = File.ReadAllText(path);
+        Statement existing = self.Prepare(
+            "SELECT Sql FROM AsterMigrations WHERE Name = @name"
+        );
+        existing.Bind("@name", name);
+        if (existing.Read())
+        {
+            if (existing.CurrentRow().GetString(0) != sql)
+            {
+                throw new SqliteException(
+                    $"Applied migration '{name}' has changed."
+                );
+            }
+        }
+        else
+        {
+            Transaction transaction = self.BeginTransaction(
+                TransactionMode.Immediate
+            );
+            self.Execute(sql);
+            Statement record = self.Prepare(
+                "INSERT INTO AsterMigrations (Name, Sql) VALUES (@name, @sql)"
+            );
+            record.Bind("@name", name);
+            record.Bind("@sql", sql);
+            record.Execute();
+            transaction.Commit();
+        }
+    }
+}
+
+// Result-returning compatibility surface. New application code normally uses
+// the throwing object API above; Result remains available when failure itself
+// is an expected value at the call site.
+public Result<Database, SqliteError> SqliteOpen(string path)
+{
+    switch (NativeSqliteOpen(path))
+    {
+        case Result.Ok(handle):
+        {
+            return Result.Ok(new Database { Handle = handle });
+        }
+        case Result.Err(error): { return Result.Err(error); }
+    }
+}
+
+public Result<unit, SqliteError> SqliteExecute(
+    Database database,
+    string sql
+)
+{
+    return NativeSqliteExecute(database.Handle, sql);
+}
+
+public Result<Statement, SqliteError> SqlitePrepare(
+    Database database,
+    string sql
+)
+{
+    switch (NativeSqlitePrepare(database.Handle, sql))
+    {
+        case Result.Ok(handle):
+        {
+            return Result.Ok(new Statement { Handle = handle });
+        }
+        case Result.Err(error): { return Result.Err(error); }
+    }
+}
+
+public Result<unit, SqliteError> SqliteBindI64(
+    Statement statement,
+    long index,
+    long value
+)
+{
+    return NativeSqliteBindI64(statement.Handle, index, value);
+}
+
+public Result<unit, SqliteError> SqliteBindText(
+    Statement statement,
+    long index,
+    string value
+)
+{
+    return NativeSqliteBindText(statement.Handle, index, value);
+}
+
+public Result<Step, SqliteError> SqliteStep(Statement statement)
+{
+    switch (NativeSqliteStep(statement.Handle))
+    {
+        case Result.Ok(hasRow):
+        {
+            return Result.Ok(if (hasRow) { Step.Row } else { Step.Done });
+        }
+        case Result.Err(error): { return Result.Err(error); }
+    }
+}
+
+public Result<long, SqliteError> SqliteColumnI64(
+    Statement statement,
+    long index
+)
+{
+    return NativeSqliteColumnI64(statement.Handle, index);
+}
+
+public Result<string, SqliteError> SqliteColumnText(
+    Statement statement,
+    long index
+)
+{
+    return NativeSqliteColumnText(statement.Handle, index);
+}
+
+public Result<long, SqliteError> SqliteChanges(Database database)
+{
+    return NativeSqliteChanges(database.Handle);
+}
+
+public Result<long, SqliteError> SqliteLastInsertId(Database database)
+{
+    return NativeSqliteLastInsertId(database.Handle);
+}
+
+public Result<unit, SqliteError> SqliteBegin(Database database)
+{
+    return NativeSqliteExecute(database.Handle, "BEGIN");
+}
+
+public Result<unit, SqliteError> SqliteCommit(Database database)
+{
+    return NativeSqliteExecute(database.Handle, "COMMIT");
+}
+
+public Result<unit, SqliteError> SqliteRollback(Database database)
+{
+    return NativeSqliteExecute(database.Handle, "ROLLBACK");
+}

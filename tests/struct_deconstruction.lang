@@ -1,0 +1,25 @@
+struct ResponseParts {
+    int status;
+    string body;
+    List<string> headers;
+}
+
+ResponseParts MakeResponse() {
+    List<string> headers = new();
+    headers.Add("Content-Type: text/html");
+    return new() {
+        status = 201,
+        body = "created",
+        headers = headers,
+    };
+}
+
+int main() {
+    ResponseParts response = MakeResponse();
+    (int status, string body, List<string> headers) = response;
+    print(status);
+    print(body);
+    print(headers.Count);
+    print(response.status);
+    return 0;
+}

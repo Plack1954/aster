@@ -1,0 +1,810 @@
+#include "c_backend_internal.h"
+
+#include <inttypes.h>
+#include <stdlib.h>
+#include <string.h>
+
+bool c_backend_async_function_supported(
+    CEmitter *emitter, const IrFunction *function) {
+    if (!function->is_async) return true;
+    IrTypeId result = function->async_result_type;
+    if (!c_backend_type_is_supported(emitter->ir, result) ||
+        (c_backend_type_needs_drop(emitter, result) &&
+         !c_backend_type_clone_supported(emitter->ir, result))) {
+        LangSpan span = function->declaration != NULL
+                      ? function->declaration->span
+                      : (LangSpan){NULL, 0U, 0U};
+        c_backend_unsupported(
+            emitter, span,
+            "an async completion type without generated copy and cleanup support");
+        return false;
+    }
+    return true;
+}
+
+void c_backend_emit_async_runtime(FILE *output) {
+    fputs(
+        "#include <threads.h>\n"
+        "#include <time.h>\n\n"
+        "typedef enum aster_task_state {\n"
+        "    ASTER_TASK_PENDING,\n"
+        "    ASTER_TASK_SUCCEEDED,\n"
+        "    ASTER_TASK_FAULTED,\n"
+        "    ASTER_TASK_CANCELED\n"
+        "} aster_task_state;\n"
+        "typedef void (*aster_task_callback)(void *context);\n"
+        "typedef void (*aster_task_result_drop)(void *result);\n"
+        "typedef struct aster_task_continuation {\n"
+        "    aster_task_callback callback;\n"
+        "    void *context;\n"
+        "    struct aster_task_continuation *next;\n"
+        "} aster_task_continuation;\n"
+        "struct aster_task {\n"
+        "    size_t references;\n"
+        "    aster_task_state state;\n"
+        "    void *result;\n"
+        "    size_t result_size;\n"
+        "    aster_task_result_drop result_drop;\n"
+        "    aster_string *exception_message;\n"
+        "    const char *exception_type;\n"
+        "    aster_task_continuation *continuations;\n"
+        "};\n"
+        "typedef struct aster_task_timer {\n"
+        "    int64_t deadline_ms;\n"
+        "    aster_task *task;\n"
+        "    aster_cancellation_state *cancellation;\n"
+        "    struct aster_task_timer *next;\n"
+        "} aster_task_timer;\n"
+        "static aster_task_timer *aster_task_timers = NULL;\n\n"
+        "static aster_task *aster_task_new(void) {\n"
+        "    aster_task *task = aster_allocate(sizeof(*task));\n"
+        "    *task = (aster_task){0};\n"
+        "    task->references = 1U;\n"
+        "    task->state = ASTER_TASK_PENDING;\n"
+        "    return task;\n"
+        "}\n"
+        "static aster_task *aster_task_retain(aster_task *task) {\n"
+        "    if (task == NULL) return NULL;\n"
+        "    if (task->references == SIZE_MAX)\n"
+        "        aster_trap(\"task reference count overflow\");\n"
+        "    ++task->references;\n"
+        "    return task;\n"
+        "}\n"
+        "static void aster_task_drop(aster_task *task) {\n"
+        "    if (task == NULL) return;\n"
+        "    if (task->references > 1U) {\n"
+        "        --task->references;\n"
+        "        return;\n"
+        "    }\n"
+        "    if (task->state == ASTER_TASK_PENDING)\n"
+        "        aster_trap(\"last Task reference dropped while pending\");\n"
+        "    if (task->result_drop != NULL && task->result != NULL)\n"
+        "        task->result_drop(task->result);\n"
+        "    free(task->result);\n"
+        "    aster_string_drop(task->exception_message);\n"
+        "    while (task->continuations != NULL) {\n"
+        "        aster_task_continuation *next =\n"
+        "            task->continuations->next;\n"
+        "        free(task->continuations);\n"
+        "        task->continuations = next;\n"
+        "    }\n"
+        "    free(task);\n"
+        "}\n",
+        output);
+    fputs(
+        "static void aster_task_run_continuations(aster_task *task) {\n"
+        "    aster_task_continuation *continuation =\n"
+        "        task->continuations;\n"
+        "    task->continuations = NULL;\n"
+        "    while (continuation != NULL) {\n"
+        "        aster_task_continuation *next = continuation->next;\n"
+        "        aster_task_callback callback = continuation->callback;\n"
+        "        void *context = continuation->context;\n"
+        "        free(continuation);\n"
+        "        callback(context);\n"
+        "        continuation = next;\n"
+        "    }\n"
+        "}\n"
+        "static void aster_task_on_completed(\n"
+        "        aster_task *task, aster_task_callback callback,\n"
+        "        void *context) {\n"
+        "    if (task->state != ASTER_TASK_PENDING) {\n"
+        "        callback(context);\n"
+        "        return;\n"
+        "    }\n"
+        "    aster_task_continuation *continuation =\n"
+        "        aster_allocate(sizeof(*continuation));\n"
+        "    continuation->callback = callback;\n"
+        "    continuation->context = context;\n"
+        "    continuation->next = task->continuations;\n"
+        "    task->continuations = continuation;\n"
+        "}\n"
+        "static void aster_task_succeed(\n"
+        "        aster_task *task, const void *result, size_t size,\n"
+        "        aster_task_result_drop result_drop) {\n"
+        "    if (task->state != ASTER_TASK_PENDING)\n"
+        "        aster_trap(\"Task completed more than once\");\n"
+        "    task->result_size = size;\n"
+        "    task->result_drop = result_drop;\n"
+        "    if (size != 0U) {\n"
+        "        task->result = aster_allocate(size);\n"
+        "        memcpy(task->result, result, size);\n"
+        "    }\n"
+        "    task->state = ASTER_TASK_SUCCEEDED;\n"
+        "    aster_task_run_continuations(task);\n"
+        "}\n"
+        "static void aster_task_fault_from_current(aster_task *task) {\n"
+        "    if (task->state != ASTER_TASK_PENDING ||\n"
+        "        !aster_exception_pending)\n"
+        "        aster_trap(\"Task faulted without a current exception\");\n"
+        "    task->exception_message = aster_exception_message;\n"
+        "    task->exception_type = aster_exception_type;\n"
+        "    aster_exception_message = NULL;\n"
+        "    aster_exception_type = NULL;\n"
+        "    aster_exception_pending = false;\n"
+        "    task->state = ASTER_TASK_FAULTED;\n"
+        "    aster_task_run_continuations(task);\n"
+        "}\n"
+        "static void aster_task_cancel_from_current(aster_task *task) {\n"
+        "    if (task->state != ASTER_TASK_PENDING ||\n"
+        "        !aster_exception_pending)\n"
+        "        aster_trap(\"Task canceled without a current exception\");\n"
+        "    task->exception_message = aster_exception_message;\n"
+        "    task->exception_type = aster_exception_type;\n"
+        "    aster_exception_message = NULL;\n"
+        "    aster_exception_type = NULL;\n"
+        "    aster_exception_pending = false;\n"
+        "    task->state = ASTER_TASK_CANCELED;\n"
+        "    aster_task_run_continuations(task);\n"
+        "}\n"
+        "static void aster_task_restore_fault(aster_task *task) {\n"
+        "    if (task->state != ASTER_TASK_FAULTED &&\n"
+        "        task->state != ASTER_TASK_CANCELED)\n"
+        "        aster_trap(\"await exception restoration requires a terminal Task\");\n"
+        "    if (aster_exception_pending)\n"
+        "        aster_string_drop(aster_exception_message);\n"
+        "    aster_exception_message =\n"
+        "        aster_string_clone(task->exception_message);\n"
+        "    aster_exception_type = task->exception_type;\n"
+        "    aster_exception_pending = true;\n"
+        "}\n",
+        output);
+    fputs(
+        "static void aster_task_fault_from_task(\n"
+        "        aster_task *target, aster_task *source) {\n"
+        "    if (target->state != ASTER_TASK_PENDING ||\n"
+        "        source->state != ASTER_TASK_FAULTED)\n"
+        "        aster_trap(\"invalid Task fault propagation\");\n"
+        "    target->exception_message =\n"
+        "        aster_string_clone(source->exception_message);\n"
+        "    target->exception_type = source->exception_type;\n"
+        "    target->state = ASTER_TASK_FAULTED;\n"
+        "    aster_task_run_continuations(target);\n"
+        "}\n"
+        "static void aster_task_result_drop_task(void *storage) {\n"
+        "    aster_task_drop(*(aster_task **)storage);\n"
+        "}\n"
+        "typedef struct aster_when_all_state {\n"
+        "    aster_task *output;\n"
+        "    aster_task **tasks;\n"
+        "    size_t count;\n"
+        "    size_t remaining;\n"
+        "    void (*finish)(struct aster_when_all_state *state);\n"
+        "} aster_when_all_state;\n"
+        "static inline void aster_when_all_release(aster_when_all_state *state) {\n"
+        "    for (size_t i = 0U; i < state->count; ++i)\n"
+        "        aster_task_drop(state->tasks[i]);\n"
+        "    free(state->tasks);\n"
+        "    aster_task_drop(state->output);\n"
+        "    free(state);\n"
+        "}\n"
+        "static inline bool aster_when_all_propagate_fault(\n"
+        "        aster_when_all_state *state) {\n"
+        "    for (size_t i = 0U; i < state->count; ++i) {\n"
+        "        if (state->tasks[i]->state == ASTER_TASK_FAULTED) {\n"
+        "            aster_task_fault_from_task(\n"
+        "                state->output, state->tasks[i]);\n"
+        "            return true;\n"
+        "        }\n"
+        "    }\n"
+        "    return false;\n"
+        "}\n"
+        "static inline bool aster_when_all_propagate_cancellation(\n"
+        "        aster_when_all_state *state) {\n"
+        "    for (size_t i = 0U; i < state->count; ++i) {\n"
+        "        if (state->tasks[i]->state == ASTER_TASK_CANCELED) {\n"
+        "            aster_exception_message = aster_string_clone(\n"
+        "                state->tasks[i]->exception_message);\n"
+        "            aster_exception_type = state->tasks[i]->exception_type;\n"
+        "            aster_exception_pending = true;\n"
+        "            aster_task_cancel_from_current(state->output);\n"
+        "            return true;\n"
+        "        }\n"
+        "    }\n"
+        "    return false;\n"
+        "}\n"
+        "static void aster_when_all_completed(void *context) {\n"
+        "    aster_when_all_state *state = context;\n"
+        "    if (--state->remaining == 0U) state->finish(state);\n"
+        "}\n"
+        "static inline aster_task *aster_when_all_start(\n"
+        "        aster_task **tasks, size_t count,\n"
+        "        void (*finish)(aster_when_all_state *state)) {\n"
+        "    aster_task *output = aster_task_new();\n"
+        "    aster_when_all_state *state = aster_allocate(sizeof(*state));\n"
+        "    state->output = aster_task_retain(output);\n"
+        "    state->tasks = tasks;\n"
+        "    state->count = count;\n"
+        "    state->remaining = count;\n"
+        "    state->finish = finish;\n"
+        "    if (count == 0U) {\n"
+        "        finish(state);\n"
+        "        return output;\n"
+        "    }\n"
+        "    for (size_t i = 0U; i < count; ++i)\n"
+        "        aster_task_on_completed(\n"
+        "            tasks[i], aster_when_all_completed, state);\n"
+        "    return output;\n"
+        "}\n",
+        output);
+    fputs(
+        "typedef struct aster_when_any_state aster_when_any_state;\n"
+        "typedef struct aster_when_any_context {\n"
+        "    aster_when_any_state *state;\n"
+        "    aster_task *task;\n"
+        "} aster_when_any_context;\n"
+        "struct aster_when_any_state {\n"
+        "    aster_task *output;\n"
+        "    aster_task **tasks;\n"
+        "    aster_when_any_context *contexts;\n"
+        "    size_t count;\n"
+        "    size_t remaining;\n"
+        "    bool winner_selected;\n"
+        "};\n"
+        "static void aster_when_any_completed(void *raw_context) {\n"
+        "    aster_when_any_context *context = raw_context;\n"
+        "    aster_when_any_state *state = context->state;\n"
+        "    if (!state->winner_selected) {\n"
+        "        state->winner_selected = true;\n"
+        "        aster_task *winner = aster_task_retain(context->task);\n"
+        "        aster_task_succeed(\n"
+        "            state->output, &winner, sizeof(winner),\n"
+        "            aster_task_result_drop_task);\n"
+        "        aster_task_drop(state->output);\n"
+        "        state->output = NULL;\n"
+        "    }\n"
+        "    if (--state->remaining != 0U) return;\n"
+        "    for (size_t i = 0U; i < state->count; ++i)\n"
+        "        aster_task_drop(state->tasks[i]);\n"
+        "    free(state->tasks);\n"
+        "    free(state->contexts);\n"
+        "    free(state);\n"
+        "}\n"
+        "static inline aster_task *aster_when_any_start(\n"
+        "        aster_task **tasks, size_t count) {\n"
+        "    if (count == 0U) {\n"
+        "        free(tasks);\n"
+        "        aster_task *output = aster_task_new();\n"
+        "        if (aster_exception_pending)\n"
+        "            aster_string_drop(aster_exception_message);\n"
+        "        aster_exception_message = aster_string_from(\n"
+        "            (aster_str){(const unsigned char *)\n"
+        "                         \"Task.WhenAny requires at least one Task\",\n"
+        "                         sizeof(\"Task.WhenAny requires at least one Task\") - 1U});\n"
+        "        aster_exception_type = \"ArgumentException\";\n"
+        "        aster_exception_pending = true;\n"
+        "        aster_task_fault_from_current(output);\n"
+        "        return output;\n"
+        "    }\n"
+        "    aster_task *output = aster_task_new();\n"
+        "    aster_when_any_state *state = aster_allocate(sizeof(*state));\n"
+        "    *state = (aster_when_any_state){0};\n"
+        "    state->output = aster_task_retain(output);\n"
+        "    state->tasks = tasks;\n"
+        "    state->count = count;\n"
+        "    state->remaining = count;\n"
+        "    state->contexts = aster_allocate(\n"
+        "        count * sizeof(*state->contexts));\n"
+        "    for (size_t i = 0U; i < count; ++i) {\n"
+        "        state->contexts[i].state = state;\n"
+        "        state->contexts[i].task = tasks[i];\n"
+        "    }\n"
+        "    for (size_t i = 0U; i < count; ++i)\n"
+        "        aster_task_on_completed(\n"
+        "            tasks[i], aster_when_any_completed,\n"
+        "            &state->contexts[i]);\n"
+        "    return output;\n"
+        "}\n",
+        output);
+    fputs(
+        "static int64_t aster_task_now_ms(void) {\n"
+        "    struct timespec now;\n"
+        "    if (timespec_get(&now, TIME_UTC) != TIME_UTC)\n"
+        "        aster_trap(\"could not read clock for Task.Delay\");\n"
+        "    return (int64_t)now.tv_sec * INT64_C(1000) +\n"
+        "           (int64_t)now.tv_nsec / INT64_C(1000000);\n"
+        "}\n"
+        "static aster_task *aster_task_delay(\n"
+        "        int64_t milliseconds,\n"
+        "        aster_cancellation_state *cancellation) {\n"
+        "    if (milliseconds < 0)\n"
+        "        aster_trap(\"Task.Delay requires nonnegative milliseconds\");\n"
+        "    aster_task *task = aster_task_new();\n"
+        "    if (cancellation != NULL && cancellation->requested) {\n"
+        "        aster_exception_message = aster_string_from((aster_str){\n"
+        "            (const unsigned char *)\"A task was canceled.\",\n"
+        "            sizeof(\"A task was canceled.\") - 1U});\n"
+        "        aster_exception_type = \"TaskCanceledException\";\n"
+        "        aster_exception_pending = true;\n"
+        "        aster_task_cancel_from_current(task);\n"
+        "        aster_cancellation_drop(cancellation);\n"
+        "        return task;\n"
+        "    }\n"
+        "    aster_task_timer *timer = aster_allocate(sizeof(*timer));\n"
+        "    timer->deadline_ms = aster_task_now_ms() + milliseconds;\n"
+        "    timer->task = aster_task_retain(task);\n"
+        "    timer->cancellation = cancellation;\n"
+        "    timer->next = aster_task_timers;\n"
+        "    aster_task_timers = timer;\n"
+        "    return task;\n"
+        "}\n"
+        "static bool aster_task_process_timers(void) {\n"
+        "    int64_t now = aster_task_now_ms();\n"
+        "    bool completed = false;\n"
+        "    aster_task_timer **link = &aster_task_timers;\n"
+        "    while (*link != NULL) {\n"
+        "        aster_task_timer *timer = *link;\n"
+        "        bool canceled = timer->cancellation != NULL &&\n"
+        "            timer->cancellation->requested;\n"
+        "        if (!canceled && timer->deadline_ms > now) {\n"
+        "            link = &timer->next;\n"
+        "            continue;\n"
+        "        }\n"
+        "        *link = timer->next;\n"
+        "        if (canceled) {\n"
+        "            aster_exception_message = aster_string_from((aster_str){\n"
+        "                (const unsigned char *)\"A task was canceled.\",\n"
+        "                sizeof(\"A task was canceled.\") - 1U});\n"
+        "            aster_exception_type = \"TaskCanceledException\";\n"
+        "            aster_exception_pending = true;\n"
+        "            aster_task_cancel_from_current(timer->task);\n"
+        "        } else {\n"
+        "            uint8_t unit = UINT8_C(0);\n"
+        "            aster_task_succeed(\n"
+        "                timer->task, &unit, sizeof(unit), NULL);\n"
+        "        }\n"
+        "        aster_task_drop(timer->task);\n"
+        "        aster_cancellation_drop(timer->cancellation);\n"
+        "        free(timer);\n"
+        "        completed = true;\n"
+        "    }\n"
+        "    return completed;\n"
+        "}\n"
+        "static void aster_task_run_until(aster_task *task) {\n"
+        "    (void)aster_task_delay;\n"
+        "    (void)aster_when_all_start;\n"
+        "    (void)aster_when_any_start;\n"
+        "    while (task->state == ASTER_TASK_PENDING) {\n"
+        "        if (aster_task_process_timers()) continue;\n"
+        "        if (aster_task_timers == NULL)\n"
+        "            aster_trap(\"async executor has no work for pending Task\");\n"
+        "        int64_t wait_ms = aster_task_timers->deadline_ms -\n"
+        "                          aster_task_now_ms();\n"
+        "        for (aster_task_timer *timer = aster_task_timers;\n"
+        "             timer != NULL; timer = timer->next) {\n"
+        "            int64_t candidate = timer->deadline_ms -\n"
+        "                                aster_task_now_ms();\n"
+        "            if (candidate < wait_ms) wait_ms = candidate;\n"
+        "        }\n"
+        "        if (wait_ms < 0) wait_ms = 0;\n"
+        "        struct timespec duration = {\n"
+        "            .tv_sec = (time_t)(wait_ms / 1000),\n"
+        "            .tv_nsec = (long)((wait_ms % 1000) * 1000000)\n"
+        "        };\n"
+        "        (void)thrd_sleep(&duration, NULL);\n"
+        "    }\n"
+        "}\n\n",
+        output);
+}
+
+void c_backend_emit_async_result_helpers(CEmitter *emitter) {
+    for (size_t type = 0U; type < emitter->ir->type_count; ++type) {
+        bool completion_type = false;
+        for (size_t function = 0U;
+             function < emitter->ir->function_count; ++function) {
+            const IrFunction *candidate =
+                &emitter->ir->functions[function];
+            if (emitter->reachable_functions[function] &&
+                candidate->is_async &&
+                candidate->async_result_type == (IrTypeId)type) {
+                completion_type = true;
+                break;
+            }
+        }
+        for (size_t function = 0U;
+             !completion_type && function < emitter->ir->function_count;
+             ++function) {
+            if (!emitter->reachable_functions[function]) continue;
+            const IrFunction *candidate = &emitter->ir->functions[function];
+            for (size_t block = 0U;
+                 !completion_type && block < candidate->block_count; ++block)
+                for (size_t instruction = 0U;
+                     instruction < candidate->blocks[block].instruction_count;
+                     ++instruction) {
+                    const IrInstruction *call =
+                        &candidate->blocks[block].instructions[instruction];
+                    if (call->opcode == IR_OP_CALL_NATIVE &&
+                        call->symbol != NULL &&
+                        strcmp(call->symbol, "Task::WhenAll") == 0 &&
+                        call->result_type < emitter->ir->type_count &&
+                        emitter->ir->types[call->result_type].element_type ==
+                            (IrTypeId)type) {
+                        completion_type = true;
+                        break;
+                    }
+                }
+        }
+        if (!completion_type ||
+            !c_backend_type_needs_drop(emitter, (IrTypeId)type))
+            continue;
+        fprintf(emitter->output,
+                "static void aster_task_result_drop_%zu(void *storage) {\n"
+                "    aster_drop_%zu((",
+                type, type);
+        c_backend_emit_type(emitter, (IrTypeId)type);
+        fputs(" *)storage);\n}\n\n", emitter->output);
+    }
+}
+
+static bool instruction_is_when_all(const IrInstruction *instruction) {
+    return instruction->opcode == IR_OP_CALL_NATIVE &&
+           instruction->symbol != NULL &&
+           strcmp(instruction->symbol, "Task::WhenAll") == 0 &&
+           instruction->operand_count == 1U;
+}
+
+void c_backend_emit_async_combinator_helpers(CEmitter *emitter) {
+    bool *emitted = calloc(emitter->ir->type_count, sizeof(*emitted));
+    if (emitted == NULL) {
+        c_backend_unsupported(emitter, (LangSpan){0},
+                              "Task.WhenAll helper bookkeeping");
+        return;
+    }
+    for (size_t f = 0U; f < emitter->ir->function_count; ++f) {
+        if (!emitter->reachable_functions[f]) continue;
+        const IrFunction *function = &emitter->ir->functions[f];
+        for (size_t b = 0U; b < function->block_count; ++b) {
+            const IrBlock *block = &function->blocks[b];
+            for (size_t i = 0U; i < block->instruction_count; ++i) {
+                const IrInstruction *instruction = &block->instructions[i];
+                if (!instruction_is_when_all(instruction)) continue;
+                IrTypeId input_type = function->value_types[
+                    instruction->operands[0]];
+                if (input_type >= emitter->ir->type_count ||
+                    emitted[input_type])
+                    continue;
+                emitted[input_type] = true;
+                const IrType *output_task =
+                    &emitter->ir->types[instruction->result_type];
+                IrTypeId result_type = output_task->element_type;
+                const IrType *result = &emitter->ir->types[result_type];
+                fprintf(emitter->output,
+                        "static void aster_when_all_finish_%" PRIu32
+                        "(aster_when_all_state *state) {\n",
+                        input_type);
+                fputs("    if (aster_when_all_propagate_fault(state)) {\n"
+                      "        aster_when_all_release(state);\n"
+                      "        return;\n"
+                      "    }\n", emitter->output);
+                fputs("    if (aster_when_all_propagate_cancellation(state)) {\n"
+                      "        aster_when_all_release(state);\n"
+                      "        return;\n"
+                      "    }\n", emitter->output);
+                if (result->shape == IR_TYPE_UNIT) {
+                    fputs("    uint8_t unit = UINT8_C(0);\n"
+                          "    aster_task_succeed(state->output, &unit, "
+                          "sizeof(unit), NULL);\n",
+                          emitter->output);
+                } else {
+                    IrTypeId element_type = result->element_type;
+                    fprintf(emitter->output,
+                            "    aster_vec_%" PRIu32 " *results = "
+                            "aster_allocate(sizeof(*results));\n"
+                            "    *results = (aster_vec_%" PRIu32 "){0};\n"
+                            "    results->length = state->count;\n"
+                            "    results->capacity = state->count;\n"
+                            "    results->data = aster_allocate(\n"
+                            "        state->count * sizeof(*results->data));\n"
+                            "    for (size_t i = 0U; i < state->count; ++i)\n"
+                            "        results->data[i] = ",
+                            result_type, result_type);
+                    bool clone_element =
+                        c_backend_type_needs_drop(emitter, element_type);
+                    if (clone_element)
+                        fprintf(emitter->output,
+                                "aster_clone_%" PRIu32 "(", element_type);
+                    fputs("*((", emitter->output);
+                    c_backend_emit_type(emitter, element_type);
+                    fputs(" *)state->tasks[i]->result)", emitter->output);
+                    if (clone_element)
+                        fputc(')', emitter->output);
+                    fputs(";\n", emitter->output);
+                    fprintf(emitter->output,
+                            "    aster_task_succeed(state->output, &results, "
+                            "sizeof(results), aster_task_result_drop_%" PRIu32
+                            ");\n",
+                            result_type);
+                }
+                fputs("    aster_when_all_release(state);\n"
+                      "}\n", emitter->output);
+                fprintf(emitter->output,
+                        "static aster_task *aster_when_all_%" PRIu32
+                        "(aster_vec_%" PRIu32 " *list) {\n"
+                        "    size_t count = list != NULL ? list->length : 0U;\n"
+                        "    aster_task **tasks = list != NULL "
+                        "? list->data : NULL;\n"
+                        "    free(list);\n"
+                        "    return aster_when_all_start(\n"
+                        "        tasks, count, aster_when_all_finish_%" PRIu32
+                        ");\n"
+                        "}\n\n",
+                        input_type, input_type, input_type);
+            }
+        }
+    }
+    free(emitted);
+}
+
+void c_backend_emit_async_frame_declaration(
+    CEmitter *emitter, size_t function_index) {
+    const IrFunction *function =
+        &emitter->ir->functions[function_index];
+    if (!function->is_async) return;
+    FILE *output = emitter->output;
+    fprintf(output, "typedef struct aster_async_frame_%zu {\n", function_index);
+    fputs("    size_t state;\n    aster_task *task;\n", output);
+    for (size_t p = 0U; p < function->parameter_count; ++p) {
+        fputs("    ", output);
+        c_backend_emit_type(emitter, function->parameter_types[p]);
+        fprintf(output, " p%zu;\n", p);
+    }
+    for (size_t l = 0U; l < function->local_count; ++l) {
+        fputs("    ", output);
+        c_backend_emit_type(emitter, function->locals[l].type);
+        fprintf(output, " l%zu;\n", l);
+        if (c_backend_local_tracks_drop(
+                emitter, function, (uint32_t)l))
+            fprintf(output, "    bool l%zu_live;\n", l);
+    }
+    for (size_t v = 0U; v < function->value_count; ++v) {
+        fputs("    ", output);
+        c_backend_emit_type(emitter, function->value_types[v]);
+        fprintf(output, " v%zu;\n", v);
+    }
+    fprintf(output, "} aster_async_frame_%zu;\n\n", function_index);
+}
+
+void c_backend_emit_async_step_prototype(
+    CEmitter *emitter, size_t function_index) {
+    if (!emitter->ir->functions[function_index].is_async) return;
+    fprintf(emitter->output,
+            "static void aster_async_step_%zu(void *context);\n",
+            function_index);
+}
+
+static void emit_frame_save(CEmitter *emitter,
+                            const IrFunction *function) {
+    FILE *output = emitter->output;
+    for (size_t p = 0U; p < function->parameter_count; ++p)
+        fprintf(output, "        frame->p%zu = p%zu;\n", p, p);
+    for (size_t l = 0U; l < function->local_count; ++l) {
+        fprintf(output, "        frame->l%zu = l%zu;\n", l, l);
+        if (c_backend_local_tracks_drop(
+                emitter, function, (uint32_t)l))
+            fprintf(output,
+                    "        frame->l%zu_live = l%zu_live;\n", l, l);
+    }
+    for (size_t v = 0U; v < function->value_count; ++v)
+        fprintf(output, "        frame->v%zu = v%zu;\n", v, v);
+}
+
+void c_backend_emit_async_await(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction) {
+    FILE *output = emitter->output;
+    size_t state = ++emitter->async_await_index;
+    IrValueId task_value = instruction->operands[0];
+    fprintf(output,
+            "    if (v%" PRIu32 " == NULL)\n"
+            "        aster_trap(\"cannot await a null Task\");\n"
+            "    if (v%" PRIu32 "->state == ASTER_TASK_PENDING) {\n"
+            "        frame->state = %zuU;\n",
+            task_value, task_value, state);
+    emit_frame_save(emitter, function);
+    fprintf(output,
+            "        aster_task_on_completed(v%" PRIu32
+            ", aster_async_step_%zu, frame);\n"
+            "        return;\n"
+            "    }\n"
+            "aster_async_%zu_resume_%zu: ;\n"
+            "    if (v%" PRIu32 "->state == ASTER_TASK_FAULTED ||\n"
+            "        v%" PRIu32 "->state == ASTER_TASK_CANCELED)\n"
+            "        aster_task_restore_fault(v%" PRIu32 ");\n"
+            "    else if (v%" PRIu32 "->state != ASTER_TASK_SUCCEEDED)\n"
+            "        aster_trap(\"await resumed from invalid Task state\");\n",
+            task_value, emitter->async_function_index,
+            emitter->async_function_index, state,
+            task_value, task_value, task_value, task_value);
+    const IrType *result =
+        &emitter->ir->types[instruction->result_type];
+    if (result->shape == IR_TYPE_UNIT) {
+        fprintf(output,
+                "    v%" PRIu32 " = UINT8_C(0);\n",
+                instruction->result);
+    } else {
+        fprintf(output,
+                "    if (v%" PRIu32 "->state == ASTER_TASK_SUCCEEDED) {\n"
+                "        if (v%" PRIu32 "->result_size != sizeof(v%" PRIu32 "))\n"
+                "            aster_trap(\"awaited Task result size mismatch\");\n"
+                "        v%" PRIu32 " = ",
+                task_value, task_value, instruction->result,
+                instruction->result);
+        if (c_backend_type_needs_drop(
+                emitter, instruction->result_type))
+            fprintf(output, "aster_clone_%" PRIu32 "(*(",
+                    instruction->result_type);
+        else
+            fputs("*(", output);
+        c_backend_emit_type(emitter, instruction->result_type);
+        fprintf(output, " *)v%" PRIu32 "->result%s;\n    }\n",
+                task_value,
+                c_backend_type_needs_drop(
+                    emitter, instruction->result_type) ? ")" : "");
+    }
+    fprintf(output,
+            "    aster_task_drop(v%" PRIu32 ");\n"
+            "    v%" PRIu32 " = NULL;\n",
+            task_value, task_value);
+}
+
+void c_backend_emit_async_terminator(
+    CEmitter *emitter, const IrFunction *function,
+    const IrTerminator *terminator) {
+    FILE *output = emitter->output;
+    switch (terminator->kind) {
+        case IR_TERM_JUMP:
+            fprintf(output, "    goto b%" PRIu32 ";\n", terminator->target);
+            return;
+        case IR_TERM_BRANCH:
+            fprintf(output,
+                    "    if (v%" PRIu32 ") goto b%" PRIu32
+                    "; else goto b%" PRIu32 ";\n",
+                    terminator->value, terminator->target,
+                    terminator->alternate);
+            return;
+        case IR_TERM_RETURN:
+            fputs("    {\n"
+                  "    aster_task *completed_task = frame->task;\n", output);
+            fprintf(output,
+                    "    aster_task_succeed(completed_task, &v%" PRIu32
+                    ", sizeof(v%" PRIu32 "), ",
+                    terminator->value, terminator->value);
+            if (c_backend_type_needs_drop(
+                    emitter, function->async_result_type))
+                fprintf(output, "aster_task_result_drop_%" PRIu32,
+                        function->async_result_type);
+            else
+                fputs("NULL", output);
+            fputs(");\n", output);
+            fputs("    free(frame);\n"
+                  "    aster_task_drop(completed_task);\n"
+                  "    return;\n"
+                  "    }\n", output);
+            return;
+        case IR_TERM_PROPAGATE_EXCEPTION:
+            fputs("    {\n"
+                  "    aster_task *faulted_task = frame->task;\n"
+                  "    aster_task_fault_from_current(faulted_task);\n"
+                  "    free(frame);\n"
+                  "    aster_task_drop(faulted_task);\n"
+                  "    return;\n"
+                  "    }\n", output);
+            return;
+        case IR_TERM_TRAP:
+            fputs("    aster_trap(\"Aster runtime trap\");\n", output);
+            return;
+        case IR_TERM_NONE:
+            c_backend_unsupported(
+                emitter, terminator->span,
+                "an unterminated async IR block");
+            return;
+    }
+}
+
+void c_backend_emit_async_function(
+    CEmitter *emitter, size_t function_index) {
+    const IrFunction *function =
+        &emitter->ir->functions[function_index];
+    FILE *output = emitter->output;
+    c_backend_emit_type(emitter, function->return_type);
+    fprintf(output, " aster_fn_%zu(", function_index);
+    if (function->parameter_count == 0U) {
+        fputs("void", output);
+    } else {
+        for (size_t p = 0U; p < function->parameter_count; ++p) {
+            if (p != 0U) fputs(", ", output);
+            c_backend_emit_type(emitter, function->parameter_types[p]);
+            fprintf(output, " p%zu", p);
+        }
+    }
+    fprintf(output,
+            ") {\n"
+            "    aster_async_frame_%zu *frame =\n"
+            "        aster_allocate(sizeof(*frame));\n"
+            "    *frame = (aster_async_frame_%zu){0};\n"
+            "    frame->task = aster_task_new();\n"
+            "    (void)aster_task_retain(frame->task);\n",
+            function_index, function_index);
+    for (size_t p = 0U; p < function->parameter_count; ++p)
+        fprintf(output, "    frame->p%zu = p%zu;\n", p, p);
+    fprintf(output,
+            "    aster_task *task = frame->task;\n"
+            "    aster_async_step_%zu(frame);\n"
+            "    return task;\n"
+            "}\n\n"
+            "static void aster_async_step_%zu(void *context) {\n"
+            "    aster_async_frame_%zu *frame = context;\n",
+            function_index, function_index, function_index);
+    for (size_t p = 0U; p < function->parameter_count; ++p) {
+        fputs("    ", output);
+        c_backend_emit_type(emitter, function->parameter_types[p]);
+        fprintf(output, " p%zu = frame->p%zu;\n", p, p);
+    }
+    for (size_t l = 0U; l < function->local_count; ++l) {
+        fputs("    ", output);
+        c_backend_emit_type(emitter, function->locals[l].type);
+        fprintf(output, " l%zu = frame->l%zu;\n", l, l);
+        fprintf(output, "    (void)l%zu;\n", l);
+        if (c_backend_local_tracks_drop(
+                emitter, function, (uint32_t)l))
+            fprintf(output,
+                    "    bool l%zu_live = frame->l%zu_live;\n", l, l);
+    }
+    for (size_t v = 0U; v < function->value_count; ++v) {
+        fputs("    ", output);
+        c_backend_emit_type(emitter, function->value_types[v]);
+        fprintf(output, " v%zu = frame->v%zu;\n", v, v);
+        fprintf(output, "    (void)v%zu;\n", v);
+    }
+    fputs("    switch (frame->state) {\n"
+          "        case 0U: break;\n", output);
+    size_t await_count = 0U;
+    for (size_t b = 0U; b < function->block_count; ++b)
+        for (size_t i = 0U;
+             i < function->blocks[b].instruction_count; ++i)
+            if (function->blocks[b].instructions[i].opcode == IR_OP_AWAIT) {
+                ++await_count;
+                fprintf(output,
+                        "        case %zuU: goto aster_async_%zu_resume_%zu;\n",
+                        await_count, function_index, await_count);
+            }
+    fputs("        default: aster_trap(\"invalid async frame state\");\n"
+          "    }\n", output);
+    for (size_t b = 0U; b < function->block_count; ++b)
+        fprintf(output, "    if (false) goto b%zu;\n", b);
+    fprintf(output, "    goto b%" PRIu32 ";\n", function->entry_block);
+    emitter->async_function_index = function_index;
+    emitter->async_await_index = 0U;
+    for (size_t b = 0U; b < function->block_count; ++b) {
+        fprintf(output, "b%zu: ;\n", b);
+        const IrBlock *block = &function->blocks[b];
+        for (size_t i = 0U; i < block->instruction_count; ++i) {
+            c_backend_emit_instruction(
+                emitter, function, &block->instructions[i]);
+            if (emitter->failed) return;
+        }
+        c_backend_emit_terminator(emitter, function, &block->terminator);
+        if (emitter->failed) return;
+    }
+    fputs("}\n\n", output);
+}

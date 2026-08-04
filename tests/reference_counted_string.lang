@@ -1,0 +1,13 @@
+int main()
+{
+    string first = "Aster";
+    string second = first;
+
+    print(first);
+    print(second);
+
+    second = "Lime";
+    print(first);
+    print(second);
+    return 0;
+}

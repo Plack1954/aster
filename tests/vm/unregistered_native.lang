@@ -1,0 +1,6 @@
+extern long MissingNative();
+
+int main() {
+    print(MissingNative());
+    return 0;
+}

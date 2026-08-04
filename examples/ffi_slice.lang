@@ -1,0 +1,10 @@
+extern usize NativeFillBytes(Slice<byte> bytes, byte value);
+
+int main() {
+    Buffer buffer = Buffer.allocate(16);
+    unsafe {
+        Slice<byte> bytes = BufferAsMutSlice(buffer);
+        print(NativeFillBytes(bytes, 42));
+    }
+    return 0;
+}

@@ -1,0 +1,32 @@
+struct Article
+{
+    int Id;
+    bool Published;
+}
+
+public Article MakeArticle()
+{
+    Article article = new()
+    {
+        Id = 7,
+        Published = true
+    };
+    return article;
+}
+
+int main()
+{
+    Article article = MakeArticle();
+    Article backup = article;
+    print(article.Id);
+    print(backup.Id);
+
+    string title = "Aster";
+    string copiedTitle = title;
+    print(title);
+    print(copiedTitle);
+
+    var status = 0;
+    print(status);
+    return 0;
+}

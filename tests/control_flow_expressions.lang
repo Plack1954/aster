@@ -1,0 +1,43 @@
+union Choice {
+    Number(long),
+    Empty,
+}
+
+long choose(bool flag) {
+    return if (flag) {
+        10
+    } else {
+        20
+    };
+}
+
+long chained(long value) {
+    long result = if (value == 1) {
+        30
+    } else if (value == 2) {
+        40
+    } else {
+        50
+    };
+    return result;
+}
+
+long inspect(Choice choice) {
+    return switch (choice) {
+        case Choice.Number(value): {
+            value
+        }
+        case Choice.Empty: {
+            0
+        }
+    };
+}
+
+int main() {
+    print(choose(true));
+    print(choose(false));
+    print(chained(2));
+    print(inspect(Choice.Number(7)));
+    print(inspect(Choice.Empty));
+    return 0;
+}

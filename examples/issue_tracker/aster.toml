@@ -1,0 +1,23 @@
+name = "aster-issue-tracker"
+source_root = "src"
+default_target = "render"
+
+[target.render]
+kind = "bin"
+entry = "App.Render"
+
+[target.server]
+kind = "bin"
+entry = "App.Server"
+
+[target.proof]
+kind = "bin"
+entry = "App.Proof"
+
+[target.integration_server]
+kind = "bin"
+entry = "App.IntegrationServer"
+
+[target.smoke]
+kind = "test"
+entry = "App.Tests"

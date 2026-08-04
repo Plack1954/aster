@@ -1,0 +1,16 @@
+string BuildMessage() {
+    StringBuilder builder = new();
+    builder.Append("Hello");
+    builder.Append(", ");
+    builder.Append("Aster.");
+    return (builder).ToString();
+}
+
+int main() {
+    string message = BuildMessage();
+    print(message);
+
+    string copied = "owned text";
+    print(copied);
+    return 0;
+}

@@ -1,0 +1,39 @@
+using System.IO;
+using Aster.Interop;
+using System.Text;
+
+Result<bool, string> RejectBadLine(string line) {
+    if (line == "bad") {
+        return Result.Err("line callback rejected input");
+    }
+    return Result.Ok(true);
+}
+
+int main() {
+    Result<string, string> pathResult = NativeProcessArg(0);
+    switch (pathResult) {
+        case Result.Ok(path): {
+            Result<usize, string> result =
+                ForEachLineBuffered(
+                    path,
+                    7,
+                    RejectBadLine,
+                );
+            switch (result) {
+                case Result.Ok(count): {
+                    print(count);
+                    return 1;
+                }
+                case Result.Err(error): {
+                    print(error);
+                    return 0;
+                }
+            }
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+    return 1;
+}

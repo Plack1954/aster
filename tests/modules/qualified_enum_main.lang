@@ -1,0 +1,24 @@
+namespace Qualified.EnumMain;
+
+using Qualified.EnumDep;
+
+long read(Qualified.Enums.Status status) {
+    switch (status) {
+        case Qualified.Enums.Status.Ready(value): {
+            return value;
+        }
+        case Qualified.Enums.Status.Empty: {
+            return 0;
+        }
+    }
+}
+
+int main() {
+    Qualified.Enums.Status ready =
+        Qualified.Enums.Status.Ready(42);
+    Qualified.Enums.Status empty =
+        Qualified.Enums.Status.Empty;
+    print(read(ready));
+    print(read(empty));
+    return 0;
+}

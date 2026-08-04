@@ -1,0 +1,100 @@
+using System.Collections.Generic;
+
+int main()
+{
+    Dictionary<string, int> scores = new();
+    if (scores.Count != 0) { return 1; }
+    usize reserved = scores.EnsureCapacity(10);
+    if (reserved < 10 || scores.Capacity != reserved) { return 22; }
+
+    scores.Add("Aster", 10);
+    scores.Add("Lime", 20);
+    if (scores.TryAdd("Aster", 999)) { return 16; }
+    if (!scores.TryAdd("Fresh", 25)) { return 17; }
+    if (scores["Aster"] != 10 || scores["Fresh"] != 25) { return 18; }
+    if (scores.Count != 3) { return 2; }
+    if (!scores.ContainsKey("Aster")) { return 3; }
+    if (scores.ContainsKey("Missing")) { return 4; }
+    int foundScore = -1;
+    if (!scores.TryGetValue("Aster", out foundScore) || foundScore != 10)
+    {
+        return 36;
+    }
+    if (scores.TryGetValue("Missing", out foundScore) || foundScore != 0)
+    {
+        return 37;
+    }
+    if (scores["Aster"] != 10) { return 5; }
+
+    scores["Aster"] = 15;
+    scores["New"] = 30;
+    if (scores["Aster"] != 15) { return 6; }
+    if (scores["New"] != 30) { return 7; }
+    if (scores.Count != 4) { return 8; }
+
+    Dictionary<string, int> copied = scores;
+    scores["Aster"] = 99;
+    if (copied["Aster"] != 15) { return 15; }
+
+    if (!scores.Remove("Lime")) { return 9; }
+    if (scores.Remove("Missing")) { return 10; }
+    if (scores.Count != 3) { return 11; }
+    if (!scores.ContainsValue(99) || scores.ContainsValue(20)) { return 19; }
+    scores.TrimExcess();
+    if (scores.Capacity != scores.Count) { return 23; }
+    if (scores.EnsureCapacity(12) < 12) { return 24; }
+    scores.TrimExcess(8);
+    if (scores.Capacity != 8 || scores.Count != 3) { return 25; }
+
+    Dictionary<int, string> labels = new();
+    labels.Add(7, "seven");
+    labels[11] = "eleven";
+    string foundLabel = "unset";
+    if (!labels.TryGetValue(11, out foundLabel) || foundLabel != "eleven")
+    {
+        return 38;
+    }
+    if (labels[7] != "seven") { return 12; }
+    if (labels[11] != "eleven") { return 13; }
+
+    Dictionary<int, int> many = new();
+    many.EnsureCapacity(3);
+    for (int i = 0; i < 512; i++)
+    {
+        many[i] = i * 7;
+    }
+    if (many.Count != 512) { return 27; }
+    for (int i = 0; i < 512; i++)
+    {
+        if (!many.ContainsKey(i) || many[i] != i * 7) { return 28; }
+    }
+    for (int i = 0; i < 512; i += 3)
+    {
+        if (!many.Remove(i)) { return 29; }
+    }
+    for (int i = 0; i < 512; i++)
+    {
+        bool removed = i % 3 == 0;
+        if (many.ContainsKey(i) == removed) { return 30; }
+        if (!removed && many[i] != i * 7) { return 31; }
+    }
+    for (int i = 0; i < 512; i += 3)
+    {
+        if (!many.TryAdd(i, i * 11)) { return 32; }
+    }
+    if (many.Count != 512) { return 33; }
+    many.TrimExcess();
+    if (many.Capacity != 512 || many[510] != 5610) { return 34; }
+
+    many.Clear();
+    many[42] = 84;
+    if (many.Count != 1 || many[42] != 84) { return 35; }
+
+    scores.Clear();
+    labels.Clear();
+    if (scores.Count != 0 || labels.Count != 0) { return 14; }
+    scores.TrimExcess();
+    if (scores.Capacity != 0) { return 26; }
+    copied.Clear();
+    return 0;
+}

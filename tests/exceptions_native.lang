@@ -1,0 +1,19 @@
+extern NativeHandle NativeHandleOpenId(long id);
+extern void NativeFailHandle(NativeHandle handle);
+
+int main()
+{
+    try
+    {
+        NativeHandle handle = NativeHandleOpenId(9);
+        NativeFailHandle(handle);
+        print("unreachable");
+    }
+    catch (Exception error)
+    {
+        print(error.Message);
+    }
+
+    print("native-recovered");
+    return 0;
+}

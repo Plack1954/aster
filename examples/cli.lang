@@ -1,0 +1,40 @@
+using Aster.CommandLine;
+using System.Text;
+
+Result<int, string> run() {
+    List<CliArgument> arguments =
+        try CliParseProcessArguments();
+    for (argument in arguments) {
+        switch (argument) {
+            case CliArgument.Flag(name): {
+                print("flag");
+                print(name);
+            }
+            case CliArgument.Named(named): {
+                string view = named;
+                print("named");
+                print(CliNamedName(view));
+                print(CliNamedValue(view));
+            }
+            case CliArgument.Positional(value): {
+                print("positional");
+                print(value);
+            }
+        }
+    }
+    return Result.Ok(0);
+}
+
+int main() {
+    Result<int, string> result = run();
+    switch (result) {
+        case Result.Ok(status): {
+            return status;
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+    return 1;
+}

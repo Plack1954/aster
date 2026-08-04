@@ -1,0 +1,20 @@
+long mix(long value, long iteration) {
+    long next = value + iteration + 1;
+    if (next > 1000000000) {
+        return next - 1000000000;
+    }
+    return next;
+}
+
+int main() {
+    long value = 1;
+    long iteration = 0;
+    while (iteration < 20000000) {
+        value = mix(value, iteration);
+        iteration = iteration + 1;
+    }
+    if (value == 10000001) {
+        return 0;
+    }
+    return 1;
+}

@@ -1,0 +1,9 @@
+void mutate(long values[2]) {
+    values[0] = 3;
+}
+
+int main() {
+    long values[2] = [1, 2];
+    mutate(values);
+    return 0;
+}

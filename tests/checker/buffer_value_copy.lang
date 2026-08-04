@@ -1,0 +1,6 @@
+int main() {
+    Buffer buffer = Buffer.allocate(16);
+    Buffer other = buffer;
+    print(buffer.len);
+    return 0;
+}

@@ -1,0 +1,19 @@
+using Aster.Content;
+
+int main()
+{
+    switch (DiscoverFiles("packages/lime/test_content", ".md"))
+    {
+        case Result.Ok(paths): {
+            foreach (string path in paths)
+            {
+                print(path);
+            }
+            return 0;
+        }
+        case Result.Err(error): {
+            eprint(error);
+            return 1;
+        }
+    }
+}

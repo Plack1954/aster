@@ -1,0 +1,19 @@
+struct Counter {
+    value: long,
+    label: string,
+}
+
+void increment(ref Counter counter) {
+    counter.value = counter.value + 1;
+}
+
+int main() {
+    var counter = Counter {
+        value: 40,
+        label: "answer",
+    };
+    increment(counter);
+    increment(counter);
+    print(counter.value);
+    return 0;
+}

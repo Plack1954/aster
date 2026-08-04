@@ -1,0 +1,41 @@
+long RangeStart() {
+    print(100);
+    return 2;
+}
+
+long RangeEnd() {
+    print(200);
+    return 7;
+}
+
+int main() {
+    long total = 0;
+    for (index in RangeStart()..RangeEnd()) {
+        if (index == 3) {
+            continue;
+        }
+        if (index == 6) {
+            break;
+        }
+        total += index;
+    }
+    print(total);
+
+    usize limit = 4;
+    usize unsignedTotal = 0;
+    for (index in 0..limit) {
+        unsignedTotal += index;
+    }
+    print(unsignedTotal);
+
+    for (ignored in 5..2) {
+        print(ignored);
+    }
+
+    byte narrowStart = 254;
+    byte narrowEnd = 255;
+    for (value in narrowStart..narrowEnd) {
+        print(value);
+    }
+    return 0;
+}

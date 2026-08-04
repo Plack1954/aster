@@ -1,0 +1,12 @@
+using Aster.Html;
+
+int main() {
+    Html document =
+        <img
+            src=Url.relative("first.jpg")
+            src=Url.relative("second.jpg")
+            alt="image"
+        />;
+    print(HtmlRender(document));
+    return 0;
+}

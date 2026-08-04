@@ -1,0 +1,10 @@
+using Aster.Html;
+
+Html BadPanel(string children) {
+    return <section>{children}</section>;
+}
+
+int main() {
+    Html panel = <BadPanel>"content"</BadPanel>;
+    return 0;
+}

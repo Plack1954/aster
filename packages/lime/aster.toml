@@ -1,0 +1,84 @@
+name = "lime"
+source_root = "src"
+default_target = "smoke"
+
+[target.library]
+kind = "lib"
+entry = "Lime"
+
+[target.current_http]
+kind = "lib"
+entry = "Lime.CurrentHttp"
+
+[target.h2o]
+kind = "lib"
+entry = "Lime.H2O"
+
+[target.forms]
+kind = "lib"
+entry = "Lime.Forms"
+
+[target.sessions]
+kind = "lib"
+entry = "Lime.Sessions"
+
+[target.static]
+kind = "lib"
+entry = "Lime.Static"
+
+[target.content]
+kind = "lib"
+entry = "Lime.Content"
+
+[target.markdown]
+kind = "lib"
+entry = "Lime.Markdown"
+
+[target.browser]
+kind = "lib"
+entry = "Lime.Browser"
+
+[target.ssg]
+kind = "lib"
+entry = "Lime.Ssg"
+
+[target.smoke]
+kind = "test"
+entry = "Tests.Smoke"
+
+[target.sessions_smoke]
+kind = "test"
+entry = "Tests.SessionsSmoke"
+
+[target.browser_smoke]
+kind = "test"
+entry = "Tests.BrowserSmoke"
+
+[target.ssg_smoke]
+kind = "bin"
+entry = "Tests.SsgSmoke"
+
+[target.current_http_server]
+kind = "bin"
+entry = "Tests.CurrentHttpServer"
+
+[target.h2o_http_server]
+kind = "bin"
+entry = "Tests.H2OHttpServer"
+
+[target.browser_http_server]
+kind = "bin"
+entry = "Tests.BrowserHttpServer"
+browser_entry = "Tests.BrowserApp"
+
+[target.async_response]
+kind = "bin"
+entry = "Tests.AsyncResponse"
+
+[target.blog_fixture]
+kind = "bin"
+entry = "Examples.Blog.Site"
+
+[target.blog_fixture_server]
+kind = "bin"
+entry = "Examples.Blog.Server"

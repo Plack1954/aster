@@ -1,0 +1,16 @@
+using Aster.Interop;
+
+int main() {
+    Result<string, string> value =
+        NativeProcessEnvironment("ASTER_C_ENV_TEST");
+    switch (value) {
+        case Result.Ok(configured): {
+            print(configured);
+        }
+        case Result.Err(error): {
+            print(error);
+            return 1;
+        }
+    }
+    return 0;
+}

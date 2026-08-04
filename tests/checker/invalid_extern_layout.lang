@@ -1,0 +1,7 @@
+extern struct BadCLayout {
+    text: string,
+}
+
+int main() {
+    return 0;
+}

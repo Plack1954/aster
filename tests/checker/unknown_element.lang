@@ -1,0 +1,5 @@
+int main() {
+    Html document = <notRegistered />;
+    print(HtmlRender(document));
+    return 0;
+}

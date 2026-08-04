@@ -1,0 +1,8 @@
+long recurse(long value) {
+    return recurse(value + 1);
+}
+
+int main() {
+    print(recurse(0));
+    return 0;
+}

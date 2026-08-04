@@ -1,0 +1,10 @@
+namespace Isolation.Dep;
+
+int main() {
+    print(999);
+    return 0;
+}
+
+pub bool choose(bool value) {
+    return value;
+}

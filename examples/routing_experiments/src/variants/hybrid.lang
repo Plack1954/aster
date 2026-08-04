@@ -1,0 +1,21 @@
+namespace Variants.Hybrid;
+
+using Aster.Web.HttpApp;
+using Pages.Generated;
+using Site.View;
+
+Router DynamicRouter() {
+    Router router = RouterNew(missing);
+    AddPages(router);
+    RouterGetMut(router, "/article/:slug/", article);
+    return router;
+}
+
+int main() {
+    Router router = DynamicRouter();
+    PrintResponse(RouterDispatch(router, request("/")));
+    PrintResponse(RouterDispatch(router, request("/about/")));
+    PrintResponse(RouterDispatch(router, request("/article/hello-world/")));
+    PrintResponse(RouterDispatch(router, request("/missing/")));
+    return 0;
+}

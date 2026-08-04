@@ -1,0 +1,14 @@
+namespace Shared.Generics;
+
+pub struct Box<T> {
+    value: T,
+}
+
+pub union Maybe<T> {
+    None,
+    Some(T),
+}
+
+pub T identity<T>(T value) {
+    return value;
+}

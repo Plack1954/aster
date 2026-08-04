@@ -1,0 +1,13 @@
+int main() {
+    List<string> values = new();
+    string first = "Ada";
+    string second = "Lin";
+    values.Add(first);
+    values.Add(second);
+    print(values.Count);
+
+    foreach (string value in values) {
+        print(value);
+    }
+    return 0;
+}

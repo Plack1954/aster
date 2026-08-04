@@ -1,0 +1,75 @@
+extern Task Task.Delay(int milliseconds);
+
+using Aster.Html;
+
+struct PageResponse
+{
+    int StatusCode;
+    string ContentType;
+    List<string> Headers;
+    Html Body;
+}
+
+async Task<string> LoadTitleAsync()
+{
+    await Task.Delay(1);
+    return "Aster async";
+}
+
+async Task<List<int>> LoadNumbersAsync()
+{
+    await Task.Delay(1);
+    List<int> values = new();
+    values.Add(10);
+    values.Add(20);
+    return values;
+}
+
+async Task<Html> LoadHtmlAsync(string title)
+{
+    await Task.Delay(1);
+    return <article><h1>{title}</h1></article>;
+}
+
+async Task<PageResponse> LoadResponseAsync()
+{
+    string title = await LoadTitleAsync();
+    List<string> headers = new();
+    headers.Add("cache-control: public");
+    Html body = await LoadHtmlAsync(title);
+    return new()
+    {
+        StatusCode = 200,
+        ContentType = "text/html",
+        Headers = headers,
+        Body = body
+    };
+}
+
+async Task<int> main()
+{
+    Task<string> titleTask = LoadTitleAsync();
+    string titleFirst = await titleTask;
+    string titleSecond = await titleTask;
+    print(titleFirst);
+    print(titleSecond);
+
+    Task<List<int>> numbersTask = LoadNumbersAsync();
+    List<int> firstNumbers = await numbersTask;
+    firstNumbers.Add(30);
+    List<int> secondNumbers = await numbersTask;
+    print(firstNumbers.Count);
+    print(secondNumbers.Count);
+
+    Task<PageResponse> responseTask = LoadResponseAsync();
+    PageResponse first = await responseTask;
+    first.Headers.Add("x-first: yes");
+    PageResponse second = await responseTask;
+    print(first.StatusCode);
+    print(first.Headers.Count);
+    print(second.Headers.Count);
+    print(first.ContentType);
+    print(HtmlRender(first.Body));
+    print(HtmlRender(second.Body));
+    return 0;
+}

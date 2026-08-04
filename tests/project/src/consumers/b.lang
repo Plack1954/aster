@@ -1,0 +1,11 @@
+namespace Consumers.B;
+
+using Shared.Generics;
+
+pub long read(Box<long> value) {
+    return value.value;
+}
+
+pub long echo(long value) {
+    return identity(value);
+}

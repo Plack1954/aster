@@ -1,0 +1,176 @@
+using System.Collections.Generic;
+using System.Text;
+
+bool IsEven(int value)
+{
+    return value % 2 == 0;
+}
+
+bool IsPositive(int value)
+{
+    return value > 0;
+}
+
+void RequirePositive(int value)
+{
+    int observed = value;
+}
+
+bool StartsWithA(string value)
+{
+    return value.StartsWith("A");
+}
+
+int main()
+{
+    List<string> names = new();
+    if (names.Count != 0) { return 1; }
+    if (names.Capacity != 0) { return 2; }
+
+    names.Add("Ada");
+    names.Add("Grace");
+    usize grownCapacity = names.Capacity;
+    if (grownCapacity < names.Count) { return 3; }
+
+    names.Insert(1, "Edsger");
+    names.Insert(0, "Barbara");
+    names.Insert(names.Count, "Ken");
+    if (names.Count != 5) { return 4; }
+    if (names[0] != "Barbara") { return 5; }
+    if (names[2] != "Edsger") { return 6; }
+    if (names[4] != "Ken") { return 7; }
+
+    names[2] = "Margaret";
+    if (names[2] != "Margaret") { return 8; }
+
+    names.RemoveAt(1);
+    if (names.Count != 4) { return 9; }
+    if (names[1] != "Margaret") { return 10; }
+
+    usize capacityBeforeClear = names.Capacity;
+    names.Clear();
+    if (names.Count != 0) { return 11; }
+    if (names.Capacity != capacityBeforeClear) { return 12; }
+
+    names.Add("Dennis");
+    if (names[0] != "Dennis") { return 13; }
+    names.Add("Ada");
+    names.Add("Dennis");
+    names.Add("Ada");
+    if (!names.Contains("Dennis")) { return 14; }
+    if (names.Contains("Linus")) { return 15; }
+    if (names.IndexOf("Ada") != 1) { return 16; }
+    if (names.LastIndexOf("Ada") != 3) { return 17; }
+    if (names.IndexOf("Linus") != -1) { return 18; }
+    if (!names.Remove("Dennis")) { return 19; }
+    if (names[0] != "Ada") { return 20; }
+    if (names.Remove("Linus")) { return 21; }
+
+    List<int> numbers = new();
+    numbers.Add(7);
+    numbers.Add(11);
+    numbers.Add(7);
+    if (!numbers.Contains(11)) { return 22; }
+    if (numbers.IndexOf(7) != 0) { return 23; }
+    if (numbers.LastIndexOf(7) != 2) { return 24; }
+    if (!numbers.Remove(7)) { return 25; }
+    if (numbers.Count != 2 || numbers[0] != 11) { return 26; }
+
+    List<string> source = new();
+    source.Add("one");
+    source.Add("two");
+    List<string> ranged = new();
+    ranged.Add("zero");
+    ranged.AddRange(source);
+    if (ranged.Count != 3 || ranged[2] != "two") { return 27; }
+    if (source.Count != 2 || source[0] != "one") { return 28; }
+
+    ranged.AddRange(ranged);
+    if (ranged.Count != 6 || ranged[3] != "zero" ||
+        ranged[5] != "two") { return 29; }
+
+    List<string> inserted = new();
+    inserted.Add("left");
+    inserted.Add("right");
+    ranged.InsertRange(1, inserted);
+    if (ranged.Count != 8 || ranged[1] != "left" ||
+        ranged[2] != "right" || ranged[3] != "one") { return 30; }
+    if (inserted.Count != 2) { return 31; }
+    inserted.InsertRange(1, inserted);
+    if (inserted.Count != 4 || inserted[0] != "left" ||
+        inserted[1] != "left" || inserted[2] != "right" ||
+        inserted[3] != "right") { return 36; }
+
+    List<string> portion = ranged.GetRange(1, 3);
+    if (portion.Count != 3 || portion[0] != "left" ||
+        portion[2] != "one") { return 32; }
+    portion[0] = "changed";
+    if (ranged[1] != "left") { return 33; }
+
+    ranged.RemoveRange(1, 3);
+    if (ranged.Count != 5 || ranged[1] != "two") { return 34; }
+    ranged.RemoveRange(ranged.Count, 0);
+    if (ranged.Count != 5) { return 35; }
+
+    List<int> ordered = new();
+    ordered.Add(1);
+    ordered.Add(2);
+    ordered.Add(3);
+    ordered.Add(4);
+    ordered.Add(5);
+    ordered.Reverse();
+    if (ordered[0] != 5 || ordered[4] != 1) { return 37; }
+    ordered.Reverse(1, 3);
+    if (ordered[0] != 5 || ordered[1] != 2 ||
+        ordered[2] != 3 || ordered[3] != 4 ||
+        ordered[4] != 1) { return 38; }
+
+    List<int> reserved = new();
+    usize ensured = reserved.EnsureCapacity(9);
+    if (ensured < 9 || reserved.Capacity != ensured) { return 39; }
+    reserved.Capacity = 12;
+    if (reserved.Capacity != 12) { return 40; }
+    reserved.Add(1);
+    reserved.Add(2);
+    reserved.Add(3);
+    reserved.Capacity = reserved.Count;
+    if (reserved.Capacity != 3) { return 41; }
+    reserved.Capacity = 20;
+    reserved.TrimExcess();
+    if (reserved.Capacity != 3) { return 42; }
+    reserved.Clear();
+    reserved.TrimExcess();
+    if (reserved.Capacity != 0) { return 43; }
+
+    List<int> filtered = new();
+    filtered.Add(1);
+    filtered.Add(2);
+    filtered.Add(3);
+    filtered.Add(4);
+    if (!filtered.Exists(IsEven)) { return 44; }
+    if (!filtered.TrueForAll(IsPositive)) { return 45; }
+    if (filtered.FindIndex(IsEven) != 1) { return 46; }
+    if (filtered.FindLastIndex(IsEven) != 3) { return 47; }
+    List<int> evens = filtered.FindAll(IsEven);
+    if (evens.Count != 2 || evens[0] != 2 || evens[1] != 4)
+        { return 48; }
+    filtered.ForEach(RequirePositive);
+    if (filtered.RemoveAll(IsEven) != 2) { return 49; }
+    if (filtered.Count != 2 || filtered[0] != 1 || filtered[1] != 3)
+        { return 50; }
+    if (filtered.Exists(IsEven)) { return 51; }
+    if (filtered.FindIndex(IsEven) != -1 ||
+        filtered.FindLastIndex(IsEven) != -1) { return 53; }
+
+    List<string> letterNames = new();
+    letterNames.Add("Ada");
+    letterNames.Add("Grace");
+    letterNames.Add("Alan");
+    List<string> aNames = letterNames.FindAll(StartsWithA);
+    if (aNames.Count != 2 || aNames[0] != "Ada" ||
+        aNames[1] != "Alan") { return 52; }
+    if (letterNames.RemoveAll(StartsWithA) != 2 ||
+        letterNames.Count != 1 || letterNames[0] != "Grace")
+        { return 54; }
+    return 0;
+}

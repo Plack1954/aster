@@ -1,0 +1,2 @@
+Search results lose their sort order
+Add an export command
