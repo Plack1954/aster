@@ -79,7 +79,9 @@ typedef enum LangValueTag {
     LANG_VALUE_BYTE_SLICE,
     LANG_VALUE_OBJECT,
     LANG_VALUE_RAW_POINTER,
-    LANG_VALUE_FUNCTION
+    LANG_VALUE_FUNCTION,
+    /* Reserved for diagnostics owned by a failed LangNativeResult. */
+    LANG_VALUE_NATIVE_ERROR
 } LangValueTag;
 
 typedef struct LangStringView {
@@ -112,13 +114,16 @@ typedef struct LangVM LangVM;
 typedef struct LangNativeResult {
     bool ok;
     LangValue value;
-    const char *error; /* Borrowed; must remain valid until callback returns. */
+    /* Optional static-lifetime diagnostic; dynamic text uses the constructor. */
+    const char *error;
 } LangNativeResult;
 
 /*
  * `vm` and `args` are borrowed for this call. The callback must not retain
  * either pointer or any borrowed view reachable from `args`. On success,
- * `value` transfers to the VM or embedding caller.
+ * `value` transfers to the VM or embedding caller. On failure, return
+ * `lang_native_result_error`; it copies even stack-backed messages into the
+ * result before the callback returns.
  */
 typedef LangNativeResult (*LangNativeFn)(
     LangVM *vm,
@@ -132,6 +137,13 @@ typedef void (*LangNativeHandleDropFn)(void *handle);
 bool lang_source_load(const char *path, LangSource *out_source);
 /* Releases owned storage and clears `source`. */
 void lang_source_free(LangSource *source);
+/*
+ * Overrides standard-library discovery for subsequent compilation requests.
+ * The path is copied. Passing NULL clears the override.
+ */
+void lang_set_stdlib_path(const char *path);
+/* Supplies an executable-path hint for platforms without self-discovery. */
+void lang_set_executable_path(const char *path);
 /* Initializes caller-owned diagnostic storage. */
 void lang_diagnostics_init(LangDiagnostics *diagnostics);
 /* Releases diagnostic storage and clears `diagnostics`. */
@@ -162,9 +174,6 @@ int lang_project_run(const char *manifest_path, const char *target_name,
  * `manifest_path` and `target_name` are borrowed.
  */
 int lang_project_run_ir(const char *manifest_path, const char *target_name);
-/* Runs through the legacy direct AST-to-bytecode compiler. */
-int lang_project_run_direct(const char *manifest_path,
-                            const char *target_name);
 /* Emits a complete manifest target through a native backend. */
 int lang_project_emit_c(const char *manifest_path,
                         const char *target_name);
@@ -198,10 +207,18 @@ void lang_vm_free(LangVM *vm);
  */
 bool lang_register_native(LangVM *vm, const char *name, LangNativeFn callback,
                           size_t arity);
+/* Returns a failed result owning a copy of `message`. */
+LangNativeResult lang_native_result_error(const char *message);
+/* Returns the result-owned or static failure diagnostic, or NULL. */
+const char *lang_native_result_error_message(const LangNativeResult *result);
+/* Releases an owned failure diagnostic and clears the result; accepts NULL. */
+void lang_native_result_drop(LangNativeResult *result);
 /*
  * `vm`, `name`, and `args` are borrowed; arguments are not consumed. On a
  * successful callback, `out_result->value` is caller-owned and must eventually
- * be passed to `lang_value_drop` when it owns storage.
+ * be passed to `lang_value_drop` when it owns storage. The complete result,
+ * including a failure diagnostic, is caller-owned and may outlive the call.
+ * Failed results must be passed to `lang_native_result_drop` after inspection.
  */
 bool lang_vm_call_native(LangVM *vm, const char *name, const LangValue *args,
                          size_t arg_count, LangNativeResult *out_result);

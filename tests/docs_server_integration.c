@@ -123,8 +123,8 @@ int main(int argc, char **argv) {
     (void)argv;
     return 0;
 #else
-    bool use_ir = argc == 2 && strcmp(argv[1], "ir") == 0;
-    if (argc > 2 || (argc == 2 && !use_ir)) return 9;
+    (void)argv;
+    if (argc != 1) return 9;
     int descriptors[2];
     if (pipe(descriptors) != 0) return 10;
     pid_t child = fork();
@@ -134,13 +134,9 @@ int main(int argc, char **argv) {
         if (dup2(descriptors[1], STDOUT_FILENO) < 0) _exit(12);
         (void)close(descriptors[1]);
         (void)setvbuf(stdout, NULL, _IONBF, 0);
-        _exit(use_ir
-            ? lang_project_run_ir(
-                "examples/docs_server/aster.toml",
-                "integration_server")
-            : lang_project_run_direct(
-                "examples/docs_server/aster.toml",
-                "integration_server"));
+        _exit(lang_project_run(
+            "examples/docs_server/aster.toml",
+            "integration_server", false));
     }
     (void)close(descriptors[1]);
     FILE *ports = fdopen(descriptors[0], "r");

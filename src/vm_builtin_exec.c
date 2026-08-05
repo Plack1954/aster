@@ -208,6 +208,9 @@ static void print_value(FILE *stream, LangValue value) {
         case LANG_VALUE_FUNCTION:
             fprintf(stream, "<fn:%zu>", value.as.function);
             break;
+        case LANG_VALUE_NATIVE_ERROR:
+            fputs("<native-error>", stream);
+            break;
     }
 }
 

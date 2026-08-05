@@ -131,6 +131,43 @@ bool lang_register_native(LangVM *vm, const char *name, LangNativeFn callback,
     return true;
 }
 
+LangNativeResult lang_native_result_error(const char *message) {
+    LangNativeResult result = {
+        .ok=false,
+        .value={.tag=LANG_VALUE_UNIT},
+        .error=NULL
+    };
+    const char *source = message != NULL ? message : "native function failed";
+    size_t length = strlen(source);
+    char *copy = malloc(length + 1U);
+    if (copy == NULL) {
+        result.error = "could not allocate native failure diagnostic";
+        return result;
+    }
+    memcpy(copy, source, length + 1U);
+    result.value.tag = LANG_VALUE_NATIVE_ERROR;
+    result.value.as.pointer = copy;
+    return result;
+}
+
+const char *lang_native_result_error_message(const LangNativeResult *result) {
+    if (result == NULL) return NULL;
+    if (!result->ok && result->error == NULL &&
+        result->value.tag == LANG_VALUE_NATIVE_ERROR)
+        return result->value.as.pointer;
+    return result->error;
+}
+
+void lang_native_result_drop(LangNativeResult *result) {
+    if (result == NULL || result->ok) return;
+    if (result->error == NULL &&
+        result->value.tag == LANG_VALUE_NATIVE_ERROR)
+        free(result->value.as.pointer);
+    *result = (LangNativeResult){
+        .ok=false, .value={.tag=LANG_VALUE_UNIT}, .error=NULL
+    };
+}
+
 bool lang_vm_call_native(LangVM *vm, const char *name, const LangValue *args,
                          size_t arg_count, LangNativeResult *out_result) {
     if (vm == NULL || name == NULL || out_result == NULL) return false;
@@ -141,9 +178,7 @@ bool lang_vm_call_native(LangVM *vm, const char *name, const LangValue *args,
             strcmp(entry->name, name) != 0)
             continue;
         if (entry->arity != arg_count) {
-            *out_result = (LangNativeResult){
-                false, {.tag=LANG_VALUE_UNIT}, "native arity mismatch"
-            };
+            *out_result = lang_native_result_error("native arity mismatch");
             return true;
         }
         *out_result = entry->callback(vm, args, arg_count);

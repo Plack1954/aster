@@ -45,7 +45,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$output_directory/browser-server" > "$port_file" &
+ASTER_BROWSER_ASSET_DIR="$output_directory" \
+    "$output_directory/browser-server" > "$port_file" &
 server_pid=$!
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
     [[ -s "$port_file" ]] && break

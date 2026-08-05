@@ -108,6 +108,10 @@ mapping, named binary/library/test targets, and selective or aliased imports:
 ```
 
 See [projects and targets](docs/projects.md).
+Standard-library imports do not depend on the launch directory: installed
+toolchains find `share/aster/std` relative to `bin/lang`, portable bundles may
+place `std` beside `bin`, manifests may set `stdlib`, and
+`ASTER_STDLIB_PATH` provides an explicit override.
 See the [Aster 0.3 direction and status](docs/v2-roadmap.md).
 See the accepted [C#-shaped async/await design and implementation status](docs/async.md).
 
@@ -135,8 +139,8 @@ See the [backend architecture](docs/architecture.md).
 
 `lang run` now executes the verified typed IR through the IR-to-bytecode
 adapter. `lang dump-ir-bytecode file.lang` disassembles that bytecode.
-`run-ir` is an explicit alias, while `run-direct` retains the legacy
-AST-to-bytecode compiler as a differential-testing oracle.
+`run-ir` remains an explicit alias for scripts that want to name the backend.
+There is no separate AST-to-bytecode execution path.
 
 ## Implemented surface
 

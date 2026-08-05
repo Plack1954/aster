@@ -8,6 +8,7 @@ root and named binary, library, and test targets:
 name = "example"
 source_root = "src"
 default_target = "app"
+stdlib = "../toolchain/std"
 
 [target.app]
 kind = "bin"
@@ -22,6 +23,10 @@ entry = "core.lib"
 kind = "test"
 entry = "tests.smoke"
 ```
+
+`stdlib` is optional and is resolved relative to the manifest. It pins a
+project to an explicit standard-library tree; omit it for normal toolchain
+discovery.
 
 Project commands are:
 
@@ -47,6 +52,24 @@ The dependency directory must contain its own `aster.toml`, and the key must
 match that manifest's `name`. Project namespace lookup checks the
 application's source root first and then its declared direct dependencies.
 No source copying or symlinked module tree is required.
+
+## Standard-library discovery
+
+The compiler resolves the physical `std` tree independently of the process
+working directory. The first applicable source wins:
+
+1. a path configured through `lang_set_stdlib_path`;
+2. the `ASTER_STDLIB_PATH` environment variable;
+3. the manifest's optional `stdlib` path;
+4. a `std` directory at the project root;
+5. executable-relative bundle and installation layouts, including
+   `../share/aster/std` from `<prefix>/bin/lang`;
+6. the configured installation or development path;
+7. `./std` as a legacy compatibility fallback.
+
+Explicit API, environment, and manifest paths are authoritative. If one is
+invalid, compilation reports that path instead of silently falling through to
+a different standard library.
 
 The mapping from a PascalCase namespace to a snake_case file path is deterministic:
 
@@ -74,10 +97,8 @@ Selective item imports are intentionally not part of the language.
 
 Library targets are checkable but not directly runnable. `project run` and
 `project test` use the verified typed IR and IR-to-bytecode adapter.
-`project run-ir` is an explicit alias useful in backend tests.
-`project run-direct` retains the legacy AST-to-bytecode path as a comparison
-oracle. Every form uses the same manifest, source-root, namespace mapping, and
-entrypoint rules.
+`project run-ir` is an explicit alias useful in backend tests. Every form uses
+the same manifest, source-root, namespace mapping, and entrypoint rules.
 
 `project build-site` runs the selected binary target through typed IR with the
 output directory exposed as its sole `std.process` argument. A Lime SSG target

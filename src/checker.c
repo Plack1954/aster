@@ -1355,6 +1355,19 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                           "exception-handler nesting limit exceeded");
                 return true;
             }
+            /*
+             * Calls and throws inside the try clean locals introduced after
+             * the innermost handler boundary.  If a catch does not match (or
+             * an exceptional finally completes), the exception crosses the
+             * next boundary as well; retain the cleanup needed for that
+             * second transfer on the try statement itself.
+             */
+            size_t transfer_base = checker->exception_depth != 0U
+                ? checker->exception_local_bases[
+                      checker->exception_depth - 1U]
+                : 0U;
+            set_cleanup_plan(
+                checker, &stmt->exit_cleanup, transfer_base);
             checker->exception_local_bases[checker->exception_depth++] =
                 checker->local_count;
             bool body_falls = check_stmt(checker, stmt->as.try_.body);
@@ -1374,6 +1387,22 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                     checker->depth + 1U, stmt->span, binding
                 };
                 stmt->as.try_.catch_binding_id = binding;
+                bool catch_has_finally_handler =
+                    stmt->as.try_.finally_body != NULL;
+                if (catch_has_finally_handler) {
+                    if (checker->exception_depth >= 32U) {
+                        lang_diag(
+                            checker->diagnostics, stmt->span,
+                            "exception-handler nesting limit exceeded");
+                        catch_has_finally_handler = false;
+                    } else {
+                        /* A failure in the catch first exits the catch scope,
+                         * then runs finally, before crossing the outer
+                         * exception boundary. */
+                        checker->exception_local_bases[
+                            checker->exception_depth++] = base;
+                    }
+                }
                 bool pushed_catch = checker->catch_depth < 32U;
                 if (!pushed_catch) {
                     lang_diag(checker->diagnostics, stmt->span,
@@ -1386,6 +1415,8 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                     checker, stmt->as.try_.catch_body);
                 if (pushed_catch)
                     --checker->catch_depth;
+                if (catch_has_finally_handler)
+                    --checker->exception_depth;
                 checker->local_count = base;
             }
             bool finally_falls = true;

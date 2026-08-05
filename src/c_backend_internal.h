@@ -71,6 +71,9 @@ bool c_backend_local_tracks_drop(const CEmitter *emitter,
 void c_backend_emit_drop_call(CEmitter *emitter,
                               IrTypeId type_id,
                               const char *prefix, uint32_t index);
+void c_backend_emit_virtual_cleanup(
+    CEmitter *emitter, const IrFunction *function,
+    IrValueId preserved, const char *indent, bool clear);
 char *c_backend_emit_static_css_asset(CEmitter *emitter,
                                       const char *directory);
 void c_backend_emit_byte_string(FILE *output,

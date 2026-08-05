@@ -47,6 +47,7 @@ typedef struct Project {
     char *name;
     char *root;
     char *source_root;
+    char *stdlib_root;
     char *default_target;
     ProjectTarget *targets;
     size_t target_count;
@@ -109,6 +110,7 @@ static void project_free(Project *project) {
     free(project->name);
     free(project->root);
     free(project->source_root);
+    free(project->stdlib_root);
     free(project->default_target);
     for (size_t i = 0U; i < project->target_count; ++i) {
         free(project->targets[i].name);
@@ -371,6 +373,9 @@ static bool parse_manifest_internal(
             else if (strcmp(key, "source_root") == 0)
                 ok = assign_owned(
                     &project->source_root, value, key, path, line_number);
+            else if (strcmp(key, "stdlib") == 0)
+                ok = assign_owned(
+                    &project->stdlib_root, value, key, path, line_number);
             else if (strcmp(key, "default_target") == 0)
                 ok = assign_owned(
                     &project->default_target, value, key, path, line_number);
@@ -444,6 +449,12 @@ static bool parse_manifest_internal(
         project->root, project->source_root);
     free(project->source_root);
     project->source_root = full_source_root;
+    if (project->stdlib_root != NULL) {
+        char *full_stdlib_root = join_path(
+            project->root, project->stdlib_root);
+        free(project->stdlib_root);
+        project->stdlib_root = full_stdlib_root;
+    }
     if (resolve_dependencies && project->dependency_count != 0U) {
         project->dependency_roots = project_resize(
             NULL, project->dependency_count *
@@ -523,7 +534,7 @@ static int run_target(const Project *project, const ProjectTarget *target,
     int status = lang_run_file_with_roots(
         entry_path, project->source_root,
         project->dependency_roots, project->dependency_count,
-        project->root,
+        project->root, project->stdlib_root,
         check_only, dump_kind, target->kind != PROJECT_TARGET_LIB);
     free(entry_path);
     return status;
@@ -543,7 +554,7 @@ static int run_target_args(
     int status = lang_run_file_with_roots_args(
         entry_path, project->source_root,
         project->dependency_roots, project->dependency_count,
-        project->root,
+        project->root, project->stdlib_root,
         false, dump_kind, true, argument_count, arguments);
     free(entry_path);
     return status;
@@ -595,30 +606,6 @@ int lang_project_run_ir(const char *manifest_path,
         return 1;
     }
     int status = run_target(&project, target, false, "run-ir");
-    project_free(&project);
-    return status;
-}
-
-int lang_project_run_direct(const char *manifest_path,
-                            const char *target_name) {
-    if (manifest_path == NULL) return 1;
-    Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    const char *selected = target_name != NULL
-                         ? target_name : project.default_target;
-    if (selected == NULL) {
-        fprintf(stderr,
-                "error: no target specified and manifest has no default target\n");
-        project_free(&project);
-        return 1;
-    }
-    ProjectTarget *target = find_target(&project, selected);
-    if (target == NULL) {
-        fprintf(stderr, "error: unknown project target `%s`\n", selected);
-        project_free(&project);
-        return 1;
-    }
-    int status = run_target(&project, target, false, "run-direct");
     project_free(&project);
     return status;
 }
@@ -679,7 +666,7 @@ static int emit_project_target(const char *manifest_path,
         status = lang_emit_c_site_with_roots(
             entry_path, project.source_root,
             project.dependency_roots, project.dependency_count,
-            project.root,
+            project.root, project.stdlib_root,
             css_directory, target->kind != PROJECT_TARGET_LIB);
         free(entry_path);
     }
@@ -878,7 +865,7 @@ static int browser_emit_entry(const Project *project,
     int status = lang_emit_c_with_roots_to_file(
         entry_path, project->source_root,
         project->dependency_roots, project->dependency_count,
-        project->root, true, output);
+        project->root, project->stdlib_root, true, output);
     if (fclose(output) != 0) status = 1;
     free(entry_path);
     return status;

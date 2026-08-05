@@ -118,8 +118,8 @@ loop; an outer builder collecting loop output remains live.
 The IR lowers scalar expressions, calls, local ownership operations, arrays,
 structs, enum/union construction and switching, aggregate mutation, `Result`/`try`,
 `if`, `while`, `for`, loop exits, raw-pointer primitives, native elements,
-components, returns, and checker-produced cleanup plans. The original direct
-bytecode compiler remains available through `run-direct` as a test oracle.
+components, returns, and checker-produced cleanup plans. This is the sole
+source-to-bytecode lowering path.
 
 Use:
 
@@ -137,9 +137,8 @@ stack empty at basic-block boundaries and makes arbitrary CFG edges simple to
 patch. Operands move out of those temporary slots when consumed.
 
 Project targets use the same adapter through `project run` and `project test`.
-`project run-ir` is an explicit alias. The retained `project run-direct`
-command lets differential tests compare complete multi-module applications
-against the legacy compiler.
+`project run-ir` is an explicit alias. Backend tests compare complete
+multi-module applications between the typed-IR VM and generated C.
 
 The current adapter accepts scalar operations, fixed arrays, structs, plain
 enums, and discriminated unions:

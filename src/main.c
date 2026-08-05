@@ -9,9 +9,8 @@ static void usage(FILE *stream) {
     fputs(
         "usage: lang <command> [file]\n"
         "commands:\n"
-        "  run file.lang [-- args...] check, compile, and execute\n"
-        "  run-ir file.lang [-- args...] execute through typed IR\n"
-        "  run-direct file.lang [-- args...] use legacy bytecode compiler\n"
+        "  run file.lang [-- args...] execute verified typed IR\n"
+        "  run-ir file.lang [-- args...] explicit typed-IR alias\n"
         "  check file.lang        parse and type-check\n"
         "  dump-tokens file.lang  print lexer output\n"
         "  dump-ast file.lang     print parsed syntax\n"
@@ -23,13 +22,12 @@ static void usage(FILE *stream) {
         "  emit-c-site file.lang ASSET_DIR\n"
         "                         emit C17 plus one hashed external stylesheet\n"
         "  emit-c-runtime         emit the reusable C17 runtime\n"
-        "  dump-bytecode file.lang disassemble bytecode\n"
+        "  dump-bytecode file.lang disassemble IR-lowered bytecode\n"
         "  repl                   interactive expression runner\n"
         "  test                   run the integration suite\n"
         "  bench                  run a small front-end benchmark\n"
         "  project run MANIFEST [TARGET]   run a project target\n"
-        "  project run-ir MANIFEST [TARGET] run via typed IR\n"
-        "  project run-direct MANIFEST [TARGET] use legacy compiler\n"
+        "  project run-ir MANIFEST [TARGET] explicit typed-IR alias\n"
         "  project check MANIFEST [TARGET] check a project target\n"
         "  project emit-c MANIFEST [TARGET] emit a target as C17\n"
         "  project emit-c-site MANIFEST ASSET_DIR [TARGET]\n"
@@ -179,6 +177,7 @@ static int benchmark(void) {
 }
 
 int main(int argc, char **argv) {
+    if (argc != 0) lang_set_executable_path(argv[0]);
     if (argc < 2) { usage(stderr); return 2; }
     if (strcmp(argv[1], "test") == 0) return run_tests();
     if (strcmp(argv[1], "repl") == 0) return repl();
@@ -201,14 +200,10 @@ int main(int argc, char **argv) {
         if (argc >= 4 && argc <= 5 &&
             (strcmp(argv[2], "run") == 0 ||
              strcmp(argv[2], "run-ir") == 0 ||
-             strcmp(argv[2], "run-direct") == 0 ||
              strcmp(argv[2], "emit-c") == 0 ||
              strcmp(argv[2], "check") == 0)) {
             if (strcmp(argv[2], "run-ir") == 0)
                 return lang_project_run_ir(
-                    argv[3], argc == 5 ? argv[4] : NULL);
-            if (strcmp(argv[2], "run-direct") == 0)
-                return lang_project_run_direct(
                     argv[3], argc == 5 ? argv[4] : NULL);
             if (strcmp(argv[2], "emit-c") == 0)
                 return lang_project_emit_c(
@@ -224,15 +219,13 @@ int main(int argc, char **argv) {
     }
     if (argc >= 3 &&
         (strcmp(argv[1], "run") == 0 ||
-         strcmp(argv[1], "run-ir") == 0 ||
-         strcmp(argv[1], "run-direct") == 0)) {
+         strcmp(argv[1], "run-ir") == 0)) {
         int argument_start = 3;
         if (argument_start < argc &&
             strcmp(argv[argument_start], "--") == 0)
             ++argument_start;
         const char *backend =
-            strcmp(argv[1], "run-ir") == 0 ? "run-ir" :
-            strcmp(argv[1], "run-direct") == 0 ? "run-direct" : NULL;
+            strcmp(argv[1], "run-ir") == 0 ? "run-ir" : NULL;
         return lang_run_file_args(
             argv[2], false, backend,
             (size_t)(argc - argument_start),

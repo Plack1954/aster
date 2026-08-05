@@ -137,7 +137,7 @@ enough for a future native backend and catches compiler bugs.
 - cleanup-managed objects and destructor order;
 - `try` propagation and trap unwinding;
 - malformed kind metadata rejection;
-- direct-bytecode versus typed-IR differential tests;
+- typed-IR VM versus generated-C conformance tests;
 - normal, ASan, and UBSan builds.
 
 ## Expected effect

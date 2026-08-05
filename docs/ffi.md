@@ -16,6 +16,13 @@ integers, float, borrowed string views, mutable byte slices, opaque objects,
 and raw pointers. The callback must not retain borrowed string or slice data
 beyond the call.
 
+Use `lang_native_result_error(message)` to copy a dynamic or stack-backed
+failure diagnostic before returning. Read it with
+`lang_native_result_error_message`, then release the failed result with
+`lang_native_result_drop`. A callback may initialize `error` directly only
+with a static-lifetime message such as a string literal; dropping such a result
+is still safe.
+
 Source declares registered functions with `extern Type name(...);`.
 These calls lower to `CALL_NATIVE`; missing registration or a failed native
 result becomes a runtime trap.

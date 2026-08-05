@@ -1,3 +1,7 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "internal.h"
 
 #include <ctype.h>
@@ -7,6 +11,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <unistd.h>
+#else
+#include <unistd.h>
+#endif
+
+#ifndef ASTER_INSTALL_STDLIB_DIR
+#define ASTER_INSTALL_STDLIB_DIR ""
+#endif
+
+#ifndef ASTER_BUILD_STDLIB_DIR
+#define ASTER_BUILD_STDLIB_DIR ""
+#endif
 
 struct LangArenaBlock {
     struct LangArenaBlock *next;
@@ -44,10 +64,28 @@ typedef struct ModuleLoader {
     const char *const *dependency_roots; /* Borrowed project source roots. */
     size_t dependency_root_count;
     const char *project_root; /* Borrowed; used for the bundled std tree. */
+    const char *manifest_stdlib_root; /* Borrowed explicit manifest path. */
+    char *stdlib_root; /* Owned lazily resolved standard-library root. */
+    bool stdlib_resolution_attempted;
     char error[512];
 } ModuleLoader;
 
+static char *configured_stdlib_root;
+static char *configured_executable_path;
+
 static char *heap_strndup(const char *text, size_t length);
+
+void lang_set_stdlib_path(const char *path) {
+    free(configured_stdlib_root);
+    configured_stdlib_root = path != NULL && path[0] != '\0'
+        ? heap_strndup(path, strlen(path)) : NULL;
+}
+
+void lang_set_executable_path(const char *path) {
+    free(configured_executable_path);
+    configured_executable_path = path != NULL && path[0] != '\0'
+        ? heap_strndup(path, strlen(path)) : NULL;
+}
 
 static char *namespace_file_name(const char *name, char separator) {
     size_t length = strlen(name);
@@ -166,7 +204,130 @@ static const char *standard_module_file(const char *module_path) {
     return NULL;
 }
 
-static char *resolve_import_path(const ModuleLoader *loader,
+static bool path_is_file(const char *path) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) return false;
+    (void)fclose(file);
+    return true;
+}
+
+static char *path_directory(const char *path) {
+    const char *slash = strrchr(path, '/');
+#if defined(_WIN32)
+    const char *backslash = strrchr(path, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash))
+        slash = backslash;
+#endif
+    if (slash == NULL) return heap_strndup(".", 1U);
+    if (slash == path) return heap_strndup(path, 1U);
+    return heap_strndup(path, (size_t)(slash - path));
+}
+
+static char *running_executable_path(void) {
+#if defined(_WIN32)
+    char buffer[32768];
+    DWORD length = GetModuleFileNameA(
+        NULL, buffer, (DWORD)(sizeof(buffer) / sizeof(buffer[0])));
+    if (length != 0U && (size_t)length < sizeof(buffer))
+        return heap_strndup(buffer, (size_t)length);
+#elif defined(__APPLE__)
+    uint32_t capacity = 0U;
+    (void)_NSGetExecutablePath(NULL, &capacity);
+    if (capacity != 0U) {
+        char *buffer = checked_realloc(NULL, (size_t)capacity);
+        if (_NSGetExecutablePath(buffer, &capacity) == 0)
+            return buffer;
+        free(buffer);
+    }
+#elif defined(__linux__)
+    char buffer[4096];
+    ssize_t length = readlink(
+        "/proc/self/exe", buffer, sizeof(buffer) - 1U);
+    if (length > 0) {
+        buffer[(size_t)length] = '\0';
+        return heap_strndup(buffer, (size_t)length);
+    }
+#endif
+    return configured_executable_path != NULL
+        ? heap_strndup(configured_executable_path,
+                       strlen(configured_executable_path))
+        : NULL;
+}
+
+static char *existing_stdlib_root(const char *root) {
+    if (root == NULL || root[0] == '\0') return NULL;
+    char *core = join_path3(root, "core", ".lang");
+    bool exists = path_is_file(core);
+    free(core);
+    return exists ? heap_strndup(root, strlen(root)) : NULL;
+}
+
+static char *stdlib_below(const char *root, const char *relative) {
+    char *candidate = join_path3(root, relative, "");
+    char *resolved = existing_stdlib_root(candidate);
+    free(candidate);
+    return resolved;
+}
+
+static char *resolve_stdlib_root(ModuleLoader *loader) {
+    if (loader->stdlib_resolution_attempted)
+        return loader->stdlib_root;
+    loader->stdlib_resolution_attempted = true;
+
+    /* Explicit process configuration is authoritative, even when invalid. */
+    if (configured_stdlib_root != NULL) {
+        loader->stdlib_root = heap_strndup(
+            configured_stdlib_root, strlen(configured_stdlib_root));
+        return loader->stdlib_root;
+    }
+    const char *environment = getenv("ASTER_STDLIB_PATH");
+    if (environment != NULL && environment[0] != '\0') {
+        loader->stdlib_root =
+            heap_strndup(environment, strlen(environment));
+        return loader->stdlib_root;
+    }
+    if (loader->manifest_stdlib_root != NULL) {
+        loader->stdlib_root = heap_strndup(
+            loader->manifest_stdlib_root,
+            strlen(loader->manifest_stdlib_root));
+        return loader->stdlib_root;
+    }
+
+    if (loader->project_root != NULL)
+        loader->stdlib_root =
+            stdlib_below(loader->project_root, "std");
+
+    char *executable = NULL;
+    char *executable_directory = NULL;
+    if (loader->stdlib_root == NULL) {
+        executable = running_executable_path();
+        if (executable != NULL)
+            executable_directory = path_directory(executable);
+    }
+    static const char *executable_relatives[] = {
+        "std", "../std", "../share/aster/std", "../lib/aster/std"
+    };
+    for (size_t i = 0U;
+         loader->stdlib_root == NULL && executable_directory != NULL &&
+         i < sizeof(executable_relatives) /
+                 sizeof(executable_relatives[0]); ++i)
+        loader->stdlib_root = stdlib_below(
+            executable_directory, executable_relatives[i]);
+    free(executable_directory);
+    free(executable);
+
+    if (loader->stdlib_root == NULL)
+        loader->stdlib_root = existing_stdlib_root(
+            ASTER_INSTALL_STDLIB_DIR);
+    if (loader->stdlib_root == NULL)
+        loader->stdlib_root = existing_stdlib_root(
+            ASTER_BUILD_STDLIB_DIR);
+    if (loader->stdlib_root == NULL)
+        loader->stdlib_root = stdlib_below(".", "std");
+    return loader->stdlib_root;
+}
+
+static char *resolve_import_path(ModuleLoader *loader,
                                  const char *from_path,
                                  const char *module_path,
                                  const char *last) {
@@ -174,10 +335,10 @@ static char *resolve_import_path(const ModuleLoader *loader,
     if (standard_file != NULL) {
         /* Public namespaces are stable API. Physical std filenames are an
          * implementation detail and deliberately need not mirror them. */
-        char *standard_root = join_path3(".", "std", "");
-        char *result = join_path3(standard_root, standard_file, ".lang");
-        free(standard_root);
-        return result;
+        char *standard_root = resolve_stdlib_root(loader);
+        return standard_root != NULL
+            ? join_path3(standard_root, standard_file, ".lang")
+            : NULL;
     }
     if (loader->source_root != NULL) {
         char *application_path = join_path3(
@@ -325,6 +486,17 @@ static bool load_module_recursive(ModuleLoader *loader, const char *path,
         free(first);
         free(last);
         free(module_path);
+        if (import_path == NULL) {
+            (void)snprintf(
+                loader->error, sizeof(loader->error),
+                "cannot locate the Aster standard library; set ASTER_STDLIB_PATH");
+            free(module_name);
+            lang_diagnostics_free(&diagnostics);
+            lang_source_free(&source);
+            entry = loader_entry(loader, path);
+            entry->loading = false;
+            return false;
+        }
         bool imported = load_module_recursive(
             loader, import_path,
             loader->source_root != NULL ? module_name : NULL);
@@ -390,6 +562,7 @@ static void loader_free(ModuleLoader *loader) {
         free(loader->segments[i].path);
     free(loader->segments);
     free(loader->combined);
+    free(loader->stdlib_root);
 }
 
 void lang_arena_init(LangArena *arena) { arena->head = NULL; }
@@ -627,10 +800,10 @@ static int process_source(LangSource *source, bool check_only,
     }
     IrModule ir;
     memset(&ir, 0, sizeof(ir));
-    bool use_ir_backend =
-        (!check_only && dump_kind == NULL) ||
+    bool need_ir = !check_only ||
         (dump_kind != NULL &&
-         (strcmp(dump_kind, "run-ir") == 0 ||
+         (strcmp(dump_kind, "ir") == 0 ||
+          strcmp(dump_kind, "bytecode") == 0 ||
           strcmp(dump_kind, "ir-bytecode") == 0));
     bool emit_c =
         dump_kind != NULL && strcmp(dump_kind, "c") == 0;
@@ -642,7 +815,7 @@ static int process_source(LangSource *source, bool check_only,
             &module, &target, &diagnostics, &ir);
         if (ok) ok = lang_ir_verify_module(&ir, &diagnostics);
         if (ok) lang_ir_dump_module(&ir);
-    } else if (ok && (use_ir_backend || emit_c)) {
+    } else if (ok && (need_ir || emit_c)) {
         LangTargetInfo target;
         lang_target_host(&target);
         ok = lang_ir_lower_module(
@@ -658,14 +831,8 @@ static int process_source(LangSource *source, bool check_only,
     memset(&bytecode, 0, sizeof(bytecode));
     if (ok && (!check_only || (dump_kind != NULL &&
         (strcmp(dump_kind, "bytecode") == 0 ||
-         strcmp(dump_kind, "ir-bytecode") == 0)))) {
-        if (use_ir_backend)
-            ok = lang_ir_compile_bytecode(
-                &ir, &diagnostics, &bytecode);
-        else
-            ok = lang_compile_module(
-                &module, &diagnostics, &bytecode);
-    }
+         strcmp(dump_kind, "ir-bytecode") == 0))))
+        ok = lang_ir_compile_bytecode(&ir, &diagnostics, &bytecode);
     if (ok && dump_kind != NULL && strcmp(dump_kind, "bytecode") == 0)
         lang_dump_bytecode(&bytecode);
     if (ok && dump_kind != NULL &&
@@ -728,7 +895,8 @@ static char *module_name_from_path(const char *source_root,
 static bool load_program_source(
     const char *path, const char *source_root,
     const char *const *dependency_roots, size_t dependency_root_count,
-    const char *project_root, LangSource *source,
+    const char *project_root, const char *stdlib_root,
+    LangSource *source,
                                 char *error, size_t error_capacity) {
     ModuleLoader loader;
     memset(&loader, 0, sizeof(loader));
@@ -736,6 +904,7 @@ static bool load_program_source(
     loader.dependency_roots = dependency_roots;
     loader.dependency_root_count = dependency_root_count;
     loader.project_root = project_root;
+    loader.manifest_stdlib_root = stdlib_root;
     char *expected_module = module_name_from_path(source_root, path);
     if (!load_module_recursive(&loader, path, expected_module)) {
         free(expected_module);
@@ -772,7 +941,7 @@ int lang_run_file_args(const char *path, bool check_only,
     if (argument_count != 0U && arguments == NULL) return 1;
     LangSource source;
     char error[512];
-    if (!load_program_source(path, NULL, NULL, 0U, NULL, &source,
+    if (!load_program_source(path, NULL, NULL, 0U, NULL, NULL, &source,
                              error, sizeof(error))) {
         fprintf(stderr, "error: %s\n", error);
         return 1;
@@ -787,19 +956,20 @@ int lang_run_file_args(const char *path, bool check_only,
 int lang_run_file_with_roots(const char *path, const char *source_root,
                              const char *const *dependency_roots,
                              size_t dependency_root_count,
-                             const char *project_root, bool check_only,
+                             const char *project_root,
+                             const char *stdlib_root, bool check_only,
                              const char *dump_kind,
                              bool require_entrypoint) {
     return lang_run_file_with_roots_args(
         path, source_root, dependency_roots, dependency_root_count,
-        project_root, check_only, dump_kind,
+        project_root, stdlib_root, check_only, dump_kind,
         require_entrypoint, 0U, NULL);
 }
 
 int lang_run_file_with_roots_args(
     const char *path, const char *source_root,
     const char *const *dependency_roots, size_t dependency_root_count,
-    const char *project_root,
+    const char *project_root, const char *stdlib_root,
     bool check_only, const char *dump_kind, bool require_entrypoint,
     size_t argument_count, const char *const *arguments) {
     if (argument_count != 0U && arguments == NULL) return 1;
@@ -807,7 +977,7 @@ int lang_run_file_with_roots_args(
     char error[512];
     if (!load_program_source(
             path, source_root, dependency_roots, dependency_root_count,
-            project_root, &source,
+            project_root, stdlib_root, &source,
                              error, sizeof(error))) {
         fprintf(stderr, "error: %s\n", error);
         return 1;
@@ -840,7 +1010,7 @@ int lang_emit_c_site_file(const char *path, const char *css_directory) {
     if (path == NULL || css_directory == NULL) return 1;
     LangSource source;
     char error[512];
-    if (!load_program_source(path, NULL, NULL, 0U, NULL, &source,
+    if (!load_program_source(path, NULL, NULL, 0U, NULL, NULL, &source,
                              error, sizeof(error))) {
         fprintf(stderr, "error: %s\n", error);
         return 1;
@@ -858,6 +1028,7 @@ int lang_emit_c_with_roots_to_file(
     const char *const *dependency_roots,
     size_t dependency_root_count,
     const char *project_root,
+    const char *stdlib_root,
     bool require_entrypoint,
     FILE *output
 ) {
@@ -866,7 +1037,7 @@ int lang_emit_c_with_roots_to_file(
     char error[512];
     if (!load_program_source(
             path, source_root, dependency_roots, dependency_root_count,
-            project_root, &source,
+            project_root, stdlib_root, &source,
                              error, sizeof(error))) {
         fprintf(stderr, "error: %s\n", error);
         return 1;
@@ -882,13 +1053,14 @@ int lang_emit_c_site_with_roots(const char *path, const char *source_root,
                                 const char *const *dependency_roots,
                                 size_t dependency_root_count,
                                 const char *project_root,
+                                const char *stdlib_root,
                                 const char *css_directory,
                                 bool require_entrypoint) {
     LangSource source;
     char error[512];
     if (!load_program_source(
             path, source_root, dependency_roots, dependency_root_count,
-            project_root, &source,
+            project_root, stdlib_root, &source,
                              error, sizeof(error))) {
         fprintf(stderr, "error: %s\n", error);
         return 1;
@@ -907,7 +1079,7 @@ static double elapsed_seconds(clock_t begin) {
 int lang_benchmark_file(const char *path, size_t iterations) {
     LangSource source;
     char error[512];
-    if (!load_program_source(path, NULL, NULL, 0U, NULL, &source,
+    if (!load_program_source(path, NULL, NULL, 0U, NULL, NULL, &source,
                              error, sizeof(error)) ||
         iterations == 0U)
         return 1;
@@ -957,23 +1129,6 @@ int lang_benchmark_file(const char *path, size_t iterations) {
         LangDiagnostics diagnostics;
         lang_diagnostics_init(&diagnostics);
         Module module;
-        BytecodeModule bytecode;
-        memset(&bytecode, 0, sizeof(bytecode));
-        bool ok = lang_parse_module(&source, &diagnostics, &module) &&
-                  lang_check_module(&module, &diagnostics) &&
-                  lang_compile_module(&module, &diagnostics, &bytecode);
-        lang_bytecode_free(&bytecode);
-        lang_module_free(&module);
-        lang_diagnostics_free(&diagnostics);
-        if (!ok) { lang_source_free(&source); return 1; }
-    }
-    double direct_compile_time = elapsed_seconds(begin);
-
-    begin = clock();
-    for (size_t i = 0U; i < iterations; ++i) {
-        LangDiagnostics diagnostics;
-        lang_diagnostics_init(&diagnostics);
-        Module module;
         IrModule ir;
         BytecodeModule bytecode;
         memset(&ir, 0, sizeof(ir));
@@ -993,62 +1148,41 @@ int lang_benchmark_file(const char *path, size_t iterations) {
         lang_diagnostics_free(&diagnostics);
         if (!ok) { lang_source_free(&source); return 1; }
     }
-    double ir_compile_time = elapsed_seconds(begin);
+    double compile_time = elapsed_seconds(begin);
 
     LangDiagnostics diagnostics;
     lang_diagnostics_init(&diagnostics);
     Module module;
     IrModule ir;
-    BytecodeModule direct_bytecode;
-    BytecodeModule ir_bytecode;
+    BytecodeModule bytecode;
     memset(&ir, 0, sizeof(ir));
-    memset(&direct_bytecode, 0, sizeof(direct_bytecode));
-    memset(&ir_bytecode, 0, sizeof(ir_bytecode));
+    memset(&bytecode, 0, sizeof(bytecode));
     LangTargetInfo target;
     lang_target_host(&target);
     bool ok = lang_parse_module(&source, &diagnostics, &module) &&
               lang_check_module(&module, &diagnostics) &&
-              lang_compile_module(
-                  &module, &diagnostics, &direct_bytecode) &&
               lang_ir_lower_module(
                   &module, &target, &diagnostics, &ir) &&
               lang_ir_verify_module(&ir, &diagnostics) &&
               lang_ir_compile_bytecode(
-                  &ir, &diagnostics, &ir_bytecode);
+                  &ir, &diagnostics, &bytecode);
     begin = clock();
-    uint64_t direct_vm_instructions = 0U;
+    uint64_t vm_instructions = 0U;
     if (ok) {
         for (size_t i = 0U; i < iterations; ++i) {
             LangVM *vm = lang_vm_new();
             lang_vm_register_builtins(vm);
             if (lang_vm_run_module(
-                    vm, &direct_bytecode, &source) != 0)
+                    vm, &bytecode, &source) != 0)
                 ok = false;
-            direct_vm_instructions =
+            vm_instructions =
                 lang_vm_instruction_count(vm);
             lang_vm_free(vm);
             if (!ok) break;
         }
     }
-    double direct_vm_time = elapsed_seconds(begin);
-    begin = clock();
-    uint64_t ir_vm_instructions = 0U;
-    if (ok) {
-        for (size_t i = 0U; i < iterations; ++i) {
-            LangVM *vm = lang_vm_new();
-            lang_vm_register_builtins(vm);
-            if (lang_vm_run_module(
-                    vm, &ir_bytecode, &source) != 0)
-                ok = false;
-            ir_vm_instructions =
-                lang_vm_instruction_count(vm);
-            lang_vm_free(vm);
-            if (!ok) break;
-        }
-    }
-    double ir_vm_time = elapsed_seconds(begin);
-    lang_bytecode_free(&ir_bytecode);
-    lang_bytecode_free(&direct_bytecode);
+    double vm_time = elapsed_seconds(begin);
+    lang_bytecode_free(&bytecode);
     lang_ir_free_module(&ir);
     lang_module_free(&module);
     lang_diagnostics_free(&diagnostics);
@@ -1062,34 +1196,13 @@ int lang_benchmark_file(const char *path, size_t iterations) {
            parse_time > 0.0 ? (double)iterations / parse_time : 0.0);
     printf("  checker:  %.6f s, %.0f files/s (includes parsing)\n", check_time,
            check_time > 0.0 ? (double)iterations / check_time : 0.0);
-    printf("  direct compiler: %.6f s, %.0f files/s (full front end)\n",
-           direct_compile_time,
-           direct_compile_time > 0.0
-               ? (double)iterations / direct_compile_time : 0.0);
-    printf("  IR compiler:     %.6f s, %.0f files/s (full front end)\n",
-           ir_compile_time,
-           ir_compile_time > 0.0
-               ? (double)iterations / ir_compile_time : 0.0);
-    printf("  compile IR/direct: %.2fx\n",
-           direct_compile_time > 0.0
-               ? ir_compile_time / direct_compile_time : 0.0);
-    printf("  direct VM:       %.6f s, %.0f runs/s\n",
-           direct_vm_time,
-           direct_vm_time > 0.0
-               ? (double)iterations / direct_vm_time : 0.0);
-    printf("  IR VM:           %.6f s, %.0f runs/s\n",
-           ir_vm_time,
-           ir_vm_time > 0.0
-               ? (double)iterations / ir_vm_time : 0.0);
-    printf("  VM IR/direct:    %.2fx\n",
-           direct_vm_time > 0.0
-               ? ir_vm_time / direct_vm_time : 0.0);
-    printf("  instructions/run direct=%" PRIu64 ", IR=%" PRIu64
-           " (%.2fx)\n",
-           direct_vm_instructions, ir_vm_instructions,
-           direct_vm_instructions != 0U
-               ? (double)ir_vm_instructions /
-                     (double)direct_vm_instructions
-               : 0.0);
+    printf("  compiler: %.6f s, %.0f files/s (typed IR and bytecode)\n",
+           compile_time,
+           compile_time > 0.0
+               ? (double)iterations / compile_time : 0.0);
+    printf("  VM:       %.6f s, %.0f runs/s\n",
+           vm_time,
+           vm_time > 0.0 ? (double)iterations / vm_time : 0.0);
+    printf("  instructions/run: %" PRIu64 "\n", vm_instructions);
     return 0;
 }

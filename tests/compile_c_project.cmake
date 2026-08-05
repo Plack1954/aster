@@ -8,6 +8,9 @@ if(NOT DEFINED SOURCE_ROOT)
     get_filename_component(
         SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
+if(NOT DEFINED EXPECTED_RUN_STATUS)
+    set(EXPECTED_RUN_STATUS 0)
+endif()
 
 string(SHA256 PROJECT_ID "${MANIFEST_FILE}|${TARGET_NAME}")
 string(SUBSTRING "${PROJECT_ID}" 0 12 PROJECT_ID)
@@ -91,11 +94,16 @@ else()
         ERROR_VARIABLE RUN_ERROR
     )
 endif()
-if(NOT RUN_STATUS EQUAL 0)
+if(NOT RUN_STATUS EQUAL EXPECTED_RUN_STATUS)
     message(FATAL_ERROR
-        "generated project returned ${RUN_STATUS}:\n${RUN_OUTPUT}${RUN_ERROR}")
+        "generated project returned ${RUN_STATUS}, expected ${EXPECTED_RUN_STATUS}:\n${RUN_OUTPUT}${RUN_ERROR}")
 endif()
 if(DEFINED EXPECTED_OUTPUT AND NOT RUN_OUTPUT STREQUAL EXPECTED_OUTPUT)
     message(FATAL_ERROR
         "generated project stdout did not match:\nexpected:\n${EXPECTED_OUTPUT}\nactual:\n${RUN_OUTPUT}")
+endif()
+if(DEFINED EXPECTED_ERROR_OUTPUT AND
+   NOT RUN_ERROR STREQUAL EXPECTED_ERROR_OUTPUT)
+    message(FATAL_ERROR
+        "generated project stderr did not match:\nexpected:\n${EXPECTED_ERROR_OUTPUT}\nactual:\n${RUN_ERROR}")
 endif()

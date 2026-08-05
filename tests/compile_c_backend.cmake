@@ -91,12 +91,29 @@ if(NOT COMPILE_STATUS EQUAL 0)
         "generated C did not compile:\n${COMPILE_OUTPUT}${COMPILE_ERROR}")
 endif()
 
-execute_process(
-    COMMAND "${GENERATED_EXE}"
-    RESULT_VARIABLE RUN_STATUS
-    OUTPUT_VARIABLE RUN_OUTPUT
-    ERROR_VARIABLE RUN_ERROR
-)
+if(GENERATED_LEAK_CHECK)
+    if(NOT GENERATED_SANITIZE)
+        message(FATAL_ERROR
+            "GENERATED_LEAK_CHECK requires GENERATED_SANITIZE")
+    endif()
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1"
+            "${GENERATED_EXE}"
+        WORKING_DIRECTORY "${SOURCE_ROOT}"
+        RESULT_VARIABLE RUN_STATUS
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR
+    )
+else()
+    execute_process(
+        COMMAND "${GENERATED_EXE}"
+        WORKING_DIRECTORY "${SOURCE_ROOT}"
+        RESULT_VARIABLE RUN_STATUS
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR
+    )
+endif()
 if(NOT RUN_STATUS EQUAL EXPECTED_RUN_STATUS)
     message(FATAL_ERROR
         "generated executable returned ${RUN_STATUS}, expected ${EXPECTED_RUN_STATUS}:\n${RUN_OUTPUT}${RUN_ERROR}")
@@ -108,6 +125,11 @@ endif()
 if(DEFINED EXPECTED_OUTPUT AND NOT RUN_OUTPUT STREQUAL EXPECTED_OUTPUT)
     message(FATAL_ERROR
         "generated executable stdout did not match:\nexpected:\n${EXPECTED_OUTPUT}\nactual:\n${RUN_OUTPUT}")
+endif()
+if(DEFINED EXPECTED_ERROR_OUTPUT AND
+   NOT RUN_ERROR STREQUAL EXPECTED_ERROR_OUTPUT)
+    message(FATAL_ERROR
+        "generated executable stderr did not match:\nexpected:\n${EXPECTED_ERROR_OUTPUT}\nactual:\n${RUN_ERROR}")
 endif()
 if(DEFINED EXPECTED_FILE)
     file(READ "${EXPECTED_FILE}" EXPECTED_FILE_OUTPUT)

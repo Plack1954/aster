@@ -103,7 +103,7 @@ recursion, function values,
 indirect/native calls, casts, cloning, aggregate mutation, and nested
 destruction. `switch` and `try` execute through ordinary IR control flow,
 including cleanup on propagated errors. Differential tests compare stdout,
-stderr, and exit status with the original direct bytecode compiler. Owning
+stderr, and exit status between the typed-IR VM and generated C. Owning
 iteration over fixed arrays and cleanup-managed vectors is also migrated, including
 cleanup on exhaustion and `break`. Typed arena allocation, raw load/store,
 null comparison, reset invalidation, and expired-pointer traps are migrated as
@@ -114,12 +114,11 @@ module mapping through the adapter. Differential tests
 cover module/type identity, generic specialization, project test targets, and
 the multi-module documentation server's render and smoke-test applications.
 Live network tests also run both the language-handler server and documentation
-server through typed IR. The legacy compiler remains explicitly available as
-`run-direct` and `project run-direct`. Leak-enabled testing additionally
-covers consuming clone operations on fresh owning temporaries.
+server through typed IR. Leak-enabled testing additionally covers consuming
+clone operations on fresh owning temporaries.
 
-The benchmark harness measures the direct and typed-IR compilation/VM paths
-separately and counts executed bytecode instructions. Local adapter peepholes
+The benchmark harness measures typed-IR compilation and VM execution and
+counts executed bytecode instructions. Local adapter peepholes
 remove redundant temporary-local round trips and fallthrough jumps without
 crossing CFG boundaries.
 

@@ -127,9 +127,9 @@ fixed arrays, declaration-order fields for structs, declaration-order
 discriminated unions. Union layout is backend-internal; plain enums retain a
 predictable integer representation.
 
-The legacy direct AST-to-bytecode compiler is retained as a differential oracle
-behind explicit `run-direct` commands. Normal source and project execution
-lower through typed IR before producing bytecode.
+Source and project execution always lower through verified typed IR before
+producing VM bytecode or portable C. There is no parallel AST-to-bytecode
+compiler.
 
 The foundation now exists in `src/ir.c`. It lowers scalar code, calls, explicit
 local ownership operations, cleanup plans, arrays, structs, enum/union
@@ -152,4 +152,4 @@ pointers,
 native element builders, components, cleanup, and returns through the existing
 VM. Manifest targets and project tests use the same path. Module identity,
 generic targets, the documentation-server programs, and live HTTP servers are
-compared against the retained direct compiler.
+checked across the typed-IR VM and generated-C backends.

@@ -614,14 +614,14 @@ empties the source local before producing the owning `Html` result, so cleanup
 cannot destroy it twice. Components use ordinary calls and fragment builders;
 element-body control flow needs no special bytecode instructions.
 
-## Keep project IR execution explicit during migration
+## Keep project IR execution explicit during migration (superseded)
 
 Decision: expose `project run-ir MANIFEST [TARGET]` alongside `project run`.
 
 Context: single-file examples are insufficient evidence for module identity,
 canonical generic specialization, manifest source roots, and substantial
-Aster-written applications. Changing every project to the new path at once
-would remove the comparison oracle.
+Aster-written applications. During migration, changing every project at once
+would have removed an independent behavior comparison.
 
 Alternatives: switch project execution immediately, add an environment
 variable, or test combined source text outside the manifest loader.
@@ -631,15 +631,14 @@ while keeping backend selection visible and reproducible.
 
 Consequences: differential tests compare status, stdout, and stderr for module
 fixtures, generic targets, project test targets, and the documentation server.
-The direct compiler was retained as the default until network integration and
-the remaining runtime fixtures had equivalent coverage; the later default-path
-decision records that transition.
+The earlier compiler remained the default until network integration and the
+remaining runtime fixtures had equivalent coverage. The later decisions below
+record the completed transition and its eventual removal.
 
 ## Make typed IR the default execution boundary
 
 Decision: route `run`, `project run`, and `project test` through typed IR and
-the IR-to-bytecode adapter. Retain `run-direct` and `project run-direct` for
-the legacy AST-to-bytecode compiler.
+the IR-to-bytecode adapter.
 
 Context: differential coverage now includes scalar and aggregate semantics,
 ownership cleanup, generics, modules, raw pointers, FFI slices, elements,
@@ -647,18 +646,34 @@ substantial manifest applications, and live HTTP servers. Keeping the direct
 compiler as the default would let future backends bypass Aster's intended
 shared semantic representation.
 
-Alternatives: keep IR opt-in indefinitely or remove the direct compiler
-immediately.
+Alternatives: keep IR opt-in indefinitely or immediately remove the earlier
+compiler before the typed-IR path had equivalent coverage.
 
 Reason: the default path must exercise the architecture that C and VM
-backends share. A named legacy path preserves a strong comparison oracle
-without allowing normal execution to skip typed IR.
+backends share.
 
 Consequences: the default switch exposed and fixed slice-local support,
 unreachable value-return merge blocks, the `long` minimum literal, and
-consuming clone cleanup for fresh owning temporaries. Backend differential
-tests invoke the direct commands explicitly. Both paths remain covered by
-strict GCC/Clang and sanitizer test configurations.
+consuming clone cleanup for fresh owning temporaries.
+
+## Remove the parallel AST-to-bytecode compiler
+
+Decision: delete the earlier compiler and its CLI/API entry points. Source
+execution always passes through verified typed IR; backend differential tests
+compare the typed-IR VM with generated C.
+
+Context: maintaining two independent semantic lowerings caused collection,
+reference-argument, exception, and ownership behavior to drift. Typed IR now
+covers the supported language and is the shared semantic boundary for both
+remaining backends.
+
+Reason: a single lowering path makes ownership and control-flow rules
+enforceable in one place and prevents an obsolete backend from constraining or
+silently contradicting the language.
+
+Consequences: `run` and `project run` are canonical. `run-ir` and `project
+run-ir` remain descriptive aliases, while backend comparison means typed-IR VM
+versus generated C.
 
 ## Apply only block-local bytecode adapter peepholes
 

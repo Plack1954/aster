@@ -33,6 +33,7 @@ static void lower_match(IrBuilder *builder, const Stmt *stmt) {
     bool has_fallthrough_arm = false;
     for (size_t a = 0U; a < stmt->as.match_.arm_count; ++a) {
         const MatchArm *arm = &stmt->as.match_.arms[a];
+        uint32_t binding = IR_INVALID_ID;
         IrInstruction *matches = ir_emit_local_enum_operation(
             builder, IR_OP_LOCAL_ENUM_IS,
             ir_intern_type(builder->module, &ir_bool_type),
@@ -50,7 +51,7 @@ static void lower_match(IrBuilder *builder, const Stmt *stmt) {
                 ir_intern_type(builder->module, arm->binding_type),
                 matched_local, matched_type, arm->variant, arm->span);
             if (payload == NULL) return;
-            uint32_t binding = ir_add_local(
+            binding = ir_add_local(
                 builder, arm->binding, arm->binding_id,
                 arm->binding_type, false);
             IrValueId value = payload->result;
@@ -67,6 +68,17 @@ static void lower_match(IrBuilder *builder, const Stmt *stmt) {
         }
         ir_lower_stmt(builder, arm->body);
         if (!ir_current_terminated(builder)) {
+            /* The payload binding is introduced outside the parsed arm body,
+             * so that body's lexical cleanup plan cannot contain it. */
+            if (binding != IR_INVALID_ID &&
+                ir_type_needs_cleanup(
+                    builder->module,
+                    builder->function->locals[binding].type)) {
+                IrInstruction *drop = ir_append_instruction(
+                    builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
+                    NULL, 0U, arm->span);
+                if (drop != NULL) drop->index = binding;
+            }
             has_fallthrough_arm = true;
             ir_set_terminator(builder, IR_TERM_JUMP, IR_INVALID_ID,
                            merge, IR_INVALID_ID, arm->span);
@@ -642,17 +654,22 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     ir_set_terminator(
                         builder, IR_TERM_JUMP, IR_INVALID_ID,
                         exceptional_finally, IR_INVALID_ID, stmt->span);
-                else if (builder->exception_count != 0U)
+                else if (builder->exception_count != 0U) {
+                    ir_emit_cleanup(
+                        builder, &stmt->exit_cleanup, stmt->span);
                     ir_set_terminator(
                         builder, IR_TERM_JUMP, IR_INVALID_ID,
                         builder->exceptions[
                             builder->exception_count - 1U].handler,
                         IR_INVALID_ID, stmt->span);
-                else
+                } else {
+                    ir_emit_cleanup(
+                        builder, &stmt->exit_cleanup, stmt->span);
                     ir_set_terminator(
                         builder, IR_TERM_PROPAGATE_EXCEPTION,
                         IR_INVALID_ID, IR_INVALID_ID, IR_INVALID_ID,
                         stmt->span);
+                }
 
                 builder->current = matched_catch;
                 IrInstruction *take = ir_append_instruction(
@@ -660,8 +677,9 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     ir_intern_type(builder->module,
                                    stmt->as.try_.catch_type),
                     NULL, 0U, stmt->span);
+                uint32_t catch_local = IR_INVALID_ID;
                 if (take != NULL) {
-                    uint32_t local = ir_add_local(
+                    catch_local = ir_add_local(
                         builder, stmt->as.try_.catch_name,
                         stmt->as.try_.catch_binding_id,
                         stmt->as.try_.catch_type, false);
@@ -669,7 +687,7 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     IrInstruction *store = ir_append_instruction(
                         builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
                         &caught, 1U, stmt->span);
-                    if (store != NULL) store->index = local;
+                    if (store != NULL) store->index = catch_local;
                 }
                 if (has_finally) {
                     builder->exceptions[builder->exception_count++] =
@@ -683,10 +701,24 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     --builder->exception_count;
                 }
                 if (!ir_current_terminated(builder))
+                {
+                    /* Like switch payloads, the catch binding is outside the
+                     * parsed catch-body block and needs an explicit normal
+                     * scope-exit drop. */
+                    if (catch_local != IR_INVALID_ID &&
+                        ir_type_needs_cleanup(
+                            builder->module,
+                            builder->function->locals[catch_local].type)) {
+                        IrInstruction *drop = ir_append_instruction(
+                            builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
+                            NULL, 0U, stmt->span);
+                        if (drop != NULL) drop->index = catch_local;
+                    }
                     ir_set_terminator(
                         builder, IR_TERM_JUMP, IR_INVALID_ID,
                         has_finally ? normal_finally : merge,
                         IR_INVALID_ID, stmt->span);
+                }
             }
 
             if (has_finally) {
@@ -700,6 +732,8 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                 builder->current = exceptional_finally;
                 ir_lower_stmt(builder, stmt->as.try_.finally_body);
                 if (!ir_current_terminated(builder)) {
+                    ir_emit_cleanup(
+                        builder, &stmt->exit_cleanup, stmt->span);
                     if (builder->exception_count != 0U)
                         ir_set_terminator(
                             builder, IR_TERM_JUMP, IR_INVALID_ID,

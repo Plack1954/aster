@@ -68,9 +68,7 @@ typedef struct HttpRequest {
 #define HTTP_REQUEST_MAGIC UINT32_C(0x4f485251)
 
 static LangNativeResult native_error(const char *message) {
-    return (LangNativeResult){
-        false, {.tag=LANG_VALUE_UNIT}, message
-    };
+    return lang_native_result_error(message);
 }
 
 static LangNativeResult native_i64(int64_t value) {
@@ -1629,14 +1627,19 @@ static LangNativeResult wrap_http_result(
         lang_value_drop(vm, &value);
         return native_error("could not allocate HTTP success Result");
     }
-    const char *message =
-        operation.error != NULL ? operation.error : "HTTP operation failed";
-    LangValue error = {
-        .tag=LANG_VALUE_STRING_VIEW,
-        .as.string={message, strlen(message)}
-    };
-    if (!lang_result_err_value(vm, error, &tagged))
+    const char *message = lang_native_result_error_message(&operation);
+    if (message == NULL) message = "HTTP operation failed";
+    LangValue error;
+    if (!lang_string_value(
+            vm, (LangStringView){message, strlen(message)}, &error)) {
+        lang_native_result_drop(&operation);
+        return native_error("could not copy HTTP error diagnostic");
+    }
+    lang_native_result_drop(&operation);
+    if (!lang_result_err_value(vm, error, &tagged)) {
+        lang_value_drop(vm, &error);
         return native_error("could not allocate HTTP error Result");
+    }
     return (LangNativeResult){true, tagged, NULL};
 }
 

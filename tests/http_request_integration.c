@@ -193,6 +193,7 @@ int main(void) {
             &rejected_request) ||
         rejected_request.ok)
         return 20;
+    lang_native_result_drop(&rejected_request);
     int child_status = 0;
     if (waitpid(child, &child_status, 0) != child ||
         !WIFEXITED(child_status) || WEXITSTATUS(child_status) != 0)

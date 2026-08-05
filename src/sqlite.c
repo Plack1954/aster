@@ -37,9 +37,7 @@ typedef struct SqliteHandle {
 #define SQLITE_HANDLE_MAGIC UINT32_C(0x4f53514c)
 
 static LangNativeResult native_failure(const char *message) {
-    return (LangNativeResult){
-        false, {.tag=LANG_VALUE_UNIT}, message
-    };
+    return lang_native_result_error(message);
 }
 
 static LangNativeResult result_error(LangVM *vm, const char *message) {

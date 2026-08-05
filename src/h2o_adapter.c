@@ -7,9 +7,7 @@
 #include <string.h>
 
 static LangNativeResult h2o_native_failure(const char *message) {
-    return (LangNativeResult){
-        false, {.tag=LANG_VALUE_UNIT}, message
-    };
+    return lang_native_result_error(message);
 }
 
 static LangNativeResult h2o_result_error(LangVM *vm,

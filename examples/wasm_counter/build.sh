@@ -3,12 +3,13 @@ set -euo pipefail
 
 example_dir=$(cd "$(dirname "$0")" && pwd)
 aster_root=$(cd "$example_dir/../.." && pwd)
+lang=${1:-"$aster_root/build/lang"}
 build_dir="$example_dir/build"
 dist_dir="$example_dir/dist"
 
 mkdir -p "$build_dir" "$dist_dir"
 
-"$aster_root/build/lang" project build-web \
+"$lang" project build-web \
     "$example_dir/aster.toml" "$dist_dir" counter
 
 cc -std=c17 -O2 "$dist_dir/counter-server.c" \

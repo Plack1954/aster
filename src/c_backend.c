@@ -594,20 +594,24 @@ static bool emit_registry_native_call(
             "            aster_trap(\"unregistered native function\");\n"
             "        if (!native_result_%" PRIu32 ".ok) {\n"
             "            const char *native_error_%" PRIu32 " = "
-            "native_result_%" PRIu32 ".error != NULL ? "
-            "native_result_%" PRIu32 ".error : \"native function failed\";\n"
+            "lang_native_result_error_message(&native_result_%" PRIu32 ");\n"
+            "            if (native_error_%" PRIu32 " == NULL) "
+            "native_error_%" PRIu32 " = \"native function failed\";\n"
             "            if (aster_exception_pending) "
             "aster_string_drop(aster_exception_message);\n"
             "            aster_exception_message = aster_string_from("
             "(aster_str){(const unsigned char *)native_error_%" PRIu32 ", "
             "strlen(native_error_%" PRIu32 ")});\n"
+            "            lang_native_result_drop(&native_result_%" PRIu32 ");\n"
             "            aster_exception_pending = true;\n"
             "            v%" PRIu32 " = (",
             instruction->result, instruction->operand_count,
             instruction->result, instruction->result,
             instruction->result, instruction->result,
             instruction->result, instruction->result,
-            instruction->result, instruction->result);
+            instruction->result, instruction->result,
+            instruction->result,
+            instruction->result);
     c_backend_emit_type(emitter, instruction->result_type);
     fputs("){0};\n        } else {\n", output);
     if (result_type->shape != IR_TYPE_UNION) {
@@ -1536,6 +1540,18 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    v%" PRIu32 " = v%" PRIu32 ".f%" PRIu32 ";\n",
                         instruction->result, instruction->operands[0],
                         instruction->index);
+            if (c_backend_type_needs_drop(
+                    emitter,
+                    function->value_types[instruction->operands[0]]) &&
+                !c_backend_value_is_borrowed_projection(
+                    function, instruction->operands[0])) {
+                fputs("    ", output);
+                c_backend_emit_drop_call(
+                    emitter,
+                    function->value_types[instruction->operands[0]],
+                    "v", instruction->operands[0]);
+                fputs(";\n", output);
+            }
             return;
         case IR_OP_LOCAL_FIELD_SET:
             {
@@ -1595,6 +1611,15 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     instruction->operands[0], instruction->operands[1]);
             fputs(c_backend_type_needs_drop(emitter, instruction->result_type)
                     ? ");\n" : ";\n", output);
+            if (c_backend_type_needs_drop(emitter, array_type) &&
+                !c_backend_value_is_borrowed_projection(
+                    function, instruction->operands[0])) {
+                fputs("    ", output);
+                c_backend_emit_drop_call(
+                    emitter, array_type, "v",
+                    instruction->operands[0]);
+                fputs(";\n", output);
+            }
             return;
         }
         case IR_OP_LOCAL_INDEX_SET: {
@@ -1776,6 +1801,23 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->opcode == IR_OP_NOT_EQUAL
                             ? "!=" : "==",
                         instruction->operands[1]);
+                if (c_backend_type_needs_drop(
+                        emitter,
+                        function->value_types[
+                            instruction->operands[0]])) {
+                    c_backend_emit_drop_call(
+                        emitter,
+                        function->value_types[
+                            instruction->operands[0]],
+                        "v", instruction->operands[0]);
+                    fputs(";\n", output);
+                    c_backend_emit_drop_call(
+                        emitter,
+                        function->value_types[
+                            instruction->operands[1]],
+                        "v", instruction->operands[1]);
+                    fputs(";\n", output);
+                }
             } else if (operand_type->shape == IR_TYPE_BUILTIN_OBJECT &&
                        strcmp(operand_type->name, "string") == 0 &&
                        (instruction->opcode == IR_OP_EQUAL ||
@@ -2670,6 +2712,17 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     fprintf(output,
                             "    v%" PRIu32 " = UINT8_C(0);\n",
                             instruction->result);
+                    return;
+                }
+                if (argument->shape == IR_TYPE_BOOL) {
+                    fprintf(
+                        output,
+                        "    fputs(v%" PRIu32
+                        " ? \"true\\n\" : \"false\\n\", stdout);\n"
+                        "    (void)fflush(stdout);\n"
+                        "    v%" PRIu32 " = UINT8_C(0);\n",
+                        instruction->operands[0],
+                        instruction->result);
                     return;
                 }
                 if (argument->shape != IR_TYPE_SIGNED_INT) {
@@ -4748,6 +4801,30 @@ void c_backend_emit_instruction(CEmitter *emitter,
     }
 }
 
+void c_backend_emit_virtual_cleanup(
+    CEmitter *emitter, const IrFunction *function,
+    IrValueId preserved, const char *indent, bool clear
+) {
+    if (emitter->render_direct) return;
+    FILE *output = emitter->output;
+    for (size_t v = function->value_count; v > 0U; --v) {
+        IrValueId value = (IrValueId)(v - 1U);
+        if (value == preserved ||
+            !c_backend_type_needs_drop(
+                emitter, function->value_types[value]))
+            continue;
+        fprintf(output, "%sif (v%" PRIu32 "_live) ", indent, value);
+        if (clear) fputs("{ ", output);
+        c_backend_emit_drop_call(
+            emitter, function->value_types[value], "v", value);
+        if (clear)
+            fprintf(output,
+                    "; v%" PRIu32 "_live = false; }\n", value);
+        else
+            fputs(";\n", output);
+    }
+}
+
 void c_backend_emit_terminator(CEmitter *emitter,
                                const IrFunction *function,
                                const IrTerminator *terminator) {
@@ -4774,11 +4851,28 @@ void c_backend_emit_terminator(CEmitter *emitter,
                     terminator->target);
             break;
         case IR_TERM_BRANCH:
-            fprintf(output,
-                    "    if (v%" PRIu32 ") goto b%" PRIu32
-                    "; else goto b%" PRIu32 ";\n",
-                    terminator->value, terminator->target,
-                    terminator->alternate);
+            {
+            const IrInstruction *condition = c_backend_find_value_producer(
+                function, terminator->value);
+            if (!emitter->render_direct && condition != NULL &&
+                condition->opcode == IR_OP_EXCEPTION_PENDING) {
+                fprintf(output,
+                        "    if (v%" PRIu32 ") {\n",
+                        terminator->value);
+                c_backend_emit_virtual_cleanup(
+                    emitter, function, IR_INVALID_ID, "        ", true);
+                fprintf(output,
+                        "        goto b%" PRIu32 ";\n"
+                        "    } else goto b%" PRIu32 ";\n",
+                        terminator->target, terminator->alternate);
+            } else {
+                fprintf(output,
+                        "    if (v%" PRIu32 ") goto b%" PRIu32
+                        "; else goto b%" PRIu32 ";\n",
+                        terminator->value, terminator->target,
+                        terminator->alternate);
+            }
+            }
             break;
         case IR_TERM_RETURN:
             if (emitter->render_direct)

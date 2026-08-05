@@ -1440,7 +1440,12 @@ vm_switch_integer_binary:
                         if ((borrowed_mask & (UINT32_C(1) << (unsigned)i)) == 0U)
                             vm_value_drop_owned(vm, stack[sp - count + i]);
                     sp -= count;
-                    vm_raise_exception_message(vm, native_result.error);
+                    const char *message =
+                        lang_native_result_error_message(&native_result);
+                    vm_raise_exception_message(
+                        vm, message != NULL ? message
+                                            : "native function failed");
+                    lang_native_result_drop(&native_result);
                     PUSH(((LangValue){.tag=LANG_VALUE_UNIT}));
                     break;
                 }

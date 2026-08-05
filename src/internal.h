@@ -537,7 +537,8 @@ typedef enum IrOpcode {
     IR_OP_LOCAL_ELEMENT_APPEND,
     IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT,
     IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED,
-    IR_OP_LOCAL_ELEMENT_FINISH
+    IR_OP_LOCAL_ELEMENT_FINISH,
+    IR_OP_COUNT
 } IrOpcode;
 
 typedef enum IrTerminatorKind {
@@ -786,8 +787,6 @@ typedef struct BytecodeModule {
     size_t constant_capacity;
 } BytecodeModule;
 
-bool lang_compile_module(const Module *module, LangDiagnostics *diagnostics,
-                         BytecodeModule *bytecode);
 bool lang_ir_compile_bytecode(const IrModule *ir,
                               LangDiagnostics *diagnostics,
                               BytecodeModule *bytecode);
@@ -809,18 +808,20 @@ void lang_vm_set_process_arguments(
 int lang_run_file_with_roots(const char *path, const char *source_root,
                              const char *const *dependency_roots,
                              size_t dependency_root_count,
-                             const char *project_root, bool check_only,
+                             const char *project_root,
+                             const char *stdlib_root, bool check_only,
                              const char *dump_kind, bool require_entrypoint);
 int lang_run_file_with_roots_args(
     const char *path, const char *source_root,
     const char *const *dependency_roots, size_t dependency_root_count,
-    const char *project_root,
+    const char *project_root, const char *stdlib_root,
     bool check_only, const char *dump_kind, bool require_entrypoint,
     size_t argument_count, const char *const *arguments);
 int lang_emit_c_site_with_roots(const char *path, const char *source_root,
                                 const char *const *dependency_roots,
                                 size_t dependency_root_count,
                                 const char *project_root,
+                                const char *stdlib_root,
                                 const char *css_directory,
                                 bool require_entrypoint);
 int lang_emit_c_with_roots_to_file(
@@ -829,8 +830,8 @@ int lang_emit_c_with_roots_to_file(
     const char *const *dependency_roots,
     size_t dependency_root_count,
     const char *project_root,
+    const char *stdlib_root,
     bool require_entrypoint,
     FILE *output
 );
-
 #endif

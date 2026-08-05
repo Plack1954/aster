@@ -41,11 +41,81 @@ void MovedValueCleanup() {
     consume(value);
 }
 
+string ThrowAfterFirstArgument() {
+    throw new IOException("argument evaluation");
+}
+
+void ConsumePair(Tracked first, string second) {
+}
+
+void CleanupTemporaryOnExceptionTransfer() {
+    try {
+        ConsumePair(
+            new Tracked { id = 7 },
+            ThrowAfterFirstArgument()
+        );
+    }
+    catch (IOException error) {
+        print(70);
+    }
+}
+
+void CleanupAcrossMismatchedCatch() {
+    try {
+        Tracked outer = new() { id = 8 };
+        try {
+            throw new IOException("mismatch");
+        }
+        catch (FormatException error) {
+            print(-1);
+        }
+    }
+    catch (Exception error) {
+        print(80);
+    }
+}
+
+void CleanupCatchBeforeExceptionalFinally() {
+    try {
+        try {
+            throw new IOException("caught");
+        }
+        catch (IOException error) {
+            Tracked caught = new() { id = 9 };
+            throw new FormatException(error.Message);
+        }
+        finally {
+            print(90);
+        }
+    }
+    catch (FormatException error) {
+        print(91);
+    }
+}
+
+void CleanupMatchBindingOnNormalExit() {
+    Result<Tracked, long> result = Result.Ok(
+        new Tracked { id = 10 }
+    );
+    switch (result) {
+        case Result.Ok(value): {
+            print(100);
+        }
+        case Result.Err(error): {
+            print(-1);
+        }
+    }
+}
+
 int main() {
     ReverseScope();
     long returned = EarlyReturn();
     Result<long, long> failed = CleanupThroughTry();
     CleanupThroughBreak();
     MovedValueCleanup();
+    CleanupTemporaryOnExceptionTransfer();
+    CleanupAcrossMismatchedCatch();
+    CleanupCatchBeforeExceptionalFinally();
+    CleanupMatchBindingOnNormalExit();
     return 0;
 }

@@ -3,6 +3,7 @@ namespace Tests.BrowserHttpServer;
 using Lime;
 using Lime.Browser;
 using Lime.CurrentHttp;
+using Aster.Interop;
 using Aster.Html;
 using Aster.Net.Http;
 using System.Text;
@@ -84,8 +85,17 @@ int serve(NativeHandle server, BrowserAssets assets)
 
 int main()
 {
+    string assetDirectory = "";
+    switch (NativeProcessEnvironment("ASTER_BROWSER_ASSET_DIR"))
+    {
+        case Result.Ok(value): { assetDirectory = value; }
+        case Result.Err(error): {
+            eprint(error);
+            return 1;
+        }
+    }
     switch (BrowserAssets(
-        "build/lime-browser", "/browser", "browser_http_server"
+        assetDirectory, "/browser", "browser_http_server"
     ))
     {
         case Result.Err(error): {

@@ -5,6 +5,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+static LangNativeResult native_stack_error(LangVM *vm,
+                                            const LangValue *args,
+                                            size_t arg_count) {
+    (void)vm;
+    (void)args;
+    char message[64];
+    const char prefix[] = "stack-backed callback error";
+    memcpy(message, prefix, sizeof(prefix));
+    if (arg_count != 0U) message[0] = 'S';
+    return lang_native_result_error(message);
+}
+
 static LangNativeResult native_sum(LangVM *vm, const LangValue *args,
                                    size_t arg_count) {
     (void)vm;
@@ -38,7 +50,9 @@ int main(void) {
     if (vm == NULL ||
         !lang_register_native(vm, "test::sum", native_sum, 2U) ||
         !lang_register_native(
-            vm, "test::identity", native_identity, 1U))
+            vm, "test::identity", native_identity, 1U) ||
+        !lang_register_native(
+            vm, "test::stack_error", native_stack_error, 0U))
         return 1;
     if (lang_register_native(vm, "test::sum", native_sum, 2U)) return 2;
     LangValue args[2] = {
@@ -53,6 +67,15 @@ int main(void) {
     if (!lang_vm_call_native(vm, "test::identity", NULL, 0U, &result) ||
         result.ok)
         return 8;
+    lang_native_result_drop(&result);
+    LangNativeResult stack_error;
+    if (!lang_vm_call_native(
+            vm, "test::stack_error", NULL, 0U, &stack_error) ||
+        stack_error.ok || stack_error.error != NULL ||
+        strcmp(lang_native_result_error_message(&stack_error),
+               "stack-backed callback error") != 0)
+        return 12;
+    lang_native_result_drop(&stack_error);
     static const char text[] = "view";
     int marker = 0;
     LangValue scalar_values[] = {

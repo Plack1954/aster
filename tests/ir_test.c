@@ -189,7 +189,123 @@ int main(void) {
     bool rejected_bad_variant_payload_type = false;
     bool rejected_bad_enum_constructor = false;
     bool rejected_bad_destructor = false;
+    bool rejected_unknown_opcode = false;
+    bool rejected_bad_operand_signature = false;
+    bool rejected_bad_result_type = false;
+    bool rejected_use_before_definition = false;
+    bool rejected_non_dominating_value = false;
+    bool rejected_unknown_terminator = false;
     if (initially_valid && ir.function_count != 0U) {
+        IrInstruction *first_instruction = NULL;
+        IrInstruction *multiply = NULL;
+        IrInstruction *boolean_constant = NULL;
+        IrTypeId integer_type = IR_INVALID_ID;
+        for (size_t t = 0U; t < ir.type_count; ++t)
+            if (ir.types[t].shape == IR_TYPE_SIGNED_INT) {
+                integer_type = (IrTypeId)t;
+                break;
+            }
+        for (size_t f = 0U; f < ir.function_count; ++f)
+            for (size_t b = 0U; b < ir.functions[f].block_count; ++b)
+                for (size_t i = 0U;
+                     i < ir.functions[f].blocks[b].instruction_count; ++i) {
+                    IrInstruction *instruction =
+                        &ir.functions[f].blocks[b].instructions[i];
+                    if (first_instruction == NULL)
+                        first_instruction = instruction;
+                    if (multiply == NULL && instruction->opcode ==
+                            IR_OP_MUL_CHECKED)
+                        multiply = instruction;
+                    if (boolean_constant == NULL && instruction->opcode ==
+                            IR_OP_GREATER)
+                        boolean_constant = instruction;
+                }
+        if (first_instruction != NULL) {
+            IrOpcode saved = first_instruction->opcode;
+            first_instruction->opcode = IR_OP_COUNT;
+            rejected_unknown_opcode =
+                !lang_ir_verify_module(&ir, &diagnostics);
+            first_instruction->opcode = saved;
+        }
+        if (multiply != NULL) {
+            IrOpcode saved_opcode = multiply->opcode;
+            multiply->opcode = IR_OP_ADD_FLOAT;
+            rejected_bad_operand_signature =
+                !lang_ir_verify_module(&ir, &diagnostics);
+            multiply->opcode = saved_opcode;
+
+            IrValueId saved_operand = multiply->operands[0];
+            multiply->operands[0] = multiply->result;
+            rejected_use_before_definition =
+                !lang_ir_verify_module(&ir, &diagnostics);
+            multiply->operands[0] = saved_operand;
+        }
+        if (boolean_constant != NULL && integer_type != IR_INVALID_ID) {
+            IrFunction *owner = NULL;
+            for (size_t f = 0U; f < ir.function_count && owner == NULL; ++f)
+                for (size_t b = 0U;
+                     b < ir.functions[f].block_count && owner == NULL; ++b)
+                    for (size_t i = 0U;
+                         i < ir.functions[f].blocks[b].instruction_count;
+                         ++i)
+                        if (&ir.functions[f].blocks[b].instructions[i] ==
+                            boolean_constant)
+                            owner = &ir.functions[f];
+            if (owner != NULL && boolean_constant->result <
+                owner->value_count) {
+                IrTypeId saved_type = boolean_constant->result_type;
+                IrTypeId saved_value_type =
+                    owner->value_types[boolean_constant->result];
+                boolean_constant->result_type = integer_type;
+                owner->value_types[boolean_constant->result] = integer_type;
+                rejected_bad_result_type =
+                    !lang_ir_verify_module(&ir, &diagnostics);
+                boolean_constant->result_type = saved_type;
+                owner->value_types[boolean_constant->result] =
+                    saved_value_type;
+            }
+        }
+        for (size_t f = 0U;
+             f < ir.function_count && !rejected_non_dominating_value; ++f) {
+            IrFunction *function = &ir.functions[f];
+            IrTerminator *first_return = NULL;
+            IrTerminator *second_return = NULL;
+            for (size_t b = 0U; b < function->block_count; ++b) {
+                IrTerminator *term = &function->blocks[b].terminator;
+                if (term->kind != IR_TERM_RETURN ||
+                    term->value >= function->value_count ||
+                    function->value_types[term->value] !=
+                        function->async_result_type)
+                    continue;
+                if (first_return == NULL)
+                    first_return = term;
+                else {
+                    second_return = term;
+                    break;
+                }
+            }
+            if (first_return != NULL && second_return != NULL) {
+                IrValueId saved = first_return->value;
+                first_return->value = second_return->value;
+                rejected_non_dominating_value =
+                    !lang_ir_verify_module(&ir, &diagnostics);
+                first_return->value = saved;
+            }
+        }
+        for (size_t f = 0U;
+             f < ir.function_count && !rejected_unknown_terminator; ++f)
+            for (size_t b = 0U; b < ir.functions[f].block_count; ++b)
+                if (ir.functions[f].blocks[b].terminator.kind ==
+                    IR_TERM_TRAP) {
+                    IrTerminator *term =
+                        &ir.functions[f].blocks[b].terminator;
+                    IrTerminatorKind saved = term->kind;
+                    term->kind = (IrTerminatorKind)99;
+                    rejected_unknown_terminator =
+                        !lang_ir_verify_module(&ir, &diagnostics);
+                    term->kind = saved;
+                    break;
+                }
         for (size_t t = 0U; t < ir.type_count; ++t)
             if (ir.types[t].shape == IR_TYPE_STRUCT &&
                 ir.types[t].field_count != 0U) {
@@ -271,9 +387,11 @@ int main(void) {
                 }
         if (branch != NULL) {
             has_control_flow = true;
+            IrBlockId saved = branch->alternate;
             branch->alternate = IR_INVALID_ID;
             rejected_malformed =
                 !lang_ir_verify_module(&ir, &diagnostics);
+            branch->alternate = saved;
         }
     }
     lang_ir_free_module(&ir);
@@ -296,11 +414,17 @@ int main(void) {
            rejected_bad_variant_payload_type &&
            rejected_bad_enum_constructor &&
            rejected_bad_destructor &&
+           rejected_unknown_opcode &&
+           rejected_bad_operand_signature &&
+           rejected_bad_result_type &&
+           rejected_use_before_definition &&
+           rejected_non_dominating_value &&
+           rejected_unknown_terminator &&
            has_control_flow && rejected_malformed;
     if (!passed)
         fprintf(
             stderr,
-            "IR assertions: valid=%d metadata=%d/%d/%d/%d corrupt=%d/%d/%d/%d/%d/%d control=%d malformed=%d\n",
+            "IR assertions: valid=%d metadata=%d/%d/%d/%d corrupt=%d/%d/%d/%d/%d/%d opcode=%d types=%d/%d dominance=%d/%d term=%d control=%d malformed=%d\n",
             initially_valid, has_field_metadata,
             has_variant_metadata, has_plain_enum_metadata,
             has_destructor_metadata,
@@ -310,6 +434,12 @@ int main(void) {
             rejected_bad_variant_payload_type,
             rejected_bad_enum_constructor,
             rejected_bad_destructor,
+            rejected_unknown_opcode,
+            rejected_bad_operand_signature,
+            rejected_bad_result_type,
+            rejected_use_before_definition,
+            rejected_non_dominating_value,
+            rejected_unknown_terminator,
             has_control_flow, rejected_malformed);
     return passed ? 0 : 2;
 }

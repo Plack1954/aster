@@ -75,6 +75,153 @@ static bool function_uses_utc_clock(const IrFunction *function) {
     return false;
 }
 
+/*
+ * Cleanup-managed SSA values can remain live across a later throwing call
+ * (for example, an earlier call argument).  Generated C therefore tracks
+ * their ownership just like local slots instead of relying on C scope exit.
+ */
+static bool virtual_value_tracks_drop(
+    const CEmitter *emitter, const IrFunction *function,
+    IrValueId value
+) {
+    return value < function->value_count &&
+           c_backend_type_needs_drop(
+               emitter, function->value_types[value]);
+}
+
+static bool instruction_result_owns_value(
+    const CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction
+) {
+    if (emitter->render_direct ||
+        instruction->result == IR_INVALID_ID ||
+        !virtual_value_tracks_drop(
+            emitter, function, instruction->result))
+        return false;
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_LOAD:
+        case IR_OP_LOCAL_FIELD_BORROW:
+        case IR_OP_LOCAL_ITERATOR_NEXT:
+            return false;
+        case IR_OP_PARAMETER:
+            return function->declaration == NULL ||
+                   instruction->index >= function->declaration
+                       ->as.function.param_count ||
+                   !function->declaration->as.function
+                       .params[instruction->index].borrowed;
+        default:
+            return true;
+    }
+}
+
+static uint32_t direct_call_borrowed_values(
+    const CEmitter *emitter, const IrInstruction *instruction
+) {
+    if (instruction->index >= emitter->ir->function_count)
+        return 0U;
+    const IrFunction *target =
+        &emitter->ir->functions[instruction->index];
+    if (target->declaration == NULL) return 0U;
+    uint32_t mask = 0U;
+    const Function *source = &target->declaration->as.function;
+    for (size_t i = 0U; i < source->param_count && i < 32U; ++i)
+        if (source->params[i].borrowed)
+            mask |= UINT32_C(1) << (unsigned)i;
+    return mask;
+}
+
+static bool instruction_consumes_operand(
+    const CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction, size_t operand
+) {
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_STORE:
+        case IR_OP_VALUE_DISCARD:
+        case IR_OP_EXCEPTION_SET:
+        case IR_OP_AGGREGATE_MAKE:
+        case IR_OP_ITERATOR_BEGIN:
+            return true;
+        case IR_OP_VALUE_CLONE:
+            return instruction->auxiliary != 0U &&
+                   !c_backend_value_is_borrowed_projection(
+                       function, instruction->operands[operand]);
+        case IR_OP_LOCAL_FIELD_SET:
+            return operand == 0U;
+        case IR_OP_LOCAL_INDEX_SET:
+            return operand == 1U;
+        case IR_OP_RAW_STORE:
+            return operand == 1U;
+        case IR_OP_FIELD_GET:
+        case IR_OP_INDEX_GET:
+            return operand == 0U &&
+                   !c_backend_value_is_borrowed_projection(
+                       function, instruction->operands[operand]);
+        case IR_OP_EQUAL:
+        case IR_OP_NOT_EQUAL:
+            return c_backend_type_needs_drop(
+                emitter,
+                function->value_types[
+                    instruction->operands[operand]]);
+        case IR_OP_CALL_DIRECT: {
+            uint32_t mask = direct_call_borrowed_values(
+                emitter, instruction);
+            return operand >= 32U ||
+                   (mask & (UINT32_C(1) << (unsigned)operand)) == 0U;
+        }
+        case IR_OP_CALL_INDIRECT:
+            if (operand == 0U) return false;
+            return operand - 1U >= 32U ||
+                   (instruction->auxiliary &
+                    (UINT32_C(1) << (unsigned)(operand - 1U))) == 0U;
+        case IR_OP_CALL_NATIVE:
+            return operand >= 32U ||
+                   (instruction->auxiliary &
+                    (UINT32_C(1) << (unsigned)operand)) == 0U;
+        case IR_OP_LOCAL_ELEMENT_PROPERTY:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY_APPEND:
+        case IR_OP_LOCAL_ELEMENT_CSS_VALUE:
+        case IR_OP_LOCAL_ELEMENT_APPEND:
+        case IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void emit_virtual_result_begin(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction
+) {
+    if (!instruction_result_owns_value(
+            emitter, function, instruction))
+        return;
+    fprintf(emitter->output,
+            "    if (v%" PRIu32 "_live) ", instruction->result);
+    c_backend_emit_drop_call(
+        emitter, instruction->result_type, "v", instruction->result);
+    fputs(";\n", emitter->output);
+}
+
+static void emit_virtual_ownership_update(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction
+) {
+    if (emitter->render_direct) return;
+    if (instruction_result_owns_value(
+            emitter, function, instruction))
+        fprintf(emitter->output,
+                "    v%" PRIu32 "_live = true;\n",
+                instruction->result);
+    for (size_t i = 0U; i < instruction->operand_count; ++i) {
+        IrValueId operand = instruction->operands[i];
+        if (virtual_value_tracks_drop(emitter, function, operand) &&
+            instruction_consumes_operand(
+                emitter, function, instruction, i))
+            fprintf(emitter->output,
+                    "    v%" PRIu32 "_live = false;\n", operand);
+    }
+}
+
 static void emit_function_signature(CEmitter *emitter, size_t index,
                                     bool prototype) {
     const IrFunction *function = &emitter->ir->functions[index];
@@ -242,6 +389,10 @@ static void emit_function_variant(
         c_backend_emit_type(emitter, function->value_types[v]);
         fprintf(emitter->output, " v%zu = {0};\n", v);
         fprintf(emitter->output, "    (void)v%zu;\n", v);
+        if (!render_direct && virtual_value_tracks_drop(
+                emitter, function, (IrValueId)v))
+            fprintf(emitter->output,
+                    "    bool v%zu_live = false;\n", v);
     }
     /*
      * Typed IR retains structurally valid unreachable merge blocks. Mention
@@ -260,8 +411,12 @@ static void emit_function_variant(
         fprintf(emitter->output, "b%zu: ;\n", b);
         const IrBlock *block = &function->blocks[b];
         for (size_t i = 0U; i < block->instruction_count; ++i) {
+            emit_virtual_result_begin(
+                emitter, function, &block->instructions[i]);
             c_backend_emit_instruction(emitter, function,
                              &block->instructions[i]);
+            emit_virtual_ownership_update(
+                emitter, function, &block->instructions[i]);
             if (emitter->failed) {
                 free(direct_local_tags);
                 free(direct_local_tag_lengths);
@@ -275,6 +430,14 @@ static void emit_function_variant(
                 return;
             }
         }
+        if (!render_direct &&
+            (block->terminator.kind == IR_TERM_RETURN ||
+             block->terminator.kind == IR_TERM_PROPAGATE_EXCEPTION))
+            c_backend_emit_virtual_cleanup(
+                emitter, function,
+                block->terminator.kind == IR_TERM_RETURN
+                    ? block->terminator.value : IR_INVALID_ID,
+                "    ", false);
         c_backend_emit_terminator(emitter, function, &block->terminator);
         if (emitter->failed) {
             free(direct_local_tags);
