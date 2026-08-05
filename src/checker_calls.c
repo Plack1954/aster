@@ -520,7 +520,7 @@ Type *checker_check_call(Checker *checker, Expr *expr) {
                           "unknown method receiver `%s`",
                           receiver->as.name);
         } else if (receiver->kind == EXPR_FIELD) {
-            receiver_type = check_place(checker, receiver);
+            receiver_type = check_expr(checker, receiver);
         } else {
             receiver_type = check_expr(checker, receiver);
         }

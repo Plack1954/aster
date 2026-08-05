@@ -86,9 +86,9 @@ int main()
             "2024-02-29" ||
         TimeOnly.FromDateTime(combinedDateTime).ToString() !=
             "23:59:59.125" ||
-        combinedDateTime.Date().ToString() !=
+        combinedDateTime.Date.ToString() !=
             "2024-02-29T00:00:00.000Z" ||
-        combinedDateTime.TimeOfDay().Ticks() != time.Ticks()) { return 21; }
+        combinedDateTime.TimeOfDay.Ticks() != time.Ticks()) { return 21; }
     if (TimeOnly.FromTimeSpan(time.ToTimeSpan()).ToString() !=
         time.ToString()) { return 22; }
 

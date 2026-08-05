@@ -27,6 +27,7 @@ static const Keyword keywords[] = {
     {"as", TOK_AS}, {"public", TOK_PUB},
     {"private", TOK_PRIVATE},
     {"static", TOK_STATIC},
+    {"readonly", TOK_READONLY},
     {"extern", TOK_EXTERN},
     {"type", TOK_TYPE},
     {"delegate", TOK_DELEGATE},

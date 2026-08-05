@@ -1659,10 +1659,12 @@ static Decl *parse_function(
 
 static void configure_struct_member(
     Parser *parser, Decl *member, const char *owner,
-    bool is_static, bool is_public, bool has_visibility) {
+    bool is_static, bool is_readonly,
+    bool is_public, bool has_visibility) {
     Function *function = &member->as.function;
     function->owner_type = owner;
     function->is_static_member = is_static;
+    function->is_readonly_member = is_readonly;
     function->name = join_text(parser, owner, "::", function->name);
     member->is_public = is_public;
     member->has_explicit_visibility = has_visibility;
@@ -1672,8 +1674,9 @@ static void configure_struct_member(
         (function->param_count + 1U) * sizeof(*parameters));
     parameters[0] = (Param){
         .name="this", .type_name=owner, .borrowed=true,
-        .mutable_=!function->is_property_getter,
-        .by_ref=!function->is_property_getter, .span=member->span,
+        .mutable_=!function->is_property_getter && !is_readonly,
+        .by_ref=!function->is_property_getter && !is_readonly,
+        .span=member->span,
         .type_syntax=new_type_syntax(parser, TYPE_SYNTAX_NAMED, member->span)
     };
     parameters[0].type_syntax->as.name = owner;
@@ -1709,6 +1712,7 @@ static Decl *parse_struct_decl(
         bool member_private = !member_public && parser_accept(parser, TOK_PRIVATE);
         bool member_visibility = member_public || member_private;
         bool member_static = parser_accept(parser, TOK_STATIC);
+        bool member_readonly = parser_accept(parser, TOK_READONLY);
         Token field;
         const char *type_name = "Unit";
         TypeSyntax *type_syntax = new_type_syntax(
@@ -1744,6 +1748,7 @@ static Decl *parse_struct_decl(
                     parser, field, false, type_name, type_syntax, field);
                 configure_struct_member(
                     parser, member, *decl_name, member_static,
+                    member_readonly,
                     member_public, member_visibility);
                 parser_array_push(&members, &member);
                 continue;
@@ -1774,6 +1779,7 @@ static Decl *parse_struct_decl(
                 member->as.function.is_property_getter = true;
                 configure_struct_member(
                     parser, member, *decl_name, member_static,
+                    member_readonly,
                     member_public, member_visibility);
                 parser_array_push(&members, &member);
                 continue;
@@ -1802,6 +1808,7 @@ static Decl *parse_struct_decl(
                 member->as.function.is_property_getter = true;
                 configure_struct_member(
                     parser, member, *decl_name, member_static,
+                    member_readonly,
                     member_public, member_visibility);
                 parser_array_push(&members, &member);
                 continue;

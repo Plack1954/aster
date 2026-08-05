@@ -16,6 +16,51 @@ public struct DateTime {
     public int Minute => DatePartsFromUnixTicks(unixTicks).minute;
     public int Second => DatePartsFromUnixTicks(unixTicks).second;
     public int Millisecond => DatePartsFromUnixTicks(unixTicks).millisecond;
+
+    public readonly DateTime Add(TimeSpan value) {
+        return new() { unixTicks = unixTicks + value.ticks };
+    }
+
+    public readonly DateTime AddDays(double value) {
+        return this.Add(TimeSpan.FromDays(value));
+    }
+
+    public readonly string ToString() {
+        return FormatDateTime(unixTicks, 0);
+    }
+
+    public static DateTime Parse(string value) {
+        return ParseDateTimeOffset(value).UtcDateTime();
+    }
+
+    public static bool TryParse(string value, out DateTime result) {
+        result = new() { unixTicks = 0 };
+        try { result = DateTime.Parse(value); return true; }
+        catch (Exception error) { return false; }
+    }
+
+    public readonly DateTime Subtract(TimeSpan value) {
+        return new() { unixTicks = unixTicks - value.ticks };
+    }
+
+    public readonly TimeSpan Subtract(DateTime value) {
+        return TimeSpan.FromTicks(unixTicks - value.unixTicks);
+    }
+
+    public DateTime Date {
+        get {
+            DateParts parts = DatePartsFromUnixTicks(unixTicks);
+            return new()
+            {
+                unixTicks = DaysFromCivil(
+                    parts.year, parts.month, parts.day
+                ) * 864000000000
+            };
+        }
+    }
+
+    public TimeSpan TimeOfDay =>
+        TimeSpan.FromTicks(unixTicks - this.Date.unixTicks);
 }
 public struct DateTimeOffset { long unixTicks; short offsetMinutes; }
 public struct DateOnly { int dayNumber; }
@@ -343,59 +388,6 @@ public TimeSpan TimeSpan.Negate(TimeSpan self)
     return TimeSpan.FromTicks(-self.ticks);
 }
 
-public DateTime DateTime.Add(DateTime self, TimeSpan value)
-{
-    return new() { unixTicks = self.unixTicks + value.ticks };
-}
-
-public DateTime DateTime.AddDays(DateTime self, double value)
-{
-    return self.Add(TimeSpan.FromDays(value));
-}
-
-public string DateTime.ToString(DateTime self)
-{
-    return FormatDateTime(self.unixTicks, 0);
-}
-
-public DateTime DateTime.Parse(string value)
-{
-    return ParseDateTimeOffset(value).UtcDateTime();
-}
-
-public bool DateTime.TryParse(string value, out DateTime result)
-{
-    result = new() { unixTicks = 0 };
-    try { result = DateTime.Parse(value); return true; }
-    catch (Exception error) { return false; }
-}
-
-public DateTime DateTime.Subtract(DateTime self, TimeSpan value)
-{
-    return new() { unixTicks = self.unixTicks - value.ticks };
-}
-
-public TimeSpan DateTime.Subtract(DateTime self, DateTime value)
-{
-    return TimeSpan.FromTicks(self.unixTicks - value.unixTicks);
-}
-
-public DateTime DateTime.Date(DateTime self)
-{
-    DateParts parts = DatePartsFromUnixTicks(self.unixTicks);
-    return new()
-    {
-        unixTicks = DaysFromCivil(parts.year, parts.month, parts.day) *
-            864000000000
-    };
-}
-
-public TimeSpan DateTime.TimeOfDay(DateTime self)
-{
-    DateTime date = self.Date();
-    return TimeSpan.FromTicks(self.unixTicks - date.unixTicks);
-}
-
 public DateTimeOffset DateTimeOffset.UtcNow()
 {
     return new()
@@ -622,7 +614,7 @@ public DateTime DateOnly.ToDateTime(DateOnly self, TimeOnly time)
 
 public TimeOnly TimeOnly.FromDateTime(DateTime dateTime)
 {
-    return new() { ticks = dateTime.TimeOfDay().ticks };
+    return new() { ticks = dateTime.TimeOfDay.ticks };
 }
 
 public TimeOnly TimeOnly.FromTimeSpan(TimeSpan timeSpan)

@@ -1170,7 +1170,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 result = checker_check_name(checker, expr);
                 break;
             }
-            Type *object = check_place(checker, expr->as.field.object);
+            Type *object = expr->as.field.object->kind == EXPR_FIELD
+                ? check_expr(checker, expr->as.field.object)
+                : check_place(checker, expr->as.field.object);
             if (object->kind == TYPE_NAMED &&
                 object->declaration != NULL &&
                 object->declaration->kind == DECL_STRUCT) {
@@ -2429,7 +2431,6 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 function->params[j].span);
             function->params[j].checked_type = type;
             function->params[j].borrowed = function->params[j].by_ref;
-            function->params[j].mutable_ = true;
             function->params[j].binding_id = ++checker.next_local_id;
             checker.locals[checker.local_count++] = (Local){
                 function->params[j].name, type,

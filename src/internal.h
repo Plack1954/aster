@@ -37,7 +37,8 @@ typedef enum TokenKind {
     TOK_TRUE, TOK_FALSE, TOK_NULL,
     TOK_UNSAFE, TOK_TRY, TOK_CATCH, TOK_FINALLY, TOK_THROW,
     TOK_ASYNC, TOK_AWAIT,
-    TOK_NAMESPACE, TOK_USING, TOK_AS, TOK_PUB, TOK_PRIVATE, TOK_STATIC, TOK_EXTERN,
+    TOK_NAMESPACE, TOK_USING, TOK_AS, TOK_PUB, TOK_PRIVATE, TOK_STATIC,
+    TOK_READONLY, TOK_EXTERN,
     TOK_TYPE,
     TOK_DELEGATE,
     TOK_ELEMENT,
@@ -436,6 +437,7 @@ typedef struct Function {
     bool is_drop;
     bool is_async;
     bool is_static_member;
+    bool is_readonly_member;
     bool is_property_getter;
     bool is_constructor;
     const char *owner_type;
