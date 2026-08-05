@@ -3,6 +3,16 @@ namespace Tests.AsyncResponse;
 using Lime;
 using Aster.Html;
 
+struct ApplicationOwner
+{
+    WebApplication Value;
+}
+
+~ApplicationOwner()
+{
+    delete self.Value;
+}
+
 private extern Task Task.Delay(int milliseconds);
 
 private async Task<Response> LoadResponseAsync()
@@ -81,7 +91,8 @@ private bool ResponseTextEquals(
 
 private async Task<bool> VerifyEndpointDispatchAsync()
 {
-    App app = AppNew();
+    WebApplication app = WebApplication.Create();
+    ApplicationOwner appOwner = new() { Value = app };
     app.MapFallback(Missing);
     app.OnException(HandleException);
     app.MapGet("/async/{id:int}", HandleAsync);
@@ -108,11 +119,13 @@ private async Task<bool> VerifyEndpointDispatchAsync()
     Response failed = await app.DispatchAsync(RequestNew(
         "GET", "/failure", "", "", "", ""
     ));
-    App defaultApp = AppNew();
+    WebApplication defaultApp = WebApplication.Create();
+    ApplicationOwner defaultOwner = new() { Value = defaultApp };
     Response defaultMissing = await defaultApp.DispatchAsync(RequestNew(
         "GET", "/missing", "", "", "", ""
     ));
-    App fallbackApp = AppNew();
+    WebApplication fallbackApp = WebApplication.Create();
+    ApplicationOwner fallbackOwner = new() { Value = fallbackApp };
     fallbackApp.MapFallback(AsyncMissing);
     Response asyncMissing = await fallbackApp.DispatchAsync(RequestNew(
         "GET", "/missing", "", "", "", ""

@@ -9,8 +9,9 @@ using System.Text;
 private Result<int, string> BuildSite()
 {
     string outputRoot = try NativeProcessArg(0);
-    StatefulApp<Blog> app = try CreateApp();
-    SiteBuild built = try SiteBuildStateful(app, outputRoot);
+    BlogApplication application = try CreateApp();
+    (WebApplication app, Blog state) = application;
+    SiteBuild built = try SiteBuild(app, outputRoot);
     Console.WriteLine($"Generated {built.files} files.");
     return Result.Ok(0);
 }

@@ -9,54 +9,83 @@ using Aster.Net.Http;
 using System.Text;
 using Tests.BrowserApp;
 
-struct BrowserState
+class BrowserState
 {
-    BrowserAssets assets;
-}
+    public BrowserAssets assets;
 
-private Response home(BrowserState state, Request request)
-{
-    return Results.Html(BrowserPage(state.assets.loader()));
-}
-
-private Response BrowserAsset(BrowserState state, Request request)
-{
-    switch (state.assets.serve(request))
+    public BrowserState(BrowserAssets value)
     {
-        case Result.Ok(response): { return response; }
-        case Result.Err(error): {
-            return Results.NotFound(<p>{error}</p>);
+        assets = value;
+    }
+
+    public Response Home(Request request)
+    {
+        BrowserAssets current = assets;
+        return Results.Html(BrowserPage(current.loader()));
+    }
+
+    public Response BrowserAsset(Request request)
+    {
+        BrowserAssets current = assets;
+        switch (current.serve(request))
+        {
+            case Result.Ok(response): { return response; }
+            case Result.Err(error): {
+                return Results.NotFound(<p>{error}</p>);
+            }
+        }
+    }
+
+    public Response FormFallback(Request request)
+    {
+        switch (request.FormValues())
+        {
+            case Result.Ok(values): {
+                return Results.Html(<p>Saved without WebAssembly.</p>);
+            }
+            case Result.Err(error): {
+                return Results.BadRequest(<p>{error}</p>);
+            }
         }
     }
 }
 
-private Response FormFallback(BrowserState state, Request request)
+struct BrowserLifetime
 {
-    switch (request.FormValues())
-    {
-        case Result.Ok(values): {
-            return Results.Html(<p>Saved without WebAssembly.</p>);
-        }
-        case Result.Err(error): {
-            return Results.BadRequest(<p>{error}</p>);
-        }
-    }
+    WebApplication Application;
+    BrowserState State;
 }
 
-private Response missing(BrowserState state, Request request)
+~BrowserLifetime()
+{
+    delete self.Application;
+    delete self.State;
+}
+
+private Response missing(Request request)
 {
     return Results.NotFound(<h1>Missing</h1>);
 }
 
 private int serve(NativeHandle server, BrowserAssets assets)
 {
-    BrowserState state = new() { assets = assets };
-    StatefulApp<BrowserState> app = StatefulAppNew(state, missing);
+    BrowserState state = new BrowserState(assets);
+    WebApplication app = WebApplication.Create();
+    BrowserLifetime lifetime = new()
+    {
+        Application = app,
+        State = state
+    };
+    Handler home = state.Home;
+    Handler asset = state.BrowserAsset;
+    Handler formFallback = state.FormFallback;
+    app.MapFallback(missing);
     app.MapGet("/", home);
-    app.MapGet("/browser/{name}", BrowserAsset);
-    app.MapPost("/contact", FormFallback);
-    app.MapPost("/todo", FormFallback);
-    app.MapPost("/message", FormFallback);
+    RouteGroup browser = app.MapGroup("/browser");
+    browser.MapGet("/{name}", asset);
+    app.MapPost("/contact", formFallback);
+    app.MapPost("/todo", formFallback);
+    app.MapPost("/message", formFallback);
 
     Console.WriteLine(HttpServerPort(server));
     for (int count = 0; count < 5; count++)
@@ -68,7 +97,7 @@ private int serve(NativeHandle server, BrowserAssets assets)
                 return 1;
             }
             case Result.Ok(request): {
-                switch (CurrentHttpDispatchStateful(app, request))
+                switch (CurrentHttpDispatch(app, request))
                 {
                     case Result.Ok(reuse): {
                     }

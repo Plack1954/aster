@@ -9,6 +9,16 @@ using Aster.Html;
 using Aster.Interop;
 using System.Text;
 
+struct ApplicationOwner
+{
+    WebApplication Value;
+}
+
+~ApplicationOwner()
+{
+    delete self.Value;
+}
+
 private Response home(Request request)
 {
     return Results.Html(
@@ -93,7 +103,11 @@ private Result<int, string> build()
     {
         return Result.Err("Markdown rendered incorrectly");
     }
-    App app = AppNew();
+    ApplicationOwner appOwner = new()
+    {
+        Value = WebApplication.Create()
+    };
+    WebApplication app = appOwner.Value;
     app.MapFallback(missing);
     app.MapGet("/", home);
     app.MapGet("/about/", about);

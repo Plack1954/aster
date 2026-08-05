@@ -24,8 +24,9 @@ private Response Home(Request request)
 
 int main()
 {
-    App app = AppNew();
+    WebApplication app = WebApplication.Create();
     app.MapGet("/", Home);
+    delete app;
     return 0;
 }
 ```
@@ -41,11 +42,34 @@ app.MapGet("/search/{term?}", Search);
 app.MapGet("/files/{*path}", File);
 ```
 
+Mapping returns an `EndpointBuilder` for conventional endpoint metadata:
+
+```aster
+app.MapGet("/articles/{slug}", Article)
+    .WithName("GetArticle")
+    .WithDescription("Gets one article")
+    .WithTag("articles")
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound);
+```
+
+Groups contribute a prefix while registering into the same endpoint graph.
+They can be nested and expose the same `Map*` family:
+
+```aster
+RouteGroup api = app.MapGroup("/api");
+RouteGroup articles = api.MapGroup("/articles");
+
+articles.MapGet("/", ListArticles);
+articles.MapGet("/{slug}", Article);
+articles.MapPost("/", CreateArticle);
+```
+
 The same `Map*` names accept synchronous `Response` handlers and asynchronous
 `Task<Response>` handlers. Async applications dispatch with `DispatchAsync`;
 there is no separate `MapGetAsync` vocabulary.
 
-`AppNew()` supplies the normal 404 fallback. Use `MapFallback` only when the
+`WebApplication.Create()` supplies the normal 404 fallback. Use `MapFallback` only when the
 application needs to replace it; sync and async fallback handlers are accepted.
 
 Patterns are parsed and validated when registered. Literal routes outrank
@@ -114,27 +138,39 @@ files, and bounded streams. Adapters own framing fields such as
 
 ## Explicit state
 
-Until Aster's class and bound-method model lands, an application with state uses
-`StatefulApp<State>`:
+Application state lives in ordinary classes. Pass bound instance methods when
+an endpoint needs that state:
 
 ```aster
-struct Site
+class ArticleService
 {
-    Database database;
+    private Database Database;
+
+    public ArticleService(Database database)
+    {
+        Database = database;
+    }
+
+    public Response List(Request request)
+    {
+        return Results.Html(<h1>Articles</h1>);
+    }
 }
 
-private Response Home(Site site, Request request)
-{
-    return Results.Html(<h1>Home</h1>);
-}
+ArticleService articles = new ArticleService(database);
+Handler listArticles = articles.List;
 
-StatefulApp<Site> app = StatefulAppNew(site, Missing);
-app.MapGet("/", Home);
+WebApplication app = WebApplication.Create();
+app.MapGet("/articles", listArticles);
+
+delete app;
+delete articles;
 ```
 
-There is no hidden service lookup. This duplicated stateful surface is
-temporary and will be replaced by the class-based application design rather
-than retained as a second framework.
+There is no service locator, hidden injection, captured closure, or parallel
+stateful router. Bound delegates borrow their receiver, so the service must
+outlive the application endpoint graph and remains explicitly managed. Delete
+the application before deleting any service object borrowed by its handlers.
 
 ## Optional modules
 

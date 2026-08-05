@@ -5,6 +5,16 @@ using Lime.Ssg;
 using Aster.Html;
 using Aster.Interop;
 
+struct ApplicationOwner
+{
+    WebApplication Value;
+}
+
+~ApplicationOwner()
+{
+    delete self.Value;
+}
+
 private extern Task Task.Delay(int milliseconds);
 
 private async Task<Response> HomeAsync(Request request)
@@ -30,7 +40,11 @@ async Task<int> main()
         }
     }
 
-    App app = AppNew();
+    ApplicationOwner appOwner = new()
+    {
+        Value = WebApplication.Create()
+    };
+    WebApplication app = appOwner.Value;
     app.MapFallback(Missing);
     app.MapGet("/", HomeAsync);
     switch (await SiteBuildAsync(app, outputRoot))

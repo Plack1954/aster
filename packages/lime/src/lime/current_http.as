@@ -176,7 +176,7 @@ public Result<bool, string> CurrentHttpSend(
 }
 
 public Result<bool, string> CurrentHttpDispatch(
-    App app,
+    WebApplication app,
     NativeHandle request
 )
 {
@@ -195,7 +195,7 @@ public Result<bool, string> CurrentHttpDispatch(
 }
 
 public async Task<Result<bool, string>> CurrentHttpDispatchAsync(
-    App app,
+    WebApplication app,
     NativeHandle request
 )
 {
@@ -203,25 +203,6 @@ public async Task<Result<bool, string>> CurrentHttpDispatchAsync(
     {
         Request input = CurrentHttpRequest(request);
         Response output = await app.DispatchAsync(input);
-        return CurrentHttpSend(request, output);
-    }
-    catch (ArgumentException error)
-    {
-        return CurrentHttpSend(
-            request, Results.BadRequest(<h1>Bad request</h1>)
-        );
-    }
-}
-
-public Result<bool, string> CurrentHttpDispatchStateful<State>(
-    StatefulApp<State> app,
-    NativeHandle request
-)
-{
-    try
-    {
-        Request input = CurrentHttpRequest(request);
-        Response output = app.Dispatch(input);
         return CurrentHttpSend(request, output);
     }
     catch (ArgumentException error)

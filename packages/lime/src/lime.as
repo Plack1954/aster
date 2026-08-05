@@ -515,28 +515,11 @@ public delegate Html HtmlMiddleware(
     Html page
 );
 public delegate Response ExceptionHandler(Exception error);
-public delegate Response StatefulHandler<State>(State state, Request request);
-public delegate Task<Response> AsyncStatefulHandler<State>(
-    State state,
-    Request request
-);
-
 union RouteHandler
 {
     Sync(Handler),
     Async(AsyncHandler),
 }
-public delegate List<string> StatefulBuildSource<State>(State state);
-public delegate FilterResult StatefulRequestFilter<State>(
-    State state,
-    Request request
-);
-public delegate Html StatefulHtmlMiddleware<State>(
-    State state,
-    Request request,
-    Html page
-);
-
 struct UrlValue
 {
     string name;
@@ -553,6 +536,23 @@ struct Route
     List<string> methods;
     RoutePattern pattern;
     RouteHandler handler;
+    EndpointMetadata metadata;
+}
+
+class EndpointMetadata
+{
+    public Option<string> Name;
+    public Option<string> Description;
+    public List<string> Tags;
+    public List<int> ProducedStatuses;
+
+    public EndpointMetadata()
+    {
+        Name = Option.None;
+        Description = Option.None;
+        Tags = new();
+        ProducedStatuses = new();
+    }
 }
 
 public struct BuildPage
@@ -583,36 +583,53 @@ public StaticFileOptions StaticFileOptions()
     };
 }
 
-public struct App
+public class WebApplication
 {
-    List<Route> routes;
-    List<BuildPage> pages;
-    List<RequestFilter> filters;
-    List<HtmlMiddleware> htmlMiddleware;
-    List<StaticDirectory> staticDirectories;
-    RouteHandler fallback;
-    ExceptionHandler exceptionHandler;
-    Option<ForwardedHeadersOptions> forwardedHeaders;
+    public List<Route> routes;
+    public List<BuildPage> pages;
+    public List<RequestFilter> filters;
+    public List<HtmlMiddleware> htmlMiddleware;
+    public List<StaticDirectory> staticDirectories;
+    public RouteHandler fallback;
+    public ExceptionHandler exceptionHandler;
+    public Option<ForwardedHeadersOptions> forwardedHeaders;
+
+    private WebApplication()
+    {
+        routes = new();
+        pages = new();
+        filters = new();
+        htmlMiddleware = new();
+        staticDirectories = new();
+        fallback = RouteHandler.Sync(DefaultNotFound);
+        exceptionHandler = DefaultExceptionResponse;
+        forwardedHeaders = Option.None;
+    }
+
+    public static WebApplication Create()
+    {
+        return new WebApplication();
+    }
+
+    ~WebApplication()
+    {
+        foreach (Route route in routes)
+        {
+            delete route.metadata;
+        }
+    }
 }
 
-struct StatefulRoute<State>
+public struct EndpointBuilder
 {
-    List<string> methods;
-    RoutePattern pattern;
-    StatefulHandler<State> handler;
+    WebApplication Application;
+    EndpointMetadata Metadata;
 }
 
-public struct StatefulApp<State>
+public struct RouteGroup
 {
-    State state;
-    List<StatefulRoute<State>> routes;
-    List<BuildPage> pages;
-    List<StatefulRequestFilter<State>> filters;
-    List<StatefulHtmlMiddleware<State>> htmlMiddleware;
-    List<StaticDirectory> staticDirectories;
-    StatefulHandler<State> fallback;
-    ExceptionHandler exceptionHandler;
-    Option<ForwardedHeadersOptions> forwardedHeaders;
+    WebApplication Application;
+    string Prefix;
 }
 
 private Response DefaultExceptionResponse(Exception error)
@@ -698,35 +715,12 @@ private bool BuildPagesContains(List<BuildPage> pages, string path)
     return false;
 }
 
-private void BuildPagesAdd(ref List<BuildPage> pages, string path)
-{
-    BuildPage page = new() { path = path };
-    pages.Add(page);
-}
-
 private bool BuildPageMatchesRoutes(
     List<Route> routes,
     string path
 )
 {
     foreach (Route route in routes)
-    {
-        if (MethodContains(route.methods, "GET") &&
-            route.pattern.HasParameters &&
-            route.pattern.IsMatch(path))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-private bool BuildPageMatchesStatefulRoutes<State>(
-    List<StatefulRoute<State>> routes,
-    string path
-)
-{
-    foreach (StatefulRoute<State> route in routes)
     {
         if (MethodContains(route.methods, "GET") &&
             route.pattern.HasParameters &&
@@ -1777,38 +1771,18 @@ public Result<UrlValues, string> Request.FormValues(Request self)
     return UrlValuesParse(self.body);
 }
 
-public App AppNew()
-{
-    List<Route> routes = new();
-    List<BuildPage> pages = new();
-    List<RequestFilter> filters = new();
-    List<HtmlMiddleware> htmlMiddleware = new();
-    List<StaticDirectory> staticDirectories = new();
-    return new()
-    {
-        routes = routes,
-        pages = pages,
-        filters = filters,
-        htmlMiddleware = htmlMiddleware,
-        staticDirectories = staticDirectories,
-        fallback = RouteHandler.Sync(DefaultNotFound),
-        exceptionHandler = DefaultExceptionResponse,
-        forwardedHeaders = Option.None
-    };
-}
-
-public void App.MapFallback(ref App self, Handler handler)
+public void WebApplication.MapFallback(WebApplication self, Handler handler)
 {
     self.fallback = RouteHandler.Sync(handler);
 }
 
-public void App.MapFallback(ref App self, AsyncHandler handler)
+public void WebApplication.MapFallback(WebApplication self, AsyncHandler handler)
 {
     self.fallback = RouteHandler.Async(handler);
 }
 
-public void App.UseForwardedHeaders(
-    ref App self,
+public void WebApplication.UseForwardedHeaders(
+    WebApplication self,
     ForwardedHeadersOptions options
 )
 {
@@ -1817,16 +1791,16 @@ public void App.UseForwardedHeaders(
     self.forwardedHeaders = configured;
 }
 
-public void App.OnException(
-    ref App self,
+public void WebApplication.OnException(
+    WebApplication self,
     ExceptionHandler handler
 )
 {
     self.exceptionHandler = handler;
 }
 
-public void App.MountStatic(
-    ref App self,
+public void WebApplication.MountStatic(
+    WebApplication self,
     string urlPrefix,
     string root,
     StaticFileOptions options,
@@ -1842,7 +1816,7 @@ public void App.MountStatic(
     });
 }
 
-public List<string> App.StaticRoots(App self)
+public List<string> WebApplication.StaticRoots(WebApplication self)
 {
     List<string> roots = new();
     foreach (StaticDirectory directory in self.staticDirectories)
@@ -1852,18 +1826,18 @@ public List<string> App.StaticRoots(App self)
     return roots;
 }
 
-public void App.UseFilter(ref App self, RequestFilter filter)
+public void WebApplication.UseFilter(WebApplication self, RequestFilter filter)
 {
     self.filters.Add(filter);
 }
 
-public void App.AfterHtml(ref App self, HtmlMiddleware middleware)
+public void WebApplication.AfterHtml(WebApplication self, HtmlMiddleware middleware)
 {
     self.htmlMiddleware.Add(middleware);
 }
 
-private void App.MapEndpoint(
-    ref App self,
+private EndpointBuilder WebApplication.MapEndpoint(
+    WebApplication self,
     RoutePattern pattern,
     List<string> methods,
     RouteHandler handler
@@ -1879,16 +1853,23 @@ private void App.MapEndpoint(
             );
         }
     }
+    EndpointMetadata metadata = new EndpointMetadata();
     self.routes.Add(new()
     {
         methods = methods,
         pattern = pattern,
-        handler = handler
+        handler = handler,
+        metadata = metadata
     });
+    return new()
+    {
+        Application = self,
+        Metadata = metadata
+    };
 }
 
-private void App.MapMethod(
-    ref App self,
+private EndpointBuilder WebApplication.MapMethod(
+    WebApplication self,
     string method,
     string path,
     Handler handler
@@ -1903,11 +1884,13 @@ private void App.MapMethod(
     RoutePattern pattern = ParseRoutePattern(path);
     List<string> methods = new();
     methods.Add(method);
-    self.MapEndpoint(pattern, methods, RouteHandler.Sync(handler));
+    return self.MapEndpoint(
+        pattern, methods, RouteHandler.Sync(handler)
+    );
 }
 
-private void App.MapMethodAsync(
-    ref App self,
+private EndpointBuilder WebApplication.MapMethodAsync(
+    WebApplication self,
     string method,
     string path,
     AsyncHandler handler
@@ -1922,11 +1905,13 @@ private void App.MapMethodAsync(
     RoutePattern pattern = ParseRoutePattern(path);
     List<string> methods = new();
     methods.Add(method);
-    self.MapEndpoint(pattern, methods, RouteHandler.Async(handler));
+    return self.MapEndpoint(
+        pattern, methods, RouteHandler.Async(handler)
+    );
 }
 
-public void App.MapMethods(
-    ref App self,
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
     string path,
     List<string> methods,
     Handler handler
@@ -1958,11 +1943,13 @@ public void App.MapMethods(
         }
     }
     RoutePattern pattern = ParseRoutePattern(path);
-    self.MapEndpoint(pattern, methods, RouteHandler.Sync(handler));
+    return self.MapEndpoint(
+        pattern, methods, RouteHandler.Sync(handler)
+    );
 }
 
-public void App.MapMethods(
-    ref App self,
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
     string path,
     List<string> methods,
     AsyncHandler handler
@@ -1994,28 +1981,40 @@ public void App.MapMethods(
         }
     }
     RoutePattern pattern = ParseRoutePattern(path);
-    self.MapEndpoint(pattern, methods, RouteHandler.Async(handler));
+    return self.MapEndpoint(
+        pattern, methods, RouteHandler.Async(handler)
+    );
 }
 
-public void App.MapGet(ref App self, string path, Handler handler)
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self,
+    string path,
+    Handler handler
+)
 {
-    self.MapMethod("GET", path, handler);
+    EndpointBuilder endpoint = self.MapMethod("GET", path, handler);
     if (BuildPagePathValid(path) && !RouteHasParameter(path))
     {
-        BuildPagesAdd(self.pages, path);
+        self.pages.Add(new() { path = path });
     }
+    return endpoint;
 }
 
-public void App.MapGet(ref App self, string path, AsyncHandler handler)
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self,
+    string path,
+    AsyncHandler handler
+)
 {
-    self.MapMethodAsync("GET", path, handler);
+    EndpointBuilder endpoint = self.MapMethodAsync("GET", path, handler);
     if (BuildPagePathValid(path) && !RouteHasParameter(path))
     {
-        BuildPagesAdd(self.pages, path);
+        self.pages.Add(new() { path = path });
     }
+    return endpoint;
 }
 
-public Result<bool, string> App.AddBuildPage(ref App self, string path)
+public Result<bool, string> WebApplication.AddBuildPage(WebApplication self, string path)
 {
     if (!BuildPagePathValid(path) || RouteHasParameter(path))
     {
@@ -2027,14 +2026,14 @@ public Result<bool, string> App.AddBuildPage(ref App self, string path)
     }
     if (BuildPageMatchesRoutes(self.routes, path))
     {
-        BuildPagesAdd(self.pages, path);
+        self.pages.Add(new() { path = path });
         return Result.Ok(true);
     }
     return Result.Err("build page does not match a parameterized GET route");
 }
 
-public Result<bool, string> App.TryMapGetFrom(
-    ref App self,
+public Result<EndpointBuilder, string> WebApplication.TryMapGetFrom(
+    WebApplication self,
     string pattern,
     Handler handler,
     BuildSource source
@@ -2066,72 +2065,292 @@ public Result<bool, string> App.TryMapGetFrom(
         {
             return Result.Err("duplicate build page path");
         }
-        BuildPagesAdd(self.pages, path);
+        self.pages.Add(new() { path = path });
     }
-    self.MapMethod("GET", pattern, handler);
-    return Result.Ok(true);
+    EndpointBuilder endpoint = self.MapMethod("GET", pattern, handler);
+    return Result.Ok(endpoint);
 }
 
-public void App.MapGet(
-    ref App self,
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self,
     string pattern,
     Handler handler,
     BuildSource source
 )
 {
-    bool ignored = LimeResultOrThrow(
+    return LimeResultOrThrow(
         self.TryMapGetFrom(pattern, handler, source)
     );
 }
 
-public void App.MapPost(ref App self, string path, Handler handler)
+public EndpointBuilder WebApplication.MapPost(WebApplication self, string path, Handler handler)
 {
-    self.MapMethod("POST", path, handler);
+    return self.MapMethod("POST", path, handler);
 }
 
-public void App.MapPost(ref App self, string path, AsyncHandler handler)
+public EndpointBuilder WebApplication.MapPost(WebApplication self, string path, AsyncHandler handler)
 {
-    self.MapMethodAsync("POST", path, handler);
+    return self.MapMethodAsync("POST", path, handler);
 }
 
-public void App.MapPut(ref App self, string path, Handler handler)
+public EndpointBuilder WebApplication.MapPut(WebApplication self, string path, Handler handler)
 {
-    self.MapMethod("PUT", path, handler);
+    return self.MapMethod("PUT", path, handler);
 }
 
-public void App.MapPut(ref App self, string path, AsyncHandler handler)
+public EndpointBuilder WebApplication.MapPut(WebApplication self, string path, AsyncHandler handler)
 {
-    self.MapMethodAsync("PUT", path, handler);
+    return self.MapMethodAsync("PUT", path, handler);
 }
 
-public void App.MapPatch(ref App self, string path, Handler handler)
+public EndpointBuilder WebApplication.MapPatch(WebApplication self, string path, Handler handler)
 {
-    self.MapMethod("PATCH", path, handler);
+    return self.MapMethod("PATCH", path, handler);
 }
 
-public void App.MapPatch(ref App self, string path, AsyncHandler handler)
+public EndpointBuilder WebApplication.MapPatch(WebApplication self, string path, AsyncHandler handler)
 {
-    self.MapMethodAsync("PATCH", path, handler);
+    return self.MapMethodAsync("PATCH", path, handler);
 }
 
-public void App.MapDelete(ref App self, string path, Handler handler)
+public EndpointBuilder WebApplication.MapDelete(WebApplication self, string path, Handler handler)
 {
-    self.MapMethod("DELETE", path, handler);
+    return self.MapMethod("DELETE", path, handler);
 }
 
-public void App.MapDelete(ref App self, string path, AsyncHandler handler)
+public EndpointBuilder WebApplication.MapDelete(WebApplication self, string path, AsyncHandler handler)
 {
-    self.MapMethodAsync("DELETE", path, handler);
+    return self.MapMethodAsync("DELETE", path, handler);
 }
 
-public void App.MapHead(ref App self, string path, Handler handler)
+public EndpointBuilder WebApplication.MapHead(WebApplication self, string path, Handler handler)
 {
-    self.MapMethod("HEAD", path, handler);
+    return self.MapMethod("HEAD", path, handler);
 }
 
-public void App.MapHead(ref App self, string path, AsyncHandler handler)
+public EndpointBuilder WebApplication.MapHead(WebApplication self, string path, AsyncHandler handler)
 {
-    self.MapMethodAsync("HEAD", path, handler);
+    return self.MapMethodAsync("HEAD", path, handler);
+}
+
+private void ValidateEndpointBuilder(EndpointBuilder self)
+{
+    if (self.Application == null || self.Metadata == null)
+    {
+        throw new InvalidOperationException("endpoint builder is invalid");
+    }
+}
+
+public EndpointBuilder EndpointBuilder.WithName(
+    EndpointBuilder self,
+    string name
+)
+{
+    if (name.Length == 0)
+    {
+        throw new ArgumentException("endpoint name cannot be empty");
+    }
+    ValidateEndpointBuilder(self);
+    WebApplication application = self.Application;
+    foreach (Route route in application.routes)
+    {
+        if (route.metadata == self.Metadata) { continue; }
+        switch (route.metadata.Name)
+        {
+            case Option.Some(existing): {
+                if (existing == name)
+                {
+                    throw new ArgumentException("endpoint name is duplicated");
+                }
+            }
+            case Option.None: { }
+        }
+    }
+    Option<string> configured = Option.Some(name);
+    EndpointMetadata metadata = self.Metadata;
+    metadata.Name = configured;
+    return self;
+}
+
+public EndpointBuilder EndpointBuilder.WithDescription(
+    EndpointBuilder self,
+    string description
+)
+{
+    ValidateEndpointBuilder(self);
+    Option<string> configured = Option.Some(description);
+    EndpointMetadata metadata = self.Metadata;
+    metadata.Description = configured;
+    return self;
+}
+
+public EndpointBuilder EndpointBuilder.WithTag(
+    EndpointBuilder self,
+    string tag
+)
+{
+    if (tag.Length == 0)
+    {
+        throw new ArgumentException("endpoint tag cannot be empty");
+    }
+    ValidateEndpointBuilder(self);
+    EndpointMetadata metadata = self.Metadata;
+    metadata.Tags.Add(tag);
+    return self;
+}
+
+public EndpointBuilder EndpointBuilder.Produces(
+    EndpointBuilder self,
+    int statusCode
+)
+{
+    if (statusCode < 100 || statusCode > 599)
+    {
+        throw new ArgumentException(
+            "produced status must be between 100 and 599"
+        );
+    }
+    ValidateEndpointBuilder(self);
+    EndpointMetadata metadata = self.Metadata;
+    foreach (int existing in metadata.ProducedStatuses)
+    {
+        if (existing == statusCode) { return self; }
+    }
+    metadata.ProducedStatuses.Add(statusCode);
+    return self;
+}
+
+private string GroupPattern(string prefix, string pattern)
+{
+    if (pattern.Length == 0 || pattern[0] != 47)
+    {
+        throw new ArgumentException("group route must begin with `/`");
+    }
+    if (prefix == "/") { return pattern; }
+    if (pattern == "/") { return string.Concat(prefix, "/"); }
+    return string.Concat(prefix, pattern);
+}
+
+public RouteGroup WebApplication.MapGroup(
+    WebApplication self,
+    string prefix
+)
+{
+    if (prefix.Length == 0 || prefix[0] != 47)
+    {
+        throw new ArgumentException("route group prefix must begin with `/`");
+    }
+    if (prefix.Length > 1 && prefix[prefix.Length - 1] == 47)
+    {
+        throw new ArgumentException("route group prefix must not end with `/`");
+    }
+    RoutePattern ignored = ParseRoutePattern(prefix);
+    return new()
+    {
+        Application = self,
+        Prefix = prefix
+    };
+}
+
+public RouteGroup RouteGroup.MapGroup(RouteGroup self, string prefix)
+{
+    return self.Application.MapGroup(GroupPattern(self.Prefix, prefix));
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self,
+    string pattern,
+    Handler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self,
+    string pattern,
+    AsyncHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(RouteGroup self, string pattern, Handler handler)
+{
+    return self.Application.MapPost(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapPost(RouteGroup self, string pattern, AsyncHandler handler)
+{
+    return self.Application.MapPost(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapPut(RouteGroup self, string pattern, Handler handler)
+{
+    return self.Application.MapPut(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapPut(RouteGroup self, string pattern, AsyncHandler handler)
+{
+    return self.Application.MapPut(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapPatch(RouteGroup self, string pattern, Handler handler)
+{
+    return self.Application.MapPatch(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapPatch(RouteGroup self, string pattern, AsyncHandler handler)
+{
+    return self.Application.MapPatch(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapDelete(RouteGroup self, string pattern, Handler handler)
+{
+    return self.Application.MapDelete(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapDelete(RouteGroup self, string pattern, AsyncHandler handler)
+{
+    return self.Application.MapDelete(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapHead(RouteGroup self, string pattern, Handler handler)
+{
+    return self.Application.MapHead(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapHead(RouteGroup self, string pattern, AsyncHandler handler)
+{
+    return self.Application.MapHead(GroupPattern(self.Prefix, pattern), handler);
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    Handler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
 }
 
 private Html ApplyHtml(
@@ -2236,7 +2455,7 @@ private FilterResult ApplyRequestFilters(
     return FilterResult.Continue;
 }
 
-private Response DispatchAppUnchecked(App self, Request request)
+private Response DispatchAppUnchecked(WebApplication self, Request request)
 {
     request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
     switch (ApplyRequestFilters(self.filters, request))
@@ -2261,7 +2480,7 @@ private Response DispatchAppUnchecked(App self, Request request)
     );
 }
 
-public Response App.Dispatch(App self, Request request)
+public Response WebApplication.Dispatch(WebApplication self, Request request)
 {
     try
     {
@@ -2275,7 +2494,7 @@ public Response App.Dispatch(App self, Request request)
 }
 
 private async Task<Response> DispatchAppUncheckedAsync(
-    App self,
+    WebApplication self,
     Request request
 )
 {
@@ -2302,7 +2521,7 @@ private async Task<Response> DispatchAppUncheckedAsync(
     );
 }
 
-public async Task<Response> App.DispatchAsync(App self, Request request)
+public async Task<Response> WebApplication.DispatchAsync(WebApplication self, Request request)
 {
     try
     {
@@ -2315,7 +2534,7 @@ public async Task<Response> App.DispatchAsync(App self, Request request)
     }
 }
 
-private Response DispatchAppFallbackUnchecked(App self, Request request)
+private Response DispatchAppFallbackUnchecked(WebApplication self, Request request)
 {
     request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
     switch (ApplyRequestFilters(self.filters, request))
@@ -2337,7 +2556,7 @@ private Response DispatchAppFallbackUnchecked(App self, Request request)
     );
 }
 
-public Response App.DispatchFallback(App self, Request request)
+public Response WebApplication.DispatchFallback(WebApplication self, Request request)
 {
     try
     {
@@ -2350,8 +2569,8 @@ public Response App.DispatchFallback(App self, Request request)
     }
 }
 
-public async Task<Response> App.DispatchFallbackAsync(
-    App self,
+public async Task<Response> WebApplication.DispatchFallbackAsync(
+    WebApplication self,
     Request request
 )
 {
@@ -2737,658 +2956,4 @@ private async Task<Response> DispatchRoutesAsync(
 
     Response response = await InvokeRouteHandlerAsync(fallback, request);
     return ApplyHtmlMiddleware(middleware, request, response);
-}
-
-public StatefulApp<State> StatefulAppNew<State>(
-    State state,
-    StatefulHandler<State> fallback
-)
-{
-    List<StatefulRoute<State>> routes = new();
-    List<BuildPage> pages = new();
-    List<StatefulRequestFilter<State>> filters = new();
-    List<StatefulHtmlMiddleware<State>> htmlMiddleware = new();
-    List<StaticDirectory> staticDirectories = new();
-    return new()
-    {
-        state = state,
-        routes = routes,
-        pages = pages,
-        filters = filters,
-        htmlMiddleware = htmlMiddleware,
-        staticDirectories = staticDirectories,
-        fallback = fallback,
-        exceptionHandler = DefaultExceptionResponse,
-        forwardedHeaders = Option.None
-    };
-}
-
-public void StatefulApp.UseForwardedHeaders<State>(
-    ref StatefulApp<State> self,
-    ForwardedHeadersOptions options
-)
-{
-    ValidateForwardedHeadersOptions(options);
-    Option<ForwardedHeadersOptions> configured = Option.Some(options);
-    self.forwardedHeaders = configured;
-}
-
-public void StatefulApp.OnException<State>(
-    ref StatefulApp<State> self,
-    ExceptionHandler handler
-)
-{
-    self.exceptionHandler = handler;
-}
-
-public void StatefulApp.MountStatic<State>(
-    ref StatefulApp<State> self,
-    string urlPrefix,
-    string root,
-    StaticFileOptions options,
-    StaticResolver resolver
-)
-{
-    self.staticDirectories.Add(new()
-    {
-        urlPrefix = urlPrefix,
-        root = root,
-        options = options,
-        resolver = resolver
-    });
-}
-
-public List<string> StatefulApp.StaticRoots<State>(
-    StatefulApp<State> self
-)
-{
-    List<string> roots = new();
-    foreach (StaticDirectory directory in self.staticDirectories)
-    {
-        roots.Add(directory.root);
-    }
-    return roots;
-}
-
-public void StatefulApp.UseFilter<State>(
-    ref StatefulApp<State> self,
-    StatefulRequestFilter<State> filter
-)
-{
-    self.filters.Add(filter);
-}
-
-public void StatefulApp.AfterHtml<State>(
-    ref StatefulApp<State> self,
-    StatefulHtmlMiddleware<State> middleware
-)
-{
-    self.htmlMiddleware.Add(middleware);
-}
-
-private void StatefulApp.MapEndpoint<State>(
-    ref StatefulApp<State> self,
-    RoutePattern pattern,
-    List<string> methods,
-    StatefulHandler<State> handler
-)
-{
-    foreach (StatefulRoute<State> existing in self.routes)
-    {
-        if (MethodsOverlap(existing.methods, methods) &&
-            existing.pattern.ConflictsWith(pattern))
-        {
-            throw new ArgumentException(
-                "route conflicts with an existing endpoint"
-            );
-        }
-    }
-    StatefulRoute<State> route = new()
-    {
-        methods = methods,
-        pattern = pattern,
-        handler = handler
-    };
-    self.routes.Add(route);
-}
-
-private void StatefulApp.MapMethod<State>(
-    ref StatefulApp<State> self,
-    string method,
-    string path,
-    StatefulHandler<State> handler
-)
-{
-    if (!HttpMethodValid(method))
-    {
-        throw new ArgumentException(
-            "HTTP method must be a non-empty uppercase token"
-        );
-    }
-    RoutePattern pattern = ParseRoutePattern(path);
-    List<string> methods = new();
-    methods.Add(method);
-    self.MapEndpoint(pattern, methods, handler);
-}
-
-public void StatefulApp.MapMethods<State>(
-    ref StatefulApp<State> self,
-    string path,
-    List<string> methods,
-    StatefulHandler<State> handler
-)
-{
-    if (methods.Count == 0)
-    {
-        throw new ArgumentException("endpoint requires an HTTP method");
-    }
-    for (nuint index = 0; index < methods.Count; index += 1)
-    {
-        string method = methods[index];
-        if (method.Length == 0)
-        {
-            throw new ArgumentException("HTTP method cannot be empty");
-        }
-        if (!HttpMethodValid(method))
-        {
-            throw new ArgumentException(
-                "HTTP method must be an uppercase token"
-            );
-        }
-        for (nuint other = 0; other < index; other += 1)
-        {
-            if (methods[other] == method)
-            {
-                throw new ArgumentException("HTTP method is duplicated");
-            }
-        }
-    }
-    RoutePattern pattern = ParseRoutePattern(path);
-    self.MapEndpoint(pattern, methods, handler);
-}
-
-public void StatefulApp.MapGet<State>(
-    ref StatefulApp<State> self,
-    string path,
-    StatefulHandler<State> handler
-)
-{
-    self.MapMethod("GET", path, handler);
-    if (BuildPagePathValid(path) && !RouteHasParameter(path))
-    {
-        BuildPagesAdd(self.pages, path);
-    }
-}
-
-public Result<bool, string> StatefulApp.AddBuildPage<State>(
-    ref StatefulApp<State> self,
-    string path
-)
-{
-    if (!BuildPagePathValid(path) || RouteHasParameter(path))
-    {
-        return Result.Err("build page requires one safe concrete URL path");
-    }
-    if (BuildPagesContains(self.pages, path))
-    {
-        return Result.Err("duplicate build page path");
-    }
-    if (BuildPageMatchesStatefulRoutes(self.routes, path))
-    {
-        BuildPagesAdd(self.pages, path);
-        return Result.Ok(true);
-    }
-    return Result.Err("build page does not match a parameterized GET route");
-}
-
-public Result<bool, string> StatefulApp.TryMapGetFrom<State>(
-    ref StatefulApp<State> self,
-    string pattern,
-    StatefulHandler<State> handler,
-    StatefulBuildSource<State> source
-)
-{
-    if (!RouteHasParameter(pattern))
-    {
-        return Result.Err(
-            "parameterized build source requires a parameterized GET route"
-        );
-    }
-    StatefulBuildSource<State> buildSource = source;
-    List<string> paths = buildSource(self.state);
-    foreach (string path in paths)
-    {
-        if (!BuildPagePathValid(path) || RouteHasParameter(path))
-        {
-            return Result.Err(
-                "build source returned an unsafe or parameterized URL path"
-            );
-        }
-        if (!RouteMatches(pattern, path))
-        {
-            return Result.Err(
-                "build source URL does not match its parameterized GET route"
-            );
-        }
-        if (BuildPagesContains(self.pages, path))
-        {
-            return Result.Err("duplicate build page path");
-        }
-        BuildPagesAdd(self.pages, path);
-    }
-    self.MapMethod("GET", pattern, handler);
-    return Result.Ok(true);
-}
-
-public void StatefulApp.MapGet<State>(
-    ref StatefulApp<State> self,
-    string pattern,
-    StatefulHandler<State> handler,
-    StatefulBuildSource<State> source
-)
-{
-    bool ignored = LimeResultOrThrow(
-        self.TryMapGetFrom(pattern, handler, source)
-    );
-}
-
-public void StatefulApp.MapPost<State>(
-    ref StatefulApp<State> self,
-    string path,
-    StatefulHandler<State> handler
-)
-{
-    self.MapMethod("POST", path, handler);
-}
-
-public void StatefulApp.MapPut<State>(
-    ref StatefulApp<State> self,
-    string path,
-    StatefulHandler<State> handler
-)
-{
-    self.MapMethod("PUT", path, handler);
-}
-
-public void StatefulApp.MapPatch<State>(
-    ref StatefulApp<State> self,
-    string path,
-    StatefulHandler<State> handler
-)
-{
-    self.MapMethod("PATCH", path, handler);
-}
-
-public void StatefulApp.MapDelete<State>(
-    ref StatefulApp<State> self,
-    string path,
-    StatefulHandler<State> handler
-)
-{
-    self.MapMethod("DELETE", path, handler);
-}
-
-public void StatefulApp.MapHead<State>(
-    ref StatefulApp<State> self,
-    string path,
-    StatefulHandler<State> handler
-)
-{
-    self.MapMethod("HEAD", path, handler);
-}
-
-private Response DispatchStatefulAppUnchecked<State>(
-    StatefulApp<State> self,
-    Request request
-)
-{
-    request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
-    switch (ApplyStatefulRequestFilters(
-        self.state,
-        self.filters,
-        request
-    ))
-    {
-        case FilterResult.Continue: {
-        }
-        case FilterResult.Respond(response): {
-            return ApplyStatefulHtmlMiddleware(
-                self.state,
-                self.htmlMiddleware,
-                request,
-                response
-            );
-        }
-    }
-
-    return DispatchStatefulRoutes(
-        self.state,
-        self.routes,
-        self.staticDirectories,
-        self.htmlMiddleware,
-        self.fallback,
-        request
-    );
-}
-
-public Response StatefulApp.Dispatch<State>(
-    StatefulApp<State> self,
-    Request request
-)
-{
-    try
-    {
-        return DispatchStatefulAppUnchecked(self, request);
-    }
-    catch (Exception error)
-    {
-        ExceptionHandler handler = self.exceptionHandler;
-        return handler(error);
-    }
-}
-
-private Response DispatchStatefulAppFallbackUnchecked<State>(
-    StatefulApp<State> self,
-    Request request
-)
-{
-    request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
-    switch (ApplyStatefulRequestFilters(
-        self.state, self.filters, request
-    ))
-    {
-        case FilterResult.Continue: {
-        }
-        case FilterResult.Respond(response): {
-            return ApplyStatefulHtmlMiddleware(
-                self.state,
-                self.htmlMiddleware,
-                request,
-                response
-            );
-        }
-    }
-    StatefulHandler<State> fallback = self.fallback;
-    return ApplyStatefulHtmlMiddleware(
-        self.state,
-        self.htmlMiddleware,
-        request,
-        fallback(self.state, request)
-    );
-}
-
-public Response StatefulApp.DispatchFallback<State>(
-    StatefulApp<State> self,
-    Request request
-)
-{
-    try
-    {
-        return DispatchStatefulAppFallbackUnchecked(self, request);
-    }
-    catch (Exception error)
-    {
-        ExceptionHandler handler = self.exceptionHandler;
-        return handler(error);
-    }
-}
-
-private Option<StatefulRoute<State>> BestStatefulRoute<State>(
-    List<StatefulRoute<State>> routes,
-    string method,
-    string path
-)
-{
-    Option<StatefulRoute<State>> selected = Option.None;
-    foreach (StatefulRoute<State> route in routes)
-    {
-        if (!MethodContains(route.methods, method) ||
-            !route.pattern.IsMatch(path))
-        {
-            continue;
-        }
-        switch (selected)
-        {
-            case Option.None: { selected = Option.Some(route); }
-            case Option.Some(current): {
-                int precedence = route.pattern.ComparePrecedence(
-                    current.pattern
-                );
-                if (precedence < 0)
-                {
-                    selected = Option.Some(route);
-                }
-                else if (precedence == 0)
-                {
-                    throw new InvalidOperationException(
-                        "request matched multiple endpoints with equal precedence"
-                    );
-                }
-            }
-        }
-    }
-    return selected;
-}
-
-private Response DispatchStatefulRoutes<State>(
-    State state,
-    List<StatefulRoute<State>> routes,
-    List<StaticDirectory> staticDirectories,
-    List<StatefulHtmlMiddleware<State>> middleware,
-    StatefulHandler<State> fallback,
-    Request request
-)
-{
-    switch (BestStatefulRoute(routes, request.method, request.path))
-    {
-        case Option.Some(route): {
-                SelectRoute(request, route.pattern);
-                StatefulHandler<State> handler = route.handler;
-                return ApplyStatefulHtmlMiddleware(
-                    state,
-                    middleware,
-                    request,
-                    handler(state, request)
-                );
-        }
-        case Option.None: { }
-    }
-
-    if (request.method == "HEAD")
-    {
-        switch (BestStatefulRoute(routes, "GET", request.path))
-        {
-            case Option.Some(route): {
-                SelectRoute(request, route.pattern);
-                StatefulHandler<State> handler = route.handler;
-                return ApplyStatefulHtmlMiddleware(
-                    state,
-                    middleware,
-                    request,
-                    handler(state, request)
-                );
-            }
-            case Option.None: { }
-        }
-    }
-
-    List<string> allowedMethods = new();
-    foreach (StatefulRoute<State> route in routes)
-    {
-        if (route.pattern.IsMatch(request.path))
-        {
-            foreach (string method in route.methods)
-            {
-                AddAllowedMethod(allowedMethods, method);
-                if (method == "GET")
-                {
-                    AddAllowedMethod(allowedMethods, "HEAD");
-                }
-            }
-        }
-    }
-    if (allowedMethods.Count > 0)
-    {
-        AddAllowedMethod(allowedMethods, "OPTIONS");
-        if (request.method == "OPTIONS")
-        {
-            return ApplyStatefulHtmlMiddleware(
-                state,
-                middleware,
-                request,
-                WithAllowedMethods(
-                    Results.NoContent(), allowedMethods
-                )
-            );
-        }
-        return ApplyStatefulHtmlMiddleware(
-            state,
-            middleware,
-            request,
-            WithAllowedMethods(
-                Results.MethodNotAllowed(
-                    <h1>Method not allowed</h1>
-                ),
-                allowedMethods
-            )
-        );
-    }
-
-
-    if (request.method == "GET" || request.method == "HEAD")
-    {
-        foreach (StaticDirectory directory in staticDirectories)
-        {
-            if (!request.path.StartsWith(directory.urlPrefix))
-            {
-                continue;
-            }
-            StaticResolver resolver = directory.resolver;
-            switch (resolver(
-                directory.urlPrefix, directory.root,
-                directory.options, request
-            ))
-            {
-                case Option.Some(response): {
-                    return ApplyStatefulHtmlMiddleware(
-                        state, middleware, request, response
-                    );
-                }
-                case Option.None: {
-                }
-            }
-        }
-    }
-
-    return ApplyStatefulHtmlMiddleware(
-        state,
-        middleware,
-        request,
-        fallback(state, request)
-    );
-}
-
-private Html ApplyStatefulHtml<State>(
-    State state,
-    List<StatefulHtmlMiddleware<State>> middleware,
-    Request request,
-    Html page
-)
-{
-    foreach (StatefulHtmlMiddleware<State> transform in middleware)
-    {
-        page = transform(state, request, page);
-    }
-    return page;
-}
-
-private Response ApplyStatefulHtmlMiddleware<State>(
-    State state,
-    List<StatefulHtmlMiddleware<State>> middleware,
-    Request request,
-    Response response
-)
-{
-    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
-    switch (body)
-    {
-        case ResponseBody.Empty: {
-            return new()
-            {
-                status = status,
-                body = ResponseBody.Empty,
-                headers = headers
-            };
-        }
-        case ResponseBody.Html(page): {
-            return new()
-            {
-                status = status,
-                body = ResponseBody.Html(ApplyStatefulHtml(
-                    state, middleware, request, page
-                )),
-                headers = headers
-            };
-        }
-        case ResponseBody.Text(text): {
-            return new()
-            {
-                status = status,
-                body = ResponseBody.Text(text),
-                headers = headers
-            };
-        }
-        case ResponseBody.Css(text): {
-            return new()
-            {
-                status = status,
-                body = ResponseBody.Css(text),
-                headers = headers
-            };
-        }
-        case ResponseBody.Asset(asset): {
-            return new()
-            {
-                status = status,
-                body = ResponseBody.Asset(asset),
-                headers = headers
-            };
-        }
-        case ResponseBody.Stream(stream): {
-            return new()
-            {
-                status = status,
-                body = ResponseBody.Stream(stream),
-                headers = headers
-            };
-        }
-        case ResponseBody.File(file): {
-            return new()
-            {
-                status = status,
-                body = ResponseBody.File(file),
-                headers = headers
-            };
-        }
-    }
-}
-
-private FilterResult ApplyStatefulRequestFilters<State>(
-    State state,
-    List<StatefulRequestFilter<State>> filters,
-    Request request
-)
-{
-    foreach (StatefulRequestFilter<State> filter in filters)
-    {
-        switch (filter(state, request))
-        {
-            case FilterResult.Continue: {
-            }
-            case FilterResult.Respond(response): {
-                return FilterResult.Respond(response);
-            }
-        }
-    }
-    return FilterResult.Continue;
 }

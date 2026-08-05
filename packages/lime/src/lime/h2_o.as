@@ -112,20 +112,7 @@ public extern Result<bool, string> H2OTryRespondFile(
 
 public Result<bool, string> H2OBind(
     NativeHandle server,
-    App app
-)
-{
-    List<string> roots = app.StaticRoots();
-    foreach (string root in roots)
-    {
-        bool registered = try H2ORegisterStatic(server, root);
-    }
-    return Result.Ok(true);
-}
-
-public Result<bool, string> H2OBindStateful<State>(
-    NativeHandle server,
-    StatefulApp<State> app
+    WebApplication app
 )
 {
     List<string> roots = app.StaticRoots();
@@ -286,7 +273,7 @@ public Result<bool, string> H2OSend(
 }
 
 public Result<bool, string> H2ODispatch(
-    App app,
+    WebApplication app,
     NativeHandle request
 )
 {
@@ -305,7 +292,7 @@ public Result<bool, string> H2ODispatch(
 }
 
 public async Task<Result<bool, string>> H2ODispatchAsync(
-    App app,
+    WebApplication app,
     NativeHandle request
 )
 {
@@ -323,28 +310,9 @@ public async Task<Result<bool, string>> H2ODispatchAsync(
     }
 }
 
-public Result<bool, string> H2ODispatchStateful<State>(
-    StatefulApp<State> app,
-    NativeHandle request
-)
-{
-    try
-    {
-        Request input = H2ORequest(request);
-        Response output = app.Dispatch(input);
-        return H2OSend(request, output);
-    }
-    catch (ArgumentException error)
-    {
-        return H2OSend(
-            request, Results.BadRequest(<h1>Bad request</h1>)
-        );
-    }
-}
-
 public Result<bool, string> H2OServe(
     NativeHandle server,
-    App app
+    WebApplication app
 )
 {
     while (!H2OStopRequested(server))
@@ -371,7 +339,7 @@ public Result<bool, string> H2OServe(
 
 public async Task<Result<bool, string>> H2OServeAsync(
     NativeHandle server,
-    App app
+    WebApplication app
 )
 {
     while (!H2OStopRequested(server))
@@ -385,33 +353,6 @@ public async Task<Result<bool, string>> H2OServeAsync(
                     case Result.Err(error): {
                         Console.Error.WriteLine(error);
                     }
-                }
-            }
-            case Result.Err(error): {
-                if (!H2OStopRequested(server))
-                {
-                    return Result.Err(error);
-                }
-            }
-        }
-    }
-    return H2OTryShutdown(server);
-}
-
-public Result<bool, string> H2OServeStateful<State>(
-    NativeHandle server,
-    StatefulApp<State> app
-)
-{
-    while (!H2OStopRequested(server))
-    {
-        switch (H2OTryAccept(server))
-        {
-            case Result.Ok(request): {
-                switch (H2ODispatchStateful(app, request))
-                {
-                    case Result.Ok(sent): { }
-                    case Result.Err(error): { Console.Error.WriteLine(error); }
                 }
             }
             case Result.Err(error): {

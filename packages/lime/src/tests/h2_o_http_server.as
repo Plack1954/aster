@@ -9,12 +9,52 @@ using Lime.Static;
 using Aster.Html;
 using System.IO;
 
-struct TestState
+class TestState
 {
-    SessionStore sessions;
+    private SessionStore Sessions;
+
+    public TestState()
+    {
+        Sessions = SessionStore.Create();
+    }
+
+    public Response SessionValue(Request request)
+    {
+        SessionStore sessions = Sessions;
+        Session session = sessions.Open(request);
+        string value = "";
+        if (session.IsNew())
+        {
+            session.SetString("user", "brandon");
+            value = "created";
+        }
+        else
+        {
+            switch (session.GetString("user"))
+            {
+                case Option.Some(found): { value = found; }
+                case Option.None: { value = "missing"; }
+            }
+        }
+        Response response = Results.Text(value);
+        session.Commit(ref response);
+        return response;
+    }
 }
 
-private Response Hello(TestState state, Request request)
+struct ServerLifetime
+{
+    WebApplication Application;
+    TestState State;
+}
+
+~ServerLifetime()
+{
+    delete self.Application;
+    delete self.State;
+}
+
+private Response Hello(Request request)
 {
     string source = "";
     switch (request.Query("from"))
@@ -49,7 +89,7 @@ private Response Hello(TestState state, Request request)
     return response;
 }
 
-private Response Form(TestState state, Request request)
+private Response Form(Request request)
 {
     try
     {
@@ -70,7 +110,7 @@ private Response Form(TestState state, Request request)
     }
 }
 
-private Response Upload(TestState state, Request request)
+private Response Upload(Request request)
 {
     FormCollection form = request.ReadForm();
     switch (form.Get("title"))
@@ -90,7 +130,7 @@ private Response Upload(TestState state, Request request)
     }
 }
 
-private Response Cookie(TestState state, Request request)
+private Response Cookie(Request request)
 {
     Response response = Results.Text("cookie");
     switch (ResponseCookie("theme", "aster"))
@@ -101,39 +141,17 @@ private Response Cookie(TestState state, Request request)
     return response;
 }
 
-private Response SessionValue(TestState state, Request request)
-{
-    Session session = state.sessions.Open(request);
-    string value = "";
-    if (session.IsNew())
-    {
-        session.SetString("user", "brandon");
-        value = "created";
-    }
-    else
-    {
-        switch (session.GetString("user"))
-        {
-            case Option.Some(found): { value = found; }
-            case Option.None: { value = "missing"; }
-        }
-    }
-    Response response = Results.Text(value);
-    session.Commit(ref response);
-    return response;
-}
-
-private Response Redirect(TestState state, Request request)
+private Response Redirect(Request request)
 {
     return Results.SeeOther("/hello/Aster?from=redirect");
 }
 
-private Response Explode(TestState state, Request request)
+private Response Explode(Request request)
 {
     throw new InvalidOperationException("intentional H2O failure");
 }
 
-private Response Origin(TestState state, Request request)
+private Response Origin(Request request)
 {
     return Results.Text(
         $"{request.Scheme}|{request.Host}|{request.RemoteIpAddress}"
@@ -151,12 +169,12 @@ private Response HandleException(Exception error)
     return response;
 }
 
-private Response Stylesheet(TestState state, Request request)
+private Response Stylesheet(Request request)
 {
     return Results.Css("body { color: aster; }\n");
 }
 
-private Response Binary(TestState state, Request request)
+private Response Binary(Request request)
 {
     MemoryStream stream = MemoryStream.Create();
     List<byte> bytes = new();
@@ -171,7 +189,7 @@ private Response Binary(TestState state, Request request)
     return Results.Stream(stream, AssetKind.Binary);
 }
 
-private Response LargeBinary(TestState state, Request request)
+private Response LargeBinary(Request request)
 {
     MemoryStream stream = MemoryStream.Create();
     List<byte> bytes = new();
@@ -195,20 +213,27 @@ private Response LargeBinary(TestState state, Request request)
     return Results.Stream(stream, AssetKind.Binary);
 }
 
-private Response DisconnectBinary(TestState state, Request request)
+private Response DisconnectBinary(Request request)
 {
     return Results.Stream(File.OpenRead("/dev/zero"), AssetKind.Binary);
 }
 
-private Response Missing(TestState state, Request request)
+private Response Missing(Request request)
 {
     return Results.NotFound(<h1>Missing</h1>);
 }
 
 private int Serve(NativeHandle server)
 {
-    TestState state = new() { sessions = SessionStore.Create() };
-    StatefulApp<TestState> app = StatefulAppNew(state, Missing);
+    TestState state = new TestState();
+    WebApplication app = WebApplication.Create();
+    ServerLifetime lifetime = new()
+    {
+        Application = app,
+        State = state
+    };
+    Handler sessionValue = state.SessionValue;
+    app.MapFallback(Missing);
     ForwardedHeadersOptions forwarded = ForwardedHeadersOptions();
     forwarded.ForwardedHeaders = ForwardedHeaders.All;
     forwarded.KnownProxies.Add("127.0.0.1");
@@ -219,7 +244,7 @@ private int Serve(NativeHandle server)
     app.MapPost("/form", Form);
     app.MapPost("/upload", Upload);
     app.MapGet("/cookie", Cookie);
-    app.MapGet("/session", SessionValue);
+    app.MapGet("/session", sessionValue);
     app.MapGet("/redirect", Redirect);
     app.MapGet("/explode", Explode);
     app.MapGet("/origin", Origin);
@@ -233,7 +258,7 @@ private int Serve(NativeHandle server)
         "/files/", "packages/lime/test_assets", staticOptions
     );
 
-    switch (H2OBindStateful(server, app))
+    switch (H2OBind(server, app))
     {
         case Result.Ok(bound): { }
         case Result.Err(error): {
@@ -243,7 +268,7 @@ private int Serve(NativeHandle server)
     }
 
     Console.WriteLine(H2OServerPort(server));
-    switch (H2OServeStateful(server, app))
+    switch (H2OServe(server, app))
     {
         case Result.Ok(stopped): { return 0; }
         case Result.Err(error): {

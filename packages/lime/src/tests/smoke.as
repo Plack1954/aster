@@ -9,6 +9,21 @@ using Lime.Static;
 using Aster.Html;
 using System.Text;
 
+struct ApplicationOwner
+{
+    WebApplication Value;
+}
+
+~ApplicationOwner()
+{
+    delete self.Value;
+}
+
+private ApplicationOwner NewApplication()
+{
+    return new() { Value = WebApplication.Create() };
+}
+
 private Response home(Request request)
 {
     return Results.Html(
@@ -93,7 +108,8 @@ private Response HandleRouteException(Exception error)
 
 private bool ExceptionBoundaryWorks()
 {
-    App app = AppNew();
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
     app.MapFallback(missing);
     app.OnException(HandleRouteException);
     app.MapGet("/broken", broken);
@@ -152,27 +168,43 @@ private bool ContentLibrariesWork()
         "<h3>Gratitude &amp; <strong>Reflection</strong></h3>";
 }
 
-struct SiteState
+class SiteState
 {
-    string title;
+    private string Title;
+
+    public SiteState(string title)
+    {
+        Title = title;
+    }
+
+    public Response Home(Request request)
+    {
+        return Results.Html(<h1>{Title}</h1>);
+    }
+
+    public Response Missing(Request request)
+    {
+        return Results.NotFound(<p>{Title}:missing</p>);
+    }
 }
 
-private Response StateHome(SiteState state, Request request)
+struct SiteStateOwner
 {
-    return Results.Html(<h1>{state.title}</h1>);
+    SiteState Value;
 }
 
-private Response StateMissing(SiteState state, Request request)
+~SiteStateOwner()
 {
-    return Results.NotFound(
-        <p>{state.title}:missing</p>
-    );
+    delete self.Value;
 }
 
-private void RegisterDynamicRoute(ref StatefulApp<SiteState> app)
+private void RegisterDynamicRoute(
+    WebApplication app,
+    Handler handler
+)
 {
     string path = "/dynamic";
-    app.MapGet(path, StateHome);
+    app.MapGet(path, handler);
 }
 
 private Request request(string method, string path)
@@ -366,7 +398,8 @@ private Response Origin(Request request)
 
 private bool ForwardedHeadersAreTrustedExplicitly()
 {
-    App app = AppNew();
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
     app.MapFallback(missing);
     app.MapGet("/origin", Origin);
     ForwardedHeadersOptions options = ForwardedHeadersOptions();
@@ -504,7 +537,8 @@ private bool StaticCssWorks()
 
 private bool StaticDirectoriesWork()
 {
-    App app = AppNew();
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
     app.MapFallback(missing);
     switch (app.TryStatic("/assets/", "packages/lime/testdata"))
     {
@@ -534,7 +568,8 @@ private bool StaticCachePolicyWorks()
     StaticFileOptions options = StaticFileOptions();
     options.MaxAgeSeconds = 60;
     options.Immutable = true;
-    App app = AppNew();
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
     app.MapFallback(missing);
     app.Static("/assets/", "packages/lime/testdata", options);
     Response response = app.Dispatch(request("GET", "/assets/site.css"));
@@ -651,18 +686,20 @@ private bool PrintRedirect(Response response)
     }
 }
 
-private bool StatefulRoutes()
+private bool BoundServiceRoutes()
 {
-    SiteState state = new()
+    SiteStateOwner stateOwner = new()
     {
-        title = "Stateful Lime"
+        Value = new SiteState("Stateful Lime")
     };
-    StatefulApp<SiteState> app = StatefulAppNew(
-        state,
-        StateMissing
-    );
-    app.MapGet("/", StateHome);
-    RegisterDynamicRoute(app);
+    SiteState state = stateOwner.Value;
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    Handler missing = state.Missing;
+    Handler home = state.Home;
+    app.MapFallback(missing);
+    app.MapGet("/", home);
+    RegisterDynamicRoute(app, home);
 
     if (!PrintHtmlResponse(
             app.Dispatch(request("GET", "/")), 200))
@@ -766,7 +803,8 @@ private bool EmptyResponseEquals(Response response, int expectedStatus)
 
 private bool StructuralRoutingWorks()
 {
-    App app = AppNew();
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
     app.MapFallback(missing);
     app.MapGet("/precedence/{value}", ParameterRoute);
     app.MapGet("/precedence/{value:int}", ConstrainedRoute);
@@ -833,7 +871,8 @@ private bool RegistrationValidationWorks()
     bool malformedRejected = false;
     try
     {
-        App malformed = AppNew();
+        ApplicationOwner malformedOwner = NewApplication();
+        WebApplication malformed = malformedOwner.Value;
         malformed.MapGet("users/{id}", ParameterRoute);
     }
     catch (ArgumentException error)
@@ -844,7 +883,8 @@ private bool RegistrationValidationWorks()
     bool conflictRejected = false;
     try
     {
-        App conflict = AppNew();
+        ApplicationOwner conflictOwner = NewApplication();
+        WebApplication conflict = conflictOwner.Value;
         conflict.MapGet("/users/{id}", ParameterRoute);
         conflict.MapGet("/users/{name}", LiteralRoute);
     }
@@ -855,7 +895,8 @@ private bool RegistrationValidationWorks()
 
     try
     {
-        App disjoint = AppNew();
+        ApplicationOwner disjointOwner = NewApplication();
+        WebApplication disjoint = disjointOwner.Value;
         disjoint.MapGet("/users/{id:int}", ConstrainedRoute);
         disjoint.MapGet("/users/{name:alpha}", ParameterRoute);
     }
@@ -867,7 +908,8 @@ private bool RegistrationValidationWorks()
     bool invalidMethodRejected = false;
     try
     {
-        App invalidMethod = AppNew();
+        ApplicationOwner invalidMethodOwner = NewApplication();
+        WebApplication invalidMethod = invalidMethodOwner.Value;
         List<string> methods = new();
         methods.Add("get");
         invalidMethod.MapMethods("/methods", methods, LiteralRoute);
@@ -879,7 +921,8 @@ private bool RegistrationValidationWorks()
 
     bool atomicConflictRejected = false;
     bool registrationStayedAtomic = false;
-    App atomic = AppNew();
+    ApplicationOwner atomicOwner = NewApplication();
+    WebApplication atomic = atomicOwner.Value;
     try
     {
         atomic.MapGet("/atomic", LiteralRoute);
@@ -897,6 +940,40 @@ private bool RegistrationValidationWorks()
     return malformedRejected && conflictRejected &&
         invalidMethodRejected && atomicConflictRejected &&
         registrationStayedAtomic;
+}
+
+private bool GroupsAndBuildersWork()
+{
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    RouteGroup api = app.MapGroup("/api");
+    RouteGroup articles = api.MapGroup("/articles");
+    EndpointBuilder endpoint = articles.MapGet("/{value}", ParameterRoute);
+    endpoint.WithName("GetArticle")
+        .WithDescription("Gets one article")
+        .WithTag("articles")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
+
+    if (!TextResponseEquals(
+            app.Dispatch(request("GET", "/api/articles/aster")),
+            200,
+            "parameter"
+        ))
+    {
+        return false;
+    }
+
+    try
+    {
+        EndpointBuilder duplicate = api.MapGet("/other", LiteralRoute);
+        duplicate.WithName("GetArticle");
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        return error.Message.Length > 0;
+    }
 }
 
 int main()
@@ -950,7 +1027,7 @@ int main()
     {
         return 1;
     }
-    if (!StatefulRoutes())
+    if (!BoundServiceRoutes())
     {
         return 1;
     }
@@ -962,8 +1039,14 @@ int main()
     {
         return 1;
     }
+    if (!GroupsAndBuildersWork())
+    {
+        return 1;
+    }
 
-    App app = AppNew();
+    ApplicationOwner appOwner = NewApplication();
+
+    WebApplication app = appOwner.Value;
     app.MapFallback(missing);
     app.MapGet("/", home);
     app.MapGet("/articles/{slug}", article);

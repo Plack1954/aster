@@ -17,12 +17,46 @@ public struct Post
     PostBody body;
 }
 
-public struct Blog
+public class Blog
 {
-    string title;
-    string description;
-    string baseUrl;
-    List<Post> posts;
+    public string title;
+    public string description;
+    public string baseUrl;
+    public List<Post> posts;
+
+    public Blog(
+        string titleValue,
+        string descriptionValue,
+        string baseUrlValue,
+        List<Post> postValues
+    )
+    {
+        title = titleValue;
+        description = descriptionValue;
+        baseUrl = baseUrlValue;
+        posts = postValues;
+    }
+
+    public Response Home(Request request) { return home(this, request); }
+    public Response Posts(Request request) { return posts(this, request); }
+    public Response About(Request request) { return about(this, request); }
+    public Response Post(Request request) { return post(this, request); }
+    public Response Feed(Request request) { return feed(this, request); }
+    public Response Robots(Request request) { return robots(this, request); }
+    public Response Missing(Request request) { return missing(this, request); }
+    public List<string> PostPagePaths() { return PostPagePaths(this); }
+}
+
+public struct BlogApplication
+{
+    WebApplication Application;
+    Blog State;
+}
+
+~BlogApplication()
+{
+    delete self.Application;
+    delete self.State;
 }
 
 private Html FirstPost()
@@ -46,13 +80,12 @@ public Blog BlogNew()
         summary = "The first entry.",
         body = FirstPost
     });
-    return new()
-    {
-        title = "Blog",
-        description = "Writing and notes.",
-        baseUrl = "https://your-domain.example",
-        posts = posts
-    };
+    return new Blog(
+        "Blog",
+        "Writing and notes.",
+        "https://your-domain.example",
+        posts
+    );
 }
 
 private Html Layout(
@@ -354,15 +387,25 @@ private List<string> PostPagePaths(Blog blog)
     return PostPagePathsFrom(blog.posts);
 }
 
-public Result<StatefulApp<Blog>, string> CreateApp()
+public Result<BlogApplication, string> CreateApp()
 {
     Blog blog = BlogNew();
-    StatefulApp<Blog> app = StatefulAppNew(blog, missing);
-    app.MapGet("/", home);
-    app.MapGet("/blog/", posts);
-    app.MapGet("/blog/{slug}/", post, PostPagePaths);
-    app.MapGet("/about/", about);
-    app.MapGet("/feed.xml", feed);
-    app.MapGet("/robots.txt", robots);
-    return Result.Ok(app);
+    WebApplication app = WebApplication.Create();
+    Handler missingHandler = blog.Missing;
+    Handler homeHandler = blog.Home;
+    Handler postsHandler = blog.Posts;
+    Handler postHandler = blog.Post;
+    Handler aboutHandler = blog.About;
+    Handler feedHandler = blog.Feed;
+    Handler robotsHandler = blog.Robots;
+    BuildSource postPages = blog.PostPagePaths;
+    app.MapFallback(missingHandler);
+    app.MapGet("/", homeHandler);
+    RouteGroup blogRoutes = app.MapGroup("/blog");
+    blogRoutes.MapGet("/", postsHandler);
+    app.MapGet("/blog/{slug}/", postHandler, postPages);
+    app.MapGet("/about/", aboutHandler);
+    app.MapGet("/feed.xml", feedHandler);
+    app.MapGet("/robots.txt", robotsHandler);
+    return Result.Ok(new() { Application = app, State = blog });
 }

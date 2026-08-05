@@ -223,8 +223,8 @@ private T StaticResultOrThrow<T>(Result<T, string> result)
     }
 }
 
-public Result<bool, string> App.TryStatic(
-    ref App self,
+public Result<bool, string> WebApplication.TryStatic(
+    WebApplication self,
     string urlPrefix,
     string root
 )
@@ -232,8 +232,8 @@ public Result<bool, string> App.TryStatic(
     return self.TryStatic(urlPrefix, root, StaticFileOptions());
 }
 
-public Result<bool, string> App.TryStatic(
-    ref App self,
+public Result<bool, string> WebApplication.TryStatic(
+    WebApplication self,
     string urlPrefix,
     string root,
     StaticFileOptions options
@@ -258,8 +258,8 @@ public Result<bool, string> App.TryStatic(
     return Result.Ok(true);
 }
 
-public void App.Static(
-    ref App self,
+public void WebApplication.Static(
+    WebApplication self,
     string urlPrefix,
     string root
 )
@@ -267,65 +267,8 @@ public void App.Static(
     bool ignored = StaticResultOrThrow(self.TryStatic(urlPrefix, root));
 }
 
-public void App.Static(
-    ref App self,
-    string urlPrefix,
-    string root,
-    StaticFileOptions options
-)
-{
-    bool ignored = StaticResultOrThrow(
-        self.TryStatic(urlPrefix, root, options)
-    );
-}
-
-public Result<bool, string> StatefulApp.TryStatic<State>(
-    ref StatefulApp<State> self,
-    string urlPrefix,
-    string root
-)
-{
-    return self.TryStatic(urlPrefix, root, StaticFileOptions());
-}
-
-public Result<bool, string> StatefulApp.TryStatic<State>(
-    ref StatefulApp<State> self,
-    string urlPrefix,
-    string root,
-    StaticFileOptions options
-)
-{
-    if (!StaticPrefixValid(urlPrefix))
-    {
-        return Result.Err(
-            "static URL prefix must begin and end with one safe / segment"
-        );
-    }
-    if (root.Length == 0)
-    {
-        return Result.Err("static directory root cannot be empty");
-    }
-    if (options.MaxAgeSeconds < 0 ||
-        (options.Immutable && options.MaxAgeSeconds == 0))
-    {
-        return Result.Err("invalid static cache policy");
-    }
-    self.MountStatic(urlPrefix, root, options, ResolveStatic);
-    return Result.Ok(true);
-}
-
-public void StatefulApp.Static<State>(
-    ref StatefulApp<State> self,
-    string urlPrefix,
-    string root
-)
-{
-    bool ignored = StaticResultOrThrow(self.TryStatic(urlPrefix, root));
-}
-
-
-public void StatefulApp.Static<State>(
-    ref StatefulApp<State> self,
+public void WebApplication.Static(
+    WebApplication self,
     string urlPrefix,
     string root,
     StaticFileOptions options

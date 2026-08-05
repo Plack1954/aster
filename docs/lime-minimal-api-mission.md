@@ -166,7 +166,7 @@ worktree:
 - CurrentHttp and H2O both close response streams deterministically. HEAD
   response handling no longer reads a CurrentHttp stream or file merely to
   discard its bytes.
-- `App.MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapHead`, and
+- `WebApplication.MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapHead`, and
   `MapMethods` accept either `Response` or `Task<Response>` handlers under the
   same names. `DispatchAsync` executes both shapes, preserves selected route
   values across suspension, and is exposed through CurrentHttp and H2O async
@@ -180,50 +180,48 @@ worktree:
   static generation. Its integration test awaits an async GET, writes the
   resulting page and 404 output, and verifies both files; async endpoints are
   not silently downgraded to synchronous SSG dispatch.
-- `AppNew()` now installs the conventional 404 automatically. Applications
+- `WebApplication.Create()` installs the conventional 404 automatically. Applications
   replace it explicitly with sync or async `MapFallback`; fallback behavior is
   no longer a mandatory constructor argument.
 
-Package tests, generated-C Lime tests, SSG, docs-server, and both VM and
-generated-C CurrentHttp integrations pass this slice. Route groups, endpoint
-builders, bound typed handlers, and continuation middleware intentionally
-await Aster's class and bound-method substrate: `List<T>` has independent value
-copy semantics, so implementing live builders as structs would silently mutate
-copies of the endpoint graph.
+The Minimal API surface now uses one manually managed `WebApplication` class.
+`Map*` returns an `EndpointBuilder`; builders attach names, descriptions, tags,
+and produced statuses. `MapGroup` returns a borrowed group handle, groups may
+nest, and all group mappings register into the owning application's endpoint
+graph. Stateful services use explicit bound instance-method delegates.
+`App` and `StatefulApp<State>` have been deleted rather than retained as
+compatibility frameworks.
 
 ### What must change
 
 The routing foundation is now materially closer to Minimal APIs, but the
 application architecture is not yet the target design:
 
-1. `App` and `StatefulApp<State>` still duplicate route registration,
-   dispatch, filters, HTML middleware, static mounts, fallback, SSG pages,
-   exception handling, and forwarded-header configuration.
-2. Route handlers still receive only `Request`. `Request.RouteValue` is now
+1. Route handlers still receive only `Request`. `Request.RouteValue` is now
    optional and uses the selected parsed pattern, but handlers cannot receive
    typed route parameters directly.
-3. Binding adapters, conversion failures, and explicit query/header/body/form
+2. Binding adapters, conversion failures, and explicit query/header/body/form
    binding sources do not yet exist.
-4. Route patterns are structural and selected by precedence, but endpoints are
+3. Route patterns are structural and selected by precedence, but endpoints are
    still scanned linearly rather than compiled into one matcher graph.
-5. `UseFilter` is only a before-handler short circuit and `AfterHtml` transforms
+4. `UseFilter` is only a before-handler short circuit and `AfterHtml` transforms
    only HTML. Together they do not form general continuation middleware.
-6. Endpoint-level policy, route groups, endpoint builders, names, metadata,
-   and graph-level link generation do not exist.
-7. Asynchronous non-stateful handlers now participate in the real endpoint
-   graph, but `StatefulApp<State>` and continuation middleware remain
-   synchronous. H2O's current `ServeAsync` loop awaits one handler at a time;
+5. Endpoint builders currently store names and descriptive metadata, but
+   endpoint/group filters and graph-level link generation do not exist.
+6. Asynchronous handlers participate in the real endpoint graph, including
+   bound service methods when their delegate is asynchronous. H2O's current
+   `ServeAsync` loop awaits one handler at a time;
    its event loop is not yet integrated with Aster's executor.
-8. Request bodies are buffered strings in the core request. CurrentHttp reads
+7. Request bodies are buffered strings in the core request. CurrentHttp reads
    the declared body completely during native request parsing, and H2O exposes
    its already-buffered request entity. Response streaming exists, but neither
    transport currently supplies incremental body reads or a disconnect event
    to Aster's task executor. Consequently a truthful `RequestAborted` token
    cannot yet be implemented; attaching `CancellationToken.None` would only
    counterfeit the ASP.NET API.
-9. The public surface exposes transport construction helpers such as
+8. The public surface exposes transport construction helpers such as
    `RequestNewTransport` beside application-facing request operations.
-10. `Results`, `StatusCodes`, the empty-body variant, and `ProblemDetails` now
+9. `Results`, `StatusCodes`, the empty-body variant, and `ProblemDetails` now
     provide the primary response vocabulary. Concrete typed result metadata
     still depends on the endpoint metadata/builder architecture.
 

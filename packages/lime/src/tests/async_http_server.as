@@ -4,6 +4,16 @@ using Lime;
 using Lime.CurrentHttp;
 using Aster.Net.Http;
 
+struct ApplicationOwner
+{
+    WebApplication Value;
+}
+
+~ApplicationOwner()
+{
+    delete self.Value;
+}
+
 private extern Task Task.Delay(int milliseconds);
 
 private async Task<Response> AsyncValue(Request request)
@@ -16,7 +26,7 @@ private async Task<Response> AsyncValue(Request request)
     }
 }
 
-private async Task<int> ServeAsync(NativeHandle server, App app)
+private async Task<int> ServeAsync(NativeHandle server, WebApplication app)
 {
     Console.WriteLine(HttpServerPort(server));
     switch (HttpTryAccept(server))
@@ -40,7 +50,8 @@ private async Task<int> ServeAsync(NativeHandle server, App app)
 
 async Task<int> main()
 {
-    App app = AppNew();
+    WebApplication app = WebApplication.Create();
+    ApplicationOwner appOwner = new() { Value = app };
     app.MapGet("/async/{id:int}", AsyncValue);
     switch (HttpTryServerOpen(
         "127.0.0.1", 0, 8192, 4096, 1000, 1

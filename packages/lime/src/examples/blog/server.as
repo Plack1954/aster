@@ -5,7 +5,7 @@ using Lime;
 using Lime.CurrentHttp;
 using Aster.Net.Http;
 
-private int serve(NativeHandle server, StatefulApp<Blog> app)
+private int serve(NativeHandle server, WebApplication app)
 {
     Console.WriteLine($"http://127.0.0.1:{HttpServerPort(server)}");
     while (true)
@@ -13,7 +13,7 @@ private int serve(NativeHandle server, StatefulApp<Blog> app)
         switch (HttpTryAccept(server))
         {
             case Result.Ok(request): {
-                switch (CurrentHttpDispatchStateful(app, request))
+                switch (CurrentHttpDispatch(app, request))
                 {
                     case Result.Ok(reuse): {
                     }
@@ -36,7 +36,8 @@ int main()
 {
     switch (CreateApp())
     {
-        case Result.Ok(app): {
+        case Result.Ok(application): {
+            (WebApplication app, Blog state) = application;
             switch (HttpTryServerOpen(
                 "127.0.0.1", 0, 8192, 65536, 5000, 128
             ))

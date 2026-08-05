@@ -9,12 +9,50 @@ using Aster.Net.Http;
 using System.IO;
 using System.Text;
 
-struct ServerState
+class ServerState
 {
-    string name;
+    private string Name;
+
+    public ServerState(string name)
+    {
+        Name = name;
+    }
+
+    public FilterResult RejectFiltered(Request request)
+    {
+        if (Name == "Lime integration" && request.Path == "/filtered")
+        {
+            return FilterResult.Respond(
+                Results.NotFound(<h1>Filtered</h1>)
+            );
+        }
+        return FilterResult.Continue;
+    }
+
+    public Html FrameErrors(Request request, Html page)
+    {
+        if (Name == "Lime integration" &&
+            (request.Path == "/filtered" || request.Path == "/missing"))
+        {
+            return <main data-path=request.Path>{page}</main>;
+        }
+        return page;
+    }
 }
 
-private Response article(ServerState state, Request request)
+struct ServerLifetime
+{
+    WebApplication Application;
+    ServerState State;
+}
+
+~ServerLifetime()
+{
+    delete self.Application;
+    delete self.State;
+}
+
+private Response article(Request request)
 {
     string source = "";
     switch (request.Query("ref"))
@@ -54,7 +92,7 @@ private Response article(ServerState state, Request request)
     return response;
 }
 
-private Response submit(ServerState state, Request request)
+private Response submit(Request request)
 {
     try
     {
@@ -83,31 +121,31 @@ private Response submit(ServerState state, Request request)
     }
 }
 
-private Response missing(ServerState state, Request request)
+private Response missing(Request request)
 {
     return Results.NotFound(<h1>Missing</h1>);
 }
 
-private Response robots(ServerState state, Request request)
+private Response robots(Request request)
 {
     return Results.Text(
         "User-agent: *\nDisallow: /private\n"
     );
 }
 
-private Response stylesheet(ServerState state, Request request)
+private Response stylesheet(Request request)
 {
     return Results.Css(
         "body { color: #e45b20; }\n"
     );
 }
 
-private Response feed(ServerState state, Request request)
+private Response feed(Request request)
 {
     return Results.Xml("<rss version=\"2.0\"></rss>");
 }
 
-private Response mark(ServerState state, Request request)
+private Response mark(Request request)
 {
     switch (StaticFile("packages/lime/testdata", request.Path))
     {
@@ -118,12 +156,12 @@ private Response mark(ServerState state, Request request)
     }
 }
 
-private Response MethodResponse(ServerState state, Request request)
+private Response MethodResponse(Request request)
 {
     return Results.Text(request.Method);
 }
 
-private Response CookieValue(ServerState state, Request request)
+private Response CookieValue(Request request)
 {
     switch (request.Cookie("theme"))
     {
@@ -146,7 +184,7 @@ private Response CookieValue(ServerState state, Request request)
     }
 }
 
-private Response HeaderValue(ServerState state, Request request)
+private Response HeaderValue(Request request)
 {
     switch (request.Header("x-aster-test"))
     {
@@ -159,7 +197,7 @@ private Response HeaderValue(ServerState state, Request request)
     }
 }
 
-private Response ConfiguredCookie(ServerState state, Request request)
+private Response ConfiguredCookie(Request request)
 {
     Option<string> domain = Option.Some("lime.test");
     Option<long> maxAge = Option.Some(3600);
@@ -185,7 +223,7 @@ private Response ConfiguredCookie(ServerState state, Request request)
     }
 }
 
-private Response DeletedCookie(ServerState state, Request request)
+private Response DeletedCookie(Request request)
 {
     Response response = Results.Text("deleted");
     switch (ResponseDeleteCookie("theme", CookieOptions()))
@@ -200,7 +238,7 @@ private Response DeletedCookie(ServerState state, Request request)
     }
 }
 
-private Response JsonEcho(ServerState state, Request request)
+private Response JsonEcho(Request request)
 {
     switch (request.Json())
     {
@@ -213,7 +251,7 @@ private Response JsonEcho(ServerState state, Request request)
     }
 }
 
-private Response Problem(ServerState state, Request request)
+private Response Problem(Request request)
 {
     ProblemDetails problem = ProblemDetails.Create(409, "Conflict");
     problem.Detail = "The article already exists.";
@@ -221,7 +259,7 @@ private Response Problem(ServerState state, Request request)
     return Results.Problem(problem);
 }
 
-private Response StreamedAsset(ServerState state, Request request)
+private Response StreamedAsset(Request request)
 {
     MemoryStream stream = MemoryStream.Create();
     List<byte> first = new();
@@ -243,44 +281,18 @@ private Response StreamedAsset(ServerState state, Request request)
     return response;
 }
 
-private FilterResult RejectFiltered(
-    ServerState state,
-    Request request
-)
-{
-    if (state.name == "Lime integration" &&
-        request.Path == "/filtered")
-    {
-        return FilterResult.Respond(
-            Results.NotFound(<h1>Filtered</h1>)
-        );
-    }
-    return FilterResult.Continue;
-}
-
-private Html FrameErrors(
-    ServerState state,
-    Request request,
-    Html page
-)
-{
-    if (state.name == "Lime integration" &&
-        (request.Path == "/filtered" || request.Path == "/missing"))
-    {
-        return <main data-path=request.Path>{page}</main>;
-    }
-    return page;
-}
-
 private int serve(NativeHandle server)
 {
-    ServerState state = new()
+    ServerState state = new ServerState("Lime integration");
+    WebApplication app = WebApplication.Create();
+    ServerLifetime lifetime = new()
     {
-        name = "Lime integration"
+        Application = app,
+        State = state
     };
-    StatefulApp<ServerState> app = StatefulAppNew(state, missing);
-    app.UseFilter(RejectFiltered);
-    app.AfterHtml(FrameErrors);
+    app.MapFallback(missing);
+    app.UseFilter(state.RejectFiltered);
+    app.AfterHtml(state.FrameErrors);
     app.MapGet("/articles/{slug}", article);
     app.MapPut("/articles/{slug}", MethodResponse);
     app.MapPatch("/articles/{slug}", MethodResponse);
@@ -306,7 +318,7 @@ private int serve(NativeHandle server)
         switch (HttpTryAccept(server))
         {
             case Result.Ok(request): {
-                switch (CurrentHttpDispatchStateful(app, request))
+                switch (CurrentHttpDispatch(app, request))
                 {
                     case Result.Ok(reuse): {
                     }

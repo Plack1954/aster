@@ -401,7 +401,7 @@ private Result<int, string> SsgCopyStaticDirectories(
 
 private Result<SiteBuild, string> SsgBuildAppPages(
     List<BuildPage> pages,
-    App app,
+    WebApplication app,
     string outputRoot
 )
 {
@@ -433,7 +433,7 @@ private Result<SiteBuild, string> SsgBuildAppPages(
 
 private async Task<Result<SiteBuild, string>> SsgBuildAppPagesAsync(
     List<BuildPage> pages,
-    App app,
+    WebApplication app,
     string outputRoot
 )
 {
@@ -483,45 +483,8 @@ private async Task<Result<SiteBuild, string>> SsgBuildAppPagesAsync(
     }
 }
 
-private Result<SiteBuild, string> SsgBuildStatefulPages<State>(
-    List<BuildPage> pages,
-    StatefulApp<State> app,
-    string outputRoot
-)
-{
-    try SsgEnsureTree(outputRoot);
-    List<string> urls = new();
-    List<string> outputs = new();
-    int files = 0;
-    foreach (BuildPage page in pages)
-    {
-        string path = page.path;
-        Request request = RequestNew("GET", path, "", "", "", "");
-        try SsgMaterialize(
-            path,
-            outputRoot,
-            200,
-            false,
-            app.Dispatch(request),
-            urls,
-            outputs
-        );
-        files += 1;
-    }
-    files += try SsgCopyStaticDirectories(
-        app.staticDirectories, outputRoot, urls, outputs
-    );
-    Request missing = RequestNew("GET", "/404.html", "", "", "", "");
-    try SsgMaterialize(
-        "/404.html", outputRoot, 404, true,
-        app.DispatchFallback(missing), urls, outputs
-    );
-    files += 1;
-    return Result.Ok(new() { files = files });
-}
-
 public Result<SiteBuild, string> SiteBuild(
-    App app,
+    WebApplication app,
     string outputRoot
 )
 {
@@ -529,17 +492,9 @@ public Result<SiteBuild, string> SiteBuild(
 }
 
 public async Task<Result<SiteBuild, string>> SiteBuildAsync(
-    App app,
+    WebApplication app,
     string outputRoot
 )
 {
     return await SsgBuildAppPagesAsync(app.pages, app, outputRoot);
-}
-
-public Result<SiteBuild, string> SiteBuildStateful<State>(
-    StatefulApp<State> app,
-    string outputRoot
-)
-{
-    return SsgBuildStatefulPages(app.pages, app, outputRoot);
 }
