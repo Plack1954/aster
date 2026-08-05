@@ -1417,6 +1417,50 @@ static LangNativeResult native_str_byte_at_value(
     };
 }
 
+static LangNativeResult native_str_index_of_ordinal(
+    LangVM *vm, const LangValue *args, size_t arg_count) {
+    (void)vm;
+    LangStringView value;
+    LangStringView needle;
+    if (arg_count != 3U ||
+        !lang_value_string_view(&args[0], &value) ||
+        !lang_value_string_view(&args[1], &needle) ||
+        args[2].tag != LANG_VALUE_U64)
+        return (LangNativeResult){
+            false, {.tag=LANG_VALUE_UNIT},
+            "StringIndexOfOrdinal expects two strings and a start index"
+        };
+    uint64_t raw_start = args[2].as.u64;
+    if (raw_start > (uint64_t)value.length)
+        return (LangNativeResult){
+            true, {.tag=LANG_VALUE_I64, .as.i64=-1}, NULL};
+    size_t start = (size_t)raw_start;
+    if (needle.length == 0U)
+        return (LangNativeResult){
+            true, {.tag=LANG_VALUE_I64, .as.i64=(int64_t)start}, NULL};
+    if (needle.length > value.length - start)
+        return (LangNativeResult){
+            true, {.tag=LANG_VALUE_I64, .as.i64=-1}, NULL};
+    const char *cursor = value.data + start;
+    const char *end = value.data + (value.length - needle.length + 1U);
+    while (cursor < end) {
+        const char *candidate = memchr(
+            cursor, (unsigned char)needle.data[0], (size_t)(end - cursor));
+        if (candidate == NULL) break;
+        if (needle.length == 1U ||
+            memcmp(candidate + 1U, needle.data + 1U,
+                   needle.length - 1U) == 0)
+            return (LangNativeResult){
+                true,
+                {.tag=LANG_VALUE_I64,
+                 .as.i64=(int64_t)(candidate - value.data)},
+                NULL};
+        cursor = candidate + 1U;
+    }
+    return (LangNativeResult){
+        true, {.tag=LANG_VALUE_I64, .as.i64=-1}, NULL};
+}
+
 static bool unicode_in_ranges(
     uint32_t scalar, const AsterUnicodeRange *ranges, size_t count) {
     size_t low = 0U;
@@ -1783,6 +1827,8 @@ void lang_vm_register_builtins(LangVM *vm) {
                                native_str_byte_at_value, 2U);
     (void)lang_register_native(vm, "StringSlice",
                                native_str_slice_value, 3U);
+    (void)lang_register_native(vm, "StringIndexOfOrdinal",
+                               native_str_index_of_ordinal, 3U);
     (void)lang_register_native(vm, "UnicodeToUpper",
                                native_unicode_to_upper, 1U);
     (void)lang_register_native(vm, "UnicodeToLower",

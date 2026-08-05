@@ -80,6 +80,84 @@ LangVM *lang_vm_new(void) {
     return calloc(1U, sizeof(LangVM));
 }
 
+static size_t string_literal_hash(const char *data, size_t length) {
+    uintptr_t pointer = (uintptr_t)(const void *)data;
+    pointer ^= pointer >> 17U;
+    pointer *= (uintptr_t)UINT64_C(0xed5ad4bb);
+    pointer ^= pointer >> 11U;
+    return (size_t)(pointer ^ (uintptr_t)length);
+}
+
+void vm_clear_string_literals(LangVM *vm) {
+    if (vm == NULL) return;
+    for (size_t i = 0U; i < vm->string_literal_capacity; ++i)
+        if (vm->string_literals[i].occupied)
+            free(vm->string_literals[i].object);
+    free(vm->string_literals);
+    vm->string_literals = NULL;
+    vm->string_literal_capacity = 0U;
+}
+
+void vm_prepare_string_literals(LangVM *vm, const BytecodeModule *module) {
+    vm_clear_string_literals(vm);
+    if (vm == NULL || module == NULL) return;
+    size_t count = 0U;
+    for (size_t i = 0U; i < module->constant_count; ++i)
+        if (module->constants[i].value.tag == LANG_VALUE_STRING_VIEW)
+            ++count;
+    if (count == 0U) return;
+    size_t capacity = 8U;
+    while (capacity < count * 2U) capacity *= 2U;
+    vm->string_literals = vm_allocate(
+        capacity, sizeof(*vm->string_literals));
+    vm->string_literal_capacity = capacity;
+    size_t mask = capacity - 1U;
+    for (size_t i = 0U; i < module->constant_count; ++i) {
+        LangValue value = module->constants[i].value;
+        if (value.tag != LANG_VALUE_STRING_VIEW) continue;
+        size_t bucket = string_literal_hash(
+            value.as.string.data, value.as.string.length) & mask;
+        while (vm->string_literals[bucket].occupied) {
+            VmStringLiteral *entry = &vm->string_literals[bucket];
+            if (entry->data == value.as.string.data &&
+                entry->length == value.as.string.length)
+                break;
+            bucket = (bucket + 1U) & mask;
+        }
+        VmStringLiteral *entry = &vm->string_literals[bucket];
+        entry->data = value.as.string.data;
+        entry->length = value.as.string.length;
+        entry->occupied = true;
+    }
+}
+
+bool vm_owned_string_from_view(LangVM *vm, LangStringView source,
+                               LangValue *result) {
+    if (vm == NULL || result == NULL ||
+        vm->string_literal_capacity == 0U)
+        return false;
+    size_t mask = vm->string_literal_capacity - 1U;
+    size_t bucket = string_literal_hash(source.data, source.length) & mask;
+    while (vm->string_literals[bucket].occupied) {
+        VmStringLiteral *entry = &vm->string_literals[bucket];
+        if (entry->data == source.data && entry->length == source.length) {
+            if (entry->object == NULL) {
+                entry->object = vm_allocate(1U, sizeof(*entry->object));
+                entry->object->kind = OBJECT_STRING;
+                entry->object->references = SIZE_MAX;
+                entry->object->as.string.data = (char *)source.data;
+                entry->object->as.string.length = source.length;
+                entry->object->as.string.embedded_data = true;
+            }
+            *result = (LangValue){
+                .tag=LANG_VALUE_OBJECT, .as.object=entry->object};
+            return true;
+        }
+        bucket = (bucket + 1U) & mask;
+    }
+    return false;
+}
+
 void lang_vm_set_process_arguments(
     LangVM *vm, size_t argument_count, const char *const *arguments) {
     if (vm == NULL) return;
@@ -110,6 +188,7 @@ void lang_vm_free(LangVM *vm) {
     free(vm->frame_locals);
     free(vm->frame_stacks);
     free(vm->frame_html_objects);
+    vm_clear_string_literals(vm);
     free(vm);
 }
 
@@ -414,6 +493,12 @@ void vm_object_free(LangVM *vm, Object *object) {
          object->kind == OBJECT_NATIVE_HANDLE ||
          object->kind == OBJECT_CANCELLATION ||
          object->kind == OBJECT_TASK) &&
+        object->references == SIZE_MAX)
+        return;
+    if ((object->kind == OBJECT_STRING ||
+         object->kind == OBJECT_NATIVE_HANDLE ||
+         object->kind == OBJECT_CANCELLATION ||
+         object->kind == OBJECT_TASK) &&
         object->references > 1U) {
         --object->references;
         return;
@@ -510,11 +595,7 @@ LangValue vm_value_clone(LangValue value) {
              object->kind == OBJECT_NATIVE_HANDLE ||
              object->kind == OBJECT_CANCELLATION ||
              object->kind == OBJECT_TASK)) {
-            if (object->references == SIZE_MAX) {
-                fputs("runtime internal error: reference count overflow\n",
-                      stderr);
-                exit(2);
-            }
+            if (object->references == SIZE_MAX) return value;
             if (object->references == 0U) object->references = 1U;
             ++object->references;
         } else {

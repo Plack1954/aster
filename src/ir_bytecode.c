@@ -250,6 +250,145 @@ no_html_constant_fusion:
         }
     }
     if (opcode == OP_STORE_LOCAL &&
+        function->code_count >= builder->block_start + 11U) {
+        Instruction *search_call =
+            &function->code[function->code_count - 1U];
+        Instruction *needle_move =
+            &function->code[function->code_count - 2U];
+        Instruction *value_move =
+            &function->code[function->code_count - 3U];
+        Instruction *needle_store =
+            &function->code[function->code_count - 4U];
+        Instruction *from_call =
+            &function->code[function->code_count - 5U];
+        Instruction *constant_move =
+            &function->code[function->code_count - 6U];
+        Instruction *constant =
+            &function->code[function->code_count - 7U];
+        Instruction *value_store =
+            &function->code[function->code_count - 8U];
+        Instruction *clone =
+            &function->code[function->code_count - 9U];
+        Instruction *source_move =
+            &function->code[function->code_count - 10U];
+        Instruction *source_copy =
+            &function->code[function->code_count - 11U];
+        int kind = search_call->a == -91 ? 0
+            : search_call->a == -92 ? 2
+            : search_call->a == -93 ? 3
+            : search_call->a == -94 ? 4 : -1;
+        if (search_call->op == OP_CALL && search_call->b == 2 &&
+            kind >= 0 && needle_move->op == OP_MOVE_LOCAL &&
+            value_move->op == OP_MOVE_LOCAL &&
+            needle_store->op == OP_STORE_LOCAL &&
+            from_call->op == OP_CALL && from_call->a == -11 &&
+            from_call->b == 1 &&
+            constant_move->op == OP_MOVE_LOCAL &&
+            constant->op == OP_CONSTANT_LOCAL &&
+            value_store->op == OP_STORE_LOCAL &&
+            clone->op == OP_CLONE && clone->a == 0 &&
+            source_move->op == OP_MOVE_LOCAL &&
+            source_copy->op == OP_COPY_LOCAL_TO &&
+            needle_move->a == needle_store->a &&
+            constant_move->a == constant->b &&
+            value_move->a == value_store->a &&
+            source_move->a == source_copy->b &&
+            source_copy->a >= 0 && source_copy->a < 1024 &&
+            a >= 0 && a < 1024) {
+            uint32_t packed = (uint32_t)source_copy->a |
+                ((uint32_t)a << 10U) |
+                ((uint32_t)kind << 20U);
+            free(function->call_sites[
+                function->code_count - 5U].argument_modes);
+            free(function->call_sites[
+                function->code_count - 1U].argument_modes);
+            memset(&function->call_sites[
+                       function->code_count - 5U], 0,
+                   sizeof(*function->call_sites));
+            memset(&function->call_sites[
+                       function->code_count - 1U], 0,
+                   sizeof(*function->call_sites));
+            *source_copy = (Instruction){
+                OP_STRING_SEARCH_LOCAL_CONSTANT,
+                (int32_t)packed, constant->a
+            };
+            function->spans[function->code_count - 11U] = span;
+            function->code_count -= 10U;
+            return function->code_count - 1U;
+        }
+    }
+    if (opcode == OP_STORE_LOCAL &&
+        function->code_count >= builder->block_start + 4U) {
+        Instruction *call =
+            &function->code[function->code_count - 1U];
+        Instruction *start =
+            &function->code[function->code_count - 2U];
+        Instruction *needle =
+            &function->code[function->code_count - 3U];
+        Instruction *value =
+            &function->code[function->code_count - 4U];
+        if (call->op == OP_CALL && call->a == -91 && call->b == 3 &&
+            value->op == OP_MOVE_LOCAL &&
+            needle->op == OP_MOVE_LOCAL &&
+            start->op == OP_MOVE_LOCAL &&
+            value->a >= 0 && value->a < 1024 &&
+            needle->a >= 0 && needle->a < 1024 &&
+            start->a >= 0 && start->a < 1024 &&
+            a >= 0 && a < 1024) {
+            uint32_t packed = (uint32_t)value->a |
+                ((uint32_t)needle->a << 10U) |
+                ((uint32_t)a << 20U);
+            free(function->call_sites[
+                function->code_count - 1U].argument_modes);
+            function->call_sites[
+                function->code_count - 1U].argument_modes = NULL;
+            function->call_sites[
+                function->code_count - 1U].argument_count = 0U;
+            *value = (Instruction){
+                OP_STRING_SEARCH_LOCAL, (int32_t)packed,
+                start->a | (1 << 10)
+            };
+            function->spans[function->code_count - 4U] = span;
+            function->code_count -= 3U;
+            return function->code_count - 1U;
+        }
+    }
+    if (opcode == OP_STORE_LOCAL &&
+        function->code_count >= builder->block_start + 3U) {
+        Instruction *call =
+            &function->code[function->code_count - 1U];
+        Instruction *needle =
+            &function->code[function->code_count - 2U];
+        Instruction *value =
+            &function->code[function->code_count - 3U];
+        int kind = call->a == -91 ? 0
+            : call->a == -92 ? 2
+            : call->a == -93 ? 3
+            : call->a == -94 ? 4 : -1;
+        if (call->op == OP_CALL && call->b == 2 && kind >= 0 &&
+            value->op == OP_MOVE_LOCAL &&
+            needle->op == OP_MOVE_LOCAL &&
+            value->a >= 0 && value->a < 1024 &&
+            needle->a >= 0 && needle->a < 1024 &&
+            a >= 0 && a < 1024) {
+            uint32_t packed = (uint32_t)value->a |
+                ((uint32_t)needle->a << 10U) |
+                ((uint32_t)a << 20U);
+            free(function->call_sites[
+                function->code_count - 1U].argument_modes);
+            function->call_sites[
+                function->code_count - 1U].argument_modes = NULL;
+            function->call_sites[
+                function->code_count - 1U].argument_count = 0U;
+            *value = (Instruction){
+                OP_STRING_SEARCH_LOCAL, (int32_t)packed, kind << 10
+            };
+            function->spans[function->code_count - 3U] = span;
+            function->code_count -= 2U;
+            return function->code_count - 1U;
+        }
+    }
+    if (opcode == OP_STORE_LOCAL &&
         function->code_count >= builder->block_start + 3U) {
         Instruction *call =
             &function->code[function->code_count - 1U];
@@ -876,6 +1015,7 @@ static int32_t builtin_index(const char *name) {
     if (strcmp(name, "Stack::TryPeek") == 0) return -88;
     if (strcmp(name, "Console::Write") == 0) return -89;
     if (strcmp(name, "Console::Error::Write") == 0) return -90;
+    if (strcmp(name, "StringIndexOfOrdinal") == 0) return -91;
     return INT32_MIN;
 }
 
@@ -1149,12 +1289,41 @@ static void lower_call(IrBytecodeBuilder *builder,
                 instruction->span, &count))
         return;
     if (instruction->opcode == IR_OP_CALL_DIRECT) {
-        int32_t target;
-        if (!as_i32(builder, instruction->index,
+        int32_t target = INT32_MIN;
+        if (instruction->symbol != NULL) {
+            if (strcmp(instruction->symbol, "string::StartsWith") == 0 &&
+                instruction->operand_count == 2U)
+                target = -92;
+            else if (strcmp(instruction->symbol, "string::EndsWith") == 0 &&
+                     instruction->operand_count == 2U)
+                target = -93;
+            else if (strcmp(instruction->symbol, "string::Contains") == 0 &&
+                     instruction->operand_count == 2U)
+                target = -94;
+            else if (strcmp(instruction->symbol, "string::IndexOf") == 0 &&
+                     (instruction->operand_count == 2U ||
+                      instruction->operand_count == 3U))
+                target = -91;
+        }
+        if (target == INT32_MIN &&
+            !as_i32(builder, instruction->index,
                     instruction->span, &target))
             return;
-        (void)emit_instruction(
+        size_t call_index = emit_instruction(
             builder, OP_CALL, target, count, instruction->span);
+        if (target < 0) {
+            BytecodeCallSite *call_site =
+                &builder->function->call_sites[call_index];
+            call_site->argument_count = instruction->operand_count;
+            if (call_site->argument_count != 0U) {
+                call_site->argument_modes = ir_bc_resize(
+                    NULL, call_site->argument_count,
+                    sizeof(*call_site->argument_modes));
+                for (size_t i = 0U;
+                     i < call_site->argument_count; ++i)
+                    call_site->argument_modes[i] = PARAMETER_MODE_VALUE;
+            }
+        }
     } else {
         if (instruction->symbol != NULL &&
             strcmp(instruction->symbol, "Task::Delay") == 0 &&

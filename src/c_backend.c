@@ -4459,12 +4459,36 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 strcmp(instruction->symbol, "String::from") == 0) {
                 const IrType *source = &emitter->ir->types[
                     function->value_types[instruction->operands[0]]];
+                const IrInstruction *producer =
+                    c_backend_find_value_producer(
+                        function, instruction->operands[0]);
                 if (source->shape == IR_TYPE_BUILTIN_OBJECT &&
                     strcmp(source->name, "string") == 0)
                     fprintf(output,
                             "    v%" PRIu32 " = v%" PRIu32 ";\n",
                             instruction->result,
                             instruction->operands[0]);
+                else if (producer != NULL &&
+                         producer->opcode == IR_OP_CONST_STRING) {
+                    fprintf(output,
+                            "    static aster_string literal_%" PRIu32
+                            " = {0U, ", instruction->result);
+                    if (producer->symbol_length == 0U) {
+                        fputs("NULL, 0U};\n", output);
+                    } else {
+                        fputs("(unsigned char *)\"", output);
+                        for (size_t i = 0U;
+                             i < producer->symbol_length; ++i)
+                            fprintf(output, "\\x%02x",
+                                    (unsigned)(unsigned char)
+                                        producer->symbol[i]);
+                        fprintf(output, "\", %zuU};\n",
+                                producer->symbol_length);
+                    }
+                    fprintf(output,
+                            "    v%" PRIu32 " = &literal_%" PRIu32 ";\n",
+                            instruction->result, instruction->result);
+                }
                 else
                     fprintf(output,
                             "    v%" PRIu32
@@ -4821,6 +4845,41 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             instruction->result,
                             instruction->operands[0],
                             instruction->operands[0]);
+                return;
+            }
+            if (instruction->symbol != NULL &&
+                strcmp(instruction->symbol, "StringIndexOfOrdinal") == 0) {
+                const IrType *value_type = &emitter->ir->types[
+                    function->value_types[instruction->operands[0]]];
+                const IrType *needle_type = &emitter->ir->types[
+                    function->value_types[instruction->operands[1]]];
+                bool value_view =
+                    value_type->shape == IR_TYPE_STRING_VIEW;
+                bool needle_view =
+                    needle_type->shape == IR_TYPE_STRING_VIEW;
+                fprintf(output,
+                        "    v%" PRIu32 " = aster_str_index_of(%s"
+                        "v%" PRIu32 "%s, %sv%" PRIu32 "%s, "
+                        "(size_t)v%" PRIu32 ");\n",
+                        instruction->result,
+                        value_view ? "" : "aster_string_as_str(",
+                        instruction->operands[0], value_view ? "" : ")",
+                        needle_view ? "" : "aster_string_as_str(",
+                        instruction->operands[1], needle_view ? "" : ")",
+                        instruction->operands[2]);
+                for (size_t i = 0U; i < 2U; ++i) {
+                    const IrType *argument = &emitter->ir->types[
+                        function->value_types[instruction->operands[i]]];
+                    bool borrowed =
+                        i < instruction->argument_mode_count &&
+                        parameter_mode_is_reference(
+                            instruction->argument_modes[i]);
+                    if (argument->shape == IR_TYPE_BUILTIN_OBJECT &&
+                        !borrowed)
+                        fprintf(output,
+                                "    aster_string_drop(v%" PRIu32 ");\n",
+                                instruction->operands[i]);
+                }
                 return;
             }
             if (instruction->symbol != NULL &&

@@ -402,6 +402,9 @@ static LangValue vm_execute_function_core(
         [OP_CALL_LOCAL_2_COPY]=&&vm_dispatch_call_local_2_copy,
         [OP_RETURN_LOCAL]=&&vm_dispatch_return_local,
         [OP_TEXT_LEN_LOCAL]=&&vm_dispatch_text_len_local,
+        [OP_STRING_SEARCH_LOCAL]=&&vm_dispatch_string_search_local,
+        [OP_STRING_SEARCH_LOCAL_CONSTANT]=
+            &&vm_dispatch_string_search_local_constant,
         [OP_EXCEPTION_SET]=&&vm_dispatch_exception_set,
         [OP_EXCEPTION_PENDING]=&&vm_dispatch_exception_pending,
         [OP_EXCEPTION_MATCH]=&&vm_dispatch_exception_match,
@@ -3076,6 +3079,112 @@ vm_switch_integer_binary:
                 initialized[destination] = true;
                 break;
             }
+            VM_LABEL(string_search_local)
+            case OP_STRING_SEARCH_LOCAL: {
+                uint32_t packed = (uint32_t)instruction.a;
+                uint32_t options = (uint32_t)instruction.b;
+                size_t value_slot =
+                    (size_t)(packed & UINT32_C(0x3ff));
+                size_t needle_slot = (size_t)(
+                    (packed >> 10U) & UINT32_C(0x3ff));
+                size_t destination = (size_t)(
+                    (packed >> 20U) & UINT32_C(0x3ff));
+                size_t start_slot =
+                    (size_t)(options & UINT32_C(0x3ff));
+                unsigned kind = options >> 10U;
+                LangStringView value;
+                LangStringView needle;
+                if (!initialized[value_slot] ||
+                    !initialized[needle_slot] ||
+                    !lang_value_string_view(
+                        &LOCAL(value_slot), &value) ||
+                    !lang_value_string_view(
+                        &LOCAL(needle_slot), &needle) ||
+                    (kind == 1U &&
+                     (!initialized[start_slot] ||
+                      LOCAL(start_slot).tag != LANG_VALUE_U64))) {
+                    runtime_error(
+                        vm, instruction,
+                        "fused ordinal string search received invalid locals");
+                    goto fail;
+                }
+                size_t start = kind == 1U
+                    ? (size_t)LOCAL(start_slot).as.u64 : 0U;
+                bool oversized_suffix =
+                    kind == 3U && needle.length > value.length;
+                if (kind == 3U && !oversized_suffix)
+                    start = value.length - needle.length;
+                int64_t found = oversized_suffix ? -1
+                    : vm_string_index_of_ordinal(value, needle, start);
+                LangValue search_result;
+                if (kind <= 1U)
+                    search_result = (LangValue){
+                        .tag=LANG_VALUE_I64, .as.i64=found};
+                else
+                    search_result = (LangValue){
+                        .tag=LANG_VALUE_BOOL,
+                        .as.boolean=kind == 4U ? found >= 0
+                            : found == (int64_t)start};
+                drop_runtime_value(
+                    vm, function, value_slot, LOCAL(value_slot));
+                drop_runtime_value(
+                    vm, function, needle_slot, LOCAL(needle_slot));
+                initialized[value_slot] = false;
+                initialized[needle_slot] = false;
+                if (kind == 1U)
+                    initialized[start_slot] = false;
+                if (initialized[destination])
+                    drop_runtime_value(
+                        vm, function, destination,
+                        LOCAL(destination));
+                LOCAL(destination) = search_result;
+                initialized[destination] = true;
+                break;
+            }
+            VM_LABEL(string_search_local_constant)
+            case OP_STRING_SEARCH_LOCAL_CONSTANT: {
+                uint32_t packed = (uint32_t)instruction.a;
+                size_t value_slot =
+                    (size_t)(packed & UINT32_C(0x3ff));
+                size_t destination = (size_t)(
+                    (packed >> 10U) & UINT32_C(0x3ff));
+                unsigned kind = (packed >> 20U) & UINT32_C(0x7);
+                LangStringView value;
+                LangValue needle_value = vm->module->constants[
+                    (size_t)instruction.b].value;
+                LangStringView needle;
+                if (!initialized[value_slot] ||
+                    !lang_value_string_view(
+                        &LOCAL(value_slot), &value) ||
+                    !lang_value_string_view(
+                        &needle_value, &needle)) {
+                    runtime_error(
+                        vm, instruction,
+                        "fused constant string search received invalid values");
+                    goto fail;
+                }
+                size_t start = 0U;
+                bool oversized_suffix =
+                    kind == 3U && needle.length > value.length;
+                if (kind == 3U && !oversized_suffix)
+                    start = value.length - needle.length;
+                int64_t found = oversized_suffix ? -1
+                    : vm_string_index_of_ordinal(value, needle, start);
+                LangValue search_result = kind == 0U
+                    ? (LangValue){
+                        .tag=LANG_VALUE_I64, .as.i64=found}
+                    : (LangValue){
+                        .tag=LANG_VALUE_BOOL,
+                        .as.boolean=kind == 4U ? found >= 0
+                            : found == (int64_t)start};
+                if (initialized[destination])
+                    drop_runtime_value(
+                        vm, function, destination,
+                        LOCAL(destination));
+                LOCAL(destination) = search_result;
+                initialized[destination] = true;
+                break;
+            }
             VM_LABEL(trap)
             case OP_TRAP: runtime_error(vm, instruction, "explicit trap or unsupported control flow"); goto fail;
             VM_LABEL(exception_set)
@@ -3262,6 +3371,7 @@ int lang_vm_run_module(LangVM *vm, const BytecodeModule *module,
     };
     if (module->functions[main_index].code_count != 0U)
         entry_span = module->functions[main_index].spans[0];
+    vm_prepare_string_literals(vm, module);
     LangValue result = vm_execute_function(
         vm, main_index, NULL, 0U, entry_span);
     if (!vm->trapped && module->functions[main_index].is_async) {
@@ -3296,6 +3406,7 @@ int lang_vm_run_module(LangVM *vm, const BytecodeModule *module,
         vm->exception_value = (LangValue){.tag=LANG_VALUE_UNIT};
         vm->exception_pending = false;
     }
+    vm_clear_string_literals(vm);
     return status;
 }
 

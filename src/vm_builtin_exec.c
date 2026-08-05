@@ -537,10 +537,65 @@ static bool vm_list_call_callback(
     return true;
 }
 
+int64_t vm_string_index_of_ordinal(
+    LangStringView value, LangStringView needle, size_t start) {
+    if (start > value.length) return -1;
+    if (needle.length == 0U) return (int64_t)start;
+    if (needle.length > value.length - start) return -1;
+    const char *cursor = value.data + start;
+    const char *end = value.data +
+        (value.length - needle.length + 1U);
+    while (cursor < end) {
+        const char *candidate = memchr(
+            cursor, (unsigned char)needle.data[0],
+            (size_t)(end - cursor));
+        if (candidate == NULL) return -1;
+        if (needle.length == 1U ||
+            memcmp(candidate + 1U, needle.data + 1U,
+                   needle.length - 1U) == 0)
+            return (int64_t)(candidate - value.data);
+        cursor = candidate + 1U;
+    }
+    return -1;
+}
+
 bool vm_call_builtin(LangVM *vm, int32_t index, LangValue *args,
                      size_t count, LangValue *result,
                      LangSpan instruction_span) {
     *result = (LangValue){.tag = LANG_VALUE_UNIT};
+    if ((index == -91 || index == -92 || index == -93 || index == -94) &&
+        (count == 2U || (index == -91 && count == 3U))) {
+        LangStringView value;
+        LangStringView needle;
+        if (!lang_value_string_view(&args[0], &value) ||
+            !lang_value_string_view(&args[1], &needle) ||
+            (count == 3U && args[2].tag != LANG_VALUE_U64)) {
+            runtime_error(vm, instruction,
+                          "ordinal string search received invalid arguments");
+            return false;
+        }
+        size_t start = count == 3U
+            ? (args[2].as.u64 <= (uint64_t)SIZE_MAX
+               ? (size_t)args[2].as.u64 : SIZE_MAX)
+            : 0U;
+        if (index == -93) {
+            if (needle.length > value.length) {
+                *result = (LangValue){
+                    .tag=LANG_VALUE_BOOL, .as.boolean=false};
+                return true;
+            }
+            start = value.length - needle.length;
+        }
+        int64_t found = vm_string_index_of_ordinal(value, needle, start);
+        if (index == -91)
+            *result = (LangValue){.tag=LANG_VALUE_I64, .as.i64=found};
+        else
+            *result = (LangValue){
+                .tag=LANG_VALUE_BOOL,
+                .as.boolean=index == -94 ? found >= 0
+                    : found == (int64_t)start};
+        return true;
+    }
     if ((index == -1 || index == -2 || index == -89 || index == -90) &&
         count == 1U) {
         FILE *stream = (index == -1 || index == -89) ? stdout : stderr;
@@ -697,6 +752,9 @@ bool vm_call_builtin(LangVM *vm, int32_t index, LangValue *args,
                           "owned string constructor expects a string view");
             return false;
         }
+        if (index == -11 &&
+            vm_owned_string_from_view(vm, source, result))
+            return true;
         bool fragment = index == -16;
         if (source.length > SIZE_MAX - (fragment ? 2U : 1U)) {
             runtime_error(vm, instruction, "string is too large");

@@ -46,6 +46,12 @@ public extern string StringSlice(
     nuint end
 );
 
+private extern long StringIndexOfOrdinal(
+    string value,
+    string needle,
+    nuint start
+);
+
 public extern string I64ToString(long value);
 
 public extern string U64ToString(ulong value);
@@ -1085,18 +1091,7 @@ public Option<nuint> StringFindByte(string value, byte byte)
 
 public bool string.StartsWith(string self, string value)
 {
-    if (value.Length > self.Length)
-    {
-        return false;
-    }
-    for (nuint index = 0; index < value.Length; index++)
-    {
-        if (self[index] != value[index])
-        {
-            return false;
-        }
-    }
-    return true;
+    return StringIndexOfOrdinal(self, value, 0) == 0;
 }
 
 public bool string.EndsWith(string self, string value)
@@ -1106,14 +1101,7 @@ public bool string.EndsWith(string self, string value)
         return false;
     }
     nuint start = self.Length - value.Length;
-    for (nuint index = 0; index < value.Length; index++)
-    {
-        if (self[start + index] != value[index])
-        {
-            return false;
-        }
-    }
-    return true;
+    return StringIndexOfOrdinal(self, value, start) == (long)start;
 }
 
 public long string.IndexOf(string self, string value)
@@ -1127,24 +1115,7 @@ public long string.IndexOf(
     nuint startIndex
 )
 {
-    if (value.Length == 0)
-    {
-        return (long)startIndex;
-    }
-    if (startIndex > self.Length || value.Length > self.Length - startIndex)
-    {
-        return -1;
-    }
-    nuint start = startIndex;
-    while (start + value.Length <= self.Length)
-    {
-        if (StringSlice(self, start, start + value.Length) == value)
-        {
-            return (long)start;
-        }
-        start += 1;
-    }
-    return -1;
+    return StringIndexOfOrdinal(self, value, startIndex);
 }
 
 public long string.LastIndexOf(string self, string value)

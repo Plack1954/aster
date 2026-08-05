@@ -152,6 +152,8 @@ static bool verify_function_stack(const BytecodeFunction *function) {
             }
             case OP_CALL_LOCAL_2_COPY:
             case OP_TEXT_LEN_LOCAL:
+            case OP_STRING_SEARCH_LOCAL:
+            case OP_STRING_SEARCH_LOCAL_CONSTANT:
                 break;
             case OP_CALL_INDIRECT:
                 if (instruction.a < 0 ||
@@ -704,6 +706,56 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                             function->local_count)
                         return false;
                     break;
+                case OP_STRING_SEARCH_LOCAL: {
+                    uint32_t packed = (uint32_t)instruction.a;
+                    uint32_t options = (uint32_t)instruction.b;
+                    size_t value_slot = (size_t)(
+                        packed & UINT32_C(0x3ff));
+                    size_t needle_slot = (size_t)(
+                        (packed >> 10U) & UINT32_C(0x3ff));
+                    size_t destination = (size_t)(
+                        (packed >> 20U) & UINT32_C(0x3ff));
+                    size_t start_slot = (size_t)(
+                        options & UINT32_C(0x3ff));
+                    unsigned kind = options >> 10U;
+                    if (kind > 4U ||
+                        value_slot >= function->local_count ||
+                        needle_slot >= function->local_count ||
+                        destination >= function->local_count ||
+                        (kind == 1U &&
+                         start_slot >= function->local_count) ||
+                        value_slot == needle_slot ||
+                        destination == value_slot ||
+                        destination == needle_slot ||
+                        (kind == 1U &&
+                         (start_slot == value_slot ||
+                          start_slot == needle_slot ||
+                          start_slot == destination)))
+                        return false;
+                    break;
+                }
+                case OP_STRING_SEARCH_LOCAL_CONSTANT: {
+                    uint32_t packed = (uint32_t)instruction.a;
+                    size_t value_slot = (size_t)(
+                        packed & UINT32_C(0x3ff));
+                    size_t destination = (size_t)(
+                        (packed >> 10U) & UINT32_C(0x3ff));
+                    unsigned kind =
+                        (packed >> 20U) & UINT32_C(0x7);
+                    if ((kind != 0U && kind != 2U &&
+                         kind != 3U && kind != 4U) ||
+                        (packed >> 23U) != 0U ||
+                        value_slot >= function->local_count ||
+                        destination >= function->local_count ||
+                        value_slot == destination ||
+                        instruction.b < 0 ||
+                        (size_t)instruction.b >=
+                            module->constant_count ||
+                        module->constants[(size_t)instruction.b]
+                            .value.tag != LANG_VALUE_STRING_VIEW)
+                        return false;
+                    break;
+                }
                 case OP_RETURN_LOCAL:
                     if (instruction.a < 0 ||
                         (size_t)instruction.a >=

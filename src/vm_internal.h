@@ -22,6 +22,13 @@ typedef struct VmTaskContinuation VmTaskContinuation;
 typedef struct VmTimer VmTimer;
 typedef struct Object Object;
 
+typedef struct VmStringLiteral {
+    const char *data;
+    size_t length;
+    Object *object;
+    bool occupied;
+} VmStringLiteral;
+
 struct VmAsyncFrame {
     size_t function_index;
     size_t ip;
@@ -172,10 +179,18 @@ struct LangVM {
     size_t process_argument_count;
     const char *const *process_arguments;
     VmTimer *timers;
+    VmStringLiteral *string_literals;
+    size_t string_literal_capacity;
 };
 
 void *vm_allocate(size_t count, size_t size);
 void *vm_html_resize(void *pointer, size_t count, size_t size);
+void vm_prepare_string_literals(LangVM *vm, const BytecodeModule *module);
+void vm_clear_string_literals(LangVM *vm);
+bool vm_owned_string_from_view(LangVM *vm, LangStringView source,
+                               LangValue *result);
+int64_t vm_string_index_of_ordinal(
+    LangStringView value, LangStringView needle, size_t start);
 void *vm_allocate_uninitialized(size_t count, size_t size);
 LangValue vm_value_clone(LangValue value);
 uint32_t vm_language_destructor_for_metadata(

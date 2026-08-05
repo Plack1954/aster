@@ -10,6 +10,15 @@ int main()
     if (value.IndexOf("language") != 6) { return 5; }
     if (value.IndexOf("a", 9) != 11) { return 6; }
     if (value.LastIndexOf("a") != 11) { return 7; }
+    if (!value.StartsWith("") || !value.EndsWith("")) { return 40; }
+    if (value.StartsWith("Aster language!") ||
+        value.EndsWith("Aster language!")) { return 41; }
+    if (value.Contains("missing") || value.IndexOf("missing") != -1)
+        { return 42; }
+    if (value.IndexOf("", value.Length) != (long)value.Length)
+        { return 43; }
+    if (value.IndexOf("", value.Length + 1) != -1) { return 44; }
+    if ("aaaaab".IndexOf("aaab") != 2) { return 45; }
     if (value.Substring(6) != "language") { return 8; }
     if (value.Substring(0, 5) != "Aster") { return 9; }
     if (value.Insert(5, " programming") !=

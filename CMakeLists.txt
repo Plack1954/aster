@@ -743,6 +743,11 @@ add_test(NAME text_surface_vm
     COMMAND lang run tests/text_builder_c.as)
 set_tests_properties(text_surface_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME text_search_fused_bytecode
+    COMMAND lang dump-ir-bytecode tests/text_builder_c.as)
+set_tests_properties(text_search_fused_bytecode PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "STRING_SEARCH_LOCAL_CONSTANT")
 add_aster_generated_c_test(
     text_surface_generated_c
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/text_builder_c.as
