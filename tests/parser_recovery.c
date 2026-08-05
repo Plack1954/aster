@@ -6,7 +6,7 @@
 
 int main(void) {
     LangSource source;
-    if (!lang_source_load("tests/parser/recovery.lang", &source))
+    if (!lang_source_load("tests/parser/recovery.as", &source))
         return 1;
     LangDiagnostics diagnostics;
     lang_diagnostics_init(&diagnostics);

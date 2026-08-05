@@ -256,7 +256,7 @@ static char *running_executable_path(void) {
 
 static char *existing_stdlib_root(const char *root) {
     if (root == NULL || root[0] == '\0') return NULL;
-    char *core = join_path3(root, "core", ".lang");
+    char *core = join_path3(root, "core", ".as");
     bool exists = path_is_file(core);
     free(core);
     return exists ? heap_strndup(root, strlen(root)) : NULL;
@@ -337,12 +337,12 @@ static char *resolve_import_path(ModuleLoader *loader,
          * implementation detail and deliberately need not mirror them. */
         char *standard_root = resolve_stdlib_root(loader);
         return standard_root != NULL
-            ? join_path3(standard_root, standard_file, ".lang")
+            ? join_path3(standard_root, standard_file, ".as")
             : NULL;
     }
     if (loader->source_root != NULL) {
         char *application_path = join_path3(
-            loader->source_root, module_path, ".lang");
+            loader->source_root, module_path, ".as");
         FILE *application_file = fopen(application_path, "rb");
         if (application_file != NULL) {
             (void)fclose(application_file);
@@ -350,7 +350,7 @@ static char *resolve_import_path(ModuleLoader *loader,
         }
         for (size_t i = 0U; i < loader->dependency_root_count; ++i) {
             char *dependency_path = join_path3(
-                loader->dependency_roots[i], module_path, ".lang");
+                loader->dependency_roots[i], module_path, ".as");
             FILE *dependency_file = fopen(dependency_path, "rb");
             if (dependency_file != NULL) {
                 (void)fclose(dependency_file);
@@ -365,13 +365,13 @@ static char *resolve_import_path(ModuleLoader *loader,
     size_t directory_length = directory_end != NULL
                             ? (size_t)(directory_end - from_path) : 0U;
     size_t length = directory_length + (directory_length != 0U ? 1U : 0U) +
-                    strlen(last) + strlen(".lang") + 1U;
+                    strlen(last) + strlen(".as") + 1U;
     char *path = checked_realloc(NULL, length);
     if (directory_length != 0U)
-        (void)snprintf(path, length, "%.*s/%s.lang", (int)directory_length,
+        (void)snprintf(path, length, "%.*s/%s.as", (int)directory_length,
                        from_path, last);
     else
-        (void)snprintf(path, length, "%s.lang", last);
+        (void)snprintf(path, length, "%s.as", last);
     return path;
 }
 
@@ -867,9 +867,9 @@ static char *module_name_from_path(const char *source_root,
         if (*relative == '/') ++relative;
     }
     size_t relative_length = strlen(relative);
-    if (relative_length > 5U &&
-        strcmp(relative + relative_length - 5U, ".lang") == 0)
-        relative_length -= 5U;
+    if (relative_length > 3U &&
+        strcmp(relative + relative_length - 3U, ".as") == 0)
+        relative_length -= 3U;
     char *module_name = checked_realloc(
         NULL, relative_length * 2U + 1U);
     size_t output = 0U;
@@ -898,6 +898,15 @@ static bool load_program_source(
     const char *project_root, const char *stdlib_root,
     LangSource *source,
                                 char *error, size_t error_capacity) {
+    size_t path_length = strlen(path);
+    if (path_length < 3U ||
+        strcmp(path + path_length - 3U, ".as") != 0) {
+        if (error != NULL && error_capacity != 0U)
+            (void)snprintf(
+                error, error_capacity,
+                "Aster source path must end in `.as`");
+        return false;
+    }
     ModuleLoader loader;
     memset(&loader, 0, sizeof(loader));
     loader.source_root = source_root;

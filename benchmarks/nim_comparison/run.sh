@@ -45,7 +45,7 @@ mkdir -p "$output_dir" "$nimcache"
 } > "$output_dir/environment.txt"
 
 for name in logic functions strings html; do
-    aster_source="benchmarks/rust_comparison/$name.lang"
+    aster_source="benchmarks/rust_comparison/$name.as"
     nim_source="$source_dir/$name.nim"
     generated_c="$output_dir/$name.c"
     aster_executable="$output_dir/${name}_aster_c"

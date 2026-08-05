@@ -1,8 +1,8 @@
 using System.Text;
 
 int main() {
-    Console.WriteLine("aster.lang".StartsWith("aster"));
-    Console.WriteLine("aster.lang".EndsWith(".lang"));
+    Console.WriteLine("aster.as".StartsWith("aster"));
+    Console.WriteLine("aster.as".EndsWith(".as"));
     Console.WriteLine("typed Aster programs".Contains("Aster"));
     long minimum = -9223372036854775807 - 1;
     ulong maximum = 18446744073709551615;

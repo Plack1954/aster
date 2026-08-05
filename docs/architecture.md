@@ -28,7 +28,7 @@ portability baseline, performance baseline, inspectable output, and integration
 boundary with operating-system facilities and established C libraries.
 
 ```sh
-lang emit-c app.lang > app.c
+lang emit-c app.as > app.c
 lang project emit-c aster.toml app > app.c
 ```
 

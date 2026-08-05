@@ -18,7 +18,7 @@ endfunction()
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env --unset=ASTER_STDLIB_PATH
             "${LANG_EXECUTABLE}" check
-            "${SOURCE_DIR}/examples/aster_libraries.lang"
+            "${SOURCE_DIR}/examples/aster_libraries.as"
     WORKING_DIRECTORY "${TEST_ROOT}/work"
     RESULT_VARIABLE RESULT_CODE
     OUTPUT_VARIABLE RESULT_OUTPUT
@@ -33,7 +33,7 @@ get_filename_component(LANG_NAME "${LANG_EXECUTABLE}" NAME)
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env --unset=ASTER_STDLIB_PATH
             "${TEST_ROOT}/bundle/bin/${LANG_NAME}" check
-            "${SOURCE_DIR}/examples/aster_libraries.lang"
+            "${SOURCE_DIR}/examples/aster_libraries.as"
     WORKING_DIRECTORY "${TEST_ROOT}/work"
     RESULT_VARIABLE RESULT_CODE
     OUTPUT_VARIABLE RESULT_OUTPUT
@@ -49,7 +49,7 @@ file(COPY "${SOURCE_DIR}/std"
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env --unset=ASTER_STDLIB_PATH
             "${TEST_ROOT}/installed/bin/${LANG_NAME}" check
-            "${SOURCE_DIR}/examples/aster_libraries.lang"
+            "${SOURCE_DIR}/examples/aster_libraries.as"
     WORKING_DIRECTORY "${TEST_ROOT}/work"
     RESULT_VARIABLE RESULT_CODE
     OUTPUT_VARIABLE RESULT_OUTPUT
@@ -61,7 +61,7 @@ execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env
             "ASTER_STDLIB_PATH=${SOURCE_DIR}/std"
             "${LANG_EXECUTABLE}" check
-            "${SOURCE_DIR}/examples/aster_libraries.lang"
+            "${SOURCE_DIR}/examples/aster_libraries.as"
     WORKING_DIRECTORY "${TEST_ROOT}/work"
     RESULT_VARIABLE RESULT_CODE
     OUTPUT_VARIABLE RESULT_OUTPUT
@@ -72,7 +72,7 @@ execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env
             "ASTER_STDLIB_PATH=${TEST_ROOT}/missing-std"
             "${LANG_EXECUTABLE}" check
-            "${SOURCE_DIR}/examples/aster_libraries.lang"
+            "${SOURCE_DIR}/examples/aster_libraries.as"
     WORKING_DIRECTORY "${TEST_ROOT}/work"
     RESULT_VARIABLE RESULT_CODE
     OUTPUT_VARIABLE RESULT_OUTPUT

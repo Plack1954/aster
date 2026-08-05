@@ -25,7 +25,7 @@ int main(void) {
         return 2;
     }
 
-    int status = lang_run_file("tests/vm/trap_destructor.lang", false, NULL);
+    int status = lang_run_file("tests/vm/trap_destructor.as", false, NULL);
     (void)fflush(stdout);
     if (dup2(saved_stdout, STDOUT_FILENO) < 0) {
         (void)close(saved_stdout);

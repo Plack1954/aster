@@ -6,7 +6,7 @@
 
 int main(void) {
     LangSource source;
-    if (!lang_source_load("tests/generic_identity_test.lang", &source))
+    if (!lang_source_load("tests/generic_identity_test.as", &source))
         return 1;
     LangDiagnostics diagnostics;
     lang_diagnostics_init(&diagnostics);

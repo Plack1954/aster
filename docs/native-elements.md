@@ -151,7 +151,7 @@ C build can extract all reachable scoped component styles into one asset:
 
 ```sh
 mkdir -p public/assets
-lang emit-c-site app.lang public/assets > app.c
+lang emit-c-site app.as public/assets > app.c
 ```
 
 This writes `public/assets/site-<hash>.css`; the generated program renders one
@@ -206,7 +206,7 @@ spelling used at the call site.
 
 The checker rejects duplicates, unknown properties, missing required
 properties, wrong types, unknown element symbols, and mismatched closing
-names. Tag-specific metadata comes from `std/html.lang`, not a parser tag
+names. Tag-specific metadata comes from `std/html.as`, not a parser tag
 table. A deliberately small core contract permits real global HTML
 attributes on every declared HTML element:
 

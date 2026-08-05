@@ -52,7 +52,7 @@ oversized request headers receive 431.
 Run the example:
 
 ```sh
-./build/lang run examples/http_fixed.lang
+./build/lang run examples/http_fixed.as
 curl http://127.0.0.1:8080/
 ```
 
@@ -199,12 +199,12 @@ inject response headers. This supports the usual POST-redirect-GET flow.
 `+` and percent escapes and returns malformed or missing fields through
 `Result`; it does not retain native request storage.
 
-See `examples/http_server.lang` for status selection, request headers and
+See `examples/http_server.as` for status selection, request headers and
 bodies, typed function-value routing, middleware, configured limits, and the
 reusable accept loop:
 
 ```sh
-./build/lang run examples/http_server.lang
+./build/lang run examples/http_server.as
 # Substitute the collision-free port printed by the server:
 curl http://127.0.0.1:PORT/
 curl http://127.0.0.1:PORT/health

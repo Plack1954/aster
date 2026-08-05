@@ -8,7 +8,7 @@ private Result<string, IoError> load(string path) {
 
 int main() {
     Result<string, IoError> contents =
-        load("examples/hello.lang");
+        load("examples/hello.as");
     switch (contents) {
         case Result.Ok(text): {
             Console.WriteLine(text);

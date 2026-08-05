@@ -3,7 +3,7 @@
 Aster's primary backend is its portable C17 emitter:
 
 ```sh
-lang emit-c examples/c_backend.lang > generated.c
+lang emit-c examples/c_backend.as > generated.c
 cc -std=c17 generated.c -o generated
 ./generated
 ```
@@ -12,7 +12,7 @@ For a cacheable component stylesheet instead of inline scoped styles:
 
 ```sh
 mkdir -p public/assets
-lang emit-c-site app.lang public/assets > generated.c
+lang emit-c-site app.as public/assets > generated.c
 cc -std=c17 generated.c -o generated
 ```
 

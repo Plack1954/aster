@@ -40,7 +40,7 @@ mkdir -p "$output_dir"
 } > "$output_dir/environment.txt"
 
 for name in logic functions strings html; do
-    aster_source="$source_dir/$name.lang"
+    aster_source="$source_dir/$name.as"
     php_source="$source_dir/$name.php"
     generated_c="$output_dir/$name.c"
     executable="$output_dir/${name}_aster_c"
@@ -67,7 +67,7 @@ done
 
 http_c="$output_dir/http_server.c"
 http_executable="$output_dir/http_server_aster_c"
-"$build_dir/lang" emit-c "$source_dir/http_server.lang" > "$http_c"
+"$build_dir/lang" emit-c "$source_dir/http_server.as" > "$http_c"
 "$cc_bin" -std=c17 -O2 -DNDEBUG -I include \
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes -Werror \

@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
         (void)close(descriptors[1]);
         (void)setvbuf(stdout, NULL, _IONBF, 0);
         _exit(lang_run_file(
-            "tests/http_language_server.lang", false,
+            "tests/http_language_server.as", false,
             use_ir ? "run-ir" : NULL));
     }
     (void)close(descriptors[1]);

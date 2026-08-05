@@ -128,9 +128,9 @@ source-to-bytecode lowering path.
 Use:
 
 ```sh
-lang dump-ir examples/arithmetic.lang
-lang dump-ir-bytecode examples/arithmetic.lang
-lang run-ir examples/arithmetic.lang
+lang dump-ir examples/arithmetic.as
+lang dump-ir-bytecode examples/arithmetic.as
+lang run-ir examples/arithmetic.as
 lang project run-ir examples/docs_server/aster.toml render
 ```
 

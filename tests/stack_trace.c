@@ -25,7 +25,7 @@ int main(void) {
         return 2;
     }
     int status =
-        lang_run_file("tests/vm/stack_trace.lang", false, NULL);
+        lang_run_file("tests/vm/stack_trace.as", false, NULL);
     (void)fflush(stderr);
     if (dup2(saved_stderr, STDERR_FILENO) < 0) {
         (void)close(saved_stderr);
@@ -44,11 +44,11 @@ int main(void) {
     (void)fclose(capture);
     bool complete =
         strstr(output,
-               "at inner (tests/vm/stack_trace.lang:2:12)") != NULL &&
+               "at inner (tests/vm/stack_trace.as:2:12)") != NULL &&
         strstr(output,
-               "at middle (tests/vm/stack_trace.lang:6:12)") != NULL &&
+               "at middle (tests/vm/stack_trace.as:6:12)") != NULL &&
         strstr(output,
-               "at main (tests/vm/stack_trace.lang:10:23)") != NULL;
+               "at main (tests/vm/stack_trace.as:10:23)") != NULL;
     return status != 0 && complete ? 0 : 5;
 #endif
 }

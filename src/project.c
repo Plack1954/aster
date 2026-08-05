@@ -501,7 +501,7 @@ static bool parse_manifest(const char *path, Project *project) {
 static char *module_file_path(const Project *project,
                               const char *module_name) {
     size_t length = strlen(module_name);
-    char *relative = project_resize(NULL, length * 2U + 6U);
+    char *relative = project_resize(NULL, length * 2U + 4U);
     size_t output = 0U;
     bool segment_start = true;
     for (size_t i = 0U; i < length; ++i) {
@@ -516,7 +516,7 @@ static char *module_file_path(const Project *project,
             segment_start = false;
         }
     }
-    memcpy(relative + output, ".lang", 6U);
+    memcpy(relative + output, ".as", 4U);
     char *path = join_path(project->source_root, relative);
     free(relative);
     return path;

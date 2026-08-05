@@ -46,7 +46,7 @@ Static checking verifies the complete `ReturnType(ParameterTypes)` signature. By
 verification checks stack effects and function constants, while dispatch also
 checks target range, arity, and recursion depth.
 
-Use `lang dump-bytecode file.lang` for a stable human-readable disassembly.
+Use `lang dump-bytecode file.as` for a stable human-readable disassembly.
 Before dispatch, the VM validates opcode ranges, constant/function/local
 indexes, aggregate counts, jump targets, operand-stack underflow/overflow,
 reachable fallthrough, and consistent stack depth at control-flow joins.

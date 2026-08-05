@@ -44,7 +44,7 @@ static int check_css_files(int count, char **paths) {
 int main(int argc, char **argv) {
     if (argc > 1) return check_css_files(argc - 1, argv + 1);
     LangSource source;
-    if (!lang_source_load("tests/native_css.lang", &source)) return 1;
+    if (!lang_source_load("tests/native_css.as", &source)) return 1;
     LangDiagnostics diagnostics;
     lang_diagnostics_init(&diagnostics);
     Module module;

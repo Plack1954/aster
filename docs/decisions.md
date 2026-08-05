@@ -49,7 +49,7 @@ untyped runtime constructors.
 Reason: declarations make required, optional, and child properties ordinary
 typed module metadata while leaving the parser backend-neutral.
 
-Consequences: `std/html.lang` defines the standard tag vocabulary,
+Consequences: `std/html.as` defines the standard tag vocabulary,
 `Option<T>` properties are optional, `children: Html` permits bodies, and
 custom typed tags work without C changes. The checker owns only a narrow
 universal-attribute contract; tag-specific attributes remain source-declared.
@@ -104,13 +104,13 @@ allocation or dynamic dispatch.
 
 Consequences: `data-*` and `aria-*` accept strings universally; a small set of
 genuine global text, boolean, and numeric attributes is available on every
-declared element; other attributes remain checked against `std/html.lang`.
+declared element; other attributes remain checked against `std/html.as`.
 The VM and generated C produce the same byte output.
 
 ## Recursive namespace dependencies
 
 Decision: map project namespace paths deterministically to snake_case file
-paths: `App.Name` maps to `app/name.lang`. Public `System.*` and `Aster.*`
+paths: `App.Name` maps to `app/name.as`. Public `System.*` and `Aster.*`
 standard-library namespaces resolve through an explicit compiler table, so
 their source-tree filenames are not part of the language API.
 
@@ -385,7 +385,7 @@ Reason: Aster-written Pair, Option/Result queries, List/StringBuilder
 composition, typed routing, and middleware pressure-test generics, callbacks,
 and cleanup-managed values without hiding host operations.
 
-Consequences: user-facing behavior increasingly lives in `.lang` modules. The
+Consequences: user-facing behavior increasingly lives in `.as` modules. The
 current Option/Result representation, List backing storage, HTML nodes, and OS
 handles remain explicit privileged mechanisms to be reduced incrementally.
 
@@ -967,7 +967,7 @@ Reason: indexed lookup is a small FFI surface, performs no allocation until an
 argument is requested, and fits the existing explicit `Result` and cleanup-managed
 `String` model.
 
-Consequences: `lang run file.lang -- a b` exposes exactly `a` and `b`.
+Consequences: `lang run file.as -- a b` exposes exactly `a` and `b`.
 Successful lookups allocate owned strings; missing indexes or variables
 produce typed errors. Project-target argument forwarding remains separate
 follow-up work.

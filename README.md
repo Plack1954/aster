@@ -54,14 +54,14 @@ ctest --test-dir build --output-on-failure
 Run a source file:
 
 ```sh
-./build/lang run examples/hello.lang
-./build/lang run examples/html.lang
+./build/lang run examples/hello.as
+./build/lang run examples/html.as
 ```
 
 Emit a standalone C translation unit:
 
 ```sh
-./build/lang emit-c examples/hello.lang > hello.c
+./build/lang emit-c examples/hello.as > hello.c
 cc -std=c17 -O2 hello.c -o hello
 ./hello
 ```

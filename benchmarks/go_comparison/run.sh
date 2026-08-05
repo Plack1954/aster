@@ -39,7 +39,7 @@ mkdir -p "$output_dir"
 } > "$output_dir/environment.txt"
 
 for name in logic functions strings html; do
-    aster_source="$source_dir/$name.lang"
+    aster_source="$source_dir/$name.as"
     go_source="$source_dir/$name.go"
     generated_c="$output_dir/$name.c"
     aster_executable="$output_dir/${name}_aster_c"
@@ -69,7 +69,7 @@ done
 aster_http_c="$output_dir/http_server.c"
 aster_http_executable="$output_dir/http_server_aster_c"
 go_http_executable="$output_dir/http_server_go"
-"$build_dir/lang" emit-c "$source_dir/http_server.lang" \
+"$build_dir/lang" emit-c "$source_dir/http_server.as" \
     > "$aster_http_c"
 "$cc_bin" -std=c17 -O2 -DNDEBUG -I include \
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow \

@@ -74,8 +74,8 @@ a different standard library.
 The mapping from a PascalCase namespace to a snake_case file path is deterministic:
 
 ```text
-source_root + App.Main → source_root/app/main.lang
-source_root + Lime.CurrentHttp → source_root/lime/current_http.lang
+source_root + App.Main → source_root/app/main.as
+source_root + Lime.CurrentHttp → source_root/lime/current_http.as
 ```
 
 Every project file must declare the namespace implied by its path. A used

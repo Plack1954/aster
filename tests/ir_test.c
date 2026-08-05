@@ -220,7 +220,7 @@ static bool contains_static_css_metadata(const IrModule *ir) {
 
 int main(void) {
     LangSource source;
-    if (!lang_source_load("tests/ir_test.lang", &source))
+    if (!lang_source_load("tests/ir_test.as", &source))
         return 1;
     LangDiagnostics diagnostics;
     lang_diagnostics_init(&diagnostics);

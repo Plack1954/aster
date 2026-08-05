@@ -2,7 +2,7 @@
 
 *.c text eol=lf
 *.h text eol=lf
-*.lang text eol=lf
+*.as text eol=lf linguist-detectable=true
 *.md text eol=lf
 *.cmake text eol=lf
 *.toml text eol=lf

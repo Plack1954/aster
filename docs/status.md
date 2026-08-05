@@ -9,7 +9,7 @@ entry means the bounded 0.1 behavior is implemented and directly exercised.
 | 1 | Builds with Clang and GCC | Strict `-Werror` build commands below; warnings are applied to every C target. |
 | 2 | Normal test suite passes | `ctest`; the `language_tests` aggregate also checks every positive and negative source fixture. |
 | 3 | ASan and UBSan pass | `LANG_SANITIZE=ON` build and test command below. |
-| 4 | Hello world runs | `hello_run`, `examples/hello.lang`. |
+| 4 | Hello world runs | `hello_run`, `examples/hello.as`. |
 | 5 | Functions, structs, arrays, enums execute | `arithmetic`, `structs`, `arrays`, `enum_match_run`, and `recursion_run`. |
 | 6 | Ordinary values copy normally | Buffer, string, List, aggregate, and NativeHandle copy fixtures. |
 | 7 | Assignment never invalidates its source | `buffer_value_copy`, `native_handle_value_copy`, and conditional/loop copy fixtures. |
@@ -21,7 +21,7 @@ entry means the bounded 0.1 behavior is implemented and directly exercised.
 | 13 | Registered native C calls | `ffi_registration`, source FFI, mutable-slice FFI, and native Result FFI. |
 | 14 | Deterministically cleaned native handles | `file_raii_run`, native-handle copy tests, trap/native-failure cleanup, and HTTP socket handles. |
 | 15 | Elements are normal expressions | AST-shape test and every HTML golden program. |
-| 16 | Element names use normal resolution | Source declarations in `std/html.lang`, custom elements, qualified-name golden test, and unknown-element diagnostic. |
+| 16 | Element names use normal resolution | Source declarations in `std/html.as`, custom elements, qualified-name golden test, and unknown-element diagnostic. |
 | 17 | Properties are statically checked | Missing, unknown, duplicate, wrong-type, and children-disallowed diagnostics. |
 | 18 | Closing-tag mismatch is diagnosed | `mismatched_element_closing_diagnostic`. |
 | 19 | Ordinary `if` works in element bodies | `html_control_run`, golden output, and AST-shape assertion. |

@@ -21,7 +21,7 @@ cmake --build "$build_dir" -j 4
 mkdir -p "$output_dir"
 
 for name in backend_loop backend_compute; do
-    source="benchmarks/$name.lang"
+    source="benchmarks/$name.as"
     "$build_dir/lang" emit-c "$source" > "$output_dir/$name.c"
     "$cc_bin" -std=c17 -O2 -DNDEBUG \
         "$output_dir/$name.c" -o "$output_dir/${name}_c"
@@ -37,4 +37,4 @@ done
 
 hyperfine --warmup 3 --runs "$runs" \
     --export-json "$output_dir/native_build.json" \
-    "$build_dir/lang emit-c benchmarks/backend_compute.lang > $output_dir/timed.c && $cc_bin -std=c17 -O2 -DNDEBUG $output_dir/timed.c -o $output_dir/timed_c"
+    "$build_dir/lang emit-c benchmarks/backend_compute.as > $output_dir/timed.c && $cc_bin -std=c17 -O2 -DNDEBUG $output_dir/timed.c -o $output_dir/timed_c"

@@ -403,7 +403,7 @@ case: it returns matching regular files immediately below `root` in
 deterministic filename order. It does not recurse or infer routes.
 
 `std.process` exposes application arguments and environment lookup. With
-`lang run app.lang -- first second`, the Aster argument list contains only
+`lang run app.as -- first second`, the Aster argument list contains only
 `first` and `second`; launcher and source-path details are excluded.
 Argument and environment lookups return `string` values inside
 `Result`, so guest code never retains pointers into host process storage.
@@ -515,7 +515,7 @@ receiver. HTTP applications normally skip that string conversion entirely:
 `HttpTryRespondHtml` consumes `Html`, borrows its
 contiguous bytes for the synchronous response write, and then releases it.
 
-One file normally declares one namespace. `using App.Math;` loads `math.lang`
+One file normally declares one namespace. `using App.Math;` loads `math.as`
 beside the using file. Standard-library namespaces such as `System.Text`,
 `System.IO`, and `Aster.Html` are resolved by the compiler to the bundled
 standard-library modules; their physical filenames are not public API.
@@ -761,7 +761,7 @@ keyword names: `<label for="query">`, `<input type="text">`, and
 attribute. Boolean attributes render by presence, not as `"true"` or
 `"false"`. Global HTML attributes and `data-*`/`aria-*` are valid on every
 source-declared HTML element, while tag-specific properties remain declared in
-`std/html.lang`.
+`std/html.as`.
 
 Concrete enums, unions, and compiler-known results support exhaustive statement
 matching:

@@ -40,6 +40,6 @@ cp benchmarks/nim_comparison/html.nim "$nim_source"
 whole_program_flag=
 printf 'int main(void){return 0;}\n' | "$cc_bin" -x c -fwhole-program -o /dev/null - >/dev/null 2>&1 && whole_program_flag=-fwhole-program
 hyperfine --warmup 2 --runs "$runs" --export-json "$results/compile.json" \
-    -n aster-dev "$compiler emit-c benchmarks/rust_comparison/html.lang > $aster_c && $cc_bin -std=c17 -O0 -DNDEBUG -DASTER_EXTERNAL_RUNTIME $aster_c $runtime_o -o $results/html_aster_dev" \
-    -n aster-release "$compiler emit-c benchmarks/rust_comparison/html.lang > $aster_c && $cc_bin -std=c17 -O3 -DNDEBUG $whole_program_flag -DASTER_EXTERNAL_RUNTIME $aster_c $runtime_o -o $results/html_aster_release" \
+    -n aster-dev "$compiler emit-c benchmarks/rust_comparison/html.as > $aster_c && $cc_bin -std=c17 -O0 -DNDEBUG -DASTER_EXTERNAL_RUNTIME $aster_c $runtime_o -o $results/html_aster_dev" \
+    -n aster-release "$compiler emit-c benchmarks/rust_comparison/html.as > $aster_c && $cc_bin -std=c17 -O3 -DNDEBUG $whole_program_flag -DASTER_EXTERNAL_RUNTIME $aster_c $runtime_o -o $results/html_aster_release" \
     -n nim-release "touch $nim_source && $nim_bin c $nim_args -d:$nim_mode --mm:$nim_mm --opt:speed --hints:off --warnings:off --nimcache:$build_dir/nimcache/compile -o:$results/html_nim $nim_source >/dev/null"

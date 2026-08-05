@@ -43,7 +43,7 @@ declaration it wraps.
 Use:
 
 ```sh
-lang dump-layout file.lang
+lang dump-layout file.as
 ```
 
 The output includes target properties, aggregate sizes and alignments, struct

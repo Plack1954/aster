@@ -115,7 +115,7 @@ static void scan_expr(const Expr *expr, bool *saw_if, bool *saw_for,
 
 int main(void) {
     LangSource source;
-    if (!lang_source_load("examples/html_control.lang", &source)) return 1;
+    if (!lang_source_load("examples/html_control.as", &source)) return 1;
     LangDiagnostics diagnostics;
     lang_diagnostics_init(&diagnostics);
     Module module;
@@ -139,7 +139,7 @@ int main(void) {
         !saw_static || !saw_dynamic || !valid_spans)
         return 2;
 
-    if (!lang_source_load("examples/html_match.lang", &source)) return 3;
+    if (!lang_source_load("examples/html_match.as", &source)) return 3;
     lang_diagnostics_init(&diagnostics);
     ok = lang_parse_module(&source, &diagnostics, &module);
     if (ok) {

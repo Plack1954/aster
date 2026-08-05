@@ -43,7 +43,7 @@ cargo build --release --locked --manifest-path "$sailfish_manifest" \
 } > "$output_dir/environment.txt"
 
 for name in logic functions strings html; do
-    aster_source="$source_dir/$name.lang"
+    aster_source="$source_dir/$name.as"
     rust_source="$source_dir/$name.rs"
     generated_c="$output_dir/$name.c"
     aster_executable="$output_dir/${name}_aster_c"
@@ -86,7 +86,7 @@ done
 aster_http_c="$output_dir/http_server.c"
 aster_http_executable="$output_dir/http_server_aster_c"
 rust_http_executable="$output_dir/http_server_rust"
-"$build_dir/lang" emit-c "$source_dir/http_server.lang" \
+"$build_dir/lang" emit-c "$source_dir/http_server.as" \
     > "$aster_http_c"
 "$cc_bin" -std=c17 -O3 -DNDEBUG -I include \
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow \
