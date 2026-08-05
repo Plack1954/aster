@@ -891,6 +891,7 @@ static bool runtime_type_supported(const IrType *type) {
            type->shape == IR_TYPE_FUNCTION ||
            type->shape == IR_TYPE_ARRAY ||
            type->shape == IR_TYPE_STRUCT ||
+           type->shape == IR_TYPE_CLASS_REFERENCE ||
            type->shape == IR_TYPE_ENUM ||
            type->shape == IR_TYPE_UNION ||
            type->shape == IR_TYPE_BUILTIN_OBJECT ||
@@ -1544,12 +1545,16 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 (void)emit_instruction(
                     builder, OP_MAKE_ARRAY, count, 0,
                     instruction->span);
-            } else if (type->shape == IR_TYPE_STRUCT) {
+            } else if (type->shape == IR_TYPE_STRUCT ||
+                       type->shape == IR_TYPE_CLASS_REFERENCE) {
                 int32_t metadata =
                     add_struct_metadata(builder, instruction);
                 if (builder->failed) return;
                 (void)emit_instruction(
-                    builder, OP_MAKE_STRUCT, metadata, count,
+                    builder,
+                    type->shape == IR_TYPE_CLASS_REFERENCE
+                        ? OP_MAKE_CLASS : OP_MAKE_STRUCT,
+                    metadata, count,
                     instruction->span);
             } else if (type->shape == IR_TYPE_ENUM) {
                 LangValue value = {
@@ -1676,6 +1681,11 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 builder, OP_ITER_TAKE_NEXT_LOCAL, index, 0,
                 instruction->span);
             store_result(builder, instruction);
+            return;
+        case IR_OP_CLASS_DELETE:
+            move_value(builder, instruction->operands[0], instruction->span);
+            (void)emit_instruction(
+                builder, OP_DELETE_CLASS, 0, 0, instruction->span);
             return;
         case IR_OP_RAW_ALLOC:
         case IR_OP_RAW_STORE:

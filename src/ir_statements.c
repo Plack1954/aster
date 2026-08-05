@@ -408,6 +408,14 @@ static void lower_c_for(IrBuilder *builder, const Stmt *stmt) {
 void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
     if (ir_current_terminated(builder)) return;
     switch (stmt->kind) {
+        case STMT_DELETE: {
+            IrValueId value = ir_lower_expr(builder, stmt->as.delete_value);
+            IrInstruction *drop = ir_append_instruction(
+                builder, IR_OP_CLASS_DELETE, IR_INVALID_ID,
+                &value, 1U, stmt->span);
+            (void)drop;
+            break;
+        }
         case STMT_LET: {
             IrValueId value = ir_lower_expr(builder, stmt->as.let.value);
             if (strcmp(stmt->as.let.name, "_") == 0) {

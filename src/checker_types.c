@@ -125,7 +125,8 @@ bool is_exception_type(const Type *type) {
 }
 
 const char *type_declaration_name(const Decl *decl) {
-    if (decl->kind == DECL_STRUCT) return decl->as.structure.name;
+    if (decl->kind == DECL_STRUCT || decl->kind == DECL_CLASS)
+        return decl->as.structure.name;
     if (decl->kind == DECL_ENUM) return decl->as.enumeration.name;
     if (decl->kind == DECL_ALIAS) return decl->as.alias.name;
     return NULL;
@@ -353,23 +354,13 @@ static bool type_name_is_requires_cleanup(Checker *checker, const char *name,
         if (strcmp(seen[i], name) == 0)
             return true;
     if (seen_count >= 64U) return true;
-    for (size_t i = 0U; i < checker->module->count; ++i) {
-        Decl *decl = checker->module->decls[i];
-        if (decl->kind == DECL_FUNCTION &&
-            decl->as.function.is_drop &&
-            decl->as.function.param_count == 1U &&
-            checker->current_module != NULL &&
-            decl->module_name != NULL &&
-            strcmp(checker->current_module, decl->module_name) == 0 &&
-            strcmp(decl->as.function.params[0].type_name, name) == 0)
-            return true;
-    }
     const char *next_seen[64];
     for (size_t i = 0U; i < seen_count; ++i) next_seen[i] = seen[i];
     next_seen[seen_count++] = name;
     LangSpan lookup_span = {checker->module->source->path, 0U, 0U};
     Decl *decl = find_type_declaration(checker, name, lookup_span);
     if (decl == NULL) return false;
+    if (decl->kind == DECL_CLASS) return false;
     const char *declared_name = type_declaration_name(decl);
     for (size_t i = 0U; i < checker->module->count; ++i) {
         Decl *drop = checker->module->decls[i];
@@ -483,6 +474,10 @@ static bool type_name_is_managed(Checker *checker, const char *name,
                   checker, decl->as.alias.target, next_seen, seen_count);
         checker->current_module = previous_module;
         return managed;
+    }
+    if (decl->kind == DECL_CLASS) {
+        checker->current_module = previous_module;
+        return false;
     }
     FieldDecl *fields = decl->kind == DECL_STRUCT
                       ? decl->as.structure.fields
@@ -684,7 +679,8 @@ static const char *canonical_instantiation_name(
 Type *resolve_type_in_applied_declaration(
     Checker *checker, const Type *applied, const char *name,
     LangSpan span) {
-    if (applied == NULL || applied->kind != TYPE_NAMED ||
+    if (applied == NULL ||
+        (applied->kind != TYPE_NAMED && applied->kind != TYPE_CLASS) ||
         applied->declaration == NULL) {
         lang_diag(checker->diagnostics, span,
                   "cannot resolve `%s` without a concrete aggregate type",
@@ -713,7 +709,8 @@ Type *resolve_type_syntax_in_applied_declaration(
     if (syntax == NULL)
         return resolve_type_in_applied_declaration(
             checker, applied, fallback_name, span);
-    if (applied == NULL || applied->kind != TYPE_NAMED ||
+    if (applied == NULL ||
+        (applied->kind != TYPE_NAMED && applied->kind != TYPE_CLASS) ||
         applied->declaration == NULL) {
         lang_diag(checker->diagnostics, span,
                   "cannot resolve `%s` without a concrete aggregate type",
@@ -1464,7 +1461,8 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
             return &type_error;
         }
         Type *type = lang_arena_alloc(&checker->module->arena, sizeof(*type));
-        type->kind = TYPE_NAMED;
+        type->kind = type_decl->kind == DECL_CLASS
+                   ? TYPE_CLASS : TYPE_NAMED;
         type->name = decl_name;
         type->declaration = type_decl;
         const char *previous_module = checker->current_module;
@@ -1484,13 +1482,14 @@ Type *lang_checker_resolve_aggregate_member(
     Module *module, LangDiagnostics *diagnostics,
     const Type *aggregate, size_t member_index) {
     if (module == NULL || aggregate == NULL ||
-        aggregate->kind != TYPE_NAMED ||
+        (aggregate->kind != TYPE_NAMED &&
+         aggregate->kind != TYPE_CLASS) ||
         aggregate->declaration == NULL)
         return NULL;
     const Decl *decl = aggregate->declaration;
     FieldDecl *members = NULL;
     size_t member_count = 0U;
-    if (decl->kind == DECL_STRUCT) {
+    if (decl->kind == DECL_STRUCT || decl->kind == DECL_CLASS) {
         members = decl->as.structure.fields;
         member_count = decl->as.structure.field_count;
     } else if (decl->kind == DECL_ENUM) {
@@ -1544,7 +1543,7 @@ bool same_type(const Type *a, const Type *b) {
                 return false;
         return true;
     }
-    if (a->kind == TYPE_NAMED) {
+    if (a->kind == TYPE_NAMED || a->kind == TYPE_CLASS) {
         if (a->declaration != NULL && b->declaration != NULL) {
             if (a->declaration != b->declaration ||
                 a->argument_count != b->argument_count)
@@ -1570,7 +1569,7 @@ bool type_assignable(const Type *expected, const Type *actual) {
 
 const char *type_display_name(Checker *checker, const Type *type) {
     if (type == NULL) return "<unknown>";
-    if (type->kind != TYPE_NAMED ||
+    if ((type->kind != TYPE_NAMED && type->kind != TYPE_CLASS) ||
         type->declaration == NULL ||
         type->declaration->module_name == NULL)
         return type->name;
@@ -1704,6 +1703,7 @@ static bool type_is_copyable_inner(Checker *checker, Type *type,
         return type_is_copyable_inner(checker, type->element, seen, seen_count) &&
                type_is_copyable_inner(checker, type->error_type,
                                       seen, seen_count);
+    if (type->kind == TYPE_CLASS) return true;
     if (type->kind != TYPE_NAMED) return true;
     const Decl *type_decl = type->declaration;
     if (type_decl == NULL) return false;

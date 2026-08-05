@@ -187,6 +187,7 @@ static ComputedLayout type_layout(
         case TYPE_CANCELLATION_TOKEN:
         case TYPE_CANCELLATION_TOKEN_SOURCE:
         case TYPE_TASK:
+        case TYPE_CLASS:
             return (ComputedLayout){
                 target->pointer_size, target->pointer_alignment, true
             };

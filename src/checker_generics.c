@@ -23,6 +23,10 @@ static Stmt *clone_generic_stmt(Module *module, const Stmt *source) {
             result->as.destructure.checked_types = NULL;
             result->as.destructure.binding_ids = NULL;
             break;
+        case STMT_DELETE:
+            result->as.delete_value = clone_generic_expr(
+                module, source->as.delete_value);
+            break;
         case STMT_EXPR:
             result->as.expression =
                 clone_generic_expr(module, source->as.expression);

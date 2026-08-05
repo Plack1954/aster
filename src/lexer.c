@@ -8,10 +8,11 @@ typedef struct Keyword { const char *text; TokenKind kind; } Keyword;
 
 static const Keyword keywords[] = {
     {"var", TOK_VAR},
-    {"new", TOK_NEW}, {"const", TOK_CONST},
+    {"new", TOK_NEW}, {"delete", TOK_DELETE}, {"const", TOK_CONST},
     {"ref", TOK_REF},
     {"out", TOK_OUT},
-    {"struct", TOK_STRUCT}, {"enum", TOK_ENUM}, {"union", TOK_UNION},
+    {"struct", TOK_STRUCT}, {"class", TOK_CLASS},
+    {"enum", TOK_ENUM}, {"union", TOK_UNION},
     {"if", TOK_IF},
     {"else", TOK_ELSE}, {"while", TOK_WHILE}, {"for", TOK_FOR},
     {"foreach", TOK_FOREACH},
@@ -417,7 +418,7 @@ Token lang_lexer_next(Lexer *lexer) {
 const char *lang_token_name(TokenKind kind) {
     static const char *names[] = {
         "eof","error","identifier","integer","float","string","$",
-        "var","new","const","ref","out","struct","enum","union","if","else","while","for","foreach","in","switch","case",
+        "var","new","delete","const","ref","out","struct","class","enum","union","if","else","while","for","foreach","in","switch","case",
         "return","break","continue","true","false","null","unsafe","try","catch","finally","throw","async","await",
         "namespace","using","as","public","private","extern","type","delegate","element",
         "(",")","{","}","[","]",",",":",

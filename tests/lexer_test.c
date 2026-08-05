@@ -6,7 +6,7 @@
 int main(void) {
     static const char source_text[] =
         "// leading comment\n"
-        "fn let mut var owned take struct enum if else while for foreach in match switch case return break "
+        "fn let mut var new delete owned take struct class enum if else while for foreach in match switch case return break "
         "continue move clone borrow true false null unsafe try async await namespace using "
         "as pub public private extern drop type delegate element ident 123 1.5 \"utf8: \xc3\xa9\" "
         "( ) { } [ ] , : ; . .. ..= :: + - * / % ++ -- += -= *= /= %= "
@@ -14,8 +14,9 @@ int main(void) {
         "= == ! != < <= > >= << >> -> => "
         "/* outer /* nested */ done */ tail";
     static const TokenKind expected[] = {
-        TOK_IDENT, TOK_IDENT, TOK_IDENT, TOK_VAR, TOK_IDENT, TOK_IDENT, TOK_STRUCT,
-        TOK_ENUM, TOK_IF, TOK_ELSE,
+        TOK_IDENT, TOK_IDENT, TOK_IDENT, TOK_VAR, TOK_NEW, TOK_DELETE,
+        TOK_IDENT, TOK_IDENT, TOK_STRUCT,
+        TOK_CLASS, TOK_ENUM, TOK_IF, TOK_ELSE,
         TOK_WHILE, TOK_FOR, TOK_FOREACH, TOK_IN, TOK_IDENT, TOK_MATCH,
         TOK_CASE, TOK_RETURN, TOK_BREAK,
         TOK_CONTINUE, TOK_IDENT, TOK_IDENT, TOK_IDENT, TOK_TRUE, TOK_FALSE,

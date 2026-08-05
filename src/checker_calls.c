@@ -362,9 +362,12 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
         return local->type;
     }
     Local *this_local = find_local(checker, "this");
-    if (this_local != NULL && this_local->type->kind == TYPE_NAMED &&
+    if (this_local != NULL &&
+        (this_local->type->kind == TYPE_NAMED ||
+         this_local->type->kind == TYPE_CLASS) &&
         this_local->type->declaration != NULL &&
-        this_local->type->declaration->kind == DECL_STRUCT) {
+        (this_local->type->declaration->kind == DECL_STRUCT ||
+         this_local->type->declaration->kind == DECL_CLASS)) {
         const Decl *owner = this_local->type->declaration;
         for (size_t field = 0U;
              field < owner->as.structure.field_count; ++field) {
@@ -381,6 +384,27 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
             expr->kind = EXPR_FIELD;
             expr->as.field.object = object;
             expr->as.field.field = field_name;
+            return check_expr(checker, expr);
+        }
+        for (size_t member = 0U;
+             member < owner->as.structure.member_count; ++member) {
+            const Function *candidate =
+                &owner->as.structure.members[member]->as.function;
+            if (!candidate->is_property_getter ||
+                candidate->is_static_member ||
+                candidate->property_name == NULL ||
+                strcmp(candidate->property_name, expr->as.name) != 0)
+                continue;
+            Expr *object = lang_arena_alloc(
+                &checker->module->arena, sizeof(*object));
+            memset(object, 0, sizeof(*object));
+            object->kind = EXPR_NAME;
+            object->span = expr->span;
+            object->as.name = "this";
+            const char *property_name = expr->as.name;
+            expr->kind = EXPR_FIELD;
+            expr->as.field.object = object;
+            expr->as.field.field = property_name;
             return check_expr(checker, expr);
         }
     }
@@ -550,7 +574,8 @@ Type *checker_check_call(Checker *checker, Expr *expr) {
             case TYPE_F64: owner = "double"; break;
             default: break;
         }
-        if (receiver_type->kind == TYPE_NAMED &&
+        if ((receiver_type->kind == TYPE_NAMED ||
+             receiver_type->kind == TYPE_CLASS) &&
             receiver_type->declaration != NULL)
             owner = type_declaration_name(
                 receiver_type->declaration);
@@ -756,10 +781,11 @@ static_call:
     const char *name = expr->as.call.callee->as.name;
     if (strcmp(name, "$target::new") == 0) {
         if (checker->expected_type == NULL ||
-            checker->expected_type->kind != TYPE_NAMED ||
+            (checker->expected_type->kind != TYPE_NAMED &&
+             checker->expected_type->kind != TYPE_CLASS) ||
             checker->expected_type->declaration == NULL) {
             lang_diag(checker->diagnostics, expr->span,
-                      "target-typed `new(...)` requires an expected struct type");
+                      "target-typed `new(...)` requires an expected struct or class type");
             return &type_error;
         }
         const char *owner = type_declaration_name(
@@ -890,6 +916,24 @@ static_call:
                 ? overloads.first_named : NULL);
     Function *declared_function = declared_declaration != NULL
         ? (Function *)&declared_declaration->as.function : NULL;
+    bool same_member_owner = declared_function != NULL &&
+        declared_function->owner_type != NULL &&
+        checker->function != NULL &&
+        checker->function->owner_type != NULL &&
+        strcmp(checker->function->owner_type,
+               declared_function->owner_type) == 0 &&
+        checker->current_module != NULL &&
+        declared_declaration->module_name != NULL &&
+        strcmp(checker->current_module,
+               declared_declaration->module_name) == 0;
+    if (declared_function != NULL &&
+        declared_function->owner_type != NULL &&
+        !declared_declaration->is_public &&
+        !same_member_owner)
+        lang_diag(checker->diagnostics, expr->span,
+                  "member `%s` is private to class `%s`",
+                  declared_function->name,
+                  declared_function->owner_type);
     expr->resolved_decl = declared_declaration;
     if (expr->resolved_decl != NULL &&
         expr->resolved_decl->type_param_count != 0U)

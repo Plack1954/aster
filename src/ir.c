@@ -82,6 +82,7 @@ static IrTypeShape type_shape(const Type *type) {
         case TYPE_RAW_POINTER: return IR_TYPE_RAW_POINTER;
         case TYPE_SLICE: case TYPE_READONLY_SPAN: return IR_TYPE_SLICE;
         case TYPE_FUNCTION: return IR_TYPE_FUNCTION;
+        case TYPE_CLASS: return IR_TYPE_CLASS_REFERENCE;
         case TYPE_OPTION: case TYPE_RESULT:
             return IR_TYPE_UNION;
         case TYPE_TASK:
@@ -185,7 +186,24 @@ static void resolve_struct_member_layout(IrModule *module, IrTypeId id) {
         }
         offset += module->types[field_id].target_size;
     }
-    module->types[id].member_layout_known = known;
+    type = &module->types[id];
+    type->member_layout_known = known;
+    if (type->shape == IR_TYPE_CLASS_REFERENCE) {
+        size_t alignment = 1U;
+        if (known) {
+            for (size_t field = 0U; field < type->field_count; ++field) {
+                IrTypeId field_id = type->field_types[field];
+                if (module->types[field_id].target_alignment > alignment)
+                    alignment = module->types[field_id].target_alignment;
+            }
+            if (type->field_count == 0U)
+                offset = 1U;
+            known = ir_align_up(offset, alignment, &offset);
+        }
+        type->object_layout_known = known;
+        type->object_size = known ? offset : 0U;
+        type->object_alignment = known ? alignment : 0U;
+    }
 }
 
 static void resolve_variant_member_layout(IrModule *module, IrTypeId id) {
@@ -221,7 +239,7 @@ static bool same_ir_type_identity(const Type *left, const Type *right) {
         (left->kind == TYPE_SLICE || left->kind == TYPE_READONLY_SPAN) &&
         (right->kind == TYPE_SLICE || right->kind == TYPE_READONLY_SPAN);
     if (left->kind != right->kind && !span_pair) return false;
-    if (left->kind == TYPE_NAMED) {
+    if (left->kind == TYPE_NAMED || left->kind == TYPE_CLASS) {
         if (left->declaration != right->declaration ||
             left->argument_count != right->argument_count)
             return false;
@@ -334,9 +352,11 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
             module->types[id].argument_types[i] = argument;
         }
     }
-    if (type != NULL && type->kind == TYPE_NAMED &&
+    if (type != NULL &&
+        (type->kind == TYPE_NAMED || type->kind == TYPE_CLASS) &&
         type->declaration != NULL &&
-        type->declaration->kind == DECL_STRUCT) {
+        (type->declaration->kind == DECL_STRUCT ||
+         type->declaration->kind == DECL_CLASS)) {
         size_t count =
             type->declaration->as.structure.field_count;
         module->types[id].field_names = ir_resize(
@@ -686,7 +706,8 @@ uint32_t ir_find_function(const IrModule *ir, const Decl *decl) {
 
 uint32_t ir_field_index(const Type *object_type, const char *name) {
     if (object_type == NULL || object_type->declaration == NULL ||
-        object_type->declaration->kind != DECL_STRUCT)
+        (object_type->declaration->kind != DECL_STRUCT &&
+         object_type->declaration->kind != DECL_CLASS))
         return UINT32_MAX;
     const Decl *decl = object_type->declaration;
     for (size_t i = 0U; i < decl->as.structure.field_count; ++i)
@@ -2250,6 +2271,8 @@ static bool statement_contains_return(const Stmt *stmt) {
         case STMT_DESTRUCTURE:
             return expression_contains_return(
                 stmt->as.destructure.value);
+        case STMT_DELETE:
+            return expression_contains_return(stmt->as.delete_value);
         case STMT_EXPR:
             return expression_contains_return(stmt->as.expression);
         case STMT_IF:
@@ -2506,6 +2529,7 @@ static void resolve_type_destructors(IrModule *ir) {
          type_index < ir->type_count; ++type_index) {
         IrType *type = &ir->types[type_index];
         if (type->shape != IR_TYPE_STRUCT &&
+            type->shape != IR_TYPE_CLASS_REFERENCE &&
             type->shape != IR_TYPE_ENUM &&
             type->shape != IR_TYPE_UNION)
             continue;
@@ -2521,7 +2545,8 @@ static void resolve_type_destructors(IrModule *ir) {
                 continue;
             type->destructor_function =
                 (IrFunctionId)function_index;
-            type->drop_policy = IR_DROP_CUSTOM;
+            if (type->shape != IR_TYPE_CLASS_REFERENCE)
+                type->drop_policy = IR_DROP_CUSTOM;
             break;
         }
     }
@@ -2613,6 +2638,8 @@ bool lang_ir_lower_module(Module *module,
                     ? source->checked_return_type->element
                     : source->checked_return_type;
             if (source->is_constructor) {
+                const Decl *structure =
+                    source->checked_return_type->declaration;
                 size_t count = source->constructor_field_count;
                 IrValueId *fields = ir_resize(
                     NULL, count, sizeof(*fields));
@@ -2641,6 +2668,8 @@ bool lang_ir_lower_module(Module *module,
                 if (value != NULL) {
                     value->labels = labels;
                     value->label_count = count;
+                    value->symbol = structure->as.structure.name;
+                    value->symbol_length = strlen(value->symbol);
                     ir_set_terminator(
                         &builder, IR_TERM_RETURN, value->result,
                         IR_INVALID_ID, IR_INVALID_ID, source->span);

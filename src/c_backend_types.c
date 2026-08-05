@@ -151,8 +151,9 @@ static bool type_is_c_supported_inner(
     bool *visiting, bool *resolved) {
     if (type_id >= ir->type_count) return false;
     if (resolved[type_id]) return true;
-    if (visiting[type_id]) return false;
     const IrType *type = &ir->types[type_id];
+    if (visiting[type_id])
+        return type->shape == IR_TYPE_CLASS_REFERENCE;
     if (scalar_c_type(type) != NULL) {
         resolved[type_id] = true;
         return true;
@@ -216,6 +217,7 @@ static bool type_is_c_supported_inner(
     }
     if (type->shape != IR_TYPE_ARRAY &&
         type->shape != IR_TYPE_STRUCT &&
+        type->shape != IR_TYPE_CLASS_REFERENCE &&
         type->shape != IR_TYPE_UNION)
         return false;
     visiting[type_id] = true;
@@ -224,8 +226,11 @@ static bool type_is_c_supported_inner(
         supported = type->array_length != 0U &&
                     type_is_c_supported_inner(
                         ir, type->element_type, visiting, resolved);
-    } else if (type->shape == IR_TYPE_STRUCT) {
-        supported = type->field_count != 0U;
+    } else if (type->shape == IR_TYPE_STRUCT ||
+               type->shape == IR_TYPE_CLASS_REFERENCE) {
+        supported = type->shape == IR_TYPE_CLASS_REFERENCE
+                  ? type->object_layout_known
+                  : type->field_count != 0U;
         for (size_t field = 0U;
              supported && field < type->field_count; ++field)
             if (!type_is_c_supported_inner(
@@ -258,6 +263,7 @@ static bool emit_aggregate_type(
     const IrType *type = &emitter->ir->types[type_id];
     if (type->shape != IR_TYPE_ARRAY &&
         type->shape != IR_TYPE_STRUCT &&
+        type->shape != IR_TYPE_CLASS_REFERENCE &&
         type->shape != IR_TYPE_UNION &&
         type->shape != IR_TYPE_FUNCTION &&
         type->shape != IR_TYPE_SLICE &&
@@ -312,6 +318,15 @@ static bool emit_aggregate_type(
             if (!emit_aggregate_type(
                     emitter, type->field_types[field], states))
                 return false;
+    } else if (type->shape == IR_TYPE_CLASS_REFERENCE) {
+        for (size_t field = 0U;
+             field < type->field_count; ++field) {
+            IrTypeId field_type = type->field_types[field];
+            if (emitter->ir->types[field_type].shape !=
+                    IR_TYPE_CLASS_REFERENCE &&
+                !emit_aggregate_type(emitter, field_type, states))
+                return false;
+        }
     } else {
         for (size_t variant = 0U;
              variant < type->variant_count; ++variant) {
@@ -546,15 +561,21 @@ static bool emit_aggregate_type(
         states[type_id] = 2U;
         return true;
     }
-    fprintf(emitter->output,
-            "typedef struct aster_type_%" PRIu32 " {\n",
-            type_id);
+    if (type->shape == IR_TYPE_CLASS_REFERENCE)
+        fprintf(emitter->output,
+                "struct aster_type_%" PRIu32 " {\n", type_id);
+    else
+        fprintf(emitter->output,
+                "typedef struct aster_type_%" PRIu32 " {\n", type_id);
     if (type->shape == IR_TYPE_ARRAY) {
         fputs("    ", emitter->output);
         c_backend_emit_type(emitter, type->element_type);
         fprintf(emitter->output, " items[%zu];\n",
                 type->array_length);
-    } else if (type->shape == IR_TYPE_STRUCT) {
+    } else if (type->shape == IR_TYPE_STRUCT ||
+               type->shape == IR_TYPE_CLASS_REFERENCE) {
+        if (type->field_count == 0U)
+            fputs("    uint8_t _empty;\n", emitter->output);
         for (size_t field = 0U;
              field < type->field_count; ++field) {
             fputs("    ", emitter->output);
@@ -584,8 +605,11 @@ static bool emit_aggregate_type(
             fputs("    } payload;\n", emitter->output);
         }
     }
-    fprintf(emitter->output,
-            "} aster_type_%" PRIu32 ";\n\n", type_id);
+    if (type->shape == IR_TYPE_CLASS_REFERENCE)
+        fputs("};\n\n", emitter->output);
+    else
+        fprintf(emitter->output,
+                "} aster_type_%" PRIu32 ";\n\n", type_id);
     states[type_id] = 2U;
     return true;
 }
@@ -598,12 +622,20 @@ bool c_backend_emit_aggregate_types(CEmitter *emitter) {
         exit(2);
     }
     bool ok = true;
+    for (size_t type = 0U; type < emitter->ir->type_count; ++type)
+        if (emitter->used_types[type] &&
+            emitter->ir->types[type].shape == IR_TYPE_CLASS_REFERENCE)
+            fprintf(emitter->output,
+                    "typedef struct aster_type_%zu aster_type_%zu;\n",
+                    type, type);
+    fputc('\n', emitter->output);
     for (size_t type = 0U;
          type < emitter->ir->type_count; ++type) {
         const IrType *entry = &emitter->ir->types[type];
         if (emitter->used_types[type] &&
             (entry->shape == IR_TYPE_ARRAY ||
              entry->shape == IR_TYPE_STRUCT ||
+             entry->shape == IR_TYPE_CLASS_REFERENCE ||
              entry->shape == IR_TYPE_UNION ||
              entry->shape == IR_TYPE_FUNCTION ||
              entry->shape == IR_TYPE_SLICE ||
@@ -691,6 +723,8 @@ void c_backend_emit_type(CEmitter *emitter, IrTypeId type_id) {
                 "aster_iterator_%" PRIu32, type_id);
     else if (type->shape == IR_TYPE_ELEMENT_BUILDER)
         fputs("aster_element_builder *", emitter->output);
+    else if (type->shape == IR_TYPE_CLASS_REFERENCE)
+        fprintf(emitter->output, "aster_type_%" PRIu32 " *", type_id);
     else
         fprintf(emitter->output, "aster_type_%" PRIu32, type_id);
 }

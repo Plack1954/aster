@@ -71,6 +71,7 @@ static bool verify_function_stack(const BytecodeFunction *function) {
                 pushed = 1;
                 break;
             case OP_POP: case OP_STORE_LOCAL: case OP_EXCEPTION_SET:
+            case OP_DELETE_CLASS:
                 required = 1; popped = 1;
                 break;
             case OP_SET_LOCAL: case OP_SET_FIELD_LOCAL:
@@ -194,7 +195,7 @@ static bool verify_function_stack(const BytecodeFunction *function) {
             case OP_SET_INDEX_LOCAL:
                 required = 2; popped = 2; pushed = 1;
                 break;
-            case OP_MAKE_STRUCT:
+            case OP_MAKE_STRUCT: case OP_MAKE_CLASS:
                 required = instruction.b;
                 popped = instruction.b;
                 pushed = 1;

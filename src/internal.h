@@ -29,8 +29,8 @@ void lang_source_line_info(const LangSource *source, size_t offset,
 typedef enum TokenKind {
     TOK_EOF, TOK_ERROR, TOK_IDENT, TOK_INT, TOK_FLOAT, TOK_STRING,
     TOK_DOLLAR,
-    TOK_VAR, TOK_NEW, TOK_CONST, TOK_REF, TOK_OUT,
-    TOK_STRUCT, TOK_ENUM, TOK_UNION, TOK_IF, TOK_ELSE,
+    TOK_VAR, TOK_NEW, TOK_DELETE, TOK_CONST, TOK_REF, TOK_OUT,
+    TOK_STRUCT, TOK_CLASS, TOK_ENUM, TOK_UNION, TOK_IF, TOK_ELSE,
     TOK_WHILE, TOK_FOR, TOK_FOREACH, TOK_IN, TOK_MATCH, TOK_CASE,
     TOK_RETURN, TOK_BREAK,
     TOK_CONTINUE,
@@ -90,7 +90,8 @@ typedef enum TypeKind {
     TYPE_CANCELLATION_TOKEN_SOURCE,
     TYPE_RAW_POINTER, TYPE_SLICE, TYPE_READONLY_SPAN, TYPE_VEC,
     TYPE_DICTIONARY, TYPE_HASH_SET, TYPE_QUEUE, TYPE_STACK,
-    TYPE_ARRAY, TYPE_OPTION, TYPE_RESULT, TYPE_TASK, TYPE_FUNCTION, TYPE_NAMED
+    TYPE_ARRAY, TYPE_OPTION, TYPE_RESULT, TYPE_TASK, TYPE_FUNCTION,
+    TYPE_NAMED, TYPE_CLASS
 } TypeKind;
 
 typedef enum ParameterMode {
@@ -185,7 +186,7 @@ typedef enum StmtKind {
     STMT_LET, STMT_EXPR, STMT_RETURN, STMT_IF, STMT_WHILE, STMT_FOR,
     STMT_C_FOR, STMT_MATCH, STMT_TRY, STMT_THROW,
     STMT_BREAK, STMT_CONTINUE, STMT_BLOCK, STMT_UNSAFE,
-    STMT_DESTRUCTURE
+    STMT_DESTRUCTURE, STMT_DELETE
 } StmtKind;
 
 typedef struct Expr Expr;
@@ -398,6 +399,7 @@ struct Stmt {
             Stmt *finally_body;
         } try_;
         Expr *throw_value;
+        Expr *delete_value;
         Stmt *unsafe_body;
         StmtList block;
     } as;
@@ -439,6 +441,9 @@ typedef struct Function {
     bool is_static_member;
     bool is_readonly_member;
     bool is_property_getter;
+    bool is_property_setter;
+    const char *property_name;
+    const char *property_backing_field;
     bool is_constructor;
     const char *owner_type;
     size_t *constructor_field_binding_ids;
@@ -449,13 +454,15 @@ typedef struct Function {
 } Function;
 
 typedef enum DeclKind {
-    DECL_FUNCTION, DECL_STRUCT, DECL_ENUM, DECL_ALIAS, DECL_ELEMENT
+    DECL_FUNCTION, DECL_STRUCT, DECL_CLASS, DECL_ENUM, DECL_ALIAS, DECL_ELEMENT
 } DeclKind;
 typedef struct FieldDecl {
     const char *name;
     const char *type_name;
     LangSpan span;
     TypeSyntax *type_syntax;
+    bool is_public;
+    bool has_explicit_visibility;
 } FieldDecl;
 typedef struct Decl {
     DeclKind kind;
@@ -561,6 +568,7 @@ typedef enum IrTypeShape {
     IR_TYPE_ELEMENT_BUILDER,
     IR_TYPE_FUNCTION,
     IR_TYPE_STRUCT,
+    IR_TYPE_CLASS_REFERENCE,
     IR_TYPE_ENUM,
     IR_TYPE_UNION
 } IrTypeShape;
@@ -682,6 +690,7 @@ typedef enum IrOpcode {
     IR_OP_RAW_ALLOC,
     IR_OP_RAW_LOAD,
     IR_OP_RAW_STORE,
+    IR_OP_CLASS_DELETE,
     IR_OP_ELEMENT_BEGIN,
     IR_OP_LOCAL_ELEMENT_PROPERTY,
     IR_OP_LOCAL_ELEMENT_PROPERTY_BEGIN,
@@ -739,6 +748,10 @@ typedef struct IrType {
     size_t target_size;
     size_t target_alignment;
     bool target_layout_known;
+    /* Class values are pointers; these describe their heap object body. */
+    size_t object_size;
+    size_t object_alignment;
+    bool object_layout_known;
     bool member_layout_known;
     size_t array_length;
     uint8_t bit_width;
@@ -880,7 +893,8 @@ typedef enum OpCode {
     OP_CANCELLATION_IS_REQUESTED,
     OP_CANCELLATION_THROW_IF_REQUESTED,
     OP_MAKE_ARRAY, OP_GET_INDEX, OP_GET_INDEX_LOCAL, OP_SET_INDEX_LOCAL,
-    OP_MAKE_STRUCT, OP_GET_FIELD, OP_GET_FIELD_LOCAL,
+    OP_MAKE_STRUCT, OP_MAKE_CLASS, OP_DELETE_CLASS,
+    OP_GET_FIELD, OP_GET_FIELD_LOCAL,
     OP_GET_FIELD_LOCAL_MOVE, OP_GET_FIELD_BORROW,
     OP_SET_FIELD_LOCAL,
     OP_GET_TAG, OP_TAKE_PAYLOAD, OP_SET_LOCAL,

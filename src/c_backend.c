@@ -762,6 +762,10 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->symbol_length);
             }
             return;
+        case IR_OP_CONST_NULL:
+            fprintf(output, "    v%" PRIu32 " = NULL;\n",
+                    instruction->result);
+            return;
         case IR_OP_LOCAL_LOAD:
         case IR_OP_LOCAL_MOVE:
             fprintf(output, "    v%" PRIu32 " = l%" PRIu32 ";\n",
@@ -1444,6 +1448,19 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->result, instruction->index);
                 return;
             }
+            if (aggregate->shape == IR_TYPE_CLASS_REFERENCE) {
+                fprintf(output,
+                        "    v%" PRIu32 " = malloc(sizeof(*v%" PRIu32 "));\n"
+                        "    if (v%" PRIu32 " == NULL) aster_trap(\"class allocation failed\");\n",
+                        instruction->result, instruction->result,
+                        instruction->result);
+                for (size_t i = 0U; i < instruction->operand_count; ++i)
+                    fprintf(output,
+                            "    v%" PRIu32 "->f%" PRIu32 " = v%" PRIu32 ";\n",
+                            instruction->result, instruction->labels[i],
+                            instruction->operands[i]);
+                return;
+            }
             fprintf(output, "    v%" PRIu32 " = (",
                     instruction->result);
             c_backend_emit_type(emitter, instruction->result_type);
@@ -1506,6 +1523,20 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->index);
             return;
         case IR_OP_LOCAL_FIELD_MOVE:
+            if (emitter->ir->types[function->locals[
+                    instruction->index].type].shape ==
+                IR_TYPE_CLASS_REFERENCE) {
+                fprintf(output,
+                        "    if (l%" PRIu32 " == NULL) aster_trap(\"null class reference\");\n"
+                        "    v%" PRIu32 " = l%" PRIu32 "->f%" PRIu32 ";\n"
+                        "    memset(&l%" PRIu32 "->f%" PRIu32
+                        ", 0, sizeof(l%" PRIu32 "->f%" PRIu32 "));\n",
+                        instruction->index, instruction->result,
+                        instruction->index, instruction->auxiliary,
+                        instruction->index, instruction->auxiliary,
+                        instruction->index, instruction->auxiliary);
+                return;
+            }
             fprintf(output,
                     "    v%" PRIu32 " = l%" PRIu32 ".f%" PRIu32 ";\n"
                     "    memset(&l%" PRIu32 ".f%" PRIu32
@@ -1516,6 +1547,25 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     instruction->auxiliary);
             return;
         case IR_OP_LOCAL_FIELD_GET:
+            if (emitter->ir->types[function->locals[
+                    instruction->index].type].shape ==
+                IR_TYPE_CLASS_REFERENCE) {
+                fprintf(output,
+                        "    if (l%" PRIu32 " == NULL) aster_trap(\"null class reference\");\n",
+                        instruction->index);
+                if (c_backend_type_needs_drop(emitter, instruction->result_type))
+                    fprintf(output,
+                            "    v%" PRIu32 " = aster_clone_%" PRIu32
+                            "(l%" PRIu32 "->f%" PRIu32 ");\n",
+                            instruction->result, instruction->result_type,
+                            instruction->index, instruction->auxiliary);
+                else
+                    fprintf(output,
+                            "    v%" PRIu32 " = l%" PRIu32 "->f%" PRIu32 ";\n",
+                            instruction->result, instruction->index,
+                            instruction->auxiliary);
+                return;
+            }
             if (c_backend_type_needs_drop(emitter, instruction->result_type))
                 fprintf(output,
                         "    v%" PRIu32 " = aster_clone_%" PRIu32
@@ -1529,12 +1579,41 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->auxiliary);
             return;
         case IR_OP_LOCAL_FIELD_BORROW:
+            if (emitter->ir->types[function->locals[
+                    instruction->index].type].shape ==
+                IR_TYPE_CLASS_REFERENCE) {
+                fprintf(output,
+                        "    if (l%" PRIu32 " == NULL) aster_trap(\"null class reference\");\n"
+                        "    v%" PRIu32 " = l%" PRIu32 "->f%" PRIu32 ";\n",
+                        instruction->index, instruction->result,
+                        instruction->index, instruction->auxiliary);
+                return;
+            }
             fprintf(output,
                     "    v%" PRIu32 " = l%" PRIu32 ".f%" PRIu32 ";\n",
                     instruction->result, instruction->index,
                     instruction->auxiliary);
             return;
         case IR_OP_FIELD_GET:
+            if (emitter->ir->types[function->value_types[
+                    instruction->operands[0]]].shape ==
+                IR_TYPE_CLASS_REFERENCE) {
+                fprintf(output,
+                        "    if (v%" PRIu32 " == NULL) aster_trap(\"null class reference\");\n",
+                        instruction->operands[0]);
+                if (c_backend_type_needs_drop(emitter, instruction->result_type))
+                    fprintf(output,
+                            "    v%" PRIu32 " = aster_clone_%" PRIu32
+                            "(v%" PRIu32 "->f%" PRIu32 ");\n",
+                            instruction->result, instruction->result_type,
+                            instruction->operands[0], instruction->index);
+                else
+                    fprintf(output,
+                            "    v%" PRIu32 " = v%" PRIu32 "->f%" PRIu32 ";\n",
+                            instruction->result, instruction->operands[0],
+                            instruction->index);
+                return;
+            }
             if (c_backend_type_needs_drop(emitter, instruction->result_type))
                 fprintf(output,
                         "    v%" PRIu32 " = aster_clone_%" PRIu32
@@ -1567,16 +1646,23 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 &emitter->ir->types[structure_type];
             IrTypeId field_type =
                 structure->field_types[instruction->auxiliary];
+            if (structure->shape == IR_TYPE_CLASS_REFERENCE)
+                fprintf(output,
+                        "    if (l%" PRIu32 " == NULL) aster_trap(\"null class reference\");\n",
+                        instruction->index);
             if (c_backend_type_needs_drop(emitter, field_type))
                 fprintf(
                     output,
                     "    aster_drop_%" PRIu32
-                    "(&l%" PRIu32 ".f%" PRIu32 ");\n",
+                    "(&l%" PRIu32 "%sf%" PRIu32 ");\n",
                     field_type, instruction->index,
+                    structure->shape == IR_TYPE_CLASS_REFERENCE ? "->" : ".",
                     instruction->auxiliary);
             fprintf(output,
-                    "    l%" PRIu32 ".f%" PRIu32 " = v%" PRIu32 ";\n",
-                    instruction->index, instruction->auxiliary,
+                    "    l%" PRIu32 "%sf%" PRIu32 " = v%" PRIu32 ";\n",
+                    instruction->index,
+                    structure->shape == IR_TYPE_CLASS_REFERENCE ? "->" : ".",
+                    instruction->auxiliary,
                     instruction->operands[0]);
             return;
             }
@@ -2370,6 +2456,29 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->index, instruction->index,
                         instruction->result, instruction->index,
                         instruction->index);
+            return;
+        }
+        case IR_OP_CLASS_DELETE: {
+            IrValueId value = instruction->operands[0];
+            IrTypeId type_id = function->value_types[value];
+            const IrType *type = &emitter->ir->types[type_id];
+            fprintf(output, "    if (v%" PRIu32 " != NULL) {\n", value);
+            if (type->destructor_function != IR_INVALID_ID)
+                fprintf(output,
+                        "        (void)aster_fn_%" PRIu32 "(v%" PRIu32 ");\n",
+                        type->destructor_function, value);
+            for (size_t field = type->field_count; field > 0U; --field) {
+                IrTypeId field_type = type->field_types[field - 1U];
+                if (c_backend_type_needs_drop(emitter, field_type))
+                    fprintf(output,
+                            "        aster_drop_%" PRIu32
+                            "(&v%" PRIu32 "->f%zu);\n",
+                            field_type, value, field - 1U);
+            }
+            fprintf(output,
+                    "        free(v%" PRIu32 ");\n"
+                    "    }\n",
+                    value);
             return;
         }
         case IR_OP_RAW_ALLOC: {

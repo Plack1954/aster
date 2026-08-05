@@ -2016,6 +2016,42 @@ target_link_libraries(lexer_unit_test PRIVATE langlib)
 lang_enable_warnings(lexer_unit_test)
 add_test(NAME lexer_tokens_comments_and_spans COMMAND lexer_unit_test)
 
+add_executable(class_reference_test tests/class_reference_test.c)
+target_include_directories(class_reference_test PRIVATE src)
+target_link_libraries(class_reference_test PRIVATE langlib)
+lang_enable_warnings(class_reference_test)
+add_test(NAME class_declaration_reference_layout COMMAND class_reference_test)
+add_test(NAME class_lifetime_vm
+    COMMAND lang run-ir tests/class_lifetime.as)
+set_tests_properties(class_lifetime_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "41[\r\n]+destroyed")
+add_aster_generated_c_test(
+    class_lifetime_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/class_lifetime.as
+    aster_class_lifetime
+        "-DEXPECTED_OUTPUT=41\ndestroyed\n")
+add_test(NAME class_properties_vm
+    COMMAND lang run-ir tests/class_properties.as)
+set_tests_properties(class_properties_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "5[\r\n]+8[\r\n]+16[\r\n]+2[\r\n]+Ada[\r\n]+42[\r\n]+9[\r\n]+4")
+add_aster_generated_c_test(
+    class_properties_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/class_properties.as
+    aster_class_properties
+        "-DEXPECTED_OUTPUT=5\n8\n16\n2\nAda\n42\n9\n4\n")
+add_test(NAME private_property_setter_rejected
+    COMMAND lang check tests/checker/private_property_setter.as)
+set_tests_properties(private_property_setter_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME read_only_property_assignment_rejected
+    COMMAND lang check tests/checker/read_only_property_assignment.as)
+set_tests_properties(read_only_property_assignment_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+
 add_executable(parser_recovery_test tests/parser_recovery.c)
 target_include_directories(parser_recovery_test PRIVATE src)
 target_link_libraries(parser_recovery_test PRIVATE langlib)

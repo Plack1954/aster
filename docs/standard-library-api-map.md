@@ -59,7 +59,7 @@ features exist:
 
 | Requirement | Needed by | Current state |
 | --- | --- | --- |
-| Read-only properties | `string.Length`, `List<T>.Count`, `DateTime.Year` | Built-in `string.Length` and `List<T>.Count` are implemented; declared properties remain future work. |
+| Declared properties | `string.Length`, `List<T>.Count`, `DateTime.Year` | C#-style expression, custom-accessor, and automatic properties are implemented. Built-in types may expose the same surface through compiler-known accessors. |
 | Indexers | `list[index]`, string indexing | Arrays, lists, and checked string byte indexing are implemented for reads. List index assignment remains future work. |
 | Function overloading | `Substring`, `Split`, `File.Copy`, `Parse` families | Bounded arity/exact-type overloads are implemented; same-arity generic-template trial inference remains future work. |
 | `out` parameters or an approved alternative | Numeric `TryParse` | Aster has `ref`, but `ref` is not the same contract as C# `out`. |

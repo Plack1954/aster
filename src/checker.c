@@ -4,6 +4,70 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool class_member_accessible(
+    const Checker *checker, const Decl *owner, bool is_public
+) {
+    if (owner == NULL || owner->kind != DECL_CLASS || is_public)
+        return true;
+    return checker->function != NULL &&
+           checker->function->owner_type != NULL &&
+           strcmp(checker->function->owner_type,
+                  owner->as.structure.name) == 0 &&
+           checker->current_module != NULL && owner->module_name != NULL &&
+           strcmp(checker->current_module, owner->module_name) == 0;
+}
+
+static Function *declared_property_accessor(
+    const Decl *owner, const char *name, bool setter
+) {
+    if (owner == NULL ||
+        (owner->kind != DECL_STRUCT && owner->kind != DECL_CLASS))
+        return NULL;
+    for (size_t member = 0U;
+         member < owner->as.structure.member_count; ++member) {
+        Function *function =
+            &owner->as.structure.members[member]->as.function;
+        if ((setter ? function->is_property_setter
+                    : function->is_property_getter) &&
+            function->property_name != NULL &&
+            strcmp(function->property_name, name) == 0)
+            return function;
+    }
+    return NULL;
+}
+
+static const Decl *current_property_owner(Checker *checker) {
+    if (checker->function == NULL ||
+        checker->function->owner_type == NULL)
+        return NULL;
+    for (size_t i = 0U; i < checker->module->count; ++i) {
+        const Decl *decl = checker->module->decls[i];
+        if ((decl->kind == DECL_STRUCT || decl->kind == DECL_CLASS) &&
+            strcmp(decl->as.structure.name,
+                   checker->function->owner_type) == 0 &&
+            decl->module_name != NULL && checker->current_module != NULL &&
+            strcmp(decl->module_name, checker->current_module) == 0)
+            return decl;
+    }
+    return NULL;
+}
+
+static Function *static_property_accessor(
+    Checker *checker, const char *name, bool setter
+) {
+    for (size_t i = 0U; i < checker->module->count; ++i) {
+        Decl *decl = checker->module->decls[i];
+        Function *function = decl->kind == DECL_FUNCTION
+            ? &decl->as.function : NULL;
+        if (function != NULL && function->is_static_member &&
+            (setter ? function->is_property_setter
+                    : function->is_property_getter) &&
+            strcmp(function->name, name) == 0)
+            return function;
+    }
+    return NULL;
+}
+
 Local *find_local(Checker *checker, const char *name) {
     for (size_t i = checker->local_count; i > 0U; --i)
         if (strcmp(checker->locals[i - 1U].name, name) == 0)
@@ -178,9 +242,11 @@ Type *check_place(Checker *checker, Expr *expr) {
         if (local == NULL) local = find_local(checker, expr->as.name);
         Local *this_local = find_local(checker, "this");
         if (local == NULL && this_local != NULL &&
-            this_local->type->kind == TYPE_NAMED &&
+            (this_local->type->kind == TYPE_NAMED ||
+             this_local->type->kind == TYPE_CLASS) &&
             this_local->type->declaration != NULL &&
-            this_local->type->declaration->kind == DECL_STRUCT) {
+            (this_local->type->declaration->kind == DECL_STRUCT ||
+             this_local->type->declaration->kind == DECL_CLASS)) {
             const Decl *owner = this_local->type->declaration;
             for (size_t field = 0U;
                  field < owner->as.structure.field_count; ++field) {
@@ -247,21 +313,31 @@ Type *check_place(Checker *checker, Expr *expr) {
         if (object->kind == TYPE_BUFFER &&
             strcmp(expr->as.field.field, "len") == 0) {
             result = &type_i64;
-        } else if (object->kind == TYPE_NAMED) {
+        } else if (object->kind == TYPE_NAMED ||
+                   object->kind == TYPE_CLASS) {
             const Decl *decl = object->declaration;
-            if (decl != NULL && decl->kind == DECL_STRUCT) {
+            if (decl != NULL &&
+                (decl->kind == DECL_STRUCT || decl->kind == DECL_CLASS)) {
                 const char *previous_module = checker->current_module;
                 checker->current_module = decl->module_name;
                 for (size_t field = 0U;
                      field < decl->as.structure.field_count; ++field)
                     if (strcmp(
                             decl->as.structure.fields[field].name,
-                            expr->as.field.field) == 0)
+                            expr->as.field.field) == 0) {
+                        if (!class_member_accessible(
+                                checker, decl,
+                                decl->as.structure.fields[field].is_public))
+                            lang_diag(checker->diagnostics, expr->span,
+                                      "field `%s` is private to class `%s`",
+                                      expr->as.field.field,
+                                      decl->as.structure.name);
                         result = resolve_type_syntax_in_applied_declaration(
                             checker, object,
                             decl->as.structure.fields[field].type_syntax,
                             decl->as.structure.fields[field].type_name,
                             decl->as.structure.fields[field].span);
+                    }
                 checker->current_module = previous_module;
             }
         }
@@ -436,6 +512,33 @@ static Type *rewrite_instance_property_call(
     return checker_check_call(checker, expr);
 }
 
+static Type *rewrite_property_setter_call(
+    Checker *checker, Expr *expr, const Function *setter,
+    Expr *receiver, Expr *assigned_value
+) {
+    Expr *callee = lang_arena_alloc(
+        &checker->module->arena, sizeof(*callee));
+    memset(callee, 0, sizeof(*callee));
+    callee->kind = EXPR_NAME;
+    callee->span = expr->span;
+    callee->as.name = setter->name;
+    size_t argument_count = receiver != NULL ? 2U : 1U;
+    Expr **arguments = lang_arena_alloc(
+        &checker->module->arena,
+        argument_count * sizeof(*arguments));
+    size_t next = 0U;
+    if (receiver != NULL) arguments[next++] = receiver;
+    arguments[next] = assigned_value;
+    expr->kind = EXPR_CALL;
+    expr->as.call.callee = callee;
+    expr->as.call.arguments.items = arguments;
+    expr->as.call.arguments.count = argument_count;
+    expr->as.call.argument_modes = NULL;
+    expr->as.call.implicit_receiver = receiver != NULL;
+    expr->as.call.implicit_enum_value = false;
+    return checker_check_call(checker, expr);
+}
+
 static Type *rewrite_zero_argument_builtin_call(
     Checker *checker, Expr *expr, const char *name) {
     Expr *callee = lang_arena_alloc(
@@ -497,7 +600,8 @@ Type *check_expr(Checker *checker, Expr *expr) {
         case EXPR_BOOL: result = &type_bool; break;
         case EXPR_NULL:
             if (checker->expected_type != NULL &&
-                checker->expected_type->kind == TYPE_RAW_POINTER)
+                (checker->expected_type->kind == TYPE_RAW_POINTER ||
+                 checker->expected_type->kind == TYPE_CLASS))
                 result = checker->expected_type;
             else if (checker->expected_type != NULL &&
                      checker->expected_type->kind == TYPE_OPTION) {
@@ -639,6 +743,100 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 lang_diag(checker->diagnostics, expr->span,
                           "discard assignment does not support compound operators");
             }
+            if (expr->as.assign.target->kind == EXPR_NAME &&
+                find_local(checker,
+                           expr->as.assign.target->as.name) == NULL) {
+                const Decl *owner = current_property_owner(checker);
+                const char *property_name =
+                    expr->as.assign.target->as.name;
+                if (declared_property_accessor(
+                        owner, property_name, false) != NULL ||
+                    declared_property_accessor(
+                        owner, property_name, true) != NULL) {
+                    Expr *object = lang_arena_alloc(
+                        &checker->module->arena, sizeof(*object));
+                    memset(object, 0, sizeof(*object));
+                    object->kind = EXPR_NAME;
+                    object->span = expr->as.assign.target->span;
+                    object->as.name = "this";
+                    expr->as.assign.target->kind = EXPR_FIELD;
+                    expr->as.assign.target->as.field.object = object;
+                    expr->as.assign.target->as.field.field = property_name;
+                }
+            }
+            if (expr->as.assign.target->kind == EXPR_FIELD) {
+                Expr *target = expr->as.assign.target;
+                Expr *receiver = target->as.field.object;
+                const Decl *owner = NULL;
+                if (receiver->kind == EXPR_NAME) {
+                    Local *local = find_local(checker, receiver->as.name);
+                    if (local != NULL && local->type != NULL)
+                        owner = local->type->declaration;
+                    else if (strcmp(receiver->as.name, "this") == 0)
+                        owner = current_property_owner(checker);
+                }
+                const char *static_path = owner == NULL
+                    ? checker_static_call_path(checker, target) : NULL;
+                Function *setter = static_path != NULL
+                    ? static_property_accessor(
+                        checker, static_path, true) : NULL;
+                Function *getter = static_path != NULL
+                    ? static_property_accessor(
+                        checker, static_path, false) : NULL;
+                if (owner != NULL) {
+                    setter = declared_property_accessor(
+                        owner, target->as.field.field, true);
+                    getter = declared_property_accessor(
+                        owner, target->as.field.field, false);
+                }
+                const char *backing_field = setter != NULL &&
+                    setter->property_backing_field != NULL
+                        ? setter->property_backing_field
+                        : getter != NULL
+                          ? getter->property_backing_field : NULL;
+                if (owner != NULL && checker->function != NULL &&
+                    checker->function->is_constructor &&
+                    strcmp(receiver->as.name, "this") == 0 &&
+                    backing_field != NULL) {
+                    target->kind = EXPR_NAME;
+                    target->as.name = backing_field;
+                } else if (setter != NULL) {
+                    Expr *assigned_value = expr->as.assign.value;
+                    if (expr->as.assign.compound_op != TOK_ERROR) {
+                        if (getter == NULL) {
+                            lang_diag(
+                                checker->diagnostics, target->span,
+                                "compound assignment requires property `%s` to have a getter",
+                                target->as.field.field);
+                        } else {
+                            Expr *read = lang_arena_alloc(
+                                &checker->module->arena, sizeof(*read));
+                            *read = *target;
+                            Expr *binary = lang_arena_alloc(
+                                &checker->module->arena, sizeof(*binary));
+                            memset(binary, 0, sizeof(*binary));
+                            binary->kind = EXPR_BINARY;
+                            binary->span = expr->span;
+                            binary->as.binary.op =
+                                expr->as.assign.compound_op;
+                            binary->as.binary.left = read;
+                            binary->as.binary.right = assigned_value;
+                            assigned_value = binary;
+                        }
+                    }
+                    result = rewrite_property_setter_call(
+                        checker, expr, setter,
+                        static_path != NULL ? NULL : receiver,
+                        assigned_value);
+                    goto checked_expression;
+                } else if (getter != NULL) {
+                    lang_diag(checker->diagnostics, target->span,
+                              "property `%s` is read-only",
+                              target->as.field.field);
+                    result = &type_error;
+                    goto checked_expression;
+                }
+            }
             if (expr->as.assign.compound_op == TOK_ERROR &&
                 expr->as.assign.target->kind == EXPR_FIELD &&
                 strcmp(expr->as.assign.target->as.field.field,
@@ -737,9 +935,11 @@ Type *check_expr(Checker *checker, Expr *expr) {
                            expr->as.assign.target->as.name) == NULL) {
                 Local *this_local = find_local(checker, "this");
                 if (this_local != NULL &&
-                    this_local->type->kind == TYPE_NAMED &&
+                (this_local->type->kind == TYPE_NAMED ||
+                 this_local->type->kind == TYPE_CLASS) &&
                     this_local->type->declaration != NULL &&
-                    this_local->type->declaration->kind == DECL_STRUCT) {
+                (this_local->type->declaration->kind == DECL_STRUCT ||
+                 this_local->type->declaration->kind == DECL_CLASS)) {
                     const Decl *owner = this_local->type->declaration;
                     for (size_t field = 0U;
                          field < owner->as.structure.field_count; ++field) {
@@ -879,24 +1079,35 @@ Type *check_expr(Checker *checker, Expr *expr) {
                           local->name);
             Type *place_type = &type_error;
             if (target->kind == EXPR_FIELD) {
-                if (local->type->kind != TYPE_NAMED ||
+                if ((local->type->kind != TYPE_NAMED &&
+                     local->type->kind != TYPE_CLASS) ||
                     local->type->declaration == NULL ||
-                    local->type->declaration->kind != DECL_STRUCT) {
+                    (local->type->declaration->kind != DECL_STRUCT &&
+                     local->type->declaration->kind != DECL_CLASS)) {
                     lang_diag(checker->diagnostics, expr->span,
-                              "field assignment requires a struct local");
+                              "field assignment requires a struct or class local");
                 } else {
                     const Decl *structure = local->type->declaration;
                     for (size_t i = 0U;
                          i < structure->as.structure.field_count; ++i)
                         if (strcmp(
                                 structure->as.structure.fields[i].name,
-                                target->as.field.field) == 0)
+                                target->as.field.field) == 0) {
+                            if (!class_member_accessible(
+                                    checker, structure,
+                                    structure->as.structure.fields[i].is_public))
+                                lang_diag(
+                                    checker->diagnostics, target->span,
+                                    "field `%s` is private to class `%s`",
+                                    target->as.field.field,
+                                    structure->as.structure.name);
                             place_type =
                                 resolve_type_syntax_in_applied_declaration(
                                 checker, local->type,
                                 structure->as.structure.fields[i].type_syntax,
                                 structure->as.structure.fields[i].type_name,
                                 structure->as.structure.fields[i].span);
+                        }
                     if (place_type == &type_error)
                         lang_diag(checker->diagnostics, target->span,
                                   "unknown field `%s` on `%s`",
@@ -1186,9 +1397,11 @@ Type *check_expr(Checker *checker, Expr *expr) {
             Type *object = expr->as.field.object->kind == EXPR_FIELD
                 ? check_expr(checker, expr->as.field.object)
                 : check_place(checker, expr->as.field.object);
-            if (object->kind == TYPE_NAMED &&
+            if ((object->kind == TYPE_NAMED ||
+                 object->kind == TYPE_CLASS) &&
                 object->declaration != NULL &&
-                object->declaration->kind == DECL_STRUCT) {
+                (object->declaration->kind == DECL_STRUCT ||
+                 object->declaration->kind == DECL_CLASS)) {
                 const Decl *structure = object->declaration;
                 for (size_t member = 0U;
                      member < structure->as.structure.member_count; ++member) {
@@ -1205,6 +1418,14 @@ Type *check_expr(Checker *checker, Expr *expr) {
                             expr->as.field.object);
                         goto checked_expression;
                     }
+                }
+                if (declared_property_accessor(
+                        structure, expr->as.field.field, true) != NULL) {
+                    lang_diag(checker->diagnostics, expr->span,
+                              "property `%s` is write-only",
+                              expr->as.field.field);
+                    result = &type_error;
+                    break;
                 }
             }
             if (object->kind == TYPE_CANCELLATION_TOKEN_SOURCE &&
@@ -1301,19 +1522,31 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 result = object->element;
             else if (object->kind == TYPE_BUFFER && strcmp(expr->as.field.field, "len") == 0)
                 result = &type_i64;
-            else if (object->kind == TYPE_NAMED) {
+            else if (object->kind == TYPE_NAMED ||
+                     object->kind == TYPE_CLASS) {
                 const Decl *decl = object->declaration;
-                if (decl != NULL && decl->kind == DECL_STRUCT) {
+                if (decl != NULL &&
+                    (decl->kind == DECL_STRUCT ||
+                     decl->kind == DECL_CLASS)) {
                     const char *previous_module = checker->current_module;
                     checker->current_module = decl->module_name;
                     for (size_t f = 0U; f < decl->as.structure.field_count; ++f)
                         if (strcmp(decl->as.structure.fields[f].name,
-                                   expr->as.field.field) == 0)
+                                   expr->as.field.field) == 0) {
+                            if (!class_member_accessible(
+                                    checker, decl,
+                                    decl->as.structure.fields[f].is_public))
+                                lang_diag(
+                                    checker->diagnostics, expr->span,
+                                    "field `%s` is private to class `%s`",
+                                    expr->as.field.field,
+                                    decl->as.structure.name);
                             result = resolve_type_syntax_in_applied_declaration(
                                 checker, object,
                                 decl->as.structure.fields[f].type_syntax,
                                 decl->as.structure.fields[f].type_name,
                                 decl->as.structure.fields[f].span);
+                        }
                     checker->current_module = previous_module;
                 }
                 if (result == &type_error)
@@ -1440,6 +1673,18 @@ checked_expression:
 
 bool check_stmt(Checker *checker, Stmt *stmt) {
     switch (stmt->kind) {
+        case STMT_DELETE: {
+            Type *type = check_expr(checker, stmt->as.delete_value);
+            if (type->kind != TYPE_CLASS)
+                lang_diag(checker->diagnostics, stmt->span,
+                          "`delete` requires a class reference; found `%s`",
+                          type->name);
+            if (stmt->as.delete_value->kind == EXPR_NAME &&
+                strcmp(stmt->as.delete_value->as.name, "this") == 0)
+                lang_diag(checker->diagnostics, stmt->span,
+                          "an instance method cannot delete `this`");
+            return true;
+        }
         case STMT_LET: {
             if (checker->local_count >= sizeof(checker->locals) / sizeof(checker->locals[0])) {
                 lang_diag(checker->diagnostics, stmt->span, "too many local variables");
@@ -2137,6 +2382,27 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             set_cleanup_plan(
                 checker, &stmt->exit_cleanup,
                 function_body ? 0U : start);
+            if (function_body && checker->function != NULL &&
+                checker->function->is_constructor &&
+                stmt->exit_cleanup.count != 0U) {
+                size_t output = 0U;
+                for (size_t cleanup = 0U;
+                     cleanup < stmt->exit_cleanup.count; ++cleanup) {
+                    size_t binding =
+                        stmt->exit_cleanup.binding_ids[cleanup];
+                    bool field = false;
+                    for (size_t index = 0U;
+                         index < checker->function->constructor_field_count;
+                         ++index)
+                        field = field ||
+                            checker->function
+                                ->constructor_field_binding_ids[index] ==
+                            binding;
+                    if (!field)
+                        stmt->exit_cleanup.binding_ids[output++] = binding;
+                }
+                stmt->exit_cleanup.count = output;
+            }
             checker->local_count = start;
             --checker->depth;
             return falls_through;
@@ -2224,7 +2490,7 @@ static bool type_has_c_abi(Checker *checker, Type *type,
         case TYPE_DICTIONARY: case TYPE_HASH_SET: case TYPE_QUEUE:
         case TYPE_STACK:
         case TYPE_OPTION: case TYPE_RESULT: case TYPE_TASK:
-        case TYPE_FUNCTION:
+        case TYPE_FUNCTION: case TYPE_CLASS:
             return false;
     }
     return false;
@@ -2234,14 +2500,16 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
     for (size_t i = 0U; i < module->count; ++i) {
         Decl *first = module->decls[i];
         const char *first_name =
-            first->kind == DECL_STRUCT ? first->as.structure.name :
+            (first->kind == DECL_STRUCT || first->kind == DECL_CLASS)
+                ? first->as.structure.name :
             first->kind == DECL_ENUM ? first->as.enumeration.name :
             first->kind == DECL_ALIAS ? first->as.alias.name : NULL;
         if (first_name == NULL) continue;
         for (size_t j = i + 1U; j < module->count; ++j) {
             Decl *second = module->decls[j];
             const char *second_name =
-                second->kind == DECL_STRUCT ? second->as.structure.name :
+                (second->kind == DECL_STRUCT || second->kind == DECL_CLASS)
+                    ? second->as.structure.name :
                 second->kind == DECL_ENUM ? second->as.enumeration.name :
                 second->kind == DECL_ALIAS ? second->as.alias.name : NULL;
             if (second_name != NULL &&
@@ -2396,7 +2664,8 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
             const Decl *structure =
                 function->checked_return_type->declaration;
             size_t field_count = structure != NULL &&
-                structure->kind == DECL_STRUCT
+                (structure->kind == DECL_STRUCT ||
+                 structure->kind == DECL_CLASS)
                 ? structure->as.structure.field_count : 0U;
             function->constructor_field_count = field_count;
             function->constructor_field_binding_ids = lang_arena_alloc(
@@ -2461,9 +2730,10 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
         }
         if (function->is_drop &&
             (function->param_count != 1U ||
-             function->params[0].checked_type->kind != TYPE_NAMED))
+             (function->params[0].checked_type->kind != TYPE_NAMED &&
+              function->params[0].checked_type->kind != TYPE_CLASS)))
             lang_diag(diagnostics, function->span,
-                      "a destructor must target one user-defined struct or enum");
+                      "a destructor must target one user-defined struct, class, or enum");
         bool falls_through = check_stmt(&checker, function->body);
         function->local_count = checker.local_count + 64U;
         Type *logical_return =

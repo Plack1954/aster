@@ -25,7 +25,7 @@ const char *ir_opcode_name(IrOpcode opcode) {
         "local_enum_is", "local_enum_payload_move", "iterator_begin",
         "borrowed_iterator_begin",
         "local_iterator_has_next", "local_iterator_next", "raw_alloc",
-        "raw_load", "raw_store", "element_begin",
+        "raw_load", "raw_store", "class_delete", "element_begin",
         "local_element_property",
         "local_element_property_begin",
         "local_element_property_append",
@@ -73,6 +73,7 @@ static bool type_shape_valid(IrTypeShape shape) {
         case IR_TYPE_RAW_POINTER: case IR_TYPE_SLICE:
         case IR_TYPE_ITERATOR: case IR_TYPE_ELEMENT_BUILDER:
         case IR_TYPE_FUNCTION: case IR_TYPE_STRUCT:
+        case IR_TYPE_CLASS_REFERENCE:
         case IR_TYPE_ENUM: case IR_TYPE_UNION:
             return true;
     }
@@ -114,6 +115,7 @@ static bool operand_count_valid(const IrInstruction *instruction) {
         case IR_OP_LOCAL_FIELD_SET: case IR_OP_LOCAL_INDEX_GET:
         case IR_OP_ITERATOR_BEGIN:
         case IR_OP_RAW_LOAD:
+        case IR_OP_CLASS_DELETE:
         case IR_OP_LOCAL_ELEMENT_PROPERTY:
         case IR_OP_LOCAL_ELEMENT_PROPERTY_APPEND:
         case IR_OP_LOCAL_ELEMENT_CSS_VALUE:
@@ -163,6 +165,7 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_LOCAL_ELEMENT_APPEND:
         case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
         case IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED:
+        case IR_OP_CLASS_DELETE:
             produces_result = false;
             break;
         case IR_OP_PARAMETER: case IR_OP_UNIT: case IR_OP_CONST_BOOL:
@@ -233,6 +236,8 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_CONST_STRING:
             return shape == IR_TYPE_STRING_VIEW;
         case IR_OP_CONST_NULL:
+            return shape == IR_TYPE_RAW_POINTER ||
+                   shape == IR_TYPE_CLASS_REFERENCE;
         case IR_OP_RAW_ALLOC:
             return shape == IR_TYPE_RAW_POINTER;
         case IR_OP_RAW_STORE:
@@ -243,6 +248,7 @@ static bool result_type_valid(const IrModule *ir,
                        function->parameters[instruction->index].type;
         case IR_OP_AGGREGATE_MAKE:
             return shape == IR_TYPE_ARRAY || shape == IR_TYPE_STRUCT ||
+                   shape == IR_TYPE_CLASS_REFERENCE ||
                    shape == IR_TYPE_ENUM ||
                    shape == IR_TYPE_UNION ||
                    shape == IR_TYPE_BUILTIN_OBJECT;
@@ -700,7 +706,8 @@ static bool instruction_signature_valid(
             if (local == NULL || !verify_type(ir, local->type))
                 return false;
             const IrType *aggregate = &ir->types[local->type];
-            if (aggregate->shape != IR_TYPE_STRUCT)
+            if (aggregate->shape != IR_TYPE_STRUCT &&
+                aggregate->shape != IR_TYPE_CLASS_REFERENCE)
                 return false;
             if (instruction->auxiliary >= aggregate->field_count)
                 return false;
@@ -735,7 +742,8 @@ static bool instruction_signature_valid(
                        ir->types[instruction->result_type].shape ==
                            IR_TYPE_SIGNED_INT &&
                        ir->types[instruction->result_type].bit_width == 64U;
-            if (aggregate->shape != IR_TYPE_STRUCT)
+            if (aggregate->shape != IR_TYPE_STRUCT &&
+                aggregate->shape != IR_TYPE_CLASS_REFERENCE)
                 return false;
             return instruction->index < aggregate->field_count &&
                    instruction->result_type ==
@@ -807,7 +815,8 @@ static bool instruction_signature_valid(
                             aggregate->element_type))
                         return false;
                 return true;
-            } else if (aggregate->shape == IR_TYPE_STRUCT) {
+            } else if (aggregate->shape == IR_TYPE_STRUCT ||
+                       aggregate->shape == IR_TYPE_CLASS_REFERENCE) {
                 if (aggregate->field_count !=
                         instruction->operand_count ||
                     instruction->label_count !=
@@ -877,6 +886,14 @@ static bool instruction_signature_valid(
                         target->parameters[i].mode)
                     return false;
             return true;
+        }
+        case IR_OP_CLASS_DELETE: {
+            if (instruction->operand_count != 1U ||
+                !verify_value(function, instruction->operands[0]))
+                return false;
+            IrTypeId type = function->value_types[instruction->operands[0]];
+            return verify_type(ir, type) &&
+                   ir->types[type].shape == IR_TYPE_CLASS_REFERENCE;
         }
         case IR_OP_FIELD_SET:
         case IR_OP_INDEX_SET:
@@ -1032,7 +1049,9 @@ bool lang_ir_verify_module(const IrModule *ir,
             (type->copy_function != IR_INVALID_ID &&
              type->copy_policy != IR_COPY_CUSTOM) ||
             (type->destructor_function != IR_INVALID_ID &&
-             type->drop_policy != IR_DROP_CUSTOM)) {
+             type->drop_policy != IR_DROP_CUSTOM &&
+             !(type->shape == IR_TYPE_CLASS_REFERENCE &&
+               type->drop_policy == IR_DROP_TRIVIAL))) {
             lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
                       "IR type t%zu has invalid identity or copy/drop policy", t);
             ok = false;
@@ -1151,14 +1170,15 @@ bool lang_ir_verify_module(const IrModule *ir,
                       t);
             ok = false;
         }
-        if (type->shape == IR_TYPE_STRUCT) {
+        if (type->shape == IR_TYPE_STRUCT ||
+            type->shape == IR_TYPE_CLASS_REFERENCE) {
             if (type->field_count != 0U &&
                 (type->field_names == NULL ||
                  type->field_types == NULL ||
                  type->field_spans == NULL ||
                  type->field_offsets == NULL)) {
                 lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
-                          "IR struct type t%zu has incomplete field metadata",
+                          "IR aggregate type t%zu has incomplete field metadata",
                           t);
                 ok = false;
             } else if (type->field_count != 0U) {
@@ -1167,7 +1187,7 @@ bool lang_ir_verify_module(const IrModule *ir,
                     if (type->field_names[field] == NULL) {
                         lang_diag(
                             diagnostics, (LangSpan){NULL, 0U, 0U},
-                            "IR struct type t%zu has an invalid field name",
+                            "IR aggregate type t%zu has an invalid field name",
                             t);
                         ok = false;
                     }
@@ -1177,24 +1197,36 @@ bool lang_ir_verify_module(const IrModule *ir,
                             "IR struct type t%zu has an invalid field type",
                             t);
                         ok = false;
-                    } else if (type->member_layout_known &&
+                    } else {
+                        size_t storage_size =
+                            type->shape == IR_TYPE_CLASS_REFERENCE
+                            ? type->object_size : type->target_size;
+                        if (type->member_layout_known &&
                         (type->field_offsets[field] %
                              ir->types[type->field_types[field]].target_alignment !=
                              0U ||
-                         type->field_offsets[field] > type->target_size ||
+                         type->field_offsets[field] > storage_size ||
                          ir->types[type->field_types[field]].target_size >
-                             type->target_size - type->field_offsets[field])) {
+                             storage_size - type->field_offsets[field])) {
                         lang_diag(
                             diagnostics, (LangSpan){NULL, 0U, 0U},
-                            "IR struct type t%zu has an invalid field offset",
+                            "IR aggregate type t%zu has an invalid field offset",
                             t);
                         ok = false;
+                        }
                     }
                 }
             }
             if (type->target_layout_known && !type->member_layout_known) {
                 lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
                           "IR struct type t%zu is missing member layout", t);
+                ok = false;
+            }
+            if (type->shape == IR_TYPE_CLASS_REFERENCE &&
+                (!type->object_layout_known || type->object_size == 0U ||
+                 type->object_alignment == 0U)) {
+                lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                          "IR class type t%zu is missing object layout", t);
                 ok = false;
             }
         }

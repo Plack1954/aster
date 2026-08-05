@@ -241,9 +241,9 @@ public Entry Catalog.Item(Catalog self, int index)
 Entry entry = catalog[0];
 ```
 
-Indexer assignment remains built in for arrays, lists, and dictionaries;
-user-defined setters need a separate language design rather than an implicit
-naming convention.
+Indexer assignment remains built in for arrays, lists, and dictionaries.
+Named properties use declared `get` and `set` accessors; user-defined indexer
+setters remain a separate feature.
 
 `HashSet<T>` provides target-typed `new()`, Boolean `.Add`, `.Contains`,
 Boolean `.Remove`, `.Clear`, `.Count`, `.Capacity`, `.EnsureCapacity`, and

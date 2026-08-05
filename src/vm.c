@@ -342,6 +342,8 @@ static LangValue vm_execute_function_core(
         [OP_GET_INDEX_LOCAL]=&&vm_dispatch_get_index_local,
         [OP_SET_INDEX_LOCAL]=&&vm_dispatch_set_index_local,
         [OP_MAKE_STRUCT]=&&vm_dispatch_make_struct,
+        [OP_MAKE_CLASS]=&&vm_dispatch_make_class,
+        [OP_DELETE_CLASS]=&&vm_dispatch_delete_class,
         [OP_GET_FIELD]=&&vm_dispatch_get_field,
         [OP_GET_FIELD_LOCAL]=&&vm_dispatch_get_field_local,
         [OP_GET_FIELD_LOCAL_MOVE]=&&vm_dispatch_get_field_local_move,
@@ -1836,7 +1838,10 @@ vm_switch_integer_binary:
                 break;
             }
             VM_LABEL(make_struct)
-            case OP_MAKE_STRUCT: {
+            case OP_MAKE_STRUCT:
+            VM_LABEL(make_class)
+            case OP_MAKE_CLASS: {
+                bool class_reference = instruction.op == OP_MAKE_CLASS;
                 size_t count = (size_t)instruction.b;
                 Object *object = vm_allocate(1U, sizeof(*object)); object->kind = OBJECT_STRUCT;
                 LangStringView metadata = vm->module->constants[(size_t)instruction.a].value.as.string;
@@ -1849,15 +1854,53 @@ vm_switch_integer_binary:
                 object->as.structure.count = count;
                 object->as.structure.fields = vm_allocate(count, sizeof(LangValue));
                 for (size_t i = count; i > 0U; --i) object->as.structure.fields[i - 1U] = POP();
-                PUSH(((LangValue){.tag=LANG_VALUE_OBJECT,.as.object=object})); break;
+                PUSH(((LangValue){
+                    .tag=class_reference
+                        ? LANG_VALUE_RAW_POINTER : LANG_VALUE_OBJECT,
+                    .as.object=object
+                })); break;
+            }
+            VM_LABEL(delete_class)
+            case OP_DELETE_CLASS: {
+                if (sp == 0U) {
+                    runtime_error(vm, instruction,
+                                  "class delete requires a value");
+                    goto fail;
+                }
+                LangValue value = POP();
+                if (value.tag != LANG_VALUE_RAW_POINTER) {
+                    runtime_error(vm, instruction,
+                                  "class delete requires a class reference");
+                    goto fail;
+                }
+                Object *object = value.as.pointer;
+                if (object != NULL) {
+                    uint32_t destructor = object->language_destructor;
+                    object->language_destructor = 0U;
+                    if (destructor != 0U) {
+                        LangValue argument = value;
+                        LangValue result = vm_execute_function(
+                            vm, (size_t)(destructor - 1U),
+                            &argument, 1U, vm->active_span);
+                        vm_value_drop_owned(vm, result);
+                        bool destructor_failed = vm->trapped;
+                        vm_object_free(vm, object);
+                        if (destructor_failed) goto fail;
+                    } else {
+                        vm_object_free(vm, object);
+                    }
+                }
+                break;
             }
             VM_LABEL(get_field)
             case OP_GET_FIELD: {
                 LangValue aggregate = POP();
                 LangStringView field = vm->module->constants[(size_t)instruction.a].value.as.string;
                 Object *object = aggregate.tag == LANG_VALUE_OBJECT
-                               ? aggregate.as.object : NULL;
-                if (aggregate.tag != LANG_VALUE_OBJECT || object == NULL) {
+                               ? aggregate.as.object
+                               : aggregate.tag == LANG_VALUE_RAW_POINTER
+                                   ? aggregate.as.pointer : NULL;
+                if (object == NULL) {
                     runtime_error(vm, instruction,
                                   "field access requires an object");
                     goto fail;
@@ -1903,8 +1946,11 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *object =
                     initialized[slot] &&
-                    LOCAL(slot).tag == LANG_VALUE_OBJECT
-                    ? LOCAL(slot).as.object : NULL;
+                    (LOCAL(slot).tag == LANG_VALUE_OBJECT ||
+                     LOCAL(slot).tag == LANG_VALUE_RAW_POINTER)
+                    ? (LOCAL(slot).tag == LANG_VALUE_OBJECT
+                        ? LOCAL(slot).as.object : LOCAL(slot).as.pointer)
+                    : NULL;
                 LangStringView field =
                     vm->module->constants[(size_t)instruction.b]
                         .value.as.string;
@@ -1959,8 +2005,11 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *object =
                     initialized[slot] &&
-                    LOCAL(slot).tag == LANG_VALUE_OBJECT
-                    ? LOCAL(slot).as.object : NULL;
+                    (LOCAL(slot).tag == LANG_VALUE_OBJECT ||
+                     LOCAL(slot).tag == LANG_VALUE_RAW_POINTER)
+                    ? (LOCAL(slot).tag == LANG_VALUE_OBJECT
+                        ? LOCAL(slot).as.object : LOCAL(slot).as.pointer)
+                    : NULL;
                 LangStringView field =
                     vm->module->constants[(size_t)instruction.b]
                         .value.as.string;
@@ -2007,7 +2056,9 @@ vm_switch_integer_binary:
                     vm->module->constants[(size_t)instruction.a]
                         .value.as.string;
                 Object *object = aggregate.tag == LANG_VALUE_OBJECT
-                               ? aggregate.as.object : NULL;
+                               ? aggregate.as.object
+                               : aggregate.tag == LANG_VALUE_RAW_POINTER
+                                   ? aggregate.as.pointer : NULL;
                 if (object == NULL || object->kind != OBJECT_STRUCT) {
                     runtime_error(vm, instruction,
                                   "borrowed field access requires a struct");
@@ -2046,8 +2097,11 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *object =
                     initialized[slot] &&
-                    LOCAL(slot).tag == LANG_VALUE_OBJECT
-                    ? LOCAL(slot).as.object : NULL;
+                    (LOCAL(slot).tag == LANG_VALUE_OBJECT ||
+                     LOCAL(slot).tag == LANG_VALUE_RAW_POINTER)
+                    ? (LOCAL(slot).tag == LANG_VALUE_OBJECT
+                        ? LOCAL(slot).as.object : LOCAL(slot).as.pointer)
+                    : NULL;
                 LangStringView field =
                     vm->module->constants[(size_t)instruction.b]
                         .value.as.string;
