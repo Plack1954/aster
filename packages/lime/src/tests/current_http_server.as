@@ -17,7 +17,7 @@ struct ServerState
 private Response article(ServerState state, Request request)
 {
     string source = "";
-    switch (request.query("ref"))
+    switch (request.Query("ref"))
     {
         case Result.Ok(found): {
             switch (found)
@@ -30,19 +30,25 @@ private Response article(ServerState state, Request request)
             }
         }
         case Result.Err(error): {
-            return Response.BadRequest(<p>{error}</p>);
+            return Results.BadRequest(<p>{error}</p>);
         }
     }
-    Response response = Response.Ok(
-        <article>{request.param("slug")}:{source}</article>
-    );
+    string slug = "";
+    switch (request.RouteValue("slug"))
+    {
+        case Option.Some(value): { slug = value; }
+        case Option.None: {
+            return Results.InternalError(<p>missing route value</p>);
+        }
+    }
+    Response response = Results.Html(<article>{slug}:{source}</article>);
     switch (ResponseHeader("X-Lime", "Aster"))
     {
         case Result.Ok(header): {
             response.AddHeader(header);
         }
         case Result.Err(error): {
-            return Response.InternalError(<p>{error}</p>);
+            return Results.InternalError(<p>{error}</p>);
         }
     }
     return response;
@@ -59,70 +65,70 @@ private Response submit(ServerState state, Request request)
         {
             case Option.Some(value): { title = value; }
             case Option.None: {
-                return Response.BadRequest(<p>Missing title</p>);
+                return Results.BadRequest(<p>Missing title</p>);
             }
         }
         switch (form.Get("kind"))
         {
             case Option.Some(value): { kind = value; }
             case Option.None: {
-                return Response.BadRequest(<p>Missing kind</p>);
+                return Results.BadRequest(<p>Missing kind</p>);
             }
         }
-        return Response.Ok(<p>{title}:{kind}</p>);
+        return Results.Html(<p>{title}:{kind}</p>);
     }
     catch (Exception error)
     {
-        return Response.BadRequest(<p>{error.Message}</p>);
+        return Results.BadRequest(<p>{error.Message}</p>);
     }
 }
 
 private Response missing(ServerState state, Request request)
 {
-    return Response.NotFound(<h1>Missing</h1>);
+    return Results.NotFound(<h1>Missing</h1>);
 }
 
 private Response robots(ServerState state, Request request)
 {
-    return Response.Text(
+    return Results.Text(
         "User-agent: *\nDisallow: /private\n"
     );
 }
 
 private Response stylesheet(ServerState state, Request request)
 {
-    return Response.Css(
+    return Results.Css(
         "body { color: #e45b20; }\n"
     );
 }
 
 private Response feed(ServerState state, Request request)
 {
-    return Response.Xml("<rss version=\"2.0\"></rss>");
+    return Results.Xml("<rss version=\"2.0\"></rss>");
 }
 
 private Response mark(ServerState state, Request request)
 {
-    switch (StaticFile("packages/lime/testdata", request.path))
+    switch (StaticFile("packages/lime/testdata", request.Path))
     {
         case Result.Ok(response): { return response; }
         case Result.Err(error): {
-            return Response.NotFound(<p>{error}</p>);
+            return Results.NotFound(<p>{error}</p>);
         }
     }
 }
 
 private Response MethodResponse(ServerState state, Request request)
 {
-    return Response.Text(request.method);
+    return Results.Text(request.Method);
 }
 
 private Response CookieValue(ServerState state, Request request)
 {
-    switch (request.cookie("theme"))
+    switch (request.Cookie("theme"))
     {
         case Option.Some(value): {
-            Response response = Response.Text(value);
+            Response response = Results.Text(value);
             switch (ResponseCookie("theme", value))
             {
                 case Result.Ok(cookie): {
@@ -130,25 +136,25 @@ private Response CookieValue(ServerState state, Request request)
                     return response;
                 }
                 case Result.Err(error): {
-                    return Response.InternalError(<p>{error}</p>);
+                    return Results.InternalError(<p>{error}</p>);
                 }
             }
         }
         case Option.None: {
-            return Response.BadRequest(<p>Missing cookie</p>);
+            return Results.BadRequest(<p>Missing cookie</p>);
         }
     }
 }
 
 private Response HeaderValue(ServerState state, Request request)
 {
-    switch (request.header("x-aster-test"))
+    switch (request.Header("x-aster-test"))
     {
         case Option.Some(value): {
-            return Response.Text(value);
+            return Results.Text(value);
         }
         case Option.None: {
-            return Response.BadRequest(<p>Missing header</p>);
+            return Results.BadRequest(<p>Missing header</p>);
         }
     }
 }
@@ -166,7 +172,7 @@ private Response ConfiguredCookie(ServerState state, Request request)
         secure = true,
         sameSite = CookieSameSite.Strict
     };
-    Response response = Response.Text("configured");
+    Response response = Results.Text("configured");
     switch (ResponseCookieWith("theme", "aster", options))
     {
         case Result.Ok(cookie): {
@@ -174,14 +180,14 @@ private Response ConfiguredCookie(ServerState state, Request request)
             return response;
         }
         case Result.Err(error): {
-            return Response.InternalError(<p>{error}</p>);
+            return Results.InternalError(<p>{error}</p>);
         }
     }
 }
 
 private Response DeletedCookie(ServerState state, Request request)
 {
-    Response response = Response.Text("deleted");
+    Response response = Results.Text("deleted");
     switch (ResponseDeleteCookie("theme", CookieOptions()))
     {
         case Result.Ok(cookie): {
@@ -189,22 +195,30 @@ private Response DeletedCookie(ServerState state, Request request)
             return response;
         }
         case Result.Err(error): {
-            return Response.InternalError(<p>{error}</p>);
+            return Results.InternalError(<p>{error}</p>);
         }
     }
 }
 
 private Response JsonEcho(ServerState state, Request request)
 {
-    switch (request.json())
+    switch (request.Json())
     {
         case Result.Ok(body): {
-            return Response.JsonStatus(201, body);
+            return Results.Json(201, body);
         }
         case Result.Err(error): {
-            return Response.BadRequest(<p>{error}</p>);
+            return Results.BadRequest(<p>{error}</p>);
         }
     }
+}
+
+private Response Problem(ServerState state, Request request)
+{
+    ProblemDetails problem = ProblemDetails.Create(409, "Conflict");
+    problem.Detail = "The article already exists.";
+    problem.Instance = request.Path;
+    return Results.Problem(problem);
 }
 
 private Response StreamedAsset(ServerState state, Request request)
@@ -218,12 +232,12 @@ private Response StreamedAsset(ServerState state, Request request)
     first.Add(114);
     stream.Write(first);
     stream.Seek(0, SeekOrigin.Begin);
-    Response response = Response.Stream(stream, AssetKind.Binary);
+    Response response = Results.Stream(stream, AssetKind.Binary);
     switch (ResponseHeader("X-Lime-Stream", "yes"))
     {
         case Result.Ok(header): { response.AddHeader(header); }
         case Result.Err(error): {
-            return Response.InternalError(<p>{error}</p>);
+            return Results.InternalError(<p>{error}</p>);
         }
     }
     return response;
@@ -235,10 +249,10 @@ private FilterResult RejectFiltered(
 )
 {
     if (state.name == "Lime integration" &&
-        request.path == "/filtered")
+        request.Path == "/filtered")
     {
         return FilterResult.Respond(
-            Response.NotFound(<h1>Filtered</h1>)
+            Results.NotFound(<h1>Filtered</h1>)
         );
     }
     return FilterResult.Continue;
@@ -251,9 +265,9 @@ private Html FrameErrors(
 )
 {
     if (state.name == "Lime integration" &&
-        (request.path == "/filtered" || request.path == "/missing"))
+        (request.Path == "/filtered" || request.Path == "/missing"))
     {
-        return <main data-path=request.path>{page}</main>;
+        return <main data-path=request.Path>{page}</main>;
     }
     return page;
 }
@@ -265,28 +279,29 @@ private int serve(NativeHandle server)
         name = "Lime integration"
     };
     StatefulApp<ServerState> app = StatefulAppNew(state, missing);
-    app.filter(RejectFiltered);
+    app.UseFilter(RejectFiltered);
     app.AfterHtml(FrameErrors);
-    app.Get("/articles/:slug", article);
-    app.put("/articles/:slug", MethodResponse);
-    app.patch("/articles/:slug", MethodResponse);
-    app.delete("/articles/:slug", MethodResponse);
-    app.Get("/robots.txt", robots);
-    app.Get("/assets/site.css", stylesheet);
-    app.Get("/feed.xml", feed);
-    app.Get("/mark.svg", mark);
-    app.Get("/cookie", CookieValue);
-    app.Get("/header", HeaderValue);
-    app.Get("/cookie-options", ConfiguredCookie);
-    app.Get("/cookie-delete", DeletedCookie);
-    app.Get("/head-priority", robots);
-    app.head("/head-priority", stylesheet);
-    app.post("/submit", submit);
-    app.post("/json", JsonEcho);
-    app.Get("/stream", StreamedAsset);
+    app.MapGet("/articles/{slug}", article);
+    app.MapPut("/articles/{slug}", MethodResponse);
+    app.MapPatch("/articles/{slug}", MethodResponse);
+    app.MapDelete("/articles/{slug}", MethodResponse);
+    app.MapGet("/robots.txt", robots);
+    app.MapGet("/assets/site.css", stylesheet);
+    app.MapGet("/feed.xml", feed);
+    app.MapGet("/mark.svg", mark);
+    app.MapGet("/cookie", CookieValue);
+    app.MapGet("/header", HeaderValue);
+    app.MapGet("/cookie-options", ConfiguredCookie);
+    app.MapGet("/cookie-delete", DeletedCookie);
+    app.MapGet("/head-priority", robots);
+    app.MapHead("/head-priority", stylesheet);
+    app.MapPost("/submit", submit);
+    app.MapPost("/json", JsonEcho);
+    app.MapGet("/problem", Problem);
+    app.MapGet("/stream", StreamedAsset);
 
     Console.WriteLine(HttpServerPort(server));
-    for (int count = 0; count < 22; count++)
+    for (int count = 0; count < 26; count++)
     {
         switch (HttpTryAccept(server))
         {

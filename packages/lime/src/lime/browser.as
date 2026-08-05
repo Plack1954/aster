@@ -99,7 +99,7 @@ public Result<Response, string> BrowserAssets.serve(
     string runtimeUrl = BrowserUrl(self, "aster.js");
     string wasmUrl = BrowserUrl(self, wasmName);
     string loaderUrl = BrowserUrl(self, loaderName);
-    string path = request.path;
+    string path = request.Path;
     string filename = "";
     if (path == runtimeUrl)
     {

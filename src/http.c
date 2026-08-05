@@ -819,6 +819,42 @@ static bool respond_body_headers_mode(
     return ok;
 }
 
+static bool respond_empty_headers_mode(
+    HttpRequest *request, int status, LangStringView headers,
+    bool keep_alive
+) {
+    const char *reason = status_reason(status);
+    if (reason == NULL || !extra_response_headers_valid(headers))
+        return false;
+    bool content_length_forbidden = status == 204 || status == 304;
+    char prefix[512];
+    int prefix_length = snprintf(
+        prefix, sizeof(prefix),
+        content_length_forbidden
+            ? "HTTP/1.1 %d %s\r\n"
+            : "HTTP/1.1 %d %s\r\nContent-Length: 0\r\n",
+        status, reason);
+    char suffix[160];
+    int suffix_length = snprintf(
+        suffix, sizeof(suffix),
+        "Connection: %s\r\n"
+        "X-Content-Type-Options: nosniff\r\n\r\n",
+        keep_alive ? "keep-alive" : "close");
+    bool ok =
+        prefix_length > 0 && (size_t)prefix_length < sizeof(prefix) &&
+        suffix_length > 0 && (size_t)suffix_length < sizeof(suffix) &&
+        send_all(request->client_fd, prefix, (size_t)prefix_length) &&
+        (headers.length == 0U ||
+         send_all(request->client_fd, headers.data, headers.length)) &&
+        send_all(request->client_fd, suffix, (size_t)suffix_length);
+    if (!ok || !keep_alive) {
+        (void)close(request->client_fd);
+        request->client_fd = -1;
+    }
+    request->responded = true;
+    return ok;
+}
+
 static bool respond_html(HttpRequest *request, int status,
                          LangStringView body) {
     return respond_body_mode(
@@ -1008,9 +1044,12 @@ static LangNativeResult http_request_header(LangVM *vm,
     if (request == NULL || !lang_value_string_view(&args[1], &name))
         return native_error("invalid HTTP request or header name");
     const char *value = "";
-    for (size_t i = 0U; i < request->header_count; ++i)
-        if (header_name_equal(request->headers[i].name, name))
+    for (size_t i = 0U; i < request->header_count; ++i) {
+        if (header_name_equal(request->headers[i].name, name)) {
             value = request->headers[i].value;
+            break;
+        }
+    }
     return (LangNativeResult){
         true,
         {.tag=LANG_VALUE_STRING_VIEW,
@@ -1339,6 +1378,7 @@ static bool allowed_content_type(LangStringView content_type,
         "text/css; charset=utf-8",
         "text/javascript; charset=utf-8",
         "application/json; charset=utf-8",
+        "application/problem+json; charset=utf-8",
         "application/xml; charset=utf-8",
         "image/svg+xml",
         "image/png",
@@ -1427,6 +1467,33 @@ static LangNativeResult http_respond_headers_reuse(
             request, (int)status, body, safe_content_type,
             headers, keep_alive))
         return native_error("HTTP response write failed");
+    return (LangNativeResult){
+        true, {.tag=LANG_VALUE_BOOL, .as.boolean=keep_alive}, NULL
+    };
+}
+
+static LangNativeResult http_respond_empty_headers_reuse(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    (void)vm;
+    if (arg_count != 3U || args[1].tag != LANG_VALUE_I64)
+        return native_error(
+            "empty HTTP response expects request, status, and headers");
+    HttpRequest *request = get_request(&args[0]);
+    LangStringView headers;
+    int64_t status = args[1].as.i64;
+    if (request == NULL || request->client_fd < 0 || request->responded ||
+        status < 100 || status > 599 ||
+        status_reason((int)status) == NULL ||
+        !lang_value_string_view(&args[2], &headers) ||
+        !extra_response_headers_valid(headers))
+        return native_error("invalid empty HTTP response metadata");
+    bool keep_alive = request->client_keep_alive &&
+        !request->has_surplus &&
+        request->request_count < request->request_limit;
+    if (!respond_empty_headers_mode(
+            request, (int)status, headers, keep_alive))
+        return native_error("empty HTTP response write failed");
     return (LangNativeResult){
         true, {.tag=LANG_VALUE_BOOL, .as.boolean=keep_alive}, NULL
     };
@@ -1696,6 +1763,13 @@ static LangNativeResult http_try_respond_headers_reuse(
         vm, http_respond_headers_reuse(vm, args, arg_count));
 }
 
+static LangNativeResult http_try_respond_empty_headers_reuse(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    return wrap_http_result(
+        vm, http_respond_empty_headers_reuse(vm, args, arg_count));
+}
+
 static LangNativeResult http_try_respond_html_headers_reuse(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
@@ -1754,6 +1828,8 @@ void lang_register_http_natives(LangVM *vm) {
                                http_try_respond_reuse, 4U);
     (void)lang_register_native(vm, "HttpTryRespondHeadersReuse",
                                http_try_respond_headers_reuse, 5U);
+    (void)lang_register_native(vm, "HttpTryRespondEmptyHeadersReuse",
+                               http_try_respond_empty_headers_reuse, 3U);
     (void)lang_register_native(vm, "HttpTryRespondHtmlHeadersReuse",
                                http_try_respond_html_headers_reuse, 4U);
     (void)lang_register_native(vm, "HttpStreamBegin",

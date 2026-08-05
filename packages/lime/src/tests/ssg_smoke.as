@@ -11,7 +11,7 @@ using System.Text;
 
 private Response home(Request request)
 {
-    return Response.Ok(
+    return Results.Html(
         <html>
             <head><title>Lime SSG</title></head>
             <body><h1>Home</h1></body>
@@ -21,23 +21,30 @@ private Response home(Request request)
 
 private Response about(Request request)
 {
-    return Response.Ok(<main><h1>About</h1></main>);
+    return Results.Html(<main><h1>About</h1></main>);
 }
 
 private Response ArticlePage(Request request)
 {
-    string slug = request.param("slug");
-    return Response.Ok(<article><h1>{slug}</h1></article>);
+    switch (request.RouteValue("slug"))
+    {
+        case Option.Some(slug): {
+            return Results.Html(<article><h1>{slug}</h1></article>);
+        }
+        case Option.None: {
+            return Results.InternalError(<p>missing route value</p>);
+        }
+    }
 }
 
 private Response robots(Request request)
 {
-    return Response.Text("User-agent: *\nAllow: /\n");
+    return Results.Text("User-agent: *\nAllow: /\n");
 }
 
 private Response missing(Request request)
 {
-    return Response.NotFound(<h1>Not found</h1>);
+    return Results.NotFound(<h1>Not found</h1>);
 }
 
 private List<string> ArticlePages()
@@ -86,11 +93,12 @@ private Result<int, string> build()
     {
         return Result.Err("Markdown rendered incorrectly");
     }
-    App app = AppNew(missing);
-    app.Get("/", home);
-    app.Get("/about/", about);
-    app.Get("/articles/:slug/", ArticlePage, ArticlePages);
-    app.Get("/robots.txt", robots);
+    App app = AppNew();
+    app.MapFallback(missing);
+    app.MapGet("/", home);
+    app.MapGet("/about/", about);
+    app.MapGet("/articles/{slug}/", ArticlePage, ArticlePages);
+    app.MapGet("/robots.txt", robots);
     app.Static("/assets/", "packages/lime/test_assets");
 
     SiteBuild built = try SiteBuild(app, outputRoot);

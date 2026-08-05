@@ -176,6 +176,12 @@ public extern Result<bool, string> HttpTryRespondHeadersReuse(
     string body
 );
 
+public extern Result<bool, string> HttpTryRespondEmptyHeadersReuse(
+    NativeHandle request,
+    long status,
+    string headers
+);
+
 public extern Result<bool, string> HttpTryRespondHtmlHeadersReuse(
     NativeHandle request,
     long status,

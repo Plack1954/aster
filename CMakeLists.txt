@@ -366,6 +366,11 @@ add_aster_generated_c_test(
     async_task_api_generated_c_execution
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/async_task_api.as
     async_task_api)
+add_aster_generated_c_test(
+    task_type_runtime_generated_c_execution
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/task_type_runtime_generated_c.as
+    task_type_runtime
+        -DEXPECTED_OUTPUT=42\n)
 add_test(NAME async_task_combinators_vm_execution
     COMMAND lang run tests/async_task_combinators.as)
 set_tests_properties(async_task_combinators_vm_execution PROPERTIES
@@ -2253,6 +2258,24 @@ add_aster_generated_project_test(
     current_http_server
         -DDRIVER_EXECUTABLE=$<TARGET_FILE:lime_http_integration_test>)
 set_tests_properties(lime_current_http_c_integration PROPERTIES
+    TIMEOUT 120
+)
+add_executable(lime_async_http_integration_test
+    tests/lime_async_http_integration.c)
+target_link_libraries(lime_async_http_integration_test PRIVATE langlib)
+lang_enable_warnings(lime_async_http_integration_test)
+add_test(NAME lime_async_current_http_vm_integration
+    COMMAND lime_async_http_integration_test vm)
+set_tests_properties(lime_async_current_http_vm_integration PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    TIMEOUT 10
+)
+add_aster_generated_project_test(
+    lime_async_current_http_c_integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+    async_http_server
+        -DDRIVER_EXECUTABLE=$<TARGET_FILE:lime_async_http_integration_test>)
+set_tests_properties(lime_async_current_http_c_integration PROPERTIES
     TIMEOUT 120
 )
 if(LANG_HAVE_H2O AND UNIX)

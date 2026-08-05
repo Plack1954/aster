@@ -298,6 +298,7 @@ bool c_backend_registry_native_symbol(const char *symbol) {
             strcmp(symbol, "HttpTryRespondRedirectReuse") == 0 ||
             strcmp(symbol, "HttpTryRespondReuse") == 0 ||
             strcmp(symbol, "HttpTryRespondHeadersReuse") == 0 ||
+            strcmp(symbol, "HttpTryRespondEmptyHeadersReuse") == 0 ||
             strcmp(symbol, "HttpTryRespondHtmlHeadersReuse") == 0 ||
             strcmp(symbol, "HttpStreamBegin") == 0 ||
             strcmp(symbol, "HttpStreamBeginHeaders") == 0 ||

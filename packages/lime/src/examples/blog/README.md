@@ -11,7 +11,7 @@ asset workflow, archive, search, pagination, drafts, or editing workflow.
 
 Set the title, description, and real public URL in `blog_new()`. Each post has
 one native `Html` body function and one `Post` value in that function. The post
-collection renders the indexes and derives all concrete `/blog/:slug/` build
+collection renders the indexes and derives all concrete `/blog/{slug}/` build
 pages, so there is no separate SSG route list.
 
 Build static files:

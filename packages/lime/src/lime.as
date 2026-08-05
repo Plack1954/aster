@@ -1,9 +1,11 @@
 namespace Lime;
 
 using Lime.Forwarding;
+using Lime.Routing;
 using Aster.Html;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 
 public struct Request
 {
@@ -17,20 +19,34 @@ public struct Request
     string body;
     string target;
     string queryString;
-    string route;
+    Option<RoutePattern> routePattern;
     string headerData;
+
+    public string Method => method;
+    public string Path => path;
+    public string Host => host;
+    public string Scheme => scheme;
+    public string RemoteIpAddress => remoteIpAddress;
+    public string ContentType => contentType;
+    public string Body => body;
+    public string Target => target;
+    public string QueryString => queryString;
 }
 
 public struct ResponseHeader
 {
     string name;
     string value;
+
+    public string Name => name;
+    public string Value => value;
 }
 
 public enum AssetKind
 {
     JavaScript,
     Json,
+    ProblemJson,
     Xml,
     Svg,
     Png,
@@ -65,6 +81,7 @@ public struct FileBody
 
 public union ResponseBody
 {
+    Empty,
     Html(Html),
     Text(string),
     Css(string),
@@ -78,6 +95,63 @@ public struct Response
     int status;
     ResponseBody body;
     List<ResponseHeader> headers;
+
+    public int StatusCode => status;
+}
+
+public struct Results
+{
+}
+
+public struct StatusCodes
+{
+    public static int Status200OK => 200;
+    public static int Status201Created => 201;
+    public static int Status202Accepted => 202;
+    public static int Status204NoContent => 204;
+    public static int Status301MovedPermanently => 301;
+    public static int Status302Found => 302;
+    public static int Status303SeeOther => 303;
+    public static int Status307TemporaryRedirect => 307;
+    public static int Status308PermanentRedirect => 308;
+    public static int Status400BadRequest => 400;
+    public static int Status401Unauthorized => 401;
+    public static int Status403Forbidden => 403;
+    public static int Status404NotFound => 404;
+    public static int Status405MethodNotAllowed => 405;
+    public static int Status409Conflict => 409;
+    public static int Status415UnsupportedMediaType => 415;
+    public static int Status422UnprocessableEntity => 422;
+    public static int Status429TooManyRequests => 429;
+    public static int Status500InternalServerError => 500;
+    public static int Status503ServiceUnavailable => 503;
+}
+
+public struct ProblemDetails
+{
+    string? Type;
+    string? Title;
+    int Status;
+    string? Detail;
+    string? Instance;
+
+    public static ProblemDetails Create(int status, string title)
+    {
+        if (status < 400 || status > 599)
+        {
+            throw new ArgumentException(
+                "problem status must be between 400 and 599"
+            );
+        }
+        return new()
+        {
+            Type = null,
+            Title = title,
+            Status = status,
+            Detail = null,
+            Instance = null
+        };
+    }
 }
 
 public enum CookieSameSite
@@ -97,8 +171,19 @@ public struct CookieOptions
     CookieSameSite sameSite;
 }
 
+private void EnsureResponseBodyAllowed(int status)
+{
+    if ((status >= 100 && status < 200) || status == 204 || status == 304)
+    {
+        throw new ArgumentException(
+            "the response status does not permit a body"
+        );
+    }
+}
+
 private Response HtmlResponse(int status, Html page)
 {
+    EnsureResponseBodyAllowed(status);
     List<ResponseHeader> headers = new();
     return new()
     {
@@ -108,13 +193,14 @@ private Response HtmlResponse(int status, Html page)
     };
 }
 
-public Response Response.Html(int status, Html page)
+public Response Results.Html(int status, Html page)
 {
     return HtmlResponse(status, page);
 }
 
-public Response Response.Plain(int status, string body)
+public Response Results.Text(int status, string body)
 {
+    EnsureResponseBodyAllowed(status);
     List<ResponseHeader> headers = new();
     return new()
     {
@@ -124,8 +210,9 @@ public Response Response.Plain(int status, string body)
     };
 }
 
-public Response Response.CssStatus(int status, string body)
+public Response Results.Css(int status, string body)
 {
+    EnsureResponseBodyAllowed(status);
     List<ResponseHeader> headers = new();
     return new()
     {
@@ -135,12 +222,13 @@ public Response Response.CssStatus(int status, string body)
     };
 }
 
-public Response Response.AssetStatus(
+public Response Results.Asset(
     int status,
     string bytes,
     AssetKind kind
 )
 {
+    EnsureResponseBodyAllowed(status);
     List<ResponseHeader> headers = new();
     AssetBody asset = new()
     {
@@ -155,17 +243,49 @@ public Response Response.AssetStatus(
     };
 }
 
-public Response Response.JsonStatus(int status, string bytes)
+public Response Results.Json(int status, string bytes)
 {
-    return Response.AssetStatus(status, bytes, AssetKind.Json);
+    return Results.Asset(status, bytes, AssetKind.Json);
 }
 
-public Response Response.Ok(Html page)
+private string SerializeProblemDetails(ProblemDetails problem)
+{
+    StringBuilder json = new();
+    json.Append("{\"type\":");
+    json.Append(JsonSerializer.Serialize(problem.Type));
+    json.Append(",\"title\":");
+    json.Append(JsonSerializer.Serialize(problem.Title));
+    json.Append(",\"status\":");
+    json.Append(JsonSerializer.Serialize(problem.Status));
+    json.Append(",\"detail\":");
+    json.Append(JsonSerializer.Serialize(problem.Detail));
+    json.Append(",\"instance\":");
+    json.Append(JsonSerializer.Serialize(problem.Instance));
+    json.Append("}");
+    return json.ToString();
+}
+
+public Response Results.Problem(ProblemDetails problem)
+{
+    if (problem.Status < 400 || problem.Status > 599)
+    {
+        throw new ArgumentException(
+            "problem status must be between 400 and 599"
+        );
+    }
+    return Results.Asset(
+        problem.Status,
+        SerializeProblemDetails(problem),
+        AssetKind.ProblemJson
+    );
+}
+
+public Response Results.Html(Html page)
 {
     return HtmlResponse(200, page);
 }
 
-public Response Response.Text(string body)
+public Response Results.Text(string body)
 {
     List<ResponseHeader> headers = new();
     return new()
@@ -176,7 +296,7 @@ public Response Response.Text(string body)
     };
 }
 
-public Response Response.Css(string body)
+public Response Results.Css(string body)
 {
     List<ResponseHeader> headers = new();
     return new()
@@ -187,7 +307,7 @@ public Response Response.Css(string body)
     };
 }
 
-public Response Response.Asset(string bytes, AssetKind kind)
+public Response Results.Asset(string bytes, AssetKind kind)
 {
     List<ResponseHeader> headers = new();
     AssetBody asset = new()
@@ -203,32 +323,32 @@ public Response Response.Asset(string bytes, AssetKind kind)
     };
 }
 
-public Response Response.JavaScript(string bytes)
+public Response Results.JavaScript(string bytes)
 {
-    return Response.Asset(bytes, AssetKind.JavaScript);
+    return Results.Asset(bytes, AssetKind.JavaScript);
 }
 
-public Response Response.Json(string bytes)
+public Response Results.Json(string bytes)
 {
-    return Response.Asset(bytes, AssetKind.Json);
+    return Results.Asset(bytes, AssetKind.Json);
 }
 
-public Response Response.Xml(string bytes)
+public Response Results.Xml(string bytes)
 {
-    return Response.Asset(bytes, AssetKind.Xml);
+    return Results.Asset(bytes, AssetKind.Xml);
 }
 
-public Response Response.Svg(string bytes)
+public Response Results.Svg(string bytes)
 {
-    return Response.Asset(bytes, AssetKind.Svg);
+    return Results.Asset(bytes, AssetKind.Svg);
 }
 
-public Response Response.Wasm(string bytes)
+public Response Results.Wasm(string bytes)
 {
-    return Response.Asset(bytes, AssetKind.Wasm);
+    return Results.Asset(bytes, AssetKind.Wasm);
 }
 
-public Response Response.Stream(Stream stream, AssetKind kind)
+public Response Results.Stream(Stream stream, AssetKind kind)
 {
     List<ResponseHeader> headers = new();
     StreamBody body = new()
@@ -244,18 +364,19 @@ public Response Response.Stream(Stream stream, AssetKind kind)
     };
 }
 
-public Response Response.StreamStatus(
+public Response Results.Stream(
     int status,
     Stream stream,
     AssetKind kind
 )
 {
-    Response response = Response.Stream(stream, kind);
+    EnsureResponseBodyAllowed(status);
+    Response response = Results.Stream(stream, kind);
     response.status = status;
     return response;
 }
 
-public Response Response.File(string path, AssetKind kind)
+public Response Results.File(string path, AssetKind kind)
 {
     List<ResponseHeader> headers = new();
     FileBody body = new()
@@ -271,44 +392,107 @@ public Response Response.File(string path, AssetKind kind)
     };
 }
 
-public Response Response.Redirect(string location)
+private Response RedirectResponse(int status, string location)
 {
-    List<ResponseHeader> headers = new();
-    ResponseHeader redirect = new()
+    if (location.Length == 0)
     {
-        name = "Location",
-        value = location
-    };
+        throw new ArgumentException("redirect location cannot be empty");
+    }
+    List<ResponseHeader> headers = new();
+    ResponseHeader redirect = LimeResultOrThrow(
+        ResponseHeader("Location", location)
+    );
     headers.Add(redirect);
     return new()
     {
-        status = 303,
+        status = status,
         body = ResponseBody.Text(""),
         headers = headers
     };
 }
 
-public Response Response.BadRequest(Html page)
+public Response Results.Redirect(string location)
+{
+    return RedirectResponse(StatusCodes.Status302Found, location);
+}
+
+public Response Results.SeeOther(string location)
+{
+    return RedirectResponse(StatusCodes.Status303SeeOther, location);
+}
+
+public Response Results.PermanentRedirect(string location)
+{
+    return RedirectResponse(StatusCodes.Status301MovedPermanently, location);
+}
+
+public Response Results.TemporaryRedirectPreserveMethod(string location)
+{
+    return RedirectResponse(StatusCodes.Status307TemporaryRedirect, location);
+}
+
+public Response Results.PermanentRedirectPreserveMethod(string location)
+{
+    return RedirectResponse(StatusCodes.Status308PermanentRedirect, location);
+}
+
+public Response Results.NoContent()
+{
+    List<ResponseHeader> headers = new();
+    return new()
+    {
+        status = StatusCodes.Status204NoContent,
+        body = ResponseBody.Empty,
+        headers = headers
+    };
+}
+
+public Response Results.Created(string location, Html page)
+{
+    Response response = Results.Html(StatusCodes.Status201Created, page);
+    response.AddHeader(LimeResultOrThrow(
+        ResponseHeader("Location", location)
+    ));
+    return response;
+}
+
+public Response Results.BadRequest(Html page)
 {
     return HtmlResponse(400, page);
 }
 
-public Response Response.NotFound(Html page)
+public Response Results.NotFound(Html page)
 {
     return HtmlResponse(404, page);
 }
 
-public Response Response.MethodNotAllowed(Html page)
+public Response Results.Unauthorized(Html page)
+{
+    return HtmlResponse(StatusCodes.Status401Unauthorized, page);
+}
+
+public Response Results.Forbid(Html page)
+{
+    return HtmlResponse(StatusCodes.Status403Forbidden, page);
+}
+
+public Response Results.Conflict(Html page)
+{
+    return HtmlResponse(StatusCodes.Status409Conflict, page);
+}
+
+public Response Results.MethodNotAllowed(Html page)
 {
     return HtmlResponse(405, page);
 }
 
-public Response Response.InternalError(Html page)
+public Response Results.InternalError(Html page)
 {
     return HtmlResponse(500, page);
 }
 
 public delegate Response Handler(Request request);
+public delegate Task<Response> AsyncHandler(Request request);
 
 public delegate List<string> BuildSource();
 
@@ -332,6 +516,16 @@ public delegate Html HtmlMiddleware(
 );
 public delegate Response ExceptionHandler(Exception error);
 public delegate Response StatefulHandler<State>(State state, Request request);
+public delegate Task<Response> AsyncStatefulHandler<State>(
+    State state,
+    Request request
+);
+
+union RouteHandler
+{
+    Sync(Handler),
+    Async(AsyncHandler),
+}
 public delegate List<string> StatefulBuildSource<State>(State state);
 public delegate FilterResult StatefulRequestFilter<State>(
     State state,
@@ -356,9 +550,9 @@ public struct UrlValues
 
 struct Route
 {
-    string method;
-    string path;
-    Handler handler;
+    List<string> methods;
+    RoutePattern pattern;
+    RouteHandler handler;
 }
 
 public struct BuildPage
@@ -396,15 +590,15 @@ public struct App
     List<RequestFilter> filters;
     List<HtmlMiddleware> htmlMiddleware;
     List<StaticDirectory> staticDirectories;
-    Handler fallback;
+    RouteHandler fallback;
     ExceptionHandler exceptionHandler;
     Option<ForwardedHeadersOptions> forwardedHeaders;
 }
 
 struct StatefulRoute<State>
 {
-    string method;
-    string path;
+    List<string> methods;
+    RoutePattern pattern;
     StatefulHandler<State> handler;
 }
 
@@ -424,7 +618,12 @@ public struct StatefulApp<State>
 private Response DefaultExceptionResponse(Exception error)
 {
     Console.Error.WriteLine(error.Message);
-    return Response.InternalError(<h1>Internal server error</h1>);
+    return Results.InternalError(<h1>Internal server error</h1>);
+}
+
+private Response DefaultNotFound(Request request)
+{
+    return Results.NotFound(<h1>Not found</h1>);
 }
 
 private T LimeResultOrThrow<T>(Result<T, string> result)
@@ -436,17 +635,18 @@ private T LimeResultOrThrow<T>(Result<T, string> result)
     }
 }
 
+private RoutePattern ParseRoutePattern(string pattern)
+{
+    switch (RoutePattern.TryParse(pattern))
+    {
+        case Result.Ok(parsed): { return parsed; }
+        case Result.Err(error): { throw new ArgumentException(error); }
+    }
+}
+
 private bool RouteHasParameter(string path)
 {
-    for (nuint index = 0; index < path.Length; index++)
-    {
-        if (StringByteAt(path, index) == 58 &&
-            (index == 0 || StringByteAt(path, index - 1) == 47))
-        {
-            return true;
-        }
-    }
-    return false;
+    return ParseRoutePattern(path).HasParameters;
 }
 
 private bool BuildPagePathValid(string path)
@@ -511,10 +711,9 @@ private bool BuildPageMatchesRoutes(
 {
     foreach (Route route in routes)
     {
-        string pattern = route.path;
-        if (route.method == "GET" &&
-            RouteHasParameter(pattern) &&
-            RouteMatches(pattern, path))
+        if (MethodContains(route.methods, "GET") &&
+            route.pattern.HasParameters &&
+            route.pattern.IsMatch(path))
         {
             return true;
         }
@@ -529,10 +728,9 @@ private bool BuildPageMatchesStatefulRoutes<State>(
 {
     foreach (StatefulRoute<State> route in routes)
     {
-        string pattern = route.path;
-        if (route.method == "GET" &&
-            RouteHasParameter(pattern) &&
-            RouteMatches(pattern, path))
+        if (MethodContains(route.methods, "GET") &&
+            route.pattern.HasParameters &&
+            route.pattern.IsMatch(path))
         {
             return true;
         }
@@ -542,55 +740,206 @@ private bool BuildPageMatchesStatefulRoutes<State>(
 
 private bool RouteMatches(string pattern, string path)
 {
-    nuint patternLength = pattern.Length;
-    nuint pathLength = path.Length;
-    nuint patternIndex = 0;
-    nuint pathIndex = 0;
+    return ParseRoutePattern(pattern).IsMatch(path);
+}
 
-    while (patternIndex < patternLength && pathIndex < pathLength)
+private int RequestPathHex(byte value)
+{
+    if (value >= 48 && value <= 57) { return (int)value - 48; }
+    if (value >= 65 && value <= 70) { return (int)value - 65 + 10; }
+    if (value >= 97 && value <= 102) { return (int)value - 97 + 10; }
+    return -1;
+}
+
+private bool TryRequestPathByte(
+    string value,
+    nuint index,
+    out byte decoded
+)
+{
+    decoded = 0;
+    if (index + 2 >= value.Length || value[index] != 37)
     {
-        byte patternByte = StringByteAt(pattern, patternIndex);
-        bool parameter = patternByte == 58 &&
-            (patternIndex == 0 ||
-           StringByteAt(pattern, patternIndex - 1) == 47);
+        return false;
+    }
+    int high = RequestPathHex(value[index + 1]);
+    int low = RequestPathHex(value[index + 2]);
+    if (high < 0 || low < 0)
+    {
+        return false;
+    }
+    decoded = (byte)(high * 16 + low);
+    return true;
+}
 
-        if (parameter)
-        {
-            nuint nameStart = patternIndex + 1;
-            patternIndex = nameStart;
-            while (patternIndex < patternLength &&
-                StringByteAt(pattern, patternIndex) != 47)
-            {
-                patternIndex += 1;
-            }
-            if (patternIndex == nameStart)
-            {
-                return false;
-            }
+private int RequestPathUtf8Length(byte first)
+{
+    if (first >= 194 && first <= 223) { return 2; }
+    if (first >= 224 && first <= 239) { return 3; }
+    if (first >= 240 && first <= 244) { return 4; }
+    return 0;
+}
 
-            nuint valueStart = pathIndex;
-            while (pathIndex < pathLength &&
-                StringByteAt(path, pathIndex) != 47)
-            {
-                pathIndex += 1;
-            }
-            if (pathIndex == valueStart)
-            {
-                return false;
-            }
-        }
-        else
-        {
-            if (patternByte != StringByteAt(path, pathIndex))
-            {
-                return false;
-            }
-            patternIndex += 1;
-            pathIndex += 1;
-        }
+// Returns the number of encoded source bytes consumed. Zero means the escape
+// was malformed or was not valid UTF-8 and must remain literal.
+private Result<nuint, string> AppendRequestPathEscape(
+    ref StringBuilder output,
+    string value,
+    nuint index
+)
+{
+    byte first = 0;
+    if (!TryRequestPathByte(value, index, out first))
+    {
+        return Result.Ok((nuint)0);
+    }
+    if (first == 0)
+    {
+        return Result.Err("request path contains a null character");
+    }
+    if (first == 47)
+    {
+        output.Append(StringSlice(value, index, index + 3));
+        return Result.Ok((nuint)3);
+    }
+    if (first <= 127)
+    {
+        output.AppendByte(first);
+        return Result.Ok((nuint)3);
     }
 
-    return patternIndex == patternLength && pathIndex == pathLength;
+    int sequenceLength = RequestPathUtf8Length(first);
+    if (sequenceLength == 0)
+    {
+        return Result.Ok((nuint)0);
+    }
+    List<byte> bytes = new();
+    bytes.Add(first);
+    for (int offset = 1; offset < sequenceLength; offset += 1)
+    {
+        byte next = 0;
+        nuint source = index + (nuint)(offset * 3);
+        if (!TryRequestPathByte(value, source, out next) ||
+            (next & 192) != 128)
+        {
+            return Result.Ok((nuint)0);
+        }
+        bytes.Add(next);
+    }
+    try
+    {
+        string decoded = Encoding.UTF8().GetString(bytes);
+        output.Append(decoded);
+    }
+    catch (FormatException error)
+    {
+        return Result.Ok((nuint)0);
+    }
+    return Result.Ok((nuint)(sequenceLength * 3));
+}
+
+private Result<string, string> DecodeRequestPath(string value)
+{
+    StringBuilder output = new();
+    nuint index = 0;
+    while (index < value.Length)
+    {
+        byte current = value[index];
+        if (current == 0)
+        {
+            return Result.Err("request path contains a null character");
+        }
+        if (current != 37)
+        {
+            output.AppendByte(current);
+            index += 1;
+            continue;
+        }
+        switch (AppendRequestPathEscape(output, value, index))
+        {
+            case Result.Err(error): { return Result.Err(error); }
+            case Result.Ok(consumed): {
+                if (consumed == 0)
+                {
+                    output.Append("%");
+                    index += 1;
+                }
+                else
+                {
+                    index += consumed;
+                }
+            }
+        }
+    }
+    string decoded = output.ToString();
+    try
+    {
+        decoded.ToCharArray();
+    }
+    catch (FormatException error)
+    {
+        return Result.Err("request path is not valid UTF-8");
+    }
+    return Result.Ok(decoded);
+}
+
+private string RemoveRequestPathDotSegments(string path)
+{
+    if (path == "/") { return path; }
+    List<string> segments = new();
+    nuint start = 1;
+    while (start <= path.Length)
+    {
+        nuint end = start;
+        while (end < path.Length && path[end] != 47) { end += 1; }
+        string segment = StringSlice(path, start, end);
+        if (segment == "..")
+        {
+            if (segments.Count > 0)
+            {
+                segments.RemoveAt(segments.Count - 1);
+            }
+        }
+        else if (segment != ".")
+        {
+            segments.Add(segment);
+        }
+        if (end == path.Length) { break; }
+        start = end + 1;
+    }
+
+    bool closingSlash = path.EndsWith("/") || path.EndsWith("/.") ||
+        path.EndsWith("/..");
+    StringBuilder output = new();
+    output.Append("/");
+    for (nuint index = 0; index < segments.Count; index += 1)
+    {
+        if (index > 0) { output.Append("/"); }
+        output.Append(segments[index]);
+    }
+    string normalized = output.ToString();
+    if (closingSlash && !normalized.EndsWith("/"))
+    {
+        output.Append("/");
+        normalized = output.ToString();
+    }
+    return normalized;
+}
+
+private Result<string, string> NormalizeRequestPath(string rawPath)
+{
+    if (rawPath == "*") { return Result.Ok(rawPath); }
+    if (rawPath.Length == 0 || rawPath[0] != 47)
+    {
+        return Result.Err("request path must begin with '/'");
+    }
+    switch (DecodeRequestPath(rawPath))
+    {
+        case Result.Err(error): { return Result.Err(error); }
+        case Result.Ok(decoded): {
+            return Result.Ok(RemoveRequestPathDotSegments(decoded));
+        }
+    }
 }
 
 public Request RequestNewWithHeaders(
@@ -621,18 +970,25 @@ public Request RequestNewTransport(
     string headerData
 )
 {
-    string path = target;
+    string rawPath = target;
     string queryString = "";
     switch (StringFindByte(target, 63))
     {
         case Option.Some(separator): {
-            path = StringSlice(target, 0, separator);
+            rawPath = StringSlice(target, 0, separator);
             queryString = StringSlice(
                 target, separator + 1, target.Length
             );
         }
         case Option.None: {
         }
+    }
+
+    string path = "";
+    switch (NormalizeRequestPath(rawPath))
+    {
+        case Result.Err(error): { throw new ArgumentException(error); }
+        case Result.Ok(normalized): { path = normalized; }
     }
 
     return new()
@@ -647,7 +1003,7 @@ public Request RequestNewTransport(
         body = body,
         target = target,
         queryString = queryString,
-        route = "",
+        routePattern = Option.None,
         headerData = headerData
     };
 }
@@ -672,21 +1028,10 @@ public Request RequestNew(
     );
 }
 
-public string Request.ContentType(Request self) { return self.contentType; }
-public string Request.Body(Request self) { return self.body; }
-public string Request.Host(Request self) { return self.host; }
-public string Request.Scheme(Request self) { return self.scheme; }
-public string Request.RemoteIpAddress(Request self)
-{
-    return self.remoteIpAddress;
-}
-
-public Option<string> Request.header(Request self, string name)
+public Option<string> Request.Header(Request self, string name)
 {
     nuint length = self.headerData.Length;
     nuint cursor = 0;
-    bool matched = false;
-    string value = "";
     while (cursor < length)
     {
         nuint nameStart = cursor;
@@ -716,14 +1061,11 @@ public Option<string> Request.header(Request self, string name)
         }
         if (AsciiEqualIgnoringCase(headerName, name))
         {
-            matched = true;
-            value = StringSlice(self.headerData, valueStart, cursor);
+            return Option.Some(StringSlice(
+                self.headerData, valueStart, cursor
+            ));
         }
         cursor += 1;
-    }
-    if (matched)
-    {
-        return Option.Some(value);
     }
     return Option.None;
 }
@@ -744,9 +1086,9 @@ private Request ApplyConfiguredForwardedHeaders(
             };
             origin = ApplyForwardedHeaders(
                 origin,
-                request.header("X-Forwarded-For"),
-                request.header("X-Forwarded-Host"),
-                request.header("X-Forwarded-Proto"),
+                request.Header("X-Forwarded-For"),
+                request.Header("X-Forwarded-Host"),
+                request.Header("X-Forwarded-Proto"),
                 options
             );
             request.host = origin.Host;
@@ -760,49 +1102,21 @@ private Request ApplyConfiguredForwardedHeaders(
     }
 }
 
-public string Request.param(Request self, string name)
+public Option<string> Request.RouteValue(Request self, string name)
 {
-    nuint patternLength = self.route.Length;
-    nuint pathLength = self.path.Length;
-    nuint patternIndex = 0;
-    nuint pathIndex = 0;
-
-    while (patternIndex < patternLength && pathIndex < pathLength)
+    switch (self.routePattern)
     {
-        bool parameter = StringByteAt(self.route, patternIndex) == 58 &&
-            (patternIndex == 0 ||
-           StringByteAt(self.route, patternIndex - 1) == 47);
-
-        if (parameter)
-        {
-            nuint nameStart = patternIndex + 1;
-            patternIndex = nameStart;
-            while (patternIndex < patternLength &&
-                StringByteAt(self.route, patternIndex) != 47)
-            {
-                patternIndex += 1;
-            }
-
-            nuint valueStart = pathIndex;
-            while (pathIndex < pathLength &&
-                StringByteAt(self.path, pathIndex) != 47)
-            {
-                pathIndex += 1;
-            }
-
-            if (StringSlice(self.route, nameStart, patternIndex) == name)
-            {
-                return StringSlice(self.path, valueStart, pathIndex);
-            }
+        case Option.Some(pattern): {
+            return pattern.Parameter(self.path, name);
         }
-        else
-        {
-            patternIndex += 1;
-            pathIndex += 1;
-        }
+        case Option.None: { return Option.None; }
     }
+}
 
-    return "";
+private void SelectRoute(ref Request request, RoutePattern pattern)
+{
+    Option<RoutePattern> selected = Option.Some(pattern);
+    request.routePattern = selected;
 }
 
 // Query names and values are borrowed raw target bytes. Percent decoding is a
@@ -845,7 +1159,7 @@ public Option<string> Request.QueryRaw(Request self, string name)
     return Option.None;
 }
 
-public Option<string> Request.cookie(Request self, string name)
+public Option<string> Request.Cookie(Request self, string name)
 {
     if (name.Length == 0)
     {
@@ -1416,7 +1730,7 @@ private bool IsUrlencodedForm(string contentType)
     );
 }
 
-public Result<string, string> Request.json(Request self)
+public Result<string, string> Request.Json(Request self)
 {
     if (!MediaTypeIs(self.contentType, "application/json"))
     {
@@ -1425,7 +1739,7 @@ public Result<string, string> Request.json(Request self)
     return Result.Ok(self.body);
 }
 
-public Result<Option<string>, string> Request.query(
+public Result<Option<string>, string> Request.Query(
     Request self,
     string name
 )
@@ -1433,7 +1747,7 @@ public Result<Option<string>, string> Request.query(
     return FormValue(self.queryString, name);
 }
 
-public Result<Option<string>, string> Request.form(
+public Result<Option<string>, string> Request.Form(
     Request self,
     string name
 )
@@ -1463,7 +1777,7 @@ public Result<UrlValues, string> Request.FormValues(Request self)
     return UrlValuesParse(self.body);
 }
 
-public App AppNew(Handler fallback)
+public App AppNew()
 {
     List<Route> routes = new();
     List<BuildPage> pages = new();
@@ -1477,10 +1791,20 @@ public App AppNew(Handler fallback)
         filters = filters,
         htmlMiddleware = htmlMiddleware,
         staticDirectories = staticDirectories,
-        fallback = fallback,
+        fallback = RouteHandler.Sync(DefaultNotFound),
         exceptionHandler = DefaultExceptionResponse,
         forwardedHeaders = Option.None
     };
+}
+
+public void App.MapFallback(ref App self, Handler handler)
+{
+    self.fallback = RouteHandler.Sync(handler);
+}
+
+public void App.MapFallback(ref App self, AsyncHandler handler)
+{
+    self.fallback = RouteHandler.Async(handler);
 }
 
 public void App.UseForwardedHeaders(
@@ -1528,7 +1852,7 @@ public List<string> App.StaticRoots(App self)
     return roots;
 }
 
-public void App.filter(ref App self, RequestFilter filter)
+public void App.UseFilter(ref App self, RequestFilter filter)
 {
     self.filters.Add(filter);
 }
@@ -1538,31 +1862,160 @@ public void App.AfterHtml(ref App self, HtmlMiddleware middleware)
     self.htmlMiddleware.Add(middleware);
 }
 
-public void App.route(
+private void App.MapEndpoint(
+    ref App self,
+    RoutePattern pattern,
+    List<string> methods,
+    RouteHandler handler
+)
+{
+    foreach (Route existing in self.routes)
+    {
+        if (MethodsOverlap(existing.methods, methods) &&
+            existing.pattern.ConflictsWith(pattern))
+        {
+            throw new ArgumentException(
+                "route conflicts with an existing endpoint"
+            );
+        }
+    }
+    self.routes.Add(new()
+    {
+        methods = methods,
+        pattern = pattern,
+        handler = handler
+    });
+}
+
+private void App.MapMethod(
     ref App self,
     string method,
     string path,
     Handler handler
 )
 {
-    self.routes.Add(new()
+    if (!HttpMethodValid(method))
     {
-        method = method,
-        path = path,
-        handler = handler
-    });
+        throw new ArgumentException(
+            "HTTP method must be a non-empty uppercase token"
+        );
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    List<string> methods = new();
+    methods.Add(method);
+    self.MapEndpoint(pattern, methods, RouteHandler.Sync(handler));
 }
 
-public void App.Get(ref App self, string path, Handler handler)
+private void App.MapMethodAsync(
+    ref App self,
+    string method,
+    string path,
+    AsyncHandler handler
+)
 {
-    self.route("GET", path, handler);
+    if (!HttpMethodValid(method))
+    {
+        throw new ArgumentException(
+            "HTTP method must be a non-empty uppercase token"
+        );
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    List<string> methods = new();
+    methods.Add(method);
+    self.MapEndpoint(pattern, methods, RouteHandler.Async(handler));
+}
+
+public void App.MapMethods(
+    ref App self,
+    string path,
+    List<string> methods,
+    Handler handler
+)
+{
+    if (methods.Count == 0)
+    {
+        throw new ArgumentException("endpoint requires an HTTP method");
+    }
+    for (nuint index = 0; index < methods.Count; index += 1)
+    {
+        string method = methods[index];
+        if (method.Length == 0)
+        {
+            throw new ArgumentException("HTTP method cannot be empty");
+        }
+        if (!HttpMethodValid(method))
+        {
+            throw new ArgumentException(
+                "HTTP method must be an uppercase token"
+            );
+        }
+        for (nuint other = 0; other < index; other += 1)
+        {
+            if (methods[other] == method)
+            {
+                throw new ArgumentException("HTTP method is duplicated");
+            }
+        }
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    self.MapEndpoint(pattern, methods, RouteHandler.Sync(handler));
+}
+
+public void App.MapMethods(
+    ref App self,
+    string path,
+    List<string> methods,
+    AsyncHandler handler
+)
+{
+    if (methods.Count == 0)
+    {
+        throw new ArgumentException("endpoint requires an HTTP method");
+    }
+    for (nuint index = 0; index < methods.Count; index += 1)
+    {
+        string method = methods[index];
+        if (method.Length == 0)
+        {
+            throw new ArgumentException("HTTP method cannot be empty");
+        }
+        if (!HttpMethodValid(method))
+        {
+            throw new ArgumentException(
+                "HTTP method must be an uppercase token"
+            );
+        }
+        for (nuint other = 0; other < index; other += 1)
+        {
+            if (methods[other] == method)
+            {
+                throw new ArgumentException("HTTP method is duplicated");
+            }
+        }
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    self.MapEndpoint(pattern, methods, RouteHandler.Async(handler));
+}
+
+public void App.MapGet(ref App self, string path, Handler handler)
+{
+    self.MapMethod("GET", path, handler);
     if (BuildPagePathValid(path) && !RouteHasParameter(path))
     {
         BuildPagesAdd(self.pages, path);
     }
 }
 
-public Result<bool, string> App.page(ref App self, string path)
+public void App.MapGet(ref App self, string path, AsyncHandler handler)
+{
+    self.MapMethodAsync("GET", path, handler);
+    if (BuildPagePathValid(path) && !RouteHasParameter(path))
+    {
+        BuildPagesAdd(self.pages, path);
+    }
+}
+
+public Result<bool, string> App.AddBuildPage(ref App self, string path)
 {
     if (!BuildPagePathValid(path) || RouteHasParameter(path))
     {
@@ -1580,7 +2033,7 @@ public Result<bool, string> App.page(ref App self, string path)
     return Result.Err("build page does not match a parameterized GET route");
 }
 
-public Result<bool, string> App.TryGetFrom(
+public Result<bool, string> App.TryMapGetFrom(
     ref App self,
     string pattern,
     Handler handler,
@@ -1615,11 +2068,11 @@ public Result<bool, string> App.TryGetFrom(
         }
         BuildPagesAdd(self.pages, path);
     }
-    self.route("GET", pattern, handler);
+    self.MapMethod("GET", pattern, handler);
     return Result.Ok(true);
 }
 
-public void App.Get(
+public void App.MapGet(
     ref App self,
     string pattern,
     Handler handler,
@@ -1627,33 +2080,58 @@ public void App.Get(
 )
 {
     bool ignored = LimeResultOrThrow(
-        self.TryGetFrom(pattern, handler, source)
+        self.TryMapGetFrom(pattern, handler, source)
     );
 }
 
-public void App.post(ref App self, string path, Handler handler)
+public void App.MapPost(ref App self, string path, Handler handler)
 {
-    self.route("POST", path, handler);
+    self.MapMethod("POST", path, handler);
 }
 
-public void App.put(ref App self, string path, Handler handler)
+public void App.MapPost(ref App self, string path, AsyncHandler handler)
 {
-    self.route("PUT", path, handler);
+    self.MapMethodAsync("POST", path, handler);
 }
 
-public void App.patch(ref App self, string path, Handler handler)
+public void App.MapPut(ref App self, string path, Handler handler)
 {
-    self.route("PATCH", path, handler);
+    self.MapMethod("PUT", path, handler);
 }
 
-public void App.delete(ref App self, string path, Handler handler)
+public void App.MapPut(ref App self, string path, AsyncHandler handler)
 {
-    self.route("DELETE", path, handler);
+    self.MapMethodAsync("PUT", path, handler);
 }
 
-public void App.head(ref App self, string path, Handler handler)
+public void App.MapPatch(ref App self, string path, Handler handler)
 {
-    self.route("HEAD", path, handler);
+    self.MapMethod("PATCH", path, handler);
+}
+
+public void App.MapPatch(ref App self, string path, AsyncHandler handler)
+{
+    self.MapMethodAsync("PATCH", path, handler);
+}
+
+public void App.MapDelete(ref App self, string path, Handler handler)
+{
+    self.MapMethod("DELETE", path, handler);
+}
+
+public void App.MapDelete(ref App self, string path, AsyncHandler handler)
+{
+    self.MapMethodAsync("DELETE", path, handler);
+}
+
+public void App.MapHead(ref App self, string path, Handler handler)
+{
+    self.MapMethod("HEAD", path, handler);
+}
+
+public void App.MapHead(ref App self, string path, AsyncHandler handler)
+{
+    self.MapMethodAsync("HEAD", path, handler);
 }
 
 private Html ApplyHtml(
@@ -1678,6 +2156,14 @@ private Response ApplyHtmlMiddleware(
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     switch (body)
     {
+        case ResponseBody.Empty: {
+            return new()
+            {
+                status = status,
+                body = ResponseBody.Empty,
+                headers = headers
+            };
+        }
         case ResponseBody.Html(page): {
             return new()
             {
@@ -1775,11 +2261,52 @@ private Response DispatchAppUnchecked(App self, Request request)
     );
 }
 
-public Response App.dispatch(App self, Request request)
+public Response App.Dispatch(App self, Request request)
 {
     try
     {
         return DispatchAppUnchecked(self, request);
+    }
+    catch (Exception error)
+    {
+        ExceptionHandler handler = self.exceptionHandler;
+        return handler(error);
+    }
+}
+
+private async Task<Response> DispatchAppUncheckedAsync(
+    App self,
+    Request request
+)
+{
+    request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
+    switch (ApplyRequestFilters(self.filters, request))
+    {
+        case FilterResult.Continue: {
+        }
+        case FilterResult.Respond(response): {
+            return ApplyHtmlMiddleware(
+                self.htmlMiddleware,
+                request,
+                response
+            );
+        }
+    }
+
+    return await DispatchRoutesAsync(
+        self.routes,
+        self.staticDirectories,
+        self.htmlMiddleware,
+        self.fallback,
+        request
+    );
+}
+
+public async Task<Response> App.DispatchAsync(App self, Request request)
+{
+    try
+    {
+        return await DispatchAppUncheckedAsync(self, request);
     }
     catch (Exception error)
     {
@@ -1803,15 +2330,14 @@ private Response DispatchAppFallbackUnchecked(App self, Request request)
             );
         }
     }
-    Handler fallback = self.fallback;
     return ApplyHtmlMiddleware(
         self.htmlMiddleware,
         request,
-        fallback(request)
+        InvokeRouteHandler(self.fallback, request)
     );
 }
 
-public Response App.dispatchFallback(App self, Request request)
+public Response App.DispatchFallback(App self, Request request)
 {
     try
     {
@@ -1824,60 +2350,257 @@ public Response App.dispatchFallback(App self, Request request)
     }
 }
 
+public async Task<Response> App.DispatchFallbackAsync(
+    App self,
+    Request request
+)
+{
+    try
+    {
+        request = ApplyConfiguredForwardedHeaders(
+            self.forwardedHeaders, request
+        );
+        switch (ApplyRequestFilters(self.filters, request))
+        {
+            case FilterResult.Continue: { }
+            case FilterResult.Respond(response): {
+                return ApplyHtmlMiddleware(
+                    self.htmlMiddleware, request, response
+                );
+            }
+        }
+        Response response = await InvokeRouteHandlerAsync(
+            self.fallback, request
+        );
+        return ApplyHtmlMiddleware(
+            self.htmlMiddleware, request, response
+        );
+    }
+    catch (Exception error)
+    {
+        ExceptionHandler handler = self.exceptionHandler;
+        return handler(error);
+    }
+}
+
+private bool MethodContains(List<string> methods, string method)
+{
+    foreach (string existing in methods)
+    {
+        if (existing == method)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+private bool MethodsOverlap(List<string> left, List<string> right)
+{
+    foreach (string method in left)
+    {
+        if (MethodContains(right, method)) { return true; }
+    }
+    return false;
+}
+
+private bool HttpMethodValid(string method)
+{
+    if (method.Length == 0)
+    {
+        return false;
+    }
+    for (nuint index = 0; index < method.Length; index += 1)
+    {
+        byte current = method[index];
+        bool upper = current >= 65 && current <= 90;
+        bool digit = current >= 48 && current <= 57;
+        bool symbol = current == 33 || current == 35 || current == 36 ||
+            current == 37 || current == 38 || current == 39 ||
+            current == 42 || current == 43 || current == 45 ||
+            current == 46 || current == 94 || current == 95 ||
+            current == 96 || current == 124 || current == 126;
+        if (!upper && !digit && !symbol)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+private void AddAllowedMethod(ref List<string> methods, string method)
+{
+    if (!MethodContains(methods, method))
+    {
+        methods.Add(method);
+    }
+}
+
+private Response WithAllowedMethods(Response response, List<string> methods)
+{
+    StringBuilder value = new();
+    for (nuint index = 0; index < methods.Count; index += 1)
+    {
+        if (index > 0)
+        {
+            value.Append(", ");
+        }
+        value.Append(methods[index]);
+    }
+    ResponseHeader allow = LimeResultOrThrow(
+        ResponseHeader("Allow", value.ToString())
+    );
+    response.AddHeader(allow);
+    return response;
+}
+
+private Option<Route> BestRoute(
+    List<Route> routes,
+    string method,
+    string path
+)
+{
+    Option<Route> selected = Option.None;
+    foreach (Route route in routes)
+    {
+        if (!MethodContains(route.methods, method) ||
+            !route.pattern.IsMatch(path))
+        {
+            continue;
+        }
+        switch (selected)
+        {
+            case Option.None: { selected = Option.Some(route); }
+            case Option.Some(current): {
+                int precedence = route.pattern.ComparePrecedence(
+                    current.pattern
+                );
+                if (precedence < 0)
+                {
+                    selected = Option.Some(route);
+                }
+                else if (precedence == 0)
+                {
+                    throw new InvalidOperationException(
+                        "request matched multiple endpoints with equal precedence"
+                    );
+                }
+            }
+        }
+    }
+    return selected;
+}
+
+private Response InvokeRouteHandler(
+    RouteHandler routeHandler,
+    Request request
+)
+{
+    switch (routeHandler)
+    {
+        case RouteHandler.Sync(handler): {
+            Handler invoke = handler;
+            return invoke(request);
+        }
+        case RouteHandler.Async(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+    }
+}
+
+private async Task<Response> InvokeRouteHandlerAsync(
+    RouteHandler routeHandler,
+    Request request
+)
+{
+    switch (routeHandler)
+    {
+        case RouteHandler.Sync(handler): {
+            Handler invoke = handler;
+            return invoke(request);
+        }
+        case RouteHandler.Async(handler): {
+            AsyncHandler invoke = handler;
+            return await invoke(request);
+        }
+    }
+}
+
 private Response DispatchRoutes(
     List<Route> routes,
     List<StaticDirectory> staticDirectories,
     List<HtmlMiddleware> middleware,
-    Handler fallback,
+    RouteHandler fallback,
     Request request
 )
 {
-    bool pathMatched = false;
-    foreach (Route route in routes)
+    switch (BestRoute(routes, request.method, request.path))
     {
-        string routePath = route.path;
-        if (RouteMatches(routePath, request.path))
-        {
-            pathMatched = true;
-            if (route.method == request.method)
-            {
-                request.route = routePath;
-                Handler handler = route.handler;
+        case Option.Some(route): {
+                SelectRoute(request, route.pattern);
                 return ApplyHtmlMiddleware(
                     middleware,
                     request,
-                    handler(request)
+                    InvokeRouteHandler(route.handler, request)
                 );
-            }
         }
+        case Option.None: { }
     }
 
     if (request.method == "HEAD")
     {
-        foreach (Route route in routes)
+        switch (BestRoute(routes, "GET", request.path))
         {
-            string routePath = route.path;
-            if (route.method == "GET" &&
-                RouteMatches(routePath, request.path))
-            {
-                request.route = routePath;
-                Handler handler = route.handler;
+            case Option.Some(route): {
+                SelectRoute(request, route.pattern);
                 return ApplyHtmlMiddleware(
                     middleware,
                     request,
-                    handler(request)
+                    InvokeRouteHandler(route.handler, request)
                 );
             }
+            case Option.None: { }
         }
     }
 
-    if (pathMatched)
+    List<string> allowedMethods = new();
+    foreach (Route route in routes)
     {
+        if (route.pattern.IsMatch(request.path))
+        {
+            foreach (string method in route.methods)
+            {
+                AddAllowedMethod(allowedMethods, method);
+                if (method == "GET")
+                {
+                    AddAllowedMethod(allowedMethods, "HEAD");
+                }
+            }
+        }
+    }
+    if (allowedMethods.Count > 0)
+    {
+        AddAllowedMethod(allowedMethods, "OPTIONS");
+        if (request.method == "OPTIONS")
+        {
+            return ApplyHtmlMiddleware(
+                middleware,
+                request,
+                WithAllowedMethods(
+                    Results.NoContent(), allowedMethods
+                )
+            );
+        }
         return ApplyHtmlMiddleware(
             middleware,
             request,
-            Response.MethodNotAllowed(
-                <h1>Method not allowed</h1>
+            WithAllowedMethods(
+                Results.MethodNotAllowed(
+                    <h1>Method not allowed</h1>
+                ),
+                allowedMethods
             )
         );
     }
@@ -1911,8 +2634,109 @@ private Response DispatchRoutes(
     return ApplyHtmlMiddleware(
         middleware,
         request,
-        fallback(request)
+        InvokeRouteHandler(fallback, request)
     );
+}
+
+private async Task<Response> DispatchRoutesAsync(
+    List<Route> routes,
+    List<StaticDirectory> staticDirectories,
+    List<HtmlMiddleware> middleware,
+    RouteHandler fallback,
+    Request request
+)
+{
+    switch (BestRoute(routes, request.method, request.path))
+    {
+        case Option.Some(route): {
+            SelectRoute(request, route.pattern);
+            Response response = await InvokeRouteHandlerAsync(
+                route.handler, request
+            );
+            return ApplyHtmlMiddleware(middleware, request, response);
+        }
+        case Option.None: { }
+    }
+
+    if (request.method == "HEAD")
+    {
+        switch (BestRoute(routes, "GET", request.path))
+        {
+            case Option.Some(route): {
+                SelectRoute(request, route.pattern);
+                Response response = await InvokeRouteHandlerAsync(
+                    route.handler, request
+                );
+                return ApplyHtmlMiddleware(middleware, request, response);
+            }
+            case Option.None: { }
+        }
+    }
+
+    List<string> allowedMethods = new();
+    foreach (Route route in routes)
+    {
+        if (route.pattern.IsMatch(request.path))
+        {
+            foreach (string method in route.methods)
+            {
+                AddAllowedMethod(allowedMethods, method);
+                if (method == "GET")
+                {
+                    AddAllowedMethod(allowedMethods, "HEAD");
+                }
+            }
+        }
+    }
+    if (allowedMethods.Count > 0)
+    {
+        AddAllowedMethod(allowedMethods, "OPTIONS");
+        if (request.method == "OPTIONS")
+        {
+            return ApplyHtmlMiddleware(
+                middleware,
+                request,
+                WithAllowedMethods(Results.NoContent(), allowedMethods)
+            );
+        }
+        return ApplyHtmlMiddleware(
+            middleware,
+            request,
+            WithAllowedMethods(
+                Results.MethodNotAllowed(<h1>Method not allowed</h1>),
+                allowedMethods
+            )
+        );
+    }
+
+    if (request.method == "GET" || request.method == "HEAD")
+    {
+        foreach (StaticDirectory directory in staticDirectories)
+        {
+            if (!request.path.StartsWith(directory.urlPrefix))
+            {
+                continue;
+            }
+            StaticResolver resolver = directory.resolver;
+            switch (resolver(
+                directory.urlPrefix,
+                directory.root,
+                directory.options,
+                request
+            ))
+            {
+                case Option.Some(response): {
+                    return ApplyHtmlMiddleware(
+                        middleware, request, response
+                    );
+                }
+                case Option.None: { }
+            }
+        }
+    }
+
+    Response response = await InvokeRouteHandlerAsync(fallback, request);
+    return ApplyHtmlMiddleware(middleware, request, response);
 }
 
 public StatefulApp<State> StatefulAppNew<State>(
@@ -1986,7 +2810,7 @@ public List<string> StatefulApp.StaticRoots<State>(
     return roots;
 }
 
-public void StatefulApp.filter<State>(
+public void StatefulApp.UseFilter<State>(
     ref StatefulApp<State> self,
     StatefulRequestFilter<State> filter
 )
@@ -2002,36 +2826,101 @@ public void StatefulApp.AfterHtml<State>(
     self.htmlMiddleware.Add(middleware);
 }
 
-public void StatefulApp.route<State>(
+private void StatefulApp.MapEndpoint<State>(
+    ref StatefulApp<State> self,
+    RoutePattern pattern,
+    List<string> methods,
+    StatefulHandler<State> handler
+)
+{
+    foreach (StatefulRoute<State> existing in self.routes)
+    {
+        if (MethodsOverlap(existing.methods, methods) &&
+            existing.pattern.ConflictsWith(pattern))
+        {
+            throw new ArgumentException(
+                "route conflicts with an existing endpoint"
+            );
+        }
+    }
+    StatefulRoute<State> route = new()
+    {
+        methods = methods,
+        pattern = pattern,
+        handler = handler
+    };
+    self.routes.Add(route);
+}
+
+private void StatefulApp.MapMethod<State>(
     ref StatefulApp<State> self,
     string method,
     string path,
     StatefulHandler<State> handler
 )
 {
-    StatefulRoute<State> route = new()
+    if (!HttpMethodValid(method))
     {
-        method = method,
-        path = path,
-        handler = handler
-    };
-    self.routes.Add(route);
+        throw new ArgumentException(
+            "HTTP method must be a non-empty uppercase token"
+        );
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    List<string> methods = new();
+    methods.Add(method);
+    self.MapEndpoint(pattern, methods, handler);
 }
 
-public void StatefulApp.Get<State>(
+public void StatefulApp.MapMethods<State>(
+    ref StatefulApp<State> self,
+    string path,
+    List<string> methods,
+    StatefulHandler<State> handler
+)
+{
+    if (methods.Count == 0)
+    {
+        throw new ArgumentException("endpoint requires an HTTP method");
+    }
+    for (nuint index = 0; index < methods.Count; index += 1)
+    {
+        string method = methods[index];
+        if (method.Length == 0)
+        {
+            throw new ArgumentException("HTTP method cannot be empty");
+        }
+        if (!HttpMethodValid(method))
+        {
+            throw new ArgumentException(
+                "HTTP method must be an uppercase token"
+            );
+        }
+        for (nuint other = 0; other < index; other += 1)
+        {
+            if (methods[other] == method)
+            {
+                throw new ArgumentException("HTTP method is duplicated");
+            }
+        }
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    self.MapEndpoint(pattern, methods, handler);
+}
+
+public void StatefulApp.MapGet<State>(
     ref StatefulApp<State> self,
     string path,
     StatefulHandler<State> handler
 )
 {
-    self.route("GET", path, handler);
+    self.MapMethod("GET", path, handler);
     if (BuildPagePathValid(path) && !RouteHasParameter(path))
     {
         BuildPagesAdd(self.pages, path);
     }
 }
 
-public Result<bool, string> StatefulApp.page<State>(
+public Result<bool, string> StatefulApp.AddBuildPage<State>(
     ref StatefulApp<State> self,
     string path
 )
@@ -2052,7 +2941,7 @@ public Result<bool, string> StatefulApp.page<State>(
     return Result.Err("build page does not match a parameterized GET route");
 }
 
-public Result<bool, string> StatefulApp.TryGetFrom<State>(
+public Result<bool, string> StatefulApp.TryMapGetFrom<State>(
     ref StatefulApp<State> self,
     string pattern,
     StatefulHandler<State> handler,
@@ -2087,11 +2976,11 @@ public Result<bool, string> StatefulApp.TryGetFrom<State>(
         }
         BuildPagesAdd(self.pages, path);
     }
-    self.route("GET", pattern, handler);
+    self.MapMethod("GET", pattern, handler);
     return Result.Ok(true);
 }
 
-public void StatefulApp.Get<State>(
+public void StatefulApp.MapGet<State>(
     ref StatefulApp<State> self,
     string pattern,
     StatefulHandler<State> handler,
@@ -2099,53 +2988,53 @@ public void StatefulApp.Get<State>(
 )
 {
     bool ignored = LimeResultOrThrow(
-        self.TryGetFrom(pattern, handler, source)
+        self.TryMapGetFrom(pattern, handler, source)
     );
 }
 
-public void StatefulApp.post<State>(
+public void StatefulApp.MapPost<State>(
     ref StatefulApp<State> self,
     string path,
     StatefulHandler<State> handler
 )
 {
-    self.route("POST", path, handler);
+    self.MapMethod("POST", path, handler);
 }
 
-public void StatefulApp.put<State>(
+public void StatefulApp.MapPut<State>(
     ref StatefulApp<State> self,
     string path,
     StatefulHandler<State> handler
 )
 {
-    self.route("PUT", path, handler);
+    self.MapMethod("PUT", path, handler);
 }
 
-public void StatefulApp.patch<State>(
+public void StatefulApp.MapPatch<State>(
     ref StatefulApp<State> self,
     string path,
     StatefulHandler<State> handler
 )
 {
-    self.route("PATCH", path, handler);
+    self.MapMethod("PATCH", path, handler);
 }
 
-public void StatefulApp.delete<State>(
+public void StatefulApp.MapDelete<State>(
     ref StatefulApp<State> self,
     string path,
     StatefulHandler<State> handler
 )
 {
-    self.route("DELETE", path, handler);
+    self.MapMethod("DELETE", path, handler);
 }
 
-public void StatefulApp.head<State>(
+public void StatefulApp.MapHead<State>(
     ref StatefulApp<State> self,
     string path,
     StatefulHandler<State> handler
 )
 {
-    self.route("HEAD", path, handler);
+    self.MapMethod("HEAD", path, handler);
 }
 
 private Response DispatchStatefulAppUnchecked<State>(
@@ -2182,7 +3071,7 @@ private Response DispatchStatefulAppUnchecked<State>(
     );
 }
 
-public Response StatefulApp.dispatch<State>(
+public Response StatefulApp.Dispatch<State>(
     StatefulApp<State> self,
     Request request
 )
@@ -2228,7 +3117,7 @@ private Response DispatchStatefulAppFallbackUnchecked<State>(
     );
 }
 
-public Response StatefulApp.dispatchFallback<State>(
+public Response StatefulApp.DispatchFallback<State>(
     StatefulApp<State> self,
     Request request
 )
@@ -2244,6 +3133,43 @@ public Response StatefulApp.dispatchFallback<State>(
     }
 }
 
+private Option<StatefulRoute<State>> BestStatefulRoute<State>(
+    List<StatefulRoute<State>> routes,
+    string method,
+    string path
+)
+{
+    Option<StatefulRoute<State>> selected = Option.None;
+    foreach (StatefulRoute<State> route in routes)
+    {
+        if (!MethodContains(route.methods, method) ||
+            !route.pattern.IsMatch(path))
+        {
+            continue;
+        }
+        switch (selected)
+        {
+            case Option.None: { selected = Option.Some(route); }
+            case Option.Some(current): {
+                int precedence = route.pattern.ComparePrecedence(
+                    current.pattern
+                );
+                if (precedence < 0)
+                {
+                    selected = Option.Some(route);
+                }
+                else if (precedence == 0)
+                {
+                    throw new InvalidOperationException(
+                        "request matched multiple endpoints with equal precedence"
+                    );
+                }
+            }
+        }
+    }
+    return selected;
+}
+
 private Response DispatchStatefulRoutes<State>(
     State state,
     List<StatefulRoute<State>> routes,
@@ -2253,16 +3179,10 @@ private Response DispatchStatefulRoutes<State>(
     Request request
 )
 {
-    bool pathMatched = false;
-    foreach (StatefulRoute<State> route in routes)
+    switch (BestStatefulRoute(routes, request.method, request.path))
     {
-        string routePath = route.path;
-        if (RouteMatches(routePath, request.path))
-        {
-            pathMatched = true;
-            if (route.method == request.method)
-            {
-                request.route = routePath;
+        case Option.Some(route): {
+                SelectRoute(request, route.pattern);
                 StatefulHandler<State> handler = route.handler;
                 return ApplyStatefulHtmlMiddleware(
                     state,
@@ -2270,19 +3190,16 @@ private Response DispatchStatefulRoutes<State>(
                     request,
                     handler(state, request)
                 );
-            }
         }
+        case Option.None: { }
     }
 
     if (request.method == "HEAD")
     {
-        foreach (StatefulRoute<State> route in routes)
+        switch (BestStatefulRoute(routes, "GET", request.path))
         {
-            string routePath = route.path;
-            if (route.method == "GET" &&
-                RouteMatches(routePath, request.path))
-            {
-                request.route = routePath;
+            case Option.Some(route): {
+                SelectRoute(request, route.pattern);
                 StatefulHandler<State> handler = route.handler;
                 return ApplyStatefulHtmlMiddleware(
                     state,
@@ -2291,17 +3208,48 @@ private Response DispatchStatefulRoutes<State>(
                     handler(state, request)
                 );
             }
+            case Option.None: { }
         }
     }
 
-    if (pathMatched)
+    List<string> allowedMethods = new();
+    foreach (StatefulRoute<State> route in routes)
     {
+        if (route.pattern.IsMatch(request.path))
+        {
+            foreach (string method in route.methods)
+            {
+                AddAllowedMethod(allowedMethods, method);
+                if (method == "GET")
+                {
+                    AddAllowedMethod(allowedMethods, "HEAD");
+                }
+            }
+        }
+    }
+    if (allowedMethods.Count > 0)
+    {
+        AddAllowedMethod(allowedMethods, "OPTIONS");
+        if (request.method == "OPTIONS")
+        {
+            return ApplyStatefulHtmlMiddleware(
+                state,
+                middleware,
+                request,
+                WithAllowedMethods(
+                    Results.NoContent(), allowedMethods
+                )
+            );
+        }
         return ApplyStatefulHtmlMiddleware(
             state,
             middleware,
             request,
-            Response.MethodNotAllowed(
-                <h1>Method not allowed</h1>
+            WithAllowedMethods(
+                Results.MethodNotAllowed(
+                    <h1>Method not allowed</h1>
+                ),
+                allowedMethods
             )
         );
     }
@@ -2364,6 +3312,14 @@ private Response ApplyStatefulHtmlMiddleware<State>(
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     switch (body)
     {
+        case ResponseBody.Empty: {
+            return new()
+            {
+                status = status,
+                body = ResponseBody.Empty,
+                headers = headers
+            };
+        }
         case ResponseBody.Html(page): {
             return new()
             {

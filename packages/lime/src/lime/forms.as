@@ -16,6 +16,11 @@ public struct FormFile
     string fileName;
     string contentType;
     string bytes;
+
+    public string Name => name;
+    public string FileName => fileName;
+    public string ContentType => contentType;
+    public long Length => (long)this.bytes.Length;
 }
 
 public struct FormCollection
@@ -23,11 +28,6 @@ public struct FormCollection
     List<FormField> fields;
     List<FormFile> files;
 }
-
-public string FormFile.Name(FormFile self) { return self.name; }
-public string FormFile.FileName(FormFile self) { return self.fileName; }
-public string FormFile.ContentType(FormFile self) { return self.contentType; }
-public long FormFile.Length(FormFile self) { return (long)self.bytes.Length; }
 
 public MemoryStream FormFile.OpenReadStream(FormFile self)
 {
@@ -465,8 +465,8 @@ private FormCollection ParseMultipartForm(
 
 public FormCollection Request.ReadForm(Request self)
 {
-    string contentType = self.ContentType();
-    string body = self.Body();
+    string contentType = self.ContentType;
+    string body = self.Body;
     if (FormMediaTypeIs(contentType, "application/x-www-form-urlencoded"))
     {
         return ParseUrlEncodedForm(body);

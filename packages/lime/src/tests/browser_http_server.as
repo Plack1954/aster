@@ -16,7 +16,7 @@ struct BrowserState
 
 private Response home(BrowserState state, Request request)
 {
-    return Response.Ok(BrowserPage(state.assets.loader()));
+    return Results.Html(BrowserPage(state.assets.loader()));
 }
 
 private Response BrowserAsset(BrowserState state, Request request)
@@ -25,7 +25,7 @@ private Response BrowserAsset(BrowserState state, Request request)
     {
         case Result.Ok(response): { return response; }
         case Result.Err(error): {
-            return Response.NotFound(<p>{error}</p>);
+            return Results.NotFound(<p>{error}</p>);
         }
     }
 }
@@ -35,28 +35,28 @@ private Response FormFallback(BrowserState state, Request request)
     switch (request.FormValues())
     {
         case Result.Ok(values): {
-            return Response.Ok(<p>Saved without WebAssembly.</p>);
+            return Results.Html(<p>Saved without WebAssembly.</p>);
         }
         case Result.Err(error): {
-            return Response.BadRequest(<p>{error}</p>);
+            return Results.BadRequest(<p>{error}</p>);
         }
     }
 }
 
 private Response missing(BrowserState state, Request request)
 {
-    return Response.NotFound(<h1>Missing</h1>);
+    return Results.NotFound(<h1>Missing</h1>);
 }
 
 private int serve(NativeHandle server, BrowserAssets assets)
 {
     BrowserState state = new() { assets = assets };
     StatefulApp<BrowserState> app = StatefulAppNew(state, missing);
-    app.Get("/", home);
-    app.Get("/browser/:name", BrowserAsset);
-    app.post("/contact", FormFallback);
-    app.post("/todo", FormFallback);
-    app.post("/message", FormFallback);
+    app.MapGet("/", home);
+    app.MapGet("/browser/{name}", BrowserAsset);
+    app.MapPost("/contact", FormFallback);
+    app.MapPost("/todo", FormFallback);
+    app.MapPost("/message", FormFallback);
 
     Console.WriteLine(HttpServerPort(server));
     for (int count = 0; count < 5; count++)

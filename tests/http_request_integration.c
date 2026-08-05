@@ -31,7 +31,8 @@ static int request_client(uint16_t port) {
     static const char request[] =
         "POST /users?id=7 HTTP/1.1\r\n"
         "Host: example.test\r\n"
-        "X-Trace: aster\r\n"
+        "X-Trace: first\r\n"
+        "X-Trace: second\r\n"
         "Content-Length: 11\r\n\r\n"
         "hello world";
     if (send(fd, request, sizeof(request) - 1U, 0) < 0) return 3;
@@ -141,6 +142,14 @@ int main(void) {
                              &host) ||
         !view_equals(host, "example.test"))
         return 15;
+    static const char trace_name[] = "x-trace";
+    header_args[1].as.string.data = trace_name;
+    header_args[1].as.string.length = sizeof(trace_name) - 1U;
+    LangNativeResult trace;
+    if (!lang_vm_call_native(vm, "HttpRequestHeader", header_args, 2U,
+                             &trace) ||
+        !view_equals(trace, "first"))
+        return 22;
     LangNativeResult request_body;
     if (!lang_vm_call_native(
             vm, "HttpRequestBody", &request.value, 1U,

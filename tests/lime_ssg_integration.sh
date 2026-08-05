@@ -33,6 +33,13 @@ cmp packages/lime/test_assets/site.css "$site_directory/assets/site.css"
 cmp packages/lime/test_assets/icons/mark.svg \
     "$site_directory/assets/icons/mark.svg"
 
+async_directory="$site_directory/async"
+"$lang" project build-site \
+    packages/lime/aster.toml "$async_directory" async_ssg_smoke
+test -f "$async_directory/index.html"
+test -f "$async_directory/404.html"
+grep -q '<h1>Async static page</h1>' "$async_directory/index.html"
+
 blog_directory="$site_directory/blog"
 "$lang" project build-site \
     packages/lime/aster.toml "$blog_directory/" blog_fixture

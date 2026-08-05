@@ -16,6 +16,15 @@ struct SsgResponse
     bool html;
 }
 
+private T SsgResultOrThrow<T>(Result<T, string> result)
+{
+    switch (result)
+    {
+        case Result.Ok(value): { return value; }
+        case Result.Err(error): { throw new Exception(error); }
+    }
+}
+
 private bool SsgStringsContains(List<string> values, string value)
 {
     foreach (string existing in values)
@@ -136,6 +145,13 @@ private Result<SsgResponse, string> SsgResponseBytes(
     }
     switch (body)
     {
+        case ResponseBody.Empty: {
+            if (SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG file response URL cannot end with /");
+            }
+            return Result.Ok(new() { bytes = "", html = false });
+        }
         case ResponseBody.Html(page): {
             if (!directHtml && url != "/" && !SsgPathEndsSlash(url))
             {
@@ -399,7 +415,7 @@ private Result<SiteBuild, string> SsgBuildAppPages(
         Request request = RequestNew("GET", path, "", "", "", "");
         try SsgMaterialize(
             path, outputRoot, 200, false,
-            app.dispatch(request), urls, outputs
+            app.Dispatch(request), urls, outputs
         );
         files += 1;
     }
@@ -409,10 +425,62 @@ private Result<SiteBuild, string> SsgBuildAppPages(
     Request missing = RequestNew("GET", "/404.html", "", "", "", "");
     try SsgMaterialize(
         "/404.html", outputRoot, 404, true,
-        app.dispatchFallback(missing), urls, outputs
+        app.DispatchFallback(missing), urls, outputs
     );
     files += 1;
     return Result.Ok(new() { files = files });
+}
+
+private async Task<Result<SiteBuild, string>> SsgBuildAppPagesAsync(
+    List<BuildPage> pages,
+    App app,
+    string outputRoot
+)
+{
+    try
+    {
+        bool rootReady = SsgResultOrThrow(SsgEnsureTree(outputRoot));
+        List<string> urls = new();
+        List<string> outputs = new();
+        int files = 0;
+        foreach (BuildPage page in pages)
+        {
+            string path = page.path;
+            Request request = RequestNew("GET", path, "", "", "", "");
+            Response response = await app.DispatchAsync(request);
+            bool materialized = SsgResultOrThrow(SsgMaterialize(
+                path,
+                outputRoot,
+                200,
+                false,
+                response,
+                urls,
+                outputs
+            ));
+            files += 1;
+        }
+        files += SsgResultOrThrow(SsgCopyStaticDirectories(
+            app.staticDirectories, outputRoot, urls, outputs
+        ));
+        Request missing = RequestNew(
+            "GET", "/404.html", "", "", "", ""
+        );
+        bool missingMaterialized = SsgResultOrThrow(SsgMaterialize(
+            "/404.html",
+            outputRoot,
+            404,
+            true,
+            await app.DispatchFallbackAsync(missing),
+            urls,
+            outputs
+        ));
+        files += 1;
+        return Result.Ok(new() { files = files });
+    }
+    catch (Exception error)
+    {
+        return Result.Err(error.Message);
+    }
 }
 
 private Result<SiteBuild, string> SsgBuildStatefulPages<State>(
@@ -434,7 +502,7 @@ private Result<SiteBuild, string> SsgBuildStatefulPages<State>(
             outputRoot,
             200,
             false,
-            app.dispatch(request),
+            app.Dispatch(request),
             urls,
             outputs
         );
@@ -446,7 +514,7 @@ private Result<SiteBuild, string> SsgBuildStatefulPages<State>(
     Request missing = RequestNew("GET", "/404.html", "", "", "", "");
     try SsgMaterialize(
         "/404.html", outputRoot, 404, true,
-        app.dispatchFallback(missing), urls, outputs
+        app.DispatchFallback(missing), urls, outputs
     );
     files += 1;
     return Result.Ok(new() { files = files });
@@ -458,6 +526,14 @@ public Result<SiteBuild, string> SiteBuild(
 )
 {
     return SsgBuildAppPages(app.pages, app, outputRoot);
+}
+
+public async Task<Result<SiteBuild, string>> SiteBuildAsync(
+    App app,
+    string outputRoot
+)
+{
+    return await SsgBuildAppPagesAsync(app.pages, app, outputRoot);
 }
 
 public Result<SiteBuild, string> SiteBuildStateful<State>(

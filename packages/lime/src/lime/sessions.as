@@ -121,7 +121,7 @@ public Session SessionStore.Open(
     );
     string id = "";
     bool isNew = true;
-    switch (request.cookie(self.options.cookieName))
+    switch (request.Cookie(self.options.cookieName))
     {
         case Option.Some(candidate): {
             if (candidate.Length == 64 &&

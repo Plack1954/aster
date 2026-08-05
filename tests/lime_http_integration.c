@@ -101,13 +101,15 @@ static int request(uint16_t port, const char *method, const char *target,
         status, sizeof(status), "HTTP/1.1 %d ", expected_status);
     if (status_length <= 0 || (size_t)status_length >= sizeof(status))
         return 5;
-    char content_type[160];
-    int content_type_length = snprintf(
-        content_type, sizeof(content_type),
-        "Content-Type: %s\r\n", expected_content_type);
-    if (content_type_length <= 0 ||
-        (size_t)content_type_length >= sizeof(content_type))
-        return 5;
+    char content_type[160] = {0};
+    if (expected_content_type != NULL) {
+        int content_type_length = snprintf(
+            content_type, sizeof(content_type),
+            "Content-Type: %s\r\n", expected_content_type);
+        if (content_type_length <= 0 ||
+            (size_t)content_type_length >= sizeof(content_type))
+            return 5;
+    }
     char *body_start = strstr(response, "\r\n\r\n");
     if (body_start == NULL) return 6;
     body_start += 4;
@@ -116,9 +118,11 @@ static int request(uint16_t port, const char *method, const char *target,
         : *body_start == '\0';
     if (expected_body == NULL) {
         char *length_header = strstr(response, "Content-Length: ");
-        if (length_header == NULL ||
-            strtoul(length_header + strlen("Content-Length: "),
-                    NULL, 10) == 0UL)
+        if (expected_status == 204)
+            body_ok = body_ok && length_header == NULL;
+        else if (length_header == NULL ||
+                 strtoul(length_header + strlen("Content-Length: "),
+                         NULL, 10) == 0UL)
             body_ok = false;
     }
     bool framework_headers_ok = true;
@@ -146,8 +150,17 @@ static int request(uint16_t port, const char *method, const char *target,
         framework_headers_ok =
             strstr(response, "X-Lime-Stream: yes\r\n") != NULL &&
             strstr(response, "Transfer-Encoding: chunked\r\n") != NULL;
+    if (strcmp(target, "/articles/first-post") == 0 &&
+        (strcmp(method, "OPTIONS") == 0 || strcmp(method, "POST") == 0))
+        framework_headers_ok = strstr(
+            response,
+            "Allow: GET, HEAD, PUT, PATCH, DELETE, OPTIONS\r\n"
+        ) != NULL;
+    bool content_type_ok = expected_content_type != NULL
+        ? strstr(response, content_type) != NULL
+        : strstr(response, "Content-Type:") == NULL;
     return strstr(response, status) != NULL &&
-           strstr(response, content_type) != NULL && body_ok &&
+           content_type_ok && body_ok &&
            framework_headers_ok ? 0 : 6;
 }
 #endif
@@ -203,9 +216,18 @@ int main(int argc, char **argv) {
         "<article>first-post:home</article>");
     if (result == 0)
         result = request(
-            port, "OPTIONS", "/articles/first-post", NULL, NULL, 405,
-            "text/html; charset=utf-8",
-            "<h1>Method not allowed</h1>");
+            port, "GET",
+            "/ignored/%2E%2E/articles/Ada%20Lovelace?ref=encoded",
+            NULL, NULL, 200, "text/html; charset=utf-8",
+            "<article>Ada Lovelace:encoded</article>");
+    if (result == 0)
+        result = request(
+            port, "OPTIONS", "/articles/first-post", NULL, NULL, 204,
+            NULL, NULL);
+    if (result == 0)
+        result = request(
+            port, "POST", "/articles/first-post", NULL, NULL, 405,
+            "text/html; charset=utf-8", "<h1>Method not allowed</h1>");
     if (result == 0)
         result = request(
             port, "HEAD", "/articles/first-post?ref=head",
@@ -288,6 +310,11 @@ int main(int argc, char **argv) {
             "application/json; charset=utf-8", "{\"ok\":true}");
     if (result == 0)
         result = request(
+            port, "GET", "/problem", NULL, NULL, 409,
+            "application/problem+json; charset=utf-8",
+            "{\"type\":null,\"title\":\"Conflict\",\"status\":409,\"detail\":\"The article already exists.\",\"instance\":\"/problem\"}");
+    if (result == 0)
+        result = request(
             port, "GET", "/filtered", NULL, NULL, 404,
             "text/html; charset=utf-8",
             "<main data-path=\"/filtered\"><h1>Filtered</h1></main>");
@@ -296,6 +323,10 @@ int main(int argc, char **argv) {
             port, "GET", "/missing", NULL, NULL, 404,
             "text/html; charset=utf-8",
             "<main data-path=\"/missing\"><h1>Missing</h1></main>");
+    if (result == 0)
+        result = request(
+            port, "GET", "/invalid/%00", NULL, NULL, 400,
+            "text/html; charset=utf-8", "<h1>Bad request</h1>");
     if (result == 0)
         result = request(
             port, "GET", "/stream", NULL, NULL, 200,

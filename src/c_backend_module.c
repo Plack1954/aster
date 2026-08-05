@@ -973,6 +973,13 @@ static bool c_emit_module(const IrModule *ir,
             needs_async = true;
             break;
         }
+    if (!needs_async)
+        for (size_t t = 0U; t < ir->type_count; ++t)
+            if (emitter.used_types[t] &&
+                c_backend_type_is_task(&ir->types[t])) {
+                needs_async = true;
+                break;
+            }
     for (size_t f = 0U; f < ir->function_count; ++f)
         if (emitter.reachable_functions[f] &&
             !function_supported(&emitter, &ir->functions[f])) {

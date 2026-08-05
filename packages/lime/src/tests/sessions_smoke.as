@@ -17,7 +17,7 @@ int main()
     if (!first.IsNew() || first.Id().Length != 64) { return 1; }
     first.SetString("user", "brandon");
 
-    Response response = Response.Text("saved");
+    Response response = Results.Text("saved");
     first.Commit(ref response);
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     if (status != 200 || headers.Count != 1) { return 2; }

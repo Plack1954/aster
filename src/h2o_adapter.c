@@ -721,6 +721,7 @@ static const char *h2o_status_reason(int status) {
         case 301: return "Moved Permanently";
         case 302: return "Found";
         case 303: return "See Other";
+        case 304: return "Not Modified";
         case 307: return "Temporary Redirect";
         case 308: return "Permanent Redirect";
         case 400: return "Bad Request";
@@ -746,6 +747,7 @@ static bool h2o_content_type_valid(LangStringView type) {
         "text/html; charset=utf-8", "text/plain; charset=utf-8",
         "text/css; charset=utf-8", "text/javascript; charset=utf-8",
         "application/json; charset=utf-8",
+        "application/problem+json; charset=utf-8",
         "application/xml; charset=utf-8", "image/svg+xml", "image/png",
         "image/jpeg", "image/gif", "image/webp", "image/x-icon",
         "font/woff", "font/woff2", "font/ttf", "application/wasm",
@@ -974,6 +976,38 @@ static bool h2o_prepare_response(h2o_req_t *request, int64_t status,
     return h2o_add_response_headers(request, headers);
 }
 
+static bool h2o_prepare_empty_response(
+    h2o_req_t *request, int64_t status, LangStringView headers
+) {
+    const char *reason = h2o_status_reason((int)status);
+    if (reason == NULL) return false;
+    request->res.status = (int)status;
+    request->res.reason = reason;
+    return h2o_add_response_headers(request, headers);
+}
+
+static LangNativeResult h2o_respond_empty_value(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    LimeH2ORequest *wrapper = arg_count == 3U
+        ? get_h2o_request(&args[0]) : NULL;
+    int64_t status;
+    LangStringView headers;
+    if (wrapper == NULL || wrapper->request == NULL || wrapper->responded ||
+        !h2o_integer_arg(&args[1], &status) ||
+        !lang_value_string_view(&args[2], &headers))
+        return h2o_result_error(vm, "invalid empty H2O response arguments");
+    h2o_req_t *request = wrapper->request;
+    if (!h2o_prepare_empty_response(request, status, headers))
+        return h2o_result_error(vm, "invalid empty H2O response metadata");
+    h2o_send_inline(request, "", 0U);
+    wrapper->responded = true;
+    wrapper->request = NULL;
+    return h2o_result_value(vm, (LangValue){
+        .tag=LANG_VALUE_BOOL, .as.boolean=true
+    });
+}
+
 static LangNativeResult h2o_respond_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
@@ -1128,6 +1162,14 @@ static LangNativeResult h2o_respond_value(
     return h2o_result_error(vm, "H2O is unavailable");
 }
 
+static LangNativeResult h2o_respond_empty_value(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    (void)args;
+    (void)arg_count;
+    return h2o_result_error(vm, "H2O is unavailable");
+}
+
 static LangNativeResult h2o_shutdown_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
@@ -1199,6 +1241,8 @@ void lang_register_h2o_natives(LangVM *vm) {
                                h2o_request_scheme_value, 1U);
     (void)lang_register_native(vm, "H2OTryRespond",
                                h2o_respond_value, 6U);
+    (void)lang_register_native(vm, "H2OTryRespondEmpty",
+                               h2o_respond_empty_value, 3U);
     (void)lang_register_native(vm, "H2OTryStreamBegin",
                                h2o_stream_begin_value, 5U);
     (void)lang_register_native(vm, "H2OTryStreamWrite",

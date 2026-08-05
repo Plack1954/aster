@@ -180,7 +180,7 @@ private Html PostList(List<Post> posts)
 
 private Response home(Blog blog, Request request)
 {
-    return Response.Ok(Layout(
+    return Results.Html(Layout(
         blog,
         blog.title,
         blog.description,
@@ -194,7 +194,7 @@ private Response home(Blog blog, Request request)
 
 private Response posts(Blog blog, Request request)
 {
-    return Response.Ok(Layout(
+    return Results.Html(Layout(
         blog,
         "Posts — Blog",
         "All posts.",
@@ -207,7 +207,7 @@ private Response posts(Blog blog, Request request)
 
 private Response about(Blog blog, Request request)
 {
-    return Response.Ok(Layout(
+    return Results.Html(Layout(
         blog,
         "About — Blog",
         "About the author.",
@@ -226,7 +226,7 @@ private Response PostResponse(List<Post> posts, string slug, Blog blog)
         {
             PostBody body = post.body;
             string pageTitle = $"{post.title} — {blog.title}";
-            return Response.Ok(Layout(
+            return Results.Html(Layout(
                 blog,
                 pageTitle,
                 post.summary,
@@ -242,7 +242,7 @@ private Response PostResponse(List<Post> posts, string slug, Blog blog)
             ));
         }
     }
-    return Response.NotFound(Layout(
+    return Results.NotFound(Layout(
         blog,
         "Not found — Blog",
         "Page not found.",
@@ -252,7 +252,15 @@ private Response PostResponse(List<Post> posts, string slug, Blog blog)
 
 private Response post(Blog blog, Request request)
 {
-    return PostResponse(blog.posts, request.param("slug"), blog);
+    switch (request.RouteValue("slug"))
+    {
+        case Option.Some(slug): {
+            return PostResponse(blog.posts, slug, blog);
+        }
+        case Option.None: {
+            return Results.InternalError(<p>missing route value</p>);
+        }
+    }
 }
 
 private void XmlAppend(ref StringBuilder output, string value)
@@ -313,17 +321,17 @@ private string FeedXml(Blog blog)
 
 private Response feed(Blog blog, Request request)
 {
-    return Response.Xml(FeedXml(blog));
+    return Results.Xml(FeedXml(blog));
 }
 
 private Response robots(Blog blog, Request request)
 {
-    return Response.Text("User-agent: *\nAllow: /\n");
+    return Results.Text("User-agent: *\nAllow: /\n");
 }
 
 private Response missing(Blog blog, Request request)
 {
-    return Response.NotFound(Layout(
+    return Results.NotFound(Layout(
         blog,
         "Not found — Blog",
         "Page not found.",
@@ -350,11 +358,11 @@ public Result<StatefulApp<Blog>, string> CreateApp()
 {
     Blog blog = BlogNew();
     StatefulApp<Blog> app = StatefulAppNew(blog, missing);
-    app.Get("/", home);
-    app.Get("/blog/", posts);
-    app.Get("/blog/:slug/", post, PostPagePaths);
-    app.Get("/about/", about);
-    app.Get("/feed.xml", feed);
-    app.Get("/robots.txt", robots);
+    app.MapGet("/", home);
+    app.MapGet("/blog/", posts);
+    app.MapGet("/blog/{slug}/", post, PostPagePaths);
+    app.MapGet("/about/", about);
+    app.MapGet("/feed.xml", feed);
+    app.MapGet("/robots.txt", robots);
     return Result.Ok(app);
 }

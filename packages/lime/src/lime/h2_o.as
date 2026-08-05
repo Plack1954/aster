@@ -82,6 +82,11 @@ public extern Result<bool, string> H2OTryRespond(
     string body,
     bool head
 );
+public extern Result<bool, string> H2OTryRespondEmpty(
+    NativeHandle request,
+    long status,
+    string headers
+);
 public extern Result<NativeHandle, string> H2OTryStreamBegin(
     NativeHandle request,
     long status,
@@ -137,6 +142,9 @@ private string H2OAssetContentType(AssetKind kind)
     {
         case AssetKind.JavaScript: { return "text/javascript; charset=utf-8"; }
         case AssetKind.Json: { return "application/json; charset=utf-8"; }
+        case AssetKind.ProblemJson: {
+            return "application/problem+json; charset=utf-8";
+        }
         case AssetKind.Xml: { return "application/xml; charset=utf-8"; }
         case AssetKind.Svg: { return "image/svg+xml"; }
         case AssetKind.Png: { return "image/png"; }
@@ -222,15 +230,20 @@ public Result<bool, string> H2OSend(
     StringBuilder renderedHeaders = new();
     foreach (ResponseHeader header in headers)
     {
-        renderedHeaders.Append(header.name);
+        renderedHeaders.Append(header.Name);
         renderedHeaders.Append(": ");
-        renderedHeaders.Append(header.value);
+        renderedHeaders.Append(header.Value);
         renderedHeaders.Append("\r\n");
     }
     string headerBlock = renderedHeaders.ToString();
     bool head = H2ORequestMethod(request) == "HEAD";
     switch (body)
     {
+        case ResponseBody.Empty: {
+            return H2OTryRespondEmpty(
+                request, (long)status, headerBlock
+            );
+        }
         case ResponseBody.Html(page): {
             return H2OTryRespond(
                 request, (long)status, "text/html; charset=utf-8",
@@ -277,9 +290,37 @@ public Result<bool, string> H2ODispatch(
     NativeHandle request
 )
 {
-    Request input = H2ORequest(request);
-    Response output = app.dispatch(input);
-    return H2OSend(request, output);
+    try
+    {
+        Request input = H2ORequest(request);
+        Response output = app.Dispatch(input);
+        return H2OSend(request, output);
+    }
+    catch (ArgumentException error)
+    {
+        return H2OSend(
+            request, Results.BadRequest(<h1>Bad request</h1>)
+        );
+    }
+}
+
+public async Task<Result<bool, string>> H2ODispatchAsync(
+    App app,
+    NativeHandle request
+)
+{
+    try
+    {
+        Request input = H2ORequest(request);
+        Response output = await app.DispatchAsync(input);
+        return H2OSend(request, output);
+    }
+    catch (ArgumentException error)
+    {
+        return H2OSend(
+            request, Results.BadRequest(<h1>Bad request</h1>)
+        );
+    }
 }
 
 public Result<bool, string> H2ODispatchStateful<State>(
@@ -287,9 +328,18 @@ public Result<bool, string> H2ODispatchStateful<State>(
     NativeHandle request
 )
 {
-    Request input = H2ORequest(request);
-    Response output = app.dispatch(input);
-    return H2OSend(request, output);
+    try
+    {
+        Request input = H2ORequest(request);
+        Response output = app.Dispatch(input);
+        return H2OSend(request, output);
+    }
+    catch (ArgumentException error)
+    {
+        return H2OSend(
+            request, Results.BadRequest(<h1>Bad request</h1>)
+        );
+    }
 }
 
 public Result<bool, string> H2OServe(
@@ -306,6 +356,35 @@ public Result<bool, string> H2OServe(
                 {
                     case Result.Ok(sent): { }
                     case Result.Err(error): { Console.Error.WriteLine(error); }
+                }
+            }
+            case Result.Err(error): {
+                if (!H2OStopRequested(server))
+                {
+                    return Result.Err(error);
+                }
+            }
+        }
+    }
+    return H2OTryShutdown(server);
+}
+
+public async Task<Result<bool, string>> H2OServeAsync(
+    NativeHandle server,
+    App app
+)
+{
+    while (!H2OStopRequested(server))
+    {
+        switch (H2OTryAccept(server))
+        {
+            case Result.Ok(request): {
+                switch (await H2ODispatchAsync(app, request))
+                {
+                    case Result.Ok(sent): { }
+                    case Result.Err(error): {
+                        Console.Error.WriteLine(error);
+                    }
                 }
             }
             case Result.Err(error): {

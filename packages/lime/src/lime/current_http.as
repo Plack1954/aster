@@ -2,6 +2,7 @@ namespace Lime.CurrentHttp;
 
 using Lime;
 using Aster.Net.Http;
+using Aster.Html;
 using System.IO;
 using System.Text;
 
@@ -11,6 +12,9 @@ private string AssetContentType(AssetKind kind)
     {
         case AssetKind.JavaScript: { return "text/javascript; charset=utf-8"; }
         case AssetKind.Json: { return "application/json; charset=utf-8"; }
+        case AssetKind.ProblemJson: {
+            return "application/problem+json; charset=utf-8";
+        }
         case AssetKind.Xml: { return "application/xml; charset=utf-8"; }
         case AssetKind.Svg: { return "image/svg+xml"; }
         case AssetKind.Png: { return "image/png"; }
@@ -50,14 +54,19 @@ public Result<bool, string> CurrentHttpSend(
     StringBuilder renderedHeaders = new();
     foreach (ResponseHeader header in headers)
     {
-        renderedHeaders.Append(header.name);
+        renderedHeaders.Append(header.Name);
         renderedHeaders.Append(": ");
-        renderedHeaders.Append(header.value);
+        renderedHeaders.Append(header.Value);
         renderedHeaders.Append("\r\n");
     }
     string headerBlock = renderedHeaders.ToString();
     switch (body)
     {
+        case ResponseBody.Empty: {
+            return HttpTryRespondEmptyHeadersReuse(
+                request, (long)status, headerBlock
+            );
+        }
         case ResponseBody.Html(page): {
             return HttpTryRespondHtmlHeadersReuse(
                 request, (long)status, headerBlock, page
@@ -93,62 +102,74 @@ public Result<bool, string> CurrentHttpSend(
         }
         case ResponseBody.Stream(streamBody): {
             (Stream stream, AssetKind kind) = streamBody;
-            HttpStreamBeginHeaders(
-                request,
-                (long)status,
-                AssetContentType(kind),
-                headerBlock
-            );
-            bool reading = true;
-            while (reading)
-            {
-                List<byte> bytes = stream.Read(65536);
-                if (bytes.Count == 0)
-                {
-                    reading = false;
-                }
-                else
-                {
-                    StringBuilder chunk = new();
-                    foreach (byte value in bytes)
-                    {
-                        chunk.AppendByte(value);
-                    }
-                    HttpStreamChunk(request, chunk.ToString());
-                }
-            }
-            stream.Close();
-            HttpStreamFinish(request);
-            return Result.Ok(false);
-        }
-        case ResponseBody.File(fileBody): {
-            (string path, AssetKind kind) = fileBody;
-            FileStream stream = File.OpenRead(path);
-            HttpStreamBeginHeaders(
-                request,
-                (long)status,
-                AssetContentType(kind),
-                headerBlock
-            );
             try
             {
-                while (true)
+                HttpStreamBeginHeaders(
+                    request,
+                    (long)status,
+                    AssetContentType(kind),
+                    headerBlock
+                );
+                if (HttpRequestMethod(request) != "HEAD")
                 {
-                    List<byte> bytes = stream.Read(65536);
-                    if (bytes.Count == 0) { break; }
-                    StringBuilder chunk = new();
-                    foreach (byte value in bytes)
+                    bool reading = true;
+                    while (reading)
                     {
-                        chunk.AppendByte(value);
+                        List<byte> bytes = stream.Read(65536);
+                        if (bytes.Count == 0)
+                        {
+                            reading = false;
+                        }
+                        else
+                        {
+                            StringBuilder chunk = new();
+                            foreach (byte value in bytes)
+                            {
+                                chunk.AppendByte(value);
+                            }
+                            HttpStreamChunk(request, chunk.ToString());
+                        }
                     }
-                    HttpStreamChunk(request, chunk.ToString());
                 }
+                HttpStreamFinish(request);
             }
             finally
             {
                 stream.Close();
             }
-            HttpStreamFinish(request);
+            return Result.Ok(false);
+        }
+        case ResponseBody.File(fileBody): {
+            (string path, AssetKind kind) = fileBody;
+            FileStream stream = File.OpenRead(path);
+            try
+            {
+                HttpStreamBeginHeaders(
+                    request,
+                    (long)status,
+                    AssetContentType(kind),
+                    headerBlock
+                );
+                if (HttpRequestMethod(request) != "HEAD")
+                {
+                    while (true)
+                    {
+                        List<byte> bytes = stream.Read(65536);
+                        if (bytes.Count == 0) { break; }
+                        StringBuilder chunk = new();
+                        foreach (byte value in bytes)
+                        {
+                            chunk.AppendByte(value);
+                        }
+                        HttpStreamChunk(request, chunk.ToString());
+                    }
+                }
+                HttpStreamFinish(request);
+            }
+            finally
+            {
+                stream.Close();
+            }
             return Result.Ok(false);
         }
     }
@@ -159,9 +180,37 @@ public Result<bool, string> CurrentHttpDispatch(
     NativeHandle request
 )
 {
-    Request input = CurrentHttpRequest(request);
-    Response output = app.dispatch(input);
-    return CurrentHttpSend(request, output);
+    try
+    {
+        Request input = CurrentHttpRequest(request);
+        Response output = app.Dispatch(input);
+        return CurrentHttpSend(request, output);
+    }
+    catch (ArgumentException error)
+    {
+        return CurrentHttpSend(
+            request, Results.BadRequest(<h1>Bad request</h1>)
+        );
+    }
+}
+
+public async Task<Result<bool, string>> CurrentHttpDispatchAsync(
+    App app,
+    NativeHandle request
+)
+{
+    try
+    {
+        Request input = CurrentHttpRequest(request);
+        Response output = await app.DispatchAsync(input);
+        return CurrentHttpSend(request, output);
+    }
+    catch (ArgumentException error)
+    {
+        return CurrentHttpSend(
+            request, Results.BadRequest(<h1>Bad request</h1>)
+        );
+    }
 }
 
 public Result<bool, string> CurrentHttpDispatchStateful<State>(
@@ -169,7 +218,16 @@ public Result<bool, string> CurrentHttpDispatchStateful<State>(
     NativeHandle request
 )
 {
-    Request input = CurrentHttpRequest(request);
-    Response output = app.dispatch(input);
-    return CurrentHttpSend(request, output);
+    try
+    {
+        Request input = CurrentHttpRequest(request);
+        Response output = app.Dispatch(input);
+        return CurrentHttpSend(request, output);
+    }
+    catch (ArgumentException error)
+    {
+        return CurrentHttpSend(
+            request, Results.BadRequest(<h1>Bad request</h1>)
+        );
+    }
 }

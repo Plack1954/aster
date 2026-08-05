@@ -11,7 +11,7 @@ using System.Text;
 
 private Response home(Request request)
 {
-    return Response.Ok(
+    return Results.Html(
         <section>
             <h1>Lime</h1>
             <p>Small, explicit, and written in Aster.</p>
@@ -21,13 +21,20 @@ private Response home(Request request)
 
 private Response article(Request request)
 {
-    string slug = request.param("slug");
-    return Response.Ok(<article>{slug}</article>);
+    switch (request.RouteValue("slug"))
+    {
+        case Option.Some(slug): {
+            return Results.Html(<article>{slug}</article>);
+        }
+        case Option.None: {
+            return Results.InternalError(<p>missing route value</p>);
+        }
+    }
 }
 
 private Response create(Request request)
 {
-    return Response.Redirect("/");
+    return Results.SeeOther("/");
 }
 
 private Response search(Request request)
@@ -55,21 +62,21 @@ private Response search(Request request)
             }
             if (query.Count() != 2)
             {
-                return Response.BadRequest(<p>unexpected query</p>);
+                return Results.BadRequest(<p>unexpected query</p>);
             }
-            return Response.Ok(
+            return Results.Html(
                 <p>{page}:{sort}</p>
             );
         }
         case Result.Err(error): {
-            return Response.BadRequest(<p>{error}</p>);
+            return Results.BadRequest(<p>{error}</p>);
         }
     }
 }
 
 private Response missing(Request request)
 {
-    return Response.NotFound(
+    return Results.NotFound(
         <section><h1>Not found</h1></section>
     );
 }
@@ -81,20 +88,22 @@ private Response broken(Request request)
 
 private Response HandleRouteException(Exception error)
 {
-    return Response.Plain(503, error.Message);
+    return Results.Text(503, error.Message);
 }
 
 private bool ExceptionBoundaryWorks()
 {
-    App app = AppNew(missing);
+    App app = AppNew();
+    app.MapFallback(missing);
     app.OnException(HandleRouteException);
-    app.Get("/broken", broken);
-    Response response = app.dispatch(request("GET", "/broken"));
+    app.MapGet("/broken", broken);
+    Response response = app.Dispatch(request("GET", "/broken"));
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     if (status != 503) { return false; }
     switch (body)
     {
         case ResponseBody.Text(text): { return text == "route failed"; }
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
@@ -150,12 +159,12 @@ struct SiteState
 
 private Response StateHome(SiteState state, Request request)
 {
-    return Response.Ok(<h1>{state.title}</h1>);
+    return Results.Html(<h1>{state.title}</h1>);
 }
 
 private Response StateMissing(SiteState state, Request request)
 {
-    return Response.NotFound(
+    return Results.NotFound(
         <p>{state.title}:missing</p>
     );
 }
@@ -163,7 +172,7 @@ private Response StateMissing(SiteState state, Request request)
 private void RegisterDynamicRoute(ref StatefulApp<SiteState> app)
 {
     string path = "/dynamic";
-    app.Get(path, StateHome);
+    app.MapGet(path, StateHome);
 }
 
 private Request request(string method, string path)
@@ -186,6 +195,15 @@ private bool RejectsMalformedValues()
 
 private bool RejectsUnsafeResponseMetadata()
 {
+    try
+    {
+        Response invalidBody = Results.Text(204, "not allowed");
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        if (error.Message.Length == 0) { return false; }
+    }
     switch (ResponseHeader("Content-Length", "4"))
     {
         case Result.Ok(header): { return false; }
@@ -211,10 +229,10 @@ private bool HttpPrimitivesWork()
         "GET", "/", "example.test", "", "", "",
         "X-Test\0one\0x-test\0two\0"
     );
-    switch (withHeaders.header("X-TEST"))
+    switch (withHeaders.Header("X-TEST"))
     {
         case Option.Some(value): {
-            if (value != "two") { return false; }
+            if (value != "one") { return false; }
         }
         case Option.None: { return false; }
     }
@@ -223,7 +241,7 @@ private bool HttpPrimitivesWork()
         "POST", "/", "example.test",
         "Application/Json; charset=utf-8", "", "{\"ok\":true}"
     );
-    switch (jsonRequest.json())
+    switch (jsonRequest.Json())
     {
         case Result.Ok(body): {
             if (body != "{\"ok\":true}") { return false; }
@@ -241,7 +259,7 @@ private bool HttpPrimitivesWork()
         }
     }
 
-    Response created = Response.JsonStatus(
+    Response created = Results.Json(
         201, "{\"created\":true}"
     );
     (int status, ResponseBody body,
@@ -253,6 +271,7 @@ private bool HttpPrimitivesWork()
             switch (asset.kind)
             {
                 case AssetKind.Json: { return true; }
+                case AssetKind.ProblemJson: { return false; }
                 case AssetKind.JavaScript: { return false; }
                 case AssetKind.Xml: { return false; }
                 case AssetKind.Svg: { return false; }
@@ -268,6 +287,68 @@ private bool HttpPrimitivesWork()
                 case AssetKind.Binary: { return false; }
             }
         }
+        case ResponseBody.Empty: { return false; }
+        case ResponseBody.Html(page): { return false; }
+        case ResponseBody.Text(text): { return false; }
+        case ResponseBody.Css(text): { return false; }
+        case ResponseBody.Stream(stream): { return false; }
+        case ResponseBody.File(file): { return false; }
+    }
+}
+
+private bool RequestPathNormalizationWorks()
+{
+    Request decoded = RequestNew(
+        "GET",
+        "/a/%2E%2E/users/Ada%20Lovelace/%E2%82%AC?view=full%20page",
+        "example.test", "", "", ""
+    );
+    if (decoded.Path != "/users/Ada Lovelace/€" ||
+        decoded.Target !=
+            "/a/%2E%2E/users/Ada%20Lovelace/%E2%82%AC?view=full%20page" ||
+        decoded.QueryString != "view=full%20page")
+    {
+        return false;
+    }
+
+    Request reserved = RequestNew(
+        "GET", "/files/a%2Fb+plus/%FF/%2", "example.test", "", "", ""
+    );
+    if (reserved.Path != "/files/a%2Fb+plus/%FF/%2")
+    {
+        return false;
+    }
+
+    try
+    {
+        Request invalid = RequestNew(
+            "GET", "/invalid/%00", "example.test", "", "", ""
+        );
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        return error.Message.Length > 0;
+    }
+}
+
+private bool ProblemResultsWork()
+{
+    ProblemDetails problem = ProblemDetails.Create(409, "Conflict");
+    problem.Type = "https://lime.test/problems/conflict";
+    problem.Detail = "The article already exists.";
+    problem.Instance = "/articles/aster";
+    Response response = Results.Problem(problem);
+    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
+    if (status != 409) { return false; }
+    switch (body)
+    {
+        case ResponseBody.Asset(asset): {
+            (string bytes, AssetKind kind) = asset;
+            return kind == AssetKind.ProblemJson && bytes ==
+                "{\"type\":\"https://lime.test/problems/conflict\",\"title\":\"Conflict\",\"status\":409,\"detail\":\"The article already exists.\",\"instance\":\"/articles/aster\"}";
+        }
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
@@ -278,15 +359,16 @@ private bool HttpPrimitivesWork()
 
 private Response Origin(Request request)
 {
-    return Response.Text(
-        $"{request.Scheme()}|{request.Host()}|{request.RemoteIpAddress()}"
+    return Results.Text(
+        $"{request.Scheme}|{request.Host}|{request.RemoteIpAddress}"
     );
 }
 
 private bool ForwardedHeadersAreTrustedExplicitly()
 {
-    App app = AppNew(missing);
-    app.Get("/origin", Origin);
+    App app = AppNew();
+    app.MapFallback(missing);
+    app.MapGet("/origin", Origin);
     ForwardedHeadersOptions options = ForwardedHeadersOptions();
     options.ForwardedHeaders = ForwardedHeaders.All;
     options.KnownProxies.Add("127.0.0.1");
@@ -297,7 +379,7 @@ private bool ForwardedHeadersAreTrustedExplicitly()
         "GET", "/origin", "internal.test", "http", "127.0.0.1",
         "", "", "", forwarded
     );
-    Response trustedResponse = app.dispatch(trusted);
+    Response trustedResponse = app.Dispatch(trusted);
     (int trustedStatus, ResponseBody trustedBody,
     List<ResponseHeader> trustedHeaders) = trustedResponse;
     if (trustedStatus != 200) { return false; }
@@ -309,6 +391,7 @@ private bool ForwardedHeadersAreTrustedExplicitly()
                 return false;
             }
         }
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
@@ -320,7 +403,7 @@ private bool ForwardedHeadersAreTrustedExplicitly()
         "GET", "/origin", "internal.test", "http", "203.0.113.9",
         "", "", "", forwarded
     );
-    Response untrustedResponse = app.dispatch(untrusted);
+    Response untrustedResponse = app.Dispatch(untrusted);
     (int untrustedStatus, ResponseBody untrustedBody,
     List<ResponseHeader> untrustedHeaders) = untrustedResponse;
     if (untrustedStatus != 200) { return false; }
@@ -329,6 +412,7 @@ private bool ForwardedHeadersAreTrustedExplicitly()
         case ResponseBody.Text(text): {
             return text == "http|internal.test|203.0.113.9";
         }
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
@@ -368,6 +452,7 @@ private bool StaticAssetsWork()
                         case AssetKind.Svg: { return true; }
                         case AssetKind.JavaScript: { return false; }
                         case AssetKind.Json: { return false; }
+                        case AssetKind.ProblemJson: { return false; }
                         case AssetKind.Xml: { return false; }
                         case AssetKind.Png: { return false; }
                         case AssetKind.Jpeg: { return false; }
@@ -381,6 +466,7 @@ private bool StaticAssetsWork()
                         case AssetKind.Binary: { return false; }
                     }
                 }
+                case ResponseBody.Empty: { return false; }
                 case ResponseBody.Html(page): { return false; }
                 case ResponseBody.Text(text): { return false; }
                 case ResponseBody.Css(text): { return false; }
@@ -405,6 +491,7 @@ private bool StaticCssWorks()
                 case ResponseBody.Css(text): {
                     return text == "body { color: black; }\n";
                 }
+                case ResponseBody.Empty: { return false; }
                 case ResponseBody.Html(page): { return false; }
                 case ResponseBody.Text(text): { return false; }
                 case ResponseBody.Asset(asset): { return false; }
@@ -417,14 +504,15 @@ private bool StaticCssWorks()
 
 private bool StaticDirectoriesWork()
 {
-    App app = AppNew(missing);
+    App app = AppNew();
+    app.MapFallback(missing);
     switch (app.TryStatic("/assets/", "packages/lime/testdata"))
     {
         case Result.Err(error): { return false; }
         case Result.Ok(registered): {
         }
     }
-    Response response = app.dispatch(request("GET", "/assets/site.css"));
+    Response response = app.Dispatch(request("GET", "/assets/site.css"));
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     if (status != 200) { return false; }
     switch (body)
@@ -432,6 +520,7 @@ private bool StaticDirectoriesWork()
         case ResponseBody.Css(text): {
             return text == "body { color: black; }\n";
         }
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
@@ -445,15 +534,16 @@ private bool StaticCachePolicyWorks()
     StaticFileOptions options = StaticFileOptions();
     options.MaxAgeSeconds = 60;
     options.Immutable = true;
-    App app = AppNew(missing);
+    App app = AppNew();
+    app.MapFallback(missing);
     app.Static("/assets/", "packages/lime/testdata", options);
-    Response response = app.dispatch(request("GET", "/assets/site.css"));
+    Response response = app.Dispatch(request("GET", "/assets/site.css"));
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     if (status != 200 || headers.Count != 1) { return false; }
     foreach (ResponseHeader header in headers)
     {
-        if (header.name != "Cache-Control" ||
-            header.value != "public, max-age=60, immutable")
+        if (header.Name != "Cache-Control" ||
+            header.Value != "public, max-age=60, immutable")
         {
             return false;
         }
@@ -504,9 +594,9 @@ private bool MultipartFormsWork()
     switch (form.GetFile("image"))
     {
         case Option.Some(file): {
-            return file.FileName() == "mark.svg" &&
-                file.ContentType() == "image/svg+xml" &&
-                file.Length() == 22;
+            return file.FileName == "mark.svg" &&
+                file.ContentType == "image/svg+xml" &&
+                file.Length == 22;
         }
         case Option.None: { return false; }
     }
@@ -521,6 +611,7 @@ private bool PrintHtmlResponse(Response response, int expectedStatus)
     }
     switch (body)
     {
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): {
             Console.WriteLine(page.ToHtmlString());
             return true;
@@ -542,15 +633,16 @@ private bool PrintRedirect(Response response)
     }
     foreach (ResponseHeader header in headers)
     {
-        if (header.name != "Location")
+        if (header.Name != "Location")
         {
             return false;
         }
-        Console.WriteLine(header.value);
+        Console.WriteLine(header.Value);
     }
     switch (body)
     {
         case ResponseBody.Text(text): { return true; }
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
@@ -569,15 +661,15 @@ private bool StatefulRoutes()
         state,
         StateMissing
     );
-    app.Get("/", StateHome);
+    app.MapGet("/", StateHome);
     RegisterDynamicRoute(app);
 
     if (!PrintHtmlResponse(
-            app.dispatch(request("GET", "/")), 200))
+            app.Dispatch(request("GET", "/")), 200))
     {
         return false;
     }
-    Response dynamic = app.dispatch(request("GET", "/dynamic"));
+    Response dynamic = app.Dispatch(request("GET", "/dynamic"));
     (int dynamicStatus, ResponseBody dynamicBody,
     List<ResponseHeader> dynamicHeaders) = dynamic;
     if (dynamicStatus != 200)
@@ -586,6 +678,7 @@ private bool StatefulRoutes()
     }
     switch (dynamicBody)
     {
+        case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): {
         }
         case ResponseBody.Text(text): { return false; }
@@ -595,8 +688,215 @@ private bool StatefulRoutes()
         case ResponseBody.File(file): { return false; }
     }
     return PrintHtmlResponse(
-        app.dispatch(request("GET", "/missing")), 404
+        app.Dispatch(request("GET", "/missing")), 404
     );
+}
+
+private Response ParameterRoute(Request request)
+{
+    return Results.Text("parameter");
+}
+
+private Response ConstrainedRoute(Request request)
+{
+    return Results.Text("constrained");
+}
+
+private Response LiteralRoute(Request request)
+{
+    return Results.Text("literal");
+}
+
+private Response HeadRoute(Request request)
+{
+    return Results.Text("head");
+}
+
+private bool TextResponseEquals(
+    Response response,
+    int expectedStatus,
+    string expectedBody
+)
+{
+    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
+    if (status != expectedStatus)
+    {
+        return false;
+    }
+    switch (body)
+    {
+        case ResponseBody.Text(text): { return text == expectedBody; }
+        case ResponseBody.Empty: { return false; }
+        case ResponseBody.Html(page): { return false; }
+        case ResponseBody.Css(text): { return false; }
+        case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Stream(stream): { return false; }
+        case ResponseBody.File(file): { return false; }
+    }
+}
+
+private bool AllowEquals(Response response, string expected)
+{
+    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
+    foreach (ResponseHeader header in headers)
+    {
+        if (header.Name == "Allow")
+        {
+            return header.Value == expected;
+        }
+    }
+    return false;
+}
+
+private bool EmptyResponseEquals(Response response, int expectedStatus)
+{
+    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
+    if (status != expectedStatus) { return false; }
+    switch (body)
+    {
+        case ResponseBody.Empty: { return true; }
+        case ResponseBody.Html(page): { return false; }
+        case ResponseBody.Text(text): { return false; }
+        case ResponseBody.Css(text): { return false; }
+        case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Stream(stream): { return false; }
+        case ResponseBody.File(file): { return false; }
+    }
+}
+
+private bool StructuralRoutingWorks()
+{
+    App app = AppNew();
+    app.MapFallback(missing);
+    app.MapGet("/precedence/{value}", ParameterRoute);
+    app.MapGet("/precedence/{value:int}", ConstrainedRoute);
+    app.MapGet("/precedence/current", LiteralRoute);
+    app.MapHead("/precedence/current", HeadRoute);
+    List<string> multiMethods = new();
+    multiMethods.Add("POST");
+    multiMethods.Add("PUT");
+    app.MapMethods("/multi", multiMethods, ParameterRoute);
+    multiMethods.Add("DELETE");
+
+    if (!TextResponseEquals(
+            app.Dispatch(request("GET", "/precedence/current")),
+            200,
+            "literal"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("GET", "/precedence/42")),
+            200,
+            "constrained"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("GET", "/precedence/aster")),
+            200,
+            "parameter"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("HEAD", "/precedence/current")),
+            200,
+            "head"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("POST", "/multi")), 200, "parameter"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("PUT", "/multi")), 200, "parameter"
+        ))
+    {
+        return false;
+    }
+
+    Response options = app.Dispatch(request(
+        "OPTIONS", "/precedence/42"
+    ));
+    Response invalidMethod = app.Dispatch(request(
+        "DELETE", "/precedence/42"
+    ));
+    Response multiInvalidMethod = app.Dispatch(request(
+        "DELETE", "/multi"
+    ));
+    (int optionsStatus, ResponseBody optionsBody,
+    List<ResponseHeader> optionsHeaders) = options;
+    (int invalidStatus, ResponseBody invalidBody,
+    List<ResponseHeader> invalidHeaders) = invalidMethod;
+    return EmptyResponseEquals(options, 204) && invalidStatus == 405 &&
+        AllowEquals(options, "GET, HEAD, OPTIONS") &&
+        AllowEquals(invalidMethod, "GET, HEAD, OPTIONS") &&
+        multiInvalidMethod.StatusCode == 405 &&
+        AllowEquals(multiInvalidMethod, "POST, PUT, OPTIONS");
+}
+
+private bool RegistrationValidationWorks()
+{
+    bool malformedRejected = false;
+    try
+    {
+        App malformed = AppNew();
+        malformed.MapGet("users/{id}", ParameterRoute);
+    }
+    catch (ArgumentException error)
+    {
+        malformedRejected = true;
+    }
+
+    bool conflictRejected = false;
+    try
+    {
+        App conflict = AppNew();
+        conflict.MapGet("/users/{id}", ParameterRoute);
+        conflict.MapGet("/users/{name}", LiteralRoute);
+    }
+    catch (ArgumentException error)
+    {
+        conflictRejected = true;
+    }
+
+    try
+    {
+        App disjoint = AppNew();
+        disjoint.MapGet("/users/{id:int}", ConstrainedRoute);
+        disjoint.MapGet("/users/{name:alpha}", ParameterRoute);
+    }
+    catch (ArgumentException error)
+    {
+        return false;
+    }
+
+    bool invalidMethodRejected = false;
+    try
+    {
+        App invalidMethod = AppNew();
+        List<string> methods = new();
+        methods.Add("get");
+        invalidMethod.MapMethods("/methods", methods, LiteralRoute);
+    }
+    catch (ArgumentException error)
+    {
+        invalidMethodRejected = true;
+    }
+
+    bool atomicConflictRejected = false;
+    bool registrationStayedAtomic = false;
+    App atomic = AppNew();
+    try
+    {
+        atomic.MapGet("/atomic", LiteralRoute);
+        List<string> methods = new();
+        methods.Add("POST");
+        methods.Add("GET");
+        atomic.MapMethods("/atomic", methods, ParameterRoute);
+    }
+    catch (ArgumentException error)
+    {
+        atomicConflictRejected = true;
+        registrationStayedAtomic =
+            atomic.Dispatch(request("POST", "/atomic")).StatusCode == 405;
+    }
+    return malformedRejected && conflictRejected &&
+        invalidMethodRejected && atomicConflictRejected &&
+        registrationStayedAtomic;
 }
 
 int main()
@@ -619,6 +919,14 @@ int main()
         return 1;
     }
     if (!HttpPrimitivesWork())
+    {
+        return 1;
+    }
+    if (!RequestPathNormalizationWorks())
+    {
+        return 1;
+    }
+    if (!ProblemResultsWork())
     {
         return 1;
     }
@@ -646,24 +954,33 @@ int main()
     {
         return 1;
     }
+    if (!StructuralRoutingWorks())
+    {
+        return 1;
+    }
+    if (!RegistrationValidationWorks())
+    {
+        return 1;
+    }
 
-    App app = AppNew(missing);
-    app.Get("/", home);
-    app.Get("/articles/:slug", article);
-    app.Get("/search", search);
-    app.post("/articles", create);
+    App app = AppNew();
+    app.MapFallback(missing);
+    app.MapGet("/", home);
+    app.MapGet("/articles/{slug}", article);
+    app.MapGet("/search", search);
+    app.MapPost("/articles", create);
 
-    if (!PrintHtmlResponse(app.dispatch(request("GET", "/")), 200) ||
-        !PrintHtmlResponse(app.dispatch(
+    if (!PrintHtmlResponse(app.Dispatch(request("GET", "/")), 200) ||
+        !PrintHtmlResponse(app.Dispatch(
             request("GET", "/articles/first-post")
         ), 200) ||
-        !PrintHtmlResponse(app.dispatch(
+        !PrintHtmlResponse(app.Dispatch(
             request("GET", "/search?page=two+words%21&sort=new")
         ), 200) ||
-        !PrintHtmlResponse(app.dispatch(
+        !PrintHtmlResponse(app.Dispatch(
             request("DELETE", "/articles")
         ), 405) ||
-        !PrintRedirect(app.dispatch(request("POST", "/articles"))))
+        !PrintRedirect(app.Dispatch(request("POST", "/articles"))))
     {
         return 1;
     }

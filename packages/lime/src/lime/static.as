@@ -122,9 +122,9 @@ public Result<Response, string> StaticFile(
                 case Result.Ok(bytes): {
                     if (StaticEndsWith(requestPath, ".css"))
                     {
-                        return Result.Ok(Response.Css(bytes));
+                        return Result.Ok(Results.Css(bytes));
                     }
-                    return Result.Ok(Response.Asset(
+                    return Result.Ok(Results.Asset(
                         bytes,
                         StaticAssetKind(requestPath)
                     ));
@@ -174,17 +174,17 @@ private Option<Response> ResolveStatic(
     Request request
 )
 {
-    if (!request.path.StartsWith(urlPrefix))
+    if (!request.Path.StartsWith(urlPrefix))
     {
         return Option.None;
     }
     nuint prefixLength = urlPrefix.Length;
-    if (request.path.Length <= prefixLength)
+    if (request.Path.Length <= prefixLength)
     {
         return Option.None;
     }
     string relative = StringSlice(
-        request.path, prefixLength - 1, request.path.Length
+        request.Path, prefixLength - 1, request.Path.Length
     );
     if (!StaticEndsWith(relative, ".css"))
     {
@@ -198,7 +198,7 @@ private Option<Response> ResolveStatic(
         string filePath = path.ToString();
         if (File.Exists(filePath))
         {
-            Response response = Response.File(
+            Response response = Results.File(
                 filePath, StaticAssetKind(relative)
             );
             return StaticResponseWithCache(response, options);

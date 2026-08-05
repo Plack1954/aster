@@ -17,7 +17,7 @@ struct TestState
 private Response Hello(TestState state, Request request)
 {
     string source = "";
-    switch (request.query("from"))
+    switch (request.Query("from"))
     {
         case Result.Ok(found): {
             switch (found)
@@ -27,17 +27,23 @@ private Response Hello(TestState state, Request request)
             }
         }
         case Result.Err(error): {
-            return Response.BadRequest(<p>{error}</p>);
+            return Results.BadRequest(<p>{error}</p>);
         }
     }
-    Response response = Response.Ok(
-        <p>{request.param("name")}:{source}</p>
-    );
+    string name = "";
+    switch (request.RouteValue("name"))
+    {
+        case Option.Some(value): { name = value; }
+        case Option.None: {
+            return Results.InternalError(<p>missing route value</p>);
+        }
+    }
+    Response response = Results.Html(<p>{name}:{source}</p>);
     switch (ResponseHeader("X-Lime-Adapter", "h2o"))
     {
         case Result.Ok(header): { response.AddHeader(header); }
         case Result.Err(error): {
-            return Response.InternalError(<p>{error}</p>);
+            return Results.InternalError(<p>{error}</p>);
         }
     }
     return response;
@@ -51,16 +57,16 @@ private Response Form(TestState state, Request request)
         switch (form.Get("title"))
         {
             case Option.Some(title): {
-                return Response.Ok(<p>{title}</p>);
+                return Results.Html(<p>{title}</p>);
             }
             case Option.None: {
-                return Response.BadRequest(<p>Missing title</p>);
+                return Results.BadRequest(<p>Missing title</p>);
             }
         }
     }
     catch (Exception error)
     {
-        return Response.BadRequest(<p>{error.Message}</p>);
+        return Results.BadRequest(<p>{error.Message}</p>);
     }
 }
 
@@ -73,20 +79,20 @@ private Response Upload(TestState state, Request request)
             switch (form.GetFile("image"))
             {
                 case Option.Some(file): {
-                    return Response.Text($"{title}:{file.FileName()}:{file.ContentType()}:{file.Length()}");
+                    return Results.Text($"{title}:{file.FileName}:{file.ContentType}:{file.Length}");
                 }
                 case Option.None: {
-                    return Response.BadRequest(<p>Missing image</p>);
+                    return Results.BadRequest(<p>Missing image</p>);
                 }
             }
         }
-        case Option.None: { return Response.BadRequest(<p>Missing title</p>); }
+        case Option.None: { return Results.BadRequest(<p>Missing title</p>); }
     }
 }
 
 private Response Cookie(TestState state, Request request)
 {
-    Response response = Response.Text("cookie");
+    Response response = Results.Text("cookie");
     switch (ResponseCookie("theme", "aster"))
     {
         case Result.Ok(header): { response.AddHeader(header); }
@@ -112,14 +118,14 @@ private Response SessionValue(TestState state, Request request)
             case Option.None: { value = "missing"; }
         }
     }
-    Response response = Response.Text(value);
+    Response response = Results.Text(value);
     session.Commit(ref response);
     return response;
 }
 
 private Response Redirect(TestState state, Request request)
 {
-    return Response.Redirect("/hello/Aster?from=redirect");
+    return Results.SeeOther("/hello/Aster?from=redirect");
 }
 
 private Response Explode(TestState state, Request request)
@@ -129,14 +135,14 @@ private Response Explode(TestState state, Request request)
 
 private Response Origin(TestState state, Request request)
 {
-    return Response.Text(
-        $"{request.Scheme()}|{request.Host()}|{request.RemoteIpAddress()}"
+    return Results.Text(
+        $"{request.Scheme}|{request.Host}|{request.RemoteIpAddress}"
     );
 }
 
 private Response HandleException(Exception error)
 {
-    Response response = Response.Plain(500, $"caught:{error.Message}");
+    Response response = Results.Text(500, $"caught:{error.Message}");
     switch (ResponseHeader("X-Lime-Exception", "handled"))
     {
         case Result.Ok(header): { response.AddHeader(header); }
@@ -147,7 +153,7 @@ private Response HandleException(Exception error)
 
 private Response Stylesheet(TestState state, Request request)
 {
-    return Response.Css("body { color: aster; }\n");
+    return Results.Css("body { color: aster; }\n");
 }
 
 private Response Binary(TestState state, Request request)
@@ -162,7 +168,7 @@ private Response Binary(TestState state, Request request)
     bytes.Add(101);
     stream.Write(bytes);
     stream.Seek(0, SeekOrigin.Begin);
-    return Response.Stream(stream, AssetKind.Binary);
+    return Results.Stream(stream, AssetKind.Binary);
 }
 
 private Response LargeBinary(TestState state, Request request)
@@ -186,17 +192,17 @@ private Response LargeBinary(TestState state, Request request)
     bytes.Add(108);
     stream.Write(bytes);
     stream.Seek(0, SeekOrigin.Begin);
-    return Response.Stream(stream, AssetKind.Binary);
+    return Results.Stream(stream, AssetKind.Binary);
 }
 
 private Response DisconnectBinary(TestState state, Request request)
 {
-    return Response.Stream(File.OpenRead("/dev/zero"), AssetKind.Binary);
+    return Results.Stream(File.OpenRead("/dev/zero"), AssetKind.Binary);
 }
 
 private Response Missing(TestState state, Request request)
 {
-    return Response.NotFound(<h1>Missing</h1>);
+    return Results.NotFound(<h1>Missing</h1>);
 }
 
 private int Serve(NativeHandle server)
@@ -209,18 +215,18 @@ private int Serve(NativeHandle server)
     forwarded.KnownProxies.Add("::1");
     app.UseForwardedHeaders(forwarded);
     app.OnException(HandleException);
-    app.Get("/hello/:name", Hello);
-    app.post("/form", Form);
-    app.post("/upload", Upload);
-    app.Get("/cookie", Cookie);
-    app.Get("/session", SessionValue);
-    app.Get("/redirect", Redirect);
-    app.Get("/explode", Explode);
-    app.Get("/origin", Origin);
-    app.Get("/head", Stylesheet);
-    app.Get("/binary", Binary);
-    app.Get("/large", LargeBinary);
-    app.Get("/disconnect", DisconnectBinary);
+    app.MapGet("/hello/{name}", Hello);
+    app.MapPost("/form", Form);
+    app.MapPost("/upload", Upload);
+    app.MapGet("/cookie", Cookie);
+    app.MapGet("/session", SessionValue);
+    app.MapGet("/redirect", Redirect);
+    app.MapGet("/explode", Explode);
+    app.MapGet("/origin", Origin);
+    app.MapGet("/head", Stylesheet);
+    app.MapGet("/binary", Binary);
+    app.MapGet("/large", LargeBinary);
+    app.MapGet("/disconnect", DisconnectBinary);
     StaticFileOptions staticOptions = StaticFileOptions();
     staticOptions.MaxAgeSeconds = 3600;
     app.Static(
