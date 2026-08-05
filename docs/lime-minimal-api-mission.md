@@ -197,11 +197,13 @@ compatibility frameworks.
 The routing foundation is now materially closer to Minimal APIs, but the
 application architecture is not yet the target design:
 
-1. Route handlers still receive only `Request`. `Request.RouteValue` is now
-   optional and uses the selected parsed pattern, but handlers cannot receive
-   typed route parameters directly.
-2. Binding adapters, conversion failures, and explicit query/header/body/form
-   binding sources do not yet exist.
+1. `MapGet` handlers can receive one `string`, `int`, `long`, or `bool` route
+   parameter directly, optionally after `Request`. The same bounded shapes
+   work for async handlers, bound methods, and route groups. Multiple route
+   parameters and the other `Map*` methods do not yet use typed adapters.
+2. This first binding slice returns 400 when conversion fails after endpoint
+   selection. Explicit query/header/body/form binding sources do not yet
+   exist.
 3. Route patterns are structural and selected by precedence, but endpoints are
    still scanned linearly rather than compiled into one matcher graph.
 4. `UseFilter` is only a before-handler short circuit and `AfterHtml` transforms
@@ -602,9 +604,11 @@ It must not distort production HTTP semantics.
 
 ### Stage 3: compile-time handler adapters
 
-- Define the supported handler signatures and return shapes.
-- Generate or instantiate erased request delegates without runtime reflection.
-- Bind and convert route parameters with stable failure responses.
+- Extend the implemented one-parameter `MapGet` adapters to multiple route
+  parameters and the complete `Map*` family without runtime reflection.
+- Bind handler parameters by recorded name rather than relying on the
+  one-parameter positional equivalence of the first slice.
+- Preserve the implemented stable 400 conversion-failure response.
 - Support explicit query, header, body, form, and request abstractions only
   after each API is proven against real Lime applications.
 

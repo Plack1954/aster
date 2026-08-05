@@ -494,6 +494,24 @@ public Response Results.InternalError(Html page)
 public delegate Response Handler(Request request);
 public delegate Task<Response> AsyncHandler(Request request);
 
+public delegate Response StringRouteHandler(string value);
+public delegate Response IntRouteHandler(int value);
+public delegate Response LongRouteHandler(long value);
+public delegate Response BoolRouteHandler(bool value);
+public delegate Response RequestStringRouteHandler(Request request, string value);
+public delegate Response RequestIntRouteHandler(Request request, int value);
+public delegate Response RequestLongRouteHandler(Request request, long value);
+public delegate Response RequestBoolRouteHandler(Request request, bool value);
+
+public delegate Task<Response> AsyncStringRouteHandler(string value);
+public delegate Task<Response> AsyncIntRouteHandler(int value);
+public delegate Task<Response> AsyncLongRouteHandler(long value);
+public delegate Task<Response> AsyncBoolRouteHandler(bool value);
+public delegate Task<Response> AsyncRequestStringRouteHandler(Request request, string value);
+public delegate Task<Response> AsyncRequestIntRouteHandler(Request request, int value);
+public delegate Task<Response> AsyncRequestLongRouteHandler(Request request, long value);
+public delegate Task<Response> AsyncRequestBoolRouteHandler(Request request, bool value);
+
 public delegate List<string> BuildSource();
 
 public delegate Option<Response> StaticResolver(
@@ -519,6 +537,22 @@ union RouteHandler
 {
     Sync(Handler),
     Async(AsyncHandler),
+    String(StringRouteHandler),
+    Int(IntRouteHandler),
+    Long(LongRouteHandler),
+    Bool(BoolRouteHandler),
+    RequestString(RequestStringRouteHandler),
+    RequestInt(RequestIntRouteHandler),
+    RequestLong(RequestLongRouteHandler),
+    RequestBool(RequestBoolRouteHandler),
+    AsyncString(AsyncStringRouteHandler),
+    AsyncInt(AsyncIntRouteHandler),
+    AsyncLong(AsyncLongRouteHandler),
+    AsyncBool(AsyncBoolRouteHandler),
+    AsyncRequestString(AsyncRequestStringRouteHandler),
+    AsyncRequestInt(AsyncRequestIntRouteHandler),
+    AsyncRequestLong(AsyncRequestLongRouteHandler),
+    AsyncRequestBool(AsyncRequestBoolRouteHandler),
 }
 struct UrlValue
 {
@@ -1910,6 +1944,31 @@ private EndpointBuilder WebApplication.MapMethodAsync(
     );
 }
 
+private EndpointBuilder WebApplication.MapTypedMethod(
+    WebApplication self,
+    string method,
+    string path,
+    RouteHandler handler
+)
+{
+    if (!HttpMethodValid(method))
+    {
+        throw new ArgumentException(
+            "HTTP method must be a non-empty uppercase token"
+        );
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    if (pattern.ParameterCount != 1)
+    {
+        throw new ArgumentException(
+            "typed route handler requires exactly one route parameter"
+        );
+    }
+    List<string> methods = new();
+    methods.Add(method);
+    return self.MapEndpoint(pattern, methods, handler);
+}
+
 public EndpointBuilder WebApplication.MapMethods(
     WebApplication self,
     string path,
@@ -2012,6 +2071,137 @@ public EndpointBuilder WebApplication.MapGet(
         self.pages.Add(new() { path = path });
     }
     return endpoint;
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, StringRouteHandler handler
+)
+{
+    return self.MapTypedMethod("GET", path, RouteHandler.String(handler));
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, IntRouteHandler handler
+)
+{
+    return self.MapTypedMethod("GET", path, RouteHandler.Int(handler));
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, LongRouteHandler handler
+)
+{
+    return self.MapTypedMethod("GET", path, RouteHandler.Long(handler));
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, BoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod("GET", path, RouteHandler.Bool(handler));
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, RequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.RequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, RequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.RequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, RequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.RequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, RequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.RequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, AsyncStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.AsyncString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, AsyncIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod("GET", path, RouteHandler.AsyncInt(handler));
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, AsyncLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod("GET", path, RouteHandler.AsyncLong(handler));
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, AsyncBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod("GET", path, RouteHandler.AsyncBool(handler));
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path,
+    AsyncRequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.AsyncRequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.AsyncRequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.AsyncRequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "GET", path, RouteHandler.AsyncRequestBool(handler)
+    );
 }
 
 public Result<bool, string> WebApplication.AddBuildPage(WebApplication self, string path)
@@ -2272,6 +2462,151 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self,
     string pattern,
     AsyncHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, StringRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, IntRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, LongRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, BoolRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, RequestStringRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, RequestIntRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, RequestLongRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, RequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, AsyncStringRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, AsyncIntRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, AsyncLongRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, AsyncBoolRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern,
+    AsyncRequestStringRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.Application.MapGet(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapGet(
+    RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
 )
 {
     return self.Application.MapGet(
@@ -2710,6 +3045,38 @@ private Option<Route> BestRoute(
     return selected;
 }
 
+private Option<string> SingleRouteValue(Request request)
+{
+    switch (request.routePattern)
+    {
+        case Option.Some(pattern): {
+            return pattern.SingleParameter(request.path);
+        }
+        case Option.None: { return Option.None; }
+    }
+}
+
+private Response RouteBindingBadRequest()
+{
+    return Results.Text(
+        StatusCodes.Status400BadRequest,
+        "A route parameter could not be bound to the handler parameter."
+    );
+}
+
+private Option<bool> ParseRouteBool(string value)
+{
+    if (AsciiEqualIgnoringCase(value, "true"))
+    {
+        return Option.Some(true);
+    }
+    if (AsciiEqualIgnoringCase(value, "false"))
+    {
+        return Option.Some(false);
+    }
+    return Option.None;
+}
+
 private Response InvokeRouteHandler(
     RouteHandler routeHandler,
     Request request
@@ -2722,6 +3089,136 @@ private Response InvokeRouteHandler(
             return invoke(request);
         }
         case RouteHandler.Async(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.String(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): { return handler(value); }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.Int(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    int parsed = 0;
+                    if (int.TryParse(value, out parsed)) { return handler(parsed); }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.Long(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    long parsed = 0;
+                    if (long.TryParse(value, out parsed)) { return handler(parsed); }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.Bool(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    switch (ParseRouteBool(value))
+                    {
+                        case Option.Some(parsed): { return handler(parsed); }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.RequestString(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): { return handler(request, value); }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.RequestInt(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    int parsed = 0;
+                    if (int.TryParse(value, out parsed)) {
+                        return handler(request, parsed);
+                    }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.RequestLong(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    long parsed = 0;
+                    if (long.TryParse(value, out parsed)) {
+                        return handler(request, parsed);
+                    }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.RequestBool(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    switch (ParseRouteBool(value))
+                    {
+                        case Option.Some(parsed): {
+                            return handler(request, parsed);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncString(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncInt(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncLong(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncBool(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncRequestString(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncRequestInt(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncRequestLong(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncRequestBool(handler): {
             throw new InvalidOperationException(
                 "async endpoint requires DispatchAsync"
             );
@@ -2743,6 +3240,128 @@ private async Task<Response> InvokeRouteHandlerAsync(
         case RouteHandler.Async(handler): {
             AsyncHandler invoke = handler;
             return await invoke(request);
+        }
+        case RouteHandler.String(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.Int(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.Long(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.Bool(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.RequestString(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.RequestInt(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.RequestLong(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.RequestBool(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.AsyncString(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): { return await handler(value); }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncInt(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    int parsed = 0;
+                    if (int.TryParse(value, out parsed)) {
+                        return await handler(parsed);
+                    }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncLong(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    long parsed = 0;
+                    if (long.TryParse(value, out parsed)) {
+                        return await handler(parsed);
+                    }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncBool(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    switch (ParseRouteBool(value))
+                    {
+                        case Option.Some(parsed): {
+                            return await handler(parsed);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncRequestString(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    return await handler(request, value);
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncRequestInt(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    int parsed = 0;
+                    if (int.TryParse(value, out parsed)) {
+                        return await handler(request, parsed);
+                    }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncRequestLong(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    long parsed = 0;
+                    if (long.TryParse(value, out parsed)) {
+                        return await handler(request, parsed);
+                    }
+                    return RouteBindingBadRequest();
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncRequestBool(handler): {
+            switch (SingleRouteValue(request))
+            {
+                case Option.Some(value): {
+                    switch (ParseRouteBool(value))
+                    {
+                        case Option.Some(parsed): {
+                            return await handler(request, parsed);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
         }
     }
 }

@@ -130,6 +130,38 @@ public struct RoutePattern
         }
     }
 
+    public nuint ParameterCount
+    {
+        get
+        {
+            nuint count = 0;
+            foreach (RouteSegment segment in segments)
+            {
+                if (segment.kind != RouteSegmentKind.Literal)
+                {
+                    count += 1;
+                }
+            }
+            return count;
+        }
+    }
+
+    public readonly Option<string> SingleParameter(string path)
+    {
+        if (this.ParameterCount != 1 || !this.IsMatch(path))
+        {
+            return Option.None;
+        }
+        foreach (RouteSegment segment in segments)
+        {
+            if (segment.kind != RouteSegmentKind.Literal)
+            {
+                return this.Parameter(path, segment.value);
+            }
+        }
+        return Option.None;
+    }
+
     public static Result<RoutePattern, string> TryParse(string pattern)
     {
         if (pattern.Length == 0 || pattern[0] != 47)

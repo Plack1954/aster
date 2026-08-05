@@ -186,6 +186,11 @@ class SiteState
     {
         return Results.NotFound(<p>{Title}:missing</p>);
     }
+
+    public Response Article(string slug)
+    {
+        return Results.Text($"{Title}:{slug}");
+    }
 }
 
 struct SiteStateOwner
@@ -697,8 +702,10 @@ private bool BoundServiceRoutes()
     WebApplication app = appOwner.Value;
     Handler missing = state.Missing;
     Handler home = state.Home;
+    StringRouteHandler article = state.Article;
     app.MapFallback(missing);
     app.MapGet("/", home);
+    app.MapGet("/articles/{slug}", article);
     RegisterDynamicRoute(app, home);
 
     if (!PrintHtmlResponse(
@@ -724,6 +731,13 @@ private bool BoundServiceRoutes()
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
+    if (!TextResponseEquals(
+            app.Dispatch(request("GET", "/articles/aster")),
+            200, "Stateful Lime:aster"
+        ))
+    {
+        return false;
+    }
     return PrintHtmlResponse(
         app.Dispatch(request("GET", "/missing")), 404
     );
@@ -747,6 +761,31 @@ private Response LiteralRoute(Request request)
 private Response HeadRoute(Request request)
 {
     return Results.Text("head");
+}
+
+private Response TypedString(string slug)
+{
+    return Results.Text($"string:{slug}");
+}
+
+private Response TypedInt(int id)
+{
+    return Results.Text($"int:{id}");
+}
+
+private Response TypedLong(long id)
+{
+    return Results.Text($"long:{id}");
+}
+
+private Response TypedBool(bool enabled)
+{
+    return Results.Text(enabled ? "bool:true" : "bool:false");
+}
+
+private Response TypedRequestInt(Request request, int id)
+{
+    return Results.Text($"{request.Method}:{id}");
 }
 
 private bool TextResponseEquals(
@@ -948,7 +987,7 @@ private bool GroupsAndBuildersWork()
     WebApplication app = appOwner.Value;
     RouteGroup api = app.MapGroup("/api");
     RouteGroup articles = api.MapGroup("/articles");
-    EndpointBuilder endpoint = articles.MapGet("/{value}", ParameterRoute);
+    EndpointBuilder endpoint = articles.MapGet("/{value}", TypedString);
     endpoint.WithName("GetArticle")
         .WithDescription("Gets one article")
         .WithTag("articles")
@@ -958,7 +997,7 @@ private bool GroupsAndBuildersWork()
     if (!TextResponseEquals(
             app.Dispatch(request("GET", "/api/articles/aster")),
             200,
-            "parameter"
+            "string:aster"
         ))
     {
         return false;
@@ -968,6 +1007,63 @@ private bool GroupsAndBuildersWork()
     {
         EndpointBuilder duplicate = api.MapGet("/other", LiteralRoute);
         duplicate.WithName("GetArticle");
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        return error.Message.Length > 0;
+    }
+}
+
+private bool TypedRouteBindingWorks()
+{
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    app.MapGet("/articles/{slug}", TypedString);
+    app.MapGet("/users/{id:int}", TypedInt);
+    app.MapGet("/orders/{id:long}", TypedLong);
+    app.MapGet("/flags/{enabled:bool}", TypedBool);
+    app.MapGet("/request/{id:int}", TypedRequestInt);
+    app.MapGet("/unconstrained/{id}", TypedInt);
+
+    if (!TextResponseEquals(
+            app.Dispatch(request("GET", "/articles/aster")),
+            200, "string:aster"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("GET", "/users/42")), 200, "int:42"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("GET", "/orders/2147483648")),
+            200, "long:2147483648"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("GET", "/flags/TRUE")),
+            200, "bool:true"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("GET", "/request/7")), 200, "GET:7"
+        ) ||
+        app.Dispatch(request(
+            "GET", "/unconstrained/not-an-integer"
+        )).StatusCode != StatusCodes.Status400BadRequest)
+    {
+        return false;
+    }
+
+    try
+    {
+        app.MapGet("/missing", TypedInt);
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        if (error.Message.Length == 0) { return false; }
+    }
+
+    try
+    {
+        app.MapGet("/too-many/{first}/{second}", TypedInt);
         return false;
     }
     catch (ArgumentException error)
@@ -1040,6 +1136,10 @@ int main()
         return 1;
     }
     if (!GroupsAndBuildersWork())
+    {
+        return 1;
+    }
+    if (!TypedRouteBindingWorks())
     {
         return 1;
     }

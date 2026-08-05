@@ -77,8 +77,35 @@ constrained parameters, which outrank ordinary parameters and catch-alls.
 Chained constraints are conjunctive. Conflicting equal-precedence endpoints
 and contradictory or incompatible constraint chains are rejected.
 
-Typed handler binding is not implemented yet. The current low-level route
-value API represents absence explicitly:
+The first typed route-binding slice supports one route parameter on `MapGet`.
+The parameter may be `string`, `int`, `long`, or `bool`, and a handler may
+optionally receive `Request` first:
+
+```aster
+private Response Article(string slug)
+{
+    return Results.Html(<article>{slug}</article>);
+}
+
+private Response User(Request request, int id)
+{
+    return Results.Text($"{request.Method}:{id}");
+}
+
+app.MapGet("/articles/{slug}", Article);
+app.MapGet("/users/{id:int}", User);
+```
+
+The same shapes work for asynchronous handlers and bound class methods, and
+they work through route groups. The selected route value is converted before
+the handler runs. A conversion failure after route selection returns 400; a
+constraint failure means the endpoint did not match. Registration rejects a
+typed handler unless its pattern contains exactly one route parameter.
+
+This is deliberately not advertised as arbitrary Minimal API binding yet.
+Multiple route parameters, typed handlers on the other `Map*` methods, and
+query/header/body/form binding remain future work. Until a handler shape is
+supported, the low-level route-value API represents absence explicitly:
 
 ```aster
 switch (request.RouteValue("slug"))

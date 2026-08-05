@@ -23,16 +23,10 @@ private async Task<Response> LoadResponseAsync()
     );
 }
 
-private async Task<Response> HandleAsync(Request request)
+private async Task<Response> HandleAsync(Request request, int id)
 {
     await Task.Delay(1);
-    switch (request.RouteValue("id"))
-    {
-        case Option.Some(id): { return Results.Text(id); }
-        case Option.None: {
-            return Results.InternalError(<h1>Missing route value</h1>);
-        }
-    }
+    return Results.Text($"{request.Method}:{id}");
 }
 
 private Response HandleSync(Request request)
@@ -131,7 +125,7 @@ private async Task<bool> VerifyEndpointDispatchAsync()
         "GET", "/missing", "", "", "", ""
     ));
 
-    return ResponseTextEquals(handled, 200, "42") &&
+    return ResponseTextEquals(handled, 200, "GET:42") &&
         ResponseTextEquals(syncHandled, 200, "sync") &&
         ResponseTextEquals(methodHandled, 200, "PUT") &&
         methodRejected.StatusCode == StatusCodes.Status405MethodNotAllowed &&
