@@ -87,7 +87,7 @@ typedef enum TypeKind {
     TYPE_HTML, TYPE_BUFFER, TYPE_ARENA,
     TYPE_NATIVE_HANDLE, TYPE_CANCELLATION_TOKEN,
     TYPE_CANCELLATION_TOKEN_SOURCE,
-    TYPE_RAW_POINTER, TYPE_SLICE, TYPE_VEC,
+    TYPE_RAW_POINTER, TYPE_SLICE, TYPE_READONLY_SPAN, TYPE_VEC,
     TYPE_DICTIONARY, TYPE_HASH_SET, TYPE_QUEUE, TYPE_STACK,
     TYPE_ARRAY, TYPE_OPTION, TYPE_RESULT, TYPE_TASK, TYPE_FUNCTION, TYPE_NAMED
 } TypeKind;
@@ -349,6 +349,7 @@ struct Stmt {
             const char *name;
             const char *type_name;
             TypeSyntax *type_syntax;
+            Type *checked_type;
             bool mutable_;
             size_t binding_id; /* Checker-assigned local identity. */
             Expr *value;

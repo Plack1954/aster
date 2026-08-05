@@ -643,7 +643,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 if (coerce_literal(
                         checker, expr->as.assign.value, place_type))
                     value = place_type;
-                if (!same_type(place_type, value))
+                if (!type_assignable(place_type, value))
                     lang_diag(checker->diagnostics, expr->span,
                               "assignment expects `%s`, found `%s`",
                               type_display_name(checker, place_type),
@@ -669,7 +669,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
                     lang_diag(checker->diagnostics, expr->span,
                               "cannot assign to immutable local `%s`",
                               local->name);
-                if (!same_type(local->type, value))
+                if (!type_assignable(local->type, value))
                     lang_diag(checker->diagnostics, expr->span,
                               "assignment expects `%s`, found `%s`",
                               type_display_name(checker, local->type),
@@ -763,7 +763,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
             }
             if (coerce_literal(checker, expr->as.assign.value, place_type))
                 value = place_type;
-            if (!same_type(place_type, value))
+            if (!type_assignable(place_type, value))
                 lang_diag(checker->diagnostics, expr->span,
                           "assignment expects `%s`, found `%s`",
                           type_display_name(checker, place_type),
@@ -1209,7 +1209,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 } else {
                     (void)coerce_literal(checker, field->value, expected);
                     actual = field->value->type;
-                    if (!same_type(expected, actual))
+                    if (!type_assignable(expected, actual))
                         lang_diag(checker->diagnostics, field->value->span,
                                   "field `%s` expects `%s`, found `%s`",
                                   field->name, expected->name, actual->name);
@@ -1267,7 +1267,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             if (declared == NULL) declared = value;
             if (coerce_literal(checker, stmt->as.let.value, declared))
                 value = declared;
-            if (!same_type(declared, value))
+            if (!type_assignable(declared, value))
                 lang_diag(checker->diagnostics, stmt->span,
                           "initializer expects `%s`, found `%s`",
                           declared->name, value->name);
@@ -1280,6 +1280,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             };
             stmt->as.let.binding_id =
                 checker->locals[checker->local_count - 1U].id;
+            stmt->as.let.checked_type = declared;
             break;
         }
         case STMT_DESTRUCTURE: {
@@ -1380,7 +1381,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 coerce_literal(checker, stmt->as.return_value,
                                logical_return))
                 actual = logical_return;
-            if (!same_type(logical_return, actual))
+            if (!type_assignable(logical_return, actual))
                 lang_diag(checker->diagnostics, stmt->span,
                           "return expects `%s`, found `%s`",
                           logical_return->name, actual->name);
@@ -1608,6 +1609,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             } else if (iterable->kind != TYPE_ARRAY &&
                        iterable->kind != TYPE_VEC &&
                        iterable->kind != TYPE_SLICE &&
+                       iterable->kind != TYPE_READONLY_SPAN &&
                        iterable->kind != TYPE_STRING) {
                 lang_diag(checker->diagnostics, stmt->as.for_.iterable->span,
                           stmt->as.for_.foreach
@@ -2021,7 +2023,7 @@ static bool type_has_c_abi(Checker *checker, Type *type,
         case TYPE_NATIVE_HANDLE:
         case TYPE_CANCELLATION_TOKEN:
         case TYPE_CANCELLATION_TOKEN_SOURCE:
-        case TYPE_SLICE: case TYPE_VEC:
+        case TYPE_SLICE: case TYPE_READONLY_SPAN: case TYPE_VEC:
         case TYPE_DICTIONARY: case TYPE_HASH_SET: case TYPE_QUEUE:
         case TYPE_STACK:
         case TYPE_OPTION: case TYPE_RESULT: case TYPE_TASK:

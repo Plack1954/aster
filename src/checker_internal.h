@@ -114,6 +114,7 @@ Type *resolve_type_syntax(Checker *checker, const TypeSyntax *syntax);
 Type *resolve_declared_type(Checker *checker, const TypeSyntax *syntax,
                             const char *fallback_name, LangSpan span);
 bool same_type(const Type *a, const Type *b);
+bool type_assignable(const Type *expected, const Type *actual);
 const char *type_display_name(Checker *checker, const Type *type);
 bool coerce_literal(Checker *checker, Expr *expr, Type *expected);
 bool type_is_copyable(Checker *checker, Type *type);

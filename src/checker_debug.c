@@ -190,7 +190,7 @@ static ComputedLayout type_layout(
             return (ComputedLayout){
                 target->pointer_size, target->pointer_alignment, true
             };
-        case TYPE_STR: case TYPE_SLICE:
+        case TYPE_STR: case TYPE_SLICE: case TYPE_READONLY_SPAN:
             return (ComputedLayout){
                 (size_t)target->pointer_size * 2U,
                 target->pointer_alignment, true

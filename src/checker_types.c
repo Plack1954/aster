@@ -784,6 +784,8 @@ static Type *resolve_generic_syntax(Checker *checker,
     bool requires_cleanup = false;
     bool managed = false;
     if (strcmp(base, "Span") == 0) kind = TYPE_SLICE;
+    else if (strcmp(base, "ReadOnlySpan") == 0)
+        kind = TYPE_READONLY_SPAN;
     else if (strcmp(base, "List") == 0) {
         kind = TYPE_VEC;
         requires_cleanup = true;
@@ -1188,18 +1190,22 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
         pointer->requires_cleanup = false;
         return pointer;
     }
-    if (strncmp(name, "Span<", 6U) == 0) {
+    if (strncmp(name, "Span<", 5U) == 0 ||
+        strncmp(name, "ReadOnlySpan<", 13U) == 0) {
+        bool read_only = name[0] == 'R';
+        size_t prefix = read_only ? 13U : 5U;
         size_t length = strlen(name);
-        if (length < 8U || name[length - 1U] != '>') {
+        if (length < prefix + 2U || name[length - 1U] != '>') {
             lang_diag(checker->diagnostics, span,
-                      "malformed Span type `%s`", name);
+                      "malformed span type `%s`", name);
             return &type_error;
         }
         char *element_name = lang_arena_strndup(
-            &checker->module->arena, name + 6U, length - 7U);
+            &checker->module->arena, name + prefix,
+            length - prefix - 1U);
         Type *slice =
             lang_arena_alloc(&checker->module->arena, sizeof(*slice));
-        slice->kind = TYPE_SLICE;
+        slice->kind = read_only ? TYPE_READONLY_SPAN : TYPE_SLICE;
         slice->name = name;
         slice->element = resolve_type(checker, element_name, span);
         slice->requires_cleanup = false;
@@ -1600,6 +1606,7 @@ bool same_type(const Type *a, const Type *b) {
     if (a->kind == TYPE_HASH_SET)
         return same_type(a->element, b->element);
     if (a->kind == TYPE_OPTION || a->kind == TYPE_SLICE ||
+        a->kind == TYPE_READONLY_SPAN ||
         a->kind == TYPE_VEC || a->kind == TYPE_QUEUE)
         return same_type(a->element, b->element);
     if (a->kind == TYPE_TASK)
@@ -1633,6 +1640,14 @@ bool same_type(const Type *a, const Type *b) {
         }
     }
     return true;
+}
+
+bool type_assignable(const Type *expected, const Type *actual) {
+    if (same_type(expected, actual)) return true;
+    return expected != NULL && actual != NULL &&
+           expected->kind == TYPE_READONLY_SPAN &&
+           actual->kind == TYPE_SLICE &&
+           same_type(expected->element, actual->element);
 }
 
 const char *type_display_name(Checker *checker, const Type *type) {
@@ -1737,6 +1752,11 @@ bool coerce_literal(Checker *checker, Expr *expr, Type *expected) {
         Type *wrapped = check_expr(checker, expr);
         checker->expected_type = previous_expected;
         return same_type(wrapped, expected);
+    }
+    if (expected->kind == TYPE_READONLY_SPAN && expr->type != NULL &&
+        expr->type->kind == TYPE_SLICE &&
+        same_type(expected->element, expr->type->element)) {
+        return true;
     }
     return false;
 }

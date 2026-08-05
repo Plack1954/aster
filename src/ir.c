@@ -80,7 +80,7 @@ static IrTypeShape type_shape(const Type *type) {
         case TYPE_STR: return IR_TYPE_STRING_VIEW;
         case TYPE_ARRAY: return IR_TYPE_ARRAY;
         case TYPE_RAW_POINTER: return IR_TYPE_RAW_POINTER;
-        case TYPE_SLICE: return IR_TYPE_SLICE;
+        case TYPE_SLICE: case TYPE_READONLY_SPAN: return IR_TYPE_SLICE;
         case TYPE_FUNCTION: return IR_TYPE_FUNCTION;
         case TYPE_OPTION: case TYPE_RESULT:
             return IR_TYPE_UNION;
@@ -215,8 +215,12 @@ static void resolve_variant_member_layout(IrModule *module, IrTypeId id) {
 
 static bool same_ir_type_identity(const Type *left, const Type *right) {
     if (left == right) return true;
-    if (left == NULL || right == NULL || left->kind != right->kind)
+    if (left == NULL || right == NULL)
         return false;
+    bool span_pair =
+        (left->kind == TYPE_SLICE || left->kind == TYPE_READONLY_SPAN) &&
+        (right->kind == TYPE_SLICE || right->kind == TYPE_READONLY_SPAN);
+    if (left->kind != right->kind && !span_pair) return false;
     if (left->kind == TYPE_NAMED) {
         if (left->declaration != right->declaration ||
             left->argument_count != right->argument_count)

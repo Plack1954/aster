@@ -418,7 +418,7 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
             }
             uint32_t local = ir_add_local(
                 builder, stmt->as.let.name, stmt->as.let.binding_id,
-                stmt->as.let.value->type, stmt->as.let.mutable_);
+                stmt->as.let.checked_type, stmt->as.let.mutable_);
             IrInstruction *store = ir_append_instruction(
                 builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
                 &value, 1U, stmt->span);

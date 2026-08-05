@@ -83,7 +83,7 @@ private extern Result<Unit, SqliteError> NativeSqliteBindNull(
 private extern Result<Unit, SqliteError> NativeSqliteBindBlob(
     NativeHandle statement,
     long index,
-    Span<byte> value
+    ReadOnlySpan<byte> value
 );
 private extern Result<long, SqliteError> NativeSqliteParameterIndex(
     NativeHandle statement,

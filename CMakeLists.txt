@@ -204,6 +204,11 @@ endfunction()
 
 add_test(NAME language_tests COMMAND lang test)
 set_tests_properties(language_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME readonly_span_mutation_rejected
+    COMMAND lang check tests/checker/readonly_span_mutation.lang)
+set_tests_properties(readonly_span_mutation_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
 add_test(NAME hello_run COMMAND lang run examples/hello.lang)
 set_tests_properties(hello_run PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

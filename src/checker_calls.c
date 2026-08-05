@@ -97,6 +97,10 @@ static size_t overload_argument_rank(
     if (argument->kind == EXPR_FLOAT && is_float(expected))
         return expected->kind == TYPE_F64 ? 0U : 1U;
     if (actual != NULL && same_type(actual, expected)) return 0U;
+    if (actual != NULL && actual->kind == TYPE_SLICE &&
+        expected->kind == TYPE_READONLY_SPAN &&
+        same_type(actual->element, expected->element))
+        return 0U;
     if (argument->kind == EXPR_NULL &&
         (expected->kind == TYPE_OPTION ||
          expected->kind == TYPE_RAW_POINTER))
@@ -808,7 +812,7 @@ static_call:
                 expected);
             Type *actual =
                 expr->as.call.arguments.items[i]->type;
-            if (!same_type(expected, actual))
+            if (!type_assignable(expected, actual))
                 lang_diag(
                     checker->diagnostics,
                     expr->as.call.arguments.items[i]->span,
@@ -2478,7 +2482,7 @@ static_call:
         (void)coerce_literal(checker, expr->as.call.arguments.items[0],
                              expected);
         Type *actual = expr->as.call.arguments.items[0]->type;
-        if (!same_type(expected, actual))
+        if (!type_assignable(expected, actual))
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[0]->span,
                       "`%s` payload expects `%s`, found `%s`",
@@ -2540,7 +2544,7 @@ static_call:
                             checker, expr->as.call.arguments.items[0],
                             expected);
                         Type *actual = expr->as.call.arguments.items[0]->type;
-                        if (!same_type(expected, actual))
+                        if (!type_assignable(expected, actual))
                             lang_diag(checker->diagnostics,
                                       expr->as.call.arguments.items[0]->span,
                                       "enum variant `%s` expects `%s`, found `%s`",
@@ -2572,7 +2576,7 @@ static_call:
         (void)coerce_literal(checker, expr->as.call.arguments.items[i],
                              expected);
         Type *actual = expr->as.call.arguments.items[i]->type;
-        if (!same_type(expected, actual))
+        if (!type_assignable(expected, actual))
             lang_diag(checker->diagnostics, expr->as.call.arguments.items[i]->span,
                       "argument %zu to `%s` expects `%s`, found `%s`", i + 1U,
                       name, type_display_name(checker, expected),

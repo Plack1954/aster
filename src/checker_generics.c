@@ -367,7 +367,9 @@ static bool infer_generic_pattern(
     } else if (strcmp(base, "List") == 0 && actual->kind == TYPE_VEC) {
         actual_arguments = &actual->element;
         actual_count = 1U;
-    } else if (strcmp(base, "Span") == 0 && actual->kind == TYPE_SLICE) {
+    } else if ((strcmp(base, "Span") == 0 && actual->kind == TYPE_SLICE) ||
+               (strcmp(base, "ReadOnlySpan") == 0 &&
+                actual->kind == TYPE_READONLY_SPAN)) {
         actual_arguments = &actual->element;
         actual_count = 1U;
     } else if (strcmp(base, "Result") == 0 &&
@@ -474,6 +476,8 @@ static bool infer_generic_syntax(
     if ((strcmp(base, "Option") == 0 && actual->kind == TYPE_OPTION) ||
         (strcmp(base, "List") == 0 && actual->kind == TYPE_VEC) ||
         (strcmp(base, "Span") == 0 && actual->kind == TYPE_SLICE) ||
+        (strcmp(base, "ReadOnlySpan") == 0 &&
+         actual->kind == TYPE_READONLY_SPAN) ||
         (strcmp(base, "HashSet") == 0 && actual->kind == TYPE_HASH_SET) ||
         (strcmp(base, "Queue") == 0 && actual->kind == TYPE_QUEUE) ||
         (strcmp(base, "Stack") == 0 && actual->kind == TYPE_STACK) ||
@@ -719,7 +723,7 @@ Type *check_generic_call(
         (void)coerce_literal(
             checker, expr->as.call.arguments.items[i], expected);
         Type *actual = expr->as.call.arguments.items[i]->type;
-        if (!same_type(expected, actual))
+        if (!type_assignable(expected, actual))
             lang_diag(
                 checker->diagnostics,
                 expr->as.call.arguments.items[i]->span,

@@ -34,7 +34,7 @@ public extern Result<nuint, IoError> NativeFileReadInto(
 
 public extern Result<nuint, IoError> NativeFileWriteBytes(
     NativeHandle file,
-    Span<byte> bytes,
+    ReadOnlySpan<byte> bytes,
     nuint count
 );
 
@@ -809,9 +809,9 @@ public Result<nuint, IoError> CopyFileBuffered(
     if (bufferSize <= 0) {
         return Result.Err("buffer size must be positive");
     }
-    NativeHandle source = try NativeFileOpen(sourcePath, "rb");
+    NativeHandle source = FileResultOrThrow(NativeFileOpen(sourcePath, "rb"));
     NativeHandle destination =
-        try NativeFileOpen(destinationPath, "wb");
+        FileResultOrThrow(NativeFileOpen(destinationPath, "wb"));
     Buffer buffer = Buffer.allocate(bufferSize);
     nuint total = 0;
     bool reading = true;
@@ -820,15 +820,15 @@ public Result<nuint, IoError> CopyFileBuffered(
         unsafe {
             Span<byte> bytes = BufferAsMutSlice(buffer);
             nuint count =
-                try NativeFileReadInto(source, bytes);
+                FileResultOrThrow(NativeFileReadInto(source, bytes));
             if (count == 0) {
                 reading = false;
             } else {
-                nuint written = try NativeFileWriteBytes(
+                nuint written = FileResultOrThrow(NativeFileWriteBytes(
                     destination,
                     bytes,
                     count,
-                );
+                ));
                 total = total + written;
             }
         }
@@ -843,7 +843,7 @@ public Result<List<string>, IoError> ReadLinesBuffered(
     if (bufferSize <= 0) {
         return Result.Err("buffer size must be positive");
     }
-    NativeHandle file = try NativeFileOpen(path, "rb");
+    NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "rb"));
     Buffer buffer = Buffer.allocate(bufferSize);
     List<string> lines = new();
     StringBuilder line = new();
@@ -854,7 +854,7 @@ public Result<List<string>, IoError> ReadLinesBuffered(
     while (reading) {
         unsafe {
             Span<byte> bytes = BufferAsMutSlice(buffer);
-            nuint count = try NativeFileReadInto(file, bytes);
+            nuint count = FileResultOrThrow(NativeFileReadInto(file, bytes));
             if (count == 0) {
                 reading = false;
             } else {
@@ -873,11 +873,11 @@ public Result<List<string>, IoError> ReadLinesBuffered(
                     byte current = ByteSliceAt(bytes, cursor);
                     if (current == 10 || current == 13) {
                         string segment =
-                            try ByteSliceToString(
+                            FileResultOrThrow(ByteSliceToString(
                                 bytes,
                                 segmentStart,
                                 cursor,
-                            );
+                            ));
                         line.Append(segment);
                         string completed =
                             line.ToString();
@@ -902,11 +902,11 @@ public Result<List<string>, IoError> ReadLinesBuffered(
                 }
                 if (segmentStart < count) {
                     string segment =
-                        try ByteSliceToString(
+                        FileResultOrThrow(ByteSliceToString(
                             bytes,
                             segmentStart,
                             count,
-                        );
+                        ));
                     line.Append(segment);
                     lineLength =
                         lineLength + (count - segmentStart);
@@ -930,7 +930,7 @@ public Result<nuint, IoError> ForEachLineBuffered(
     if (bufferSize <= 0) {
         return Result.Err("buffer size must be positive");
     }
-    NativeHandle file = try NativeFileOpen(path, "rb");
+    NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "rb"));
     Buffer buffer = Buffer.allocate(bufferSize);
     StringBuilder line = new();
     nuint lineLength = 0;
@@ -941,7 +941,7 @@ public Result<nuint, IoError> ForEachLineBuffered(
     while (reading) {
         unsafe {
             Span<byte> bytes = BufferAsMutSlice(buffer);
-            nuint count = try NativeFileReadInto(file, bytes);
+            nuint count = FileResultOrThrow(NativeFileReadInto(file, bytes));
             if (count == 0) {
                 reading = false;
             } else {
@@ -960,17 +960,17 @@ public Result<nuint, IoError> ForEachLineBuffered(
                     byte current = ByteSliceAt(bytes, cursor);
                     if (current == 10 || current == 13) {
                         string segment =
-                            try ByteSliceToString(
+                            FileResultOrThrow(ByteSliceToString(
                                 bytes,
                                 segmentStart,
                                 cursor,
-                            );
+                            ));
                         line.Append(segment);
                         string completed =
                             line.ToString();
                         lineCount = lineCount + 1;
                         bool keepReading =
-                            try handler(completed);
+                            FileResultOrThrow(handler(completed));
                         if (!keepReading) {
                             return Result.Ok(lineCount);
                         }
@@ -994,11 +994,11 @@ public Result<nuint, IoError> ForEachLineBuffered(
                 }
                 if (segmentStart < count) {
                     string segment =
-                        try ByteSliceToString(
+                        FileResultOrThrow(ByteSliceToString(
                             bytes,
                             segmentStart,
                             count,
-                        );
+                        ));
                     line.Append(segment);
                     lineLength =
                         lineLength + (count - segmentStart);
@@ -1011,7 +1011,7 @@ public Result<nuint, IoError> ForEachLineBuffered(
             line.ToString();
         lineCount = lineCount + 1;
         bool ignored =
-            try handler(completed);
+            FileResultOrThrow(handler(completed));
     }
     return Result.Ok(lineCount);
 }
