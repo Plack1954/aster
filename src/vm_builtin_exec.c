@@ -523,6 +523,49 @@ static size_t vm_dictionary_find(const Object *dictionary, LangValue key) {
     }
 }
 
+static bool vm_dictionary_erase(Object *dictionary, size_t physical_index) {
+    if (dictionary->as.dictionary.bucket_count == 0U ||
+        physical_index >= dictionary->as.dictionary.count)
+        return false;
+    size_t mask = dictionary->as.dictionary.bucket_count - 1U;
+    size_t bucket = (size_t)vm_dictionary_hash(
+        dictionary->as.dictionary.items[physical_index]) & mask;
+    while (dictionary->as.dictionary.buckets[bucket] !=
+           physical_index + 1U) {
+        if (dictionary->as.dictionary.buckets[bucket] == 0U)
+            return false;
+        bucket = (bucket + 1U) & mask;
+    }
+    dictionary->as.dictionary.buckets[bucket] = 0U;
+    size_t scan = (bucket + 1U) & mask;
+    while (dictionary->as.dictionary.buckets[scan] != 0U) {
+        size_t entry = dictionary->as.dictionary.buckets[scan];
+        dictionary->as.dictionary.buckets[scan] = 0U;
+        if (!vm_dictionary_insert_bucket(dictionary, entry - 1U))
+            return false;
+        scan = (scan + 1U) & mask;
+    }
+
+    size_t last = dictionary->as.dictionary.count - 2U;
+    if (physical_index != last) {
+        dictionary->as.dictionary.items[physical_index] =
+            dictionary->as.dictionary.items[last];
+        dictionary->as.dictionary.items[physical_index + 1U] =
+            dictionary->as.dictionary.items[last + 1U];
+        size_t moved = (size_t)vm_dictionary_hash(
+            dictionary->as.dictionary.items[physical_index]) & mask;
+        while (dictionary->as.dictionary.buckets[moved] != last + 1U)
+            moved = (moved + 1U) & mask;
+        dictionary->as.dictionary.buckets[moved] = physical_index + 1U;
+    }
+    dictionary->as.dictionary.items[last] =
+        (LangValue){.tag=LANG_VALUE_UNIT};
+    dictionary->as.dictionary.items[last + 1U] =
+        (LangValue){.tag=LANG_VALUE_UNIT};
+    dictionary->as.dictionary.count -= 2U;
+    return true;
+}
+
 static bool vm_list_call_callback(
     LangVM *vm, LangValue callback, LangValue item,
     LangSpan span, bool expects_bool, bool *matched) {
@@ -1532,20 +1575,9 @@ bool vm_call_builtin(LangVM *vm, int32_t index, LangValue *args,
                 vm, dictionary->as.dictionary.items[found]);
             vm_value_drop_owned(
                 vm, dictionary->as.dictionary.items[found + 1U]);
-            memmove(dictionary->as.dictionary.items + found,
-                    dictionary->as.dictionary.items + found + 2U,
-                    (dictionary->as.dictionary.count - found - 2U) *
-                        sizeof(*dictionary->as.dictionary.items));
-            dictionary->as.dictionary.count -= 2U;
-            dictionary->as.dictionary.items[
-                dictionary->as.dictionary.count] =
-                (LangValue){.tag=LANG_VALUE_UNIT};
-            dictionary->as.dictionary.items[
-                dictionary->as.dictionary.count + 1U] =
-                (LangValue){.tag=LANG_VALUE_UNIT};
-            if (!vm_dictionary_rebuild(dictionary)) {
+            if (!vm_dictionary_erase(dictionary, found)) {
                 runtime_error(vm, instruction,
-                              "could not rebuild Dictionary hash index");
+                              "could not remove Dictionary hash entry");
                 return false;
             }
             return true;
