@@ -80,7 +80,7 @@ Type type_cancellation_token_source = {
     .requires_cleanup=true, .managed=true
 };
 Type type_raw_pointer = {
-    .kind=TYPE_RAW_POINTER, .name="*mut u8", .element=&type_u8,
+    .kind=TYPE_RAW_POINTER, .name="byte*", .element=&type_u8,
     .pointer_mutable=true
 };
 Type type_u8_slice = {
@@ -945,11 +945,14 @@ Type *resolve_type_syntax(Checker *checker, const TypeSyntax *syntax) {
             }
             function->element = resolve_type_syntax(
                 checker, syntax->as.function.return_type);
-            size_t length = sizeof("fn()->") + strlen(function->element->name);
+            bool action = function->element->kind == TYPE_UNIT;
+            size_t length = strlen(action ? "Action<>" : "Func<>") +
+                (action ? 0U : strlen(function->element->name) + 1U) + 1U;
             for (size_t i = 0U; i < function->argument_count; ++i)
-                length += strlen(function->arguments[i]->name) + 5U;
+                length += strlen(function->arguments[i]->name) + 6U;
             char *name = lang_arena_alloc(&checker->module->arena, length);
-            size_t offset = (size_t)snprintf(name, length, "fn(");
+            size_t offset = (size_t)snprintf(
+                name, length, "%s<", action ? "Action" : "Func");
             for (size_t i = 0U; i < function->argument_count; ++i) {
                 if (i != 0U) name[offset++] = ',';
                 ParameterMode mode = function->parameter_modes[i];
@@ -961,9 +964,14 @@ Type *resolve_type_syntax(Checker *checker, const TypeSyntax *syntax) {
                 memcpy(name + offset, function->arguments[i]->name, item_length);
                 offset += item_length;
             }
-            offset += (size_t)snprintf(
-                name + offset, length - offset, ")->%s",
-                function->element->name);
+            if (!action) {
+                if (function->argument_count != 0U) name[offset++] = ',';
+                size_t result_length = strlen(function->element->name);
+                memcpy(name + offset, function->element->name, result_length);
+                offset += result_length;
+            }
+            name[offset++] = '>';
+            name[offset] = '\0';
             (void)offset;
             function->name = name;
             return function;
@@ -971,11 +979,10 @@ Type *resolve_type_syntax(Checker *checker, const TypeSyntax *syntax) {
         case TYPE_SYNTAX_POINTER: {
             Type *element = resolve_type_syntax(
                 checker, syntax->as.pointer.element);
-            const char *prefix = syntax->as.pointer.mutable_
-                ? "*mut " : "*const ";
-            size_t length = strlen(prefix) + strlen(element->name) + 1U;
+            const char *prefix = syntax->as.pointer.mutable_ ? "" : "const ";
+            size_t length = strlen(prefix) + strlen(element->name) + 2U;
             char *name = lang_arena_alloc(&checker->module->arena, length);
-            (void)snprintf(name, length, "%s%s", prefix, element->name);
+            (void)snprintf(name, length, "%s%s*", prefix, element->name);
             Type *pointer = lang_arena_alloc(
                 &checker->module->arena, sizeof(*pointer));
             pointer->kind = TYPE_RAW_POINTER;
@@ -989,7 +996,7 @@ Type *resolve_type_syntax(Checker *checker, const TypeSyntax *syntax) {
                 checker, syntax->as.array.element);
             size_t length = strlen(element->name) + 32U;
             char *name = lang_arena_alloc(&checker->module->arena, length);
-            (void)snprintf(name, length, "[%s;%zu]", element->name,
+            (void)snprintf(name, length, "%s[%zu]", element->name,
                            syntax->as.array.count);
             Type *array = lang_arena_alloc(
                 &checker->module->arena, sizeof(*array));
@@ -1083,113 +1090,6 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
         return &type_cancellation_token;
     if (strcmp(name, "CancellationTokenSource") == 0)
         return &type_cancellation_token_source;
-    if (strncmp(name, "fn(", 3U) == 0) {
-        const char *begin = name + 3U;
-        const char *close = NULL;
-        unsigned paren_depth = 0U;
-        unsigned angle_depth = 0U;
-        unsigned bracket_depth = 0U;
-        for (const char *cursor = begin; *cursor != '\0'; ++cursor) {
-            if (*cursor == '(') ++paren_depth;
-            else if (*cursor == ')') {
-                if (paren_depth == 0U) {
-                    close = cursor;
-                    break;
-                }
-                --paren_depth;
-            } else if (*cursor == '<') ++angle_depth;
-            else if (*cursor == '>' && angle_depth != 0U) --angle_depth;
-            else if (*cursor == '[') ++bracket_depth;
-            else if (*cursor == ']' && bracket_depth != 0U)
-                --bracket_depth;
-        }
-        if (close == NULL || close[1] != '-' || close[2] != '>' ||
-            close[3] == '\0') {
-            lang_diag(checker->diagnostics, span,
-                      "malformed function type `%s`", name);
-            return &type_error;
-        }
-        Type *function =
-            lang_arena_alloc(&checker->module->arena, sizeof(*function));
-        function->kind = TYPE_FUNCTION;
-        function->name = name;
-        function->requires_cleanup = false;
-        const char *parameter_start = begin;
-        paren_depth = 0U;
-        angle_depth = 0U;
-        bracket_depth = 0U;
-        for (const char *cursor = begin; cursor <= close; ++cursor) {
-            bool boundary =
-                cursor == close ||
-                (*cursor == ',' && paren_depth == 0U &&
-                 angle_depth == 0U && bracket_depth == 0U);
-            if (boundary) {
-                if (cursor != parameter_start) {
-                    Type **next = lang_arena_alloc(
-                        &checker->module->arena,
-                        (function->argument_count + 1U) *
-                            sizeof(*next));
-                    if (function->arguments != NULL)
-                        memcpy(next, function->arguments,
-                               function->argument_count *
-                                   sizeof(*next));
-                    function->arguments = next;
-                    ParameterMode *next_modes = lang_arena_alloc(
-                        &checker->module->arena,
-                        (function->argument_count + 1U) *
-                            sizeof(*next_modes));
-                    if (function->parameter_modes != NULL)
-                        memcpy(next_modes, function->parameter_modes,
-                               function->argument_count *
-                                   sizeof(*next_modes));
-                    function->parameter_modes = next_modes;
-                    char *parameter_name = lang_arena_strndup(
-                        &checker->module->arena, parameter_start,
-                        (size_t)(cursor - parameter_start));
-                    bool by_ref = strncmp(
-                        parameter_name, "ref ", 4U) == 0;
-                    bool by_out = strncmp(
-                        parameter_name, "out ", 4U) == 0;
-                    const char *resolved_name = parameter_name +
-                        (by_ref || by_out ? 4U : 0U);
-                    Type *argument_type =
-                        resolve_type(checker, resolved_name, span);
-                    function->parameter_modes[
-                        function->argument_count] = by_out
-                        ? PARAMETER_MODE_OUT
-                        : by_ref
-                        ? PARAMETER_MODE_MUTABLE_REFERENCE
-                        : PARAMETER_MODE_VALUE;
-                    function->arguments[
-                        function->argument_count++] = argument_type;
-                }
-                parameter_start = cursor + 1U;
-                continue;
-            }
-            if (*cursor == '(') ++paren_depth;
-            else if (*cursor == ')' && paren_depth != 0U) --paren_depth;
-            else if (*cursor == '<') ++angle_depth;
-            else if (*cursor == '>' && angle_depth != 0U) --angle_depth;
-            else if (*cursor == '[') ++bracket_depth;
-            else if (*cursor == ']' && bracket_depth != 0U)
-                --bracket_depth;
-        }
-        function->element =
-            resolve_type(checker, close + 3U, span);
-        return function;
-    }
-    if (strncmp(name, "*mut ", 5U) == 0 ||
-        strncmp(name, "*const ", 7U) == 0) {
-        size_t prefix = name[1] == 'm' ? 5U : 7U;
-        Type *pointer =
-            lang_arena_alloc(&checker->module->arena, sizeof(*pointer));
-        pointer->kind = TYPE_RAW_POINTER;
-        pointer->name = name;
-        pointer->element = resolve_type(checker, name + prefix, span);
-        pointer->pointer_mutable = prefix == 5U;
-        pointer->requires_cleanup = false;
-        return pointer;
-    }
     if (strncmp(name, "Span<", 5U) == 0 ||
         strncmp(name, "ReadOnlySpan<", 13U) == 0) {
         bool read_only = name[0] == 'R';

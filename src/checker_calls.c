@@ -297,15 +297,19 @@ static Type *function_value_type(
         checker, function->return_type_syntax,
         function->return_type,
         function->span, declaration->module_name);
-    size_t length = 7U + strlen(type->element->name);
+    bool action = type->element->kind == TYPE_UNIT;
+    size_t length = strlen(action ? "Action<>" : "Func<>") +
+        (action ? 0U : strlen(type->element->name) + 1U) + 1U;
     for (size_t i = 0U; i < type->argument_count; ++i)
         length += strlen(type->arguments[i]->name) + 5U +
                   (i == 0U ? 0U : 1U);
     char *name =
         lang_arena_alloc(&checker->module->arena, length);
     size_t offset = 0U;
-    memcpy(name + offset, "fn(", 3U);
-    offset += 3U;
+    const char *family = action ? "Action<" : "Func<";
+    size_t family_length = strlen(family);
+    memcpy(name + offset, family, family_length);
+    offset += family_length;
     for (size_t i = 0U; i < type->argument_count; ++i) {
         if (i != 0U) name[offset++] = ',';
         if (type->parameter_modes[i] == PARAMETER_MODE_OUT) {
@@ -322,11 +326,13 @@ static Type *function_value_type(
                argument_length);
         offset += argument_length;
     }
-    memcpy(name + offset, ")->", 3U);
-    offset += 3U;
-    size_t result_length = strlen(type->element->name);
-    memcpy(name + offset, type->element->name, result_length);
-    offset += result_length;
+    if (!action) {
+        if (type->argument_count != 0U) name[offset++] = ',';
+        size_t result_length = strlen(type->element->name);
+        memcpy(name + offset, type->element->name, result_length);
+        offset += result_length;
+    }
+    name[offset++] = '>';
     name[offset] = '\0';
     type->name = name;
     return type;
@@ -2455,7 +2461,7 @@ static_call:
             expr->as.call.arguments.items[0]->type->element == NULL ||
             expr->as.call.arguments.items[0]->type->element->kind != TYPE_I64)
             lang_diag(checker->diagnostics, expr->span,
-                      "`raw_load_i64` expects `*const i64` or `*mut i64`");
+                      "`raw_load_i64` expects `const long*` or `long*`");
         return &type_i64;
     }
     if (strcmp(name, "raw_store_i64") == 0) {
@@ -2469,7 +2475,7 @@ static_call:
             expr->as.call.arguments.items[0]->type->element->kind != TYPE_I64 ||
             expr->as.call.arguments.items[1]->type->kind != TYPE_I64)
             lang_diag(checker->diagnostics, expr->span,
-                      "`raw_store_i64` expects `(*mut i64, i64)`");
+                      "`raw_store_i64` expects `(long*, long)`");
         return &type_unit;
     }
     if (strcmp(name, "Option::Some") == 0 ||
