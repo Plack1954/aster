@@ -208,8 +208,9 @@ application architecture is not yet the target design:
    still scanned linearly rather than compiled into one matcher graph.
 4. `UseFilter` is only a before-handler short circuit and `AfterHtml` transforms
    only HTML. Together they do not form general continuation middleware.
-5. Endpoint builders currently store names and descriptive metadata, but
-   endpoint/group filters and graph-level link generation do not exist.
+5. Endpoint builders store names and descriptive metadata. `app.Links`
+   generates validated, encoded paths from named endpoints using the same
+   parsed patterns as inbound routing. Endpoint/group filters do not exist.
 6. Asynchronous handlers participate in the real endpoint graph, including
    bound service methods when their delegate is asynchronous. H2O's current
    `ServeAsync` loop awaits one handler at a time;
@@ -623,7 +624,8 @@ It must not distort production HTTP semantics.
 ### Stage 5: results, links, and metadata
 
 - Consolidate result construction under `Results` and `StatusCodes`.
-- Add endpoint names and `LinkGenerator` using the compiled route graph.
+- Keep the implemented endpoint names and borrowed `LinkGenerator` on the one
+  application graph when the linear endpoint scan becomes a compiled matcher.
 - Expose metadata sufficient for tests and future OpenAPI generation without
   coupling Lime's core to an OpenAPI implementation.
 

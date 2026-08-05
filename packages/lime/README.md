@@ -53,6 +53,24 @@ app.MapGet("/articles/{slug}", Article)
     .Produces(StatusCodes.Status404NotFound);
 ```
 
+Named endpoints generate outbound paths from the same parsed patterns used
+for inbound matching:
+
+```aster
+using Lime.Routing;
+
+RouteValues values = RouteValues.From("slug", "Aster & C#");
+Result<string, string> path = app.Links.GetPathByName(
+    "GetArticle", values
+);
+```
+
+Generation checks required values and route constraints and percent-encodes
+path segments. Additional values become encoded query parameters. Unknown
+endpoint names and invalid values return `Result.Err`; malformed paths are
+never returned. `LinkGenerator` borrows its application, so it must not outlive
+the `WebApplication`.
+
 Groups contribute a prefix while registering into the same endpoint graph.
 They can be nested and expose the same `Map*` family:
 

@@ -1,6 +1,7 @@
 namespace Tests.Smoke;
 
 using Lime;
+using Lime.Routing;
 using Lime.Forms;
 using Lime.Forwarding;
 using Lime.Content;
@@ -1072,6 +1073,61 @@ private bool TypedRouteBindingWorks()
     }
 }
 
+private bool LinkGenerationWorks()
+{
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    app.MapGet("/", home).WithName("Home");
+    app.MapGet("/articles/{slug}", TypedString)
+        .WithName("GetArticle");
+    app.MapGet("/users/{id:int}", TypedInt)
+        .WithName("GetUser");
+
+    LinkGenerator links = app.Links;
+    RouteValues article = RouteValues.From("slug", "Aster & C#");
+    article.Add("page", "two words");
+    switch (links.GetPathByName("GetArticle", article))
+    {
+        case Result.Ok(path): {
+            if (path != "/articles/Aster%20%26%20C%23?page=two%20words")
+            {
+                return false;
+            }
+        }
+        case Result.Err(error): { return false; }
+    }
+
+    switch (links.GetPathByName("Home"))
+    {
+        case Result.Ok(path): {
+            if (path != "/") { return false; }
+        }
+        case Result.Err(error): { return false; }
+    }
+
+    switch (links.GetPathByName("GetArticle"))
+    {
+        case Result.Ok(path): { return false; }
+        case Result.Err(error): {
+            if (error.Length == 0) { return false; }
+        }
+    }
+    switch (links.GetPathByName(
+        "GetUser", RouteValues.From("id", "not-an-integer")
+    ))
+    {
+        case Result.Ok(path): { return false; }
+        case Result.Err(error): {
+            if (error.Length == 0) { return false; }
+        }
+    }
+    switch (links.GetPathByName("Missing"))
+    {
+        case Result.Ok(path): { return false; }
+        case Result.Err(error): { return error.Length > 0; }
+    }
+}
+
 int main()
 {
     if (!MultipartFormsWork()) { return 1; }
@@ -1140,6 +1196,10 @@ int main()
         return 1;
     }
     if (!TypedRouteBindingWorks())
+    {
+        return 1;
+    }
+    if (!LinkGenerationWorks())
     {
         return 1;
     }

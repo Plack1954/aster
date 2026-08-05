@@ -617,6 +617,11 @@ public StaticFileOptions StaticFileOptions()
     };
 }
 
+public struct LinkGenerator
+{
+    WebApplication Application;
+}
+
 public class WebApplication
 {
     public List<Route> routes;
@@ -627,6 +632,8 @@ public class WebApplication
     public RouteHandler fallback;
     public ExceptionHandler exceptionHandler;
     public Option<ForwardedHeadersOptions> forwardedHeaders;
+
+    public LinkGenerator Links => new() { Application = this };
 
     private WebApplication()
     {
@@ -664,6 +671,45 @@ public struct RouteGroup
 {
     WebApplication Application;
     string Prefix;
+}
+
+public Result<string, string> LinkGenerator.GetPathByName(
+    LinkGenerator self,
+    string endpointName,
+    RouteValues values
+)
+{
+    if (self.Application == null)
+    {
+        return Result.Err("link generator is invalid");
+    }
+    if (endpointName.Length == 0)
+    {
+        return Result.Err("endpoint name cannot be empty");
+    }
+    WebApplication application = self.Application;
+    foreach (Route route in application.routes)
+    {
+        switch (route.metadata.Name)
+        {
+            case Option.Some(name): {
+                if (name == endpointName)
+                {
+                    return route.pattern.GetPath(values);
+                }
+            }
+            case Option.None: { }
+        }
+    }
+    return Result.Err($"endpoint '{endpointName}' was not found");
+}
+
+public Result<string, string> LinkGenerator.GetPathByName(
+    LinkGenerator self,
+    string endpointName
+)
+{
+    return self.GetPathByName(endpointName, RouteValues.Create());
 }
 
 private Response DefaultExceptionResponse(Exception error)
