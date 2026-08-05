@@ -112,16 +112,26 @@ public Result<Response, string> StaticFile(
     }
     path.Append(StringSlice(requestPath, 1, requestPath.Length));
     string filePath = path.ToString();
-    NativeHandle file = try NativeFileOpen(filePath, "rb");
-    string bytes = try NativeFileReadAll(file);
-    if (StaticEndsWith(requestPath, ".css"))
+    switch (NativeFileOpen(filePath, "rb"))
     {
-        return Result.Ok(Response.Css(bytes));
+        case Result.Err(error): { return Result.Err(error); }
+        case Result.Ok(file): {
+            switch (NativeFileReadAll(file))
+            {
+                case Result.Err(error): { return Result.Err(error); }
+                case Result.Ok(bytes): {
+                    if (StaticEndsWith(requestPath, ".css"))
+                    {
+                        return Result.Ok(Response.Css(bytes));
+                    }
+                    return Result.Ok(Response.Asset(
+                        bytes,
+                        StaticAssetKind(requestPath)
+                    ));
+                }
+            }
+        }
     }
-    return Result.Ok(Response.Asset(
-        bytes,
-        StaticAssetKind(requestPath)
-    ));
 }
 
 private bool StaticPrefixValid(string prefix)

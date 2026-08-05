@@ -41,7 +41,11 @@ public Result<List<CliArgument>, string> CliParseProcessArguments() {
     bool optionsEnabled = true;
 
     while (index < count) {
-        string argument = try NativeProcessArg(index);
+        string argument = "";
+        switch (NativeProcessArg(index)) {
+            case Result.Err(error): { return Result.Err(error); }
+            case Result.Ok(value): { argument = value; }
+        }
         string view = argument;
         nuint length = view.Length;
 

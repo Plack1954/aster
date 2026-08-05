@@ -49,44 +49,56 @@ public Result<List<string>, string> DiscoverFiles(
     {
         return Result.Err("content directory root cannot be empty");
     }
-    DirectoryStream directory = try NativeDirectoryOpen(root);
-    List<string> names = new();
-    for (;;)
+    switch (NativeDirectoryOpen(root))
     {
-        switch (NativeDirectoryNext(directory))
-        {
-            case Result.Err(error): {
-                if (error == "end of directory") { break; }
-                return Result.Err(error);
-            }
-            case Result.Ok(name): {
-                string path = ContentJoin(root, name);
-                if (name.EndsWith(suffix) &&
-                    (try NativePathIsFile(path)))
+        case Result.Err(error): { return Result.Err(error); }
+        case Result.Ok(directory): {
+            List<string> names = new();
+            for (;;)
+            {
+                switch (NativeDirectoryNext(directory))
                 {
-                    names.Add(name);
+                    case Result.Err(error): {
+                        if (error == "end of directory") { break; }
+                        return Result.Err(error);
+                    }
+                    case Result.Ok(name): {
+                        string path = ContentJoin(root, name);
+                        switch (NativePathIsFile(path))
+                        {
+                            case Result.Err(error): {
+                                return Result.Err(error);
+                            }
+                            case Result.Ok(isFile): {
+                                if (name.EndsWith(suffix) && isFile)
+                                {
+                                    names.Add(name);
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        }
-    }
 
-    List<string> emitted = new();
-    List<string> paths = new();
-    while (emitted.Count < names.Count)
-    {
-        bool found = false;
-        string selected = "";
-        foreach (string name in names)
-        {
-            if (!ContentStringsContain(emitted, name) &&
-                (!found || ContentStringCompare(name, selected) < 0))
+            List<string> emitted = new();
+            List<string> paths = new();
+            while (emitted.Count < names.Count)
             {
-                selected = name;
-                found = true;
+                bool found = false;
+                string selected = "";
+                foreach (string name in names)
+                {
+                    if (!ContentStringsContain(emitted, name) &&
+                        (!found || ContentStringCompare(name, selected) < 0))
+                    {
+                        selected = name;
+                        found = true;
+                    }
+                }
+                emitted.Add(selected);
+                paths.Add(ContentJoin(root, selected));
             }
+            return Result.Ok(paths);
         }
-        emitted.Add(selected);
-        paths.Add(ContentJoin(root, selected));
     }
-    return Result.Ok(paths);
 }

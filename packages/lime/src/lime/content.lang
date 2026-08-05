@@ -127,11 +127,13 @@ private Result<ContentDocument, string> ParseContentDocument(
             string raw = ContentTrim(StringSlice(
                 line, equals + 1, line.Length
             ));
-            fields.Add(new()
+            string scalar = "";
+            switch (ContentScalar(raw))
             {
-                name = name,
-                value = try ContentScalar(raw)
-            });
+                case Result.Err(error): { return Result.Err(error); }
+                case Result.Ok(value): { scalar = value; }
+            }
+            fields.Add(new() { name = name, value = scalar });
         }
         cursor = end < length ? end + 1 : length;
     }
@@ -227,7 +229,11 @@ public Result<List<string>, string> ContentDocument.TryStrings(
     string name
 )
 {
-    return ContentStringList(try ContentRequiredFrom(self.fields, name));
+    switch (ContentRequiredFrom(self.fields, name))
+    {
+        case Result.Err(error): { return Result.Err(error); }
+        case Result.Ok(raw): { return ContentStringList(raw); }
+    }
 }
 
 public List<string> ContentDocument.Strings(
@@ -242,9 +248,19 @@ public List<string> ContentDocument.Strings(
 
 public Result<ContentDocument, string> TryLoadContentDocument(string path)
 {
-    NativeHandle file = try NativeFileOpen(path, "rb");
-    string source = try NativeFileReadAll(file);
-    return ParseContentDocument(path, source);
+    switch (NativeFileOpen(path, "rb"))
+    {
+        case Result.Err(error): { return Result.Err(error); }
+        case Result.Ok(file): {
+            switch (NativeFileReadAll(file))
+            {
+                case Result.Err(error): { return Result.Err(error); }
+                case Result.Ok(source): {
+                    return ParseContentDocument(path, source);
+                }
+            }
+        }
+    }
 }
 
 public ContentDocument LoadContentDocument(string path)
@@ -259,13 +275,22 @@ public Result<List<ContentDocument>, string> TryLoadContentDirectory(
     string suffix
 )
 {
-    List<string> paths = try DiscoverFiles(root, suffix);
-    List<ContentDocument> documents = new();
-    foreach (string path in paths)
+    switch (DiscoverFiles(root, suffix))
     {
-        documents.Add(try TryLoadContentDocument(path));
+        case Result.Err(error): { return Result.Err(error); }
+        case Result.Ok(paths): {
+            List<ContentDocument> documents = new();
+            foreach (string path in paths)
+            {
+                switch (TryLoadContentDocument(path))
+                {
+                    case Result.Err(error): { return Result.Err(error); }
+                    case Result.Ok(document): { documents.Add(document); }
+                }
+            }
+            return Result.Ok(documents);
+        }
     }
-    return Result.Ok(documents);
 }
 
 public List<ContentDocument> LoadContentDirectory(
@@ -288,13 +313,22 @@ public Result<List<T>, string> TryDecodeContentDirectory<T>(
     ContentDecoder<T> decoder
 )
 {
-    List<ContentDocument> documents = try TryLoadContentDirectory(root, suffix);
-    List<T> values = new();
-    foreach (ContentDocument document in documents)
+    switch (TryLoadContentDirectory(root, suffix))
     {
-        values.Add(try decoder(document));
+        case Result.Err(error): { return Result.Err(error); }
+        case Result.Ok(documents): {
+            List<T> values = new();
+            foreach (ContentDocument document in documents)
+            {
+                switch (decoder(document))
+                {
+                    case Result.Err(error): { return Result.Err(error); }
+                    case Result.Ok(value): { values.Add(value); }
+                }
+            }
+            return Result.Ok(values);
+        }
     }
-    return Result.Ok(values);
 }
 
 public List<T> DecodeContentDirectory<T>(
