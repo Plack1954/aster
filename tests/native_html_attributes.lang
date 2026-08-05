@@ -1,6 +1,6 @@
 using Aster.Html;
 
-Html Status(
+private Html Status(
     string label,
     Option<string> tone,
     Option<bool> concealed
@@ -8,16 +8,16 @@ Html Status(
     return <span class=tone hidden=concealed>{label}</span>;
 }
 
-Html Notices(bool showDetails) {
+private Html Notices(bool showDetails) {
     return <>
-        <strong>"Current"</strong>
+        <strong>Current</strong>
         if (showDetails) {
-            <small>" — generated without a wrapper"</small>
+            <small> — generated without a wrapper</small>
         }
     </>;
 }
 
-Html page(
+private Html page(
     Option<string> panelClass,
     bool concealed,
     Option<Url> destination,
@@ -37,8 +37,8 @@ Html page(
         hidden=concealed
     >
         <meta property="og:title" content=titleText />
-        $"Issue #{issueId}: {titleText} ({progress}, active={active})"
-        <label for="query">"Query"</label>
+        Issue #{issueId}: {titleText} ({progress}, active={active})
+        <label for="query">Query</label>
         <input
             type="text"
             name="query"
@@ -54,7 +54,7 @@ Html page(
             />
         </>
         <Notices showDetails=true />
-        <a href=destination>"Issues"</a>
+        <a href=destination>Issues</a>
         <br />
     </main>;
 }
@@ -62,7 +62,7 @@ Html page(
 int main() {
     Option<string> visibleClass = Option.Some("panel");
     Option<string> absentClass = Option.None;
-    print(HtmlRender(page(
+    Console.WriteLine(page(
         visibleClass,
         false,
         Option.Some(Url.relative("/issues")),
@@ -70,8 +70,8 @@ int main() {
         "A&B <ready>",
         0.75,
         true,
-    )));
-    print(HtmlRender(page(
+    ).ToHtmlString());
+    Console.WriteLine(page(
         absentClass,
         true,
         Option.None,
@@ -79,21 +79,21 @@ int main() {
         "Hidden & waiting",
         0.25,
         false,
-    )));
+    ).ToHtmlString());
     Url dynamicUrl =
         Url.relative($"/issues/{42}");
-    print(HtmlRender(
-        <a href=dynamicUrl>"Dynamic issue"</a>
-    ));
+    Console.WriteLine(
+        <a href=dynamicUrl>Dynamic issue</a>
+    .ToHtmlString());
     string borrowedPiece =
         "Borrowed & safe";
-    print(HtmlRender(
-        <p>$"{borrowedPiece}"</p>
-    ));
-    print(borrowedPiece);
+    Console.WriteLine(
+        <p>{borrowedPiece}</p>
+    .ToHtmlString());
+    Console.WriteLine(borrowedPiece);
     string ownedPiece = "value";
     string stored =
         $"Stored {ownedPiece} #{42}: {true}";
-    print(stored);
+    Console.WriteLine(stored);
     return 0;
 }

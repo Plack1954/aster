@@ -3,7 +3,7 @@ struct Counter {
     label: string,
 }
 
-void increment(ref Counter counter) {
+private void increment(ref Counter counter) {
     counter.value = counter.value + 1;
 }
 
@@ -14,6 +14,6 @@ int main() {
     };
     increment(counter);
     increment(counter);
-    print(counter.value);
+    Console.WriteLine(counter.value);
     return 0;
 }

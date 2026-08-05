@@ -19,9 +19,9 @@ struct DateParts
     int millisecond;
 }
 
-extern long NativeUtcNowUnixMilliseconds();
+private extern long NativeUtcNowUnixMilliseconds();
 
-long DaysFromCivil(int year, int month, int day)
+private long DaysFromCivil(int year, int month, int day)
 {
     int adjustedYear = year - if (month <= 2) { 1 } else { 0 };
     long era = (long)adjustedYear / 400;
@@ -34,7 +34,7 @@ long DaysFromCivil(int year, int month, int day)
     return era * 146097 + dayOfEra - 719468;
 }
 
-DateParts DatePartsFromUnixTicks(long unixTicks)
+private DateParts DatePartsFromUnixTicks(long unixTicks)
 {
     long milliseconds = unixTicks / 10000;
     long days = milliseconds / 86400000;
@@ -89,20 +89,20 @@ DateParts DatePartsFromUnixTicks(long unixTicks)
     };
 }
 
-void AppendTwoDigits(ref StringBuilder builder, int value)
+private void AppendTwoDigits(ref StringBuilder builder, int value)
 {
     builder.AppendByte((byte)(48 + value / 10));
     builder.AppendByte((byte)(48 + value % 10));
 }
 
-void AppendThreeDigits(ref StringBuilder builder, int value)
+private void AppendThreeDigits(ref StringBuilder builder, int value)
 {
     builder.AppendByte((byte)(48 + value / 100));
     builder.AppendByte((byte)(48 + value / 10 % 10));
     builder.AppendByte((byte)(48 + value % 10));
 }
 
-void AppendFourDigits(ref StringBuilder builder, int value)
+private void AppendFourDigits(ref StringBuilder builder, int value)
 {
     builder.AppendByte((byte)(48 + value / 1000));
     builder.AppendByte((byte)(48 + value / 100 % 10));
@@ -110,7 +110,7 @@ void AppendFourDigits(ref StringBuilder builder, int value)
     builder.AppendByte((byte)(48 + value % 10));
 }
 
-string FormatDateTime(long unixTicks, short offsetMinutes)
+private string FormatDateTime(long unixTicks, short offsetMinutes)
 {
     long displayTicks = unixTicks + (long)offsetMinutes * 600000000;
     DateParts parts = DatePartsFromUnixTicks(displayTicks);
@@ -155,7 +155,7 @@ string FormatDateTime(long unixTicks, short offsetMinutes)
     return builder.ToString();
 }
 
-int DateDigit(string value, usize index)
+private int DateDigit(string value, usize index)
 {
     byte digit = value[index];
     if (digit < 48 || digit > 57)
@@ -165,24 +165,24 @@ int DateDigit(string value, usize index)
     return (int)(digit - 48);
 }
 
-int DateTwoDigits(string value, usize index)
+private int DateTwoDigits(string value, usize index)
 {
     return DateDigit(value, index) * 10 + DateDigit(value, index + 1);
 }
 
-bool IsLeapYear(int year)
+private bool IsLeapYear(int year)
 {
     return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
 }
 
-int DaysInMonth(int year, int month)
+private int DaysInMonth(int year, int month)
 {
     if (month == 2) { return if (IsLeapYear(year)) { 29 } else { 28 }; }
     if (month == 4 || month == 6 || month == 9 || month == 11) { return 30; }
     return 31;
 }
 
-DateTimeOffset ParseDateTimeOffset(string value)
+private DateTimeOffset ParseDateTimeOffset(string value)
 {
     bool utc = value.Length == 24 && value[23] == 90;
     bool explicitOffset = value.Length == 29 &&
@@ -223,7 +223,7 @@ DateTimeOffset ParseDateTimeOffset(string value)
     };
 }
 
-DateOnly ParseDateOnly(string value)
+private DateOnly ParseDateOnly(string value)
 {
     if (value.Length != 10 || value[4] != 45 || value[7] != 45)
     {
@@ -244,7 +244,7 @@ DateOnly ParseDateOnly(string value)
     };
 }
 
-TimeOnly ParseTimeOnly(string value)
+private TimeOnly ParseTimeOnly(string value)
 {
     bool minutePrecision = value.Length == 5 && value[2] == 58;
     bool secondPrecision = value.Length == 8 &&
@@ -592,7 +592,7 @@ public TimeSpan DateTimeOffset.Subtract(
     return TimeSpan.FromTicks(self.unixTicks - value.unixTicks);
 }
 
-DateParts DateOnlyParts(DateOnly self)
+private DateParts DateOnlyParts(DateOnly self)
 {
     return DatePartsFromUnixTicks(
         ((long)self.dayNumber - 719162) * 864000000000

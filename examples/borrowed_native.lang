@@ -1,15 +1,15 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern long NativeHandleId(NativeHandle handle);
-extern long NativeHandleDropLog();
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern long NativeHandleId(NativeHandle handle);
+private extern long NativeHandleDropLog();
 
 int main() {
     {
         NativeHandle handle = NativeHandleOpenId(7);
-        print(NativeHandleId(handle));
-        print(NativeHandleId(handle));
-        print(NativeHandleDropLog());
+        Console.WriteLine(NativeHandleId(handle));
+        Console.WriteLine(NativeHandleId(handle));
+        Console.WriteLine(NativeHandleDropLog());
     }
 
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
     return 0;
 }

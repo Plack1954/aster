@@ -1,13 +1,13 @@
 using Aster.Html;
 
-string marker() {
+private string marker() {
     return "Called";
 }
 
-Html panel(bool show, string names[2]) {
+private Html panel(bool show, string names[2]) {
     return <section>
         if (show) {
-            <strong>"Visible"</strong>
+            <strong>Visible</strong>
         }
         <ul>
             foreach (string name in names) {
@@ -25,6 +25,6 @@ Html panel(bool show, string names[2]) {
 int main() {
     string names[2] = ["Ada", "Lin"];
     Html content = panel(true, names);
-    print(HtmlRender(content));
+    Console.WriteLine(content.ToHtmlString());
     return 0;
 }

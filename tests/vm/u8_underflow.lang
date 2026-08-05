@@ -1,6 +1,6 @@
 int main() {
     byte zero = 0;
     byte one = 1;
-    print(zero - one);
+    Console.WriteLine(zero - one);
     return 0;
 }

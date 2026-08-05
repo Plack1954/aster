@@ -1,14 +1,14 @@
 namespace Shared.Generics;
 
-pub struct Box<T> {
+public struct Box<T> {
     value: T,
 }
 
-pub union Maybe<T> {
+public union Maybe<T> {
     None,
     Some(T),
 }
 
-pub T identity<T>(T value) {
+public T identity<T>(T value) {
     return value;
 }

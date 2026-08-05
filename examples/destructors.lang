@@ -1,5 +1,5 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern long NativeHandleDropLog();
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern long NativeHandleDropLog();
 
 struct Tracked {
     long id;
@@ -7,14 +7,14 @@ struct Tracked {
 }
 
 ~Tracked() {
-    print(self.id);
+    Console.WriteLine(self.id);
 }
 
-Result<long, string> fail() {
+private Result<long, string> fail() {
     return Result.Err("failed");
 }
 
-long EarlyReturn() {
+private long EarlyReturn() {
     NativeHandle handle = NativeHandleOpenId(3);
     Tracked tracked = new() {
         id = 3,
@@ -23,7 +23,7 @@ long EarlyReturn() {
     return 7;
 }
 
-Result<long, string> CleanupThroughTry() {
+private Result<long, string> CleanupThroughTry() {
     NativeHandle handle = NativeHandleOpenId(4);
     Tracked tracked = new() {
         id = 4,
@@ -46,12 +46,12 @@ int main() {
             handle = secondHandle,
         };
     }
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
 
     long value = EarlyReturn();
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
 
     Result<long, string> failed = CleanupThroughTry();
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
     return 0;
 }

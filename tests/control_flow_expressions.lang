@@ -3,7 +3,7 @@ union Choice {
     Empty,
 }
 
-long choose(bool flag) {
+private long choose(bool flag) {
     return if (flag) {
         10
     } else {
@@ -11,7 +11,7 @@ long choose(bool flag) {
     };
 }
 
-long chained(long value) {
+private long chained(long value) {
     long result = if (value == 1) {
         30
     } else if (value == 2) {
@@ -22,7 +22,7 @@ long chained(long value) {
     return result;
 }
 
-long inspect(Choice choice) {
+private long inspect(Choice choice) {
     return switch (choice) {
         case Choice.Number(value): {
             value
@@ -34,10 +34,10 @@ long inspect(Choice choice) {
 }
 
 int main() {
-    print(choose(true));
-    print(choose(false));
-    print(chained(2));
-    print(inspect(Choice.Number(7)));
-    print(inspect(Choice.Empty));
+    Console.WriteLine(choose(true));
+    Console.WriteLine(choose(false));
+    Console.WriteLine(chained(2));
+    Console.WriteLine(inspect(Choice.Number(7)));
+    Console.WriteLine(inspect(Choice.Empty));
     return 0;
 }

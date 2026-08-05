@@ -35,7 +35,7 @@ Statements can be reused with `Reset` and `ClearBindings`.
 ## Queries and mapping
 
 ```aster
-Post ReadPost(Row row)
+private Post ReadPost(Row row)
 {
     return new()
     {
@@ -115,7 +115,7 @@ struct PostRepository
     Database Database;
 }
 
-Post? PostRepository.Find(PostRepository self, long id)
+public Post? PostRepository.Find(PostRepository self, long id)
 {
     Statement query = self.Database.Prepare(
         "SELECT Id, Title FROM Posts WHERE Id = @id"

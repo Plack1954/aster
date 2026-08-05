@@ -36,19 +36,19 @@ public struct ForwardedOrigin
     string RemoteIpAddress;
 }
 
-bool UsesForwardedFor(ForwardedHeaders value)
+private bool UsesForwardedFor(ForwardedHeaders value)
 {
     return value == ForwardedHeaders.XForwardedFor ||
         value == ForwardedHeaders.All;
 }
 
-bool UsesForwardedHost(ForwardedHeaders value)
+private bool UsesForwardedHost(ForwardedHeaders value)
 {
     return value == ForwardedHeaders.XForwardedHost ||
         value == ForwardedHeaders.All;
 }
 
-bool UsesForwardedProto(ForwardedHeaders value)
+private bool UsesForwardedProto(ForwardedHeaders value)
 {
     return value == ForwardedHeaders.XForwardedProto ||
         value == ForwardedHeaders.All;
@@ -73,7 +73,7 @@ public void ValidateForwardedHeadersOptions(
     }
 }
 
-bool IsKnownProxy(List<string> knownProxies, string address)
+private bool IsKnownProxy(List<string> knownProxies, string address)
 {
     foreach (string knownProxy in knownProxies)
     {
@@ -85,7 +85,7 @@ bool IsKnownProxy(List<string> knownProxies, string address)
     return false;
 }
 
-Option<string> ForwardedValueFromRight(string values, long offset)
+private Option<string> ForwardedValueFromRight(string values, long offset)
 {
     if (offset < 0)
     {
@@ -119,7 +119,7 @@ Option<string> ForwardedValueFromRight(string values, long offset)
     return Option.None;
 }
 
-bool IsSafeForwardedHost(string value)
+private bool IsSafeForwardedHost(string value)
 {
     if (value.Length == 0)
     {

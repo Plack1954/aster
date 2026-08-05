@@ -2,7 +2,7 @@ struct Samples {
     int Values[3];
 }
 
-int sum(int values[3]) {
+private int sum(int values[3]) {
     int total = 0;
     foreach (int value in values) {
         total += value;
@@ -12,14 +12,14 @@ int sum(int values[3]) {
 
 int main() {
     int values[3] = [7, 11, 13];
-    print(sum(values));
+    Console.WriteLine(sum(values));
 
     int matrix[2][2] = [[1, 2], [3, 4]];
-    print(matrix[1][0]);
+    Console.WriteLine(matrix[1][0]);
 
     Samples samples = new() {
         Values = [2, 4, 8],
     };
-    print(samples.Values[2]);
+    Console.WriteLine(samples.Values[2]);
     return 0;
 }

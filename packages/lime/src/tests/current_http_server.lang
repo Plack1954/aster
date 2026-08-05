@@ -14,7 +14,7 @@ struct ServerState
     string name;
 }
 
-Response article(ServerState state, Request request)
+private Response article(ServerState state, Request request)
 {
     string source = "";
     switch (request.query("ref"))
@@ -48,7 +48,7 @@ Response article(ServerState state, Request request)
     return response;
 }
 
-Response submit(ServerState state, Request request)
+private Response submit(ServerState state, Request request)
 {
     try
     {
@@ -77,31 +77,31 @@ Response submit(ServerState state, Request request)
     }
 }
 
-Response missing(ServerState state, Request request)
+private Response missing(ServerState state, Request request)
 {
     return Response.NotFound(<h1>Missing</h1>);
 }
 
-Response robots(ServerState state, Request request)
+private Response robots(ServerState state, Request request)
 {
     return Response.Text(
         "User-agent: *\nDisallow: /private\n"
     );
 }
 
-Response stylesheet(ServerState state, Request request)
+private Response stylesheet(ServerState state, Request request)
 {
     return Response.Css(
         "body { color: #e45b20; }\n"
     );
 }
 
-Response feed(ServerState state, Request request)
+private Response feed(ServerState state, Request request)
 {
     return Response.Xml("<rss version=\"2.0\"></rss>");
 }
 
-Response mark(ServerState state, Request request)
+private Response mark(ServerState state, Request request)
 {
     switch (StaticFile("packages/lime/testdata", request.path))
     {
@@ -112,12 +112,12 @@ Response mark(ServerState state, Request request)
     }
 }
 
-Response MethodResponse(ServerState state, Request request)
+private Response MethodResponse(ServerState state, Request request)
 {
     return Response.Text(request.method);
 }
 
-Response CookieValue(ServerState state, Request request)
+private Response CookieValue(ServerState state, Request request)
 {
     switch (request.cookie("theme"))
     {
@@ -140,7 +140,7 @@ Response CookieValue(ServerState state, Request request)
     }
 }
 
-Response HeaderValue(ServerState state, Request request)
+private Response HeaderValue(ServerState state, Request request)
 {
     switch (request.header("x-aster-test"))
     {
@@ -153,7 +153,7 @@ Response HeaderValue(ServerState state, Request request)
     }
 }
 
-Response ConfiguredCookie(ServerState state, Request request)
+private Response ConfiguredCookie(ServerState state, Request request)
 {
     Option<string> domain = Option.Some("lime.test");
     Option<long> maxAge = Option.Some(3600);
@@ -179,7 +179,7 @@ Response ConfiguredCookie(ServerState state, Request request)
     }
 }
 
-Response DeletedCookie(ServerState state, Request request)
+private Response DeletedCookie(ServerState state, Request request)
 {
     Response response = Response.Text("deleted");
     switch (ResponseDeleteCookie("theme", CookieOptions()))
@@ -194,7 +194,7 @@ Response DeletedCookie(ServerState state, Request request)
     }
 }
 
-Response JsonEcho(ServerState state, Request request)
+private Response JsonEcho(ServerState state, Request request)
 {
     switch (request.json())
     {
@@ -207,7 +207,7 @@ Response JsonEcho(ServerState state, Request request)
     }
 }
 
-Response StreamedAsset(ServerState state, Request request)
+private Response StreamedAsset(ServerState state, Request request)
 {
     MemoryStream stream = MemoryStream.Create();
     List<byte> first = new();
@@ -229,7 +229,7 @@ Response StreamedAsset(ServerState state, Request request)
     return response;
 }
 
-FilterResult RejectFiltered(
+private FilterResult RejectFiltered(
     ServerState state,
     Request request
 )
@@ -244,7 +244,7 @@ FilterResult RejectFiltered(
     return FilterResult.Continue;
 }
 
-Html FrameErrors(
+private Html FrameErrors(
     ServerState state,
     Request request,
     Html page
@@ -258,7 +258,7 @@ Html FrameErrors(
     return page;
 }
 
-int serve(NativeHandle server)
+private int serve(NativeHandle server)
 {
     ServerState state = new()
     {
@@ -285,7 +285,7 @@ int serve(NativeHandle server)
     app.post("/json", JsonEcho);
     app.Get("/stream", StreamedAsset);
 
-    print(HttpServerPort(server));
+    Console.WriteLine(HttpServerPort(server));
     for (int count = 0; count < 22; count++)
     {
         switch (HttpTryAccept(server))
@@ -296,13 +296,13 @@ int serve(NativeHandle server)
                     case Result.Ok(reuse): {
                     }
                     case Result.Err(error): {
-                        eprint(error);
+                        Console.Error.WriteLine(error);
                         return 1;
                     }
                 }
             }
             case Result.Err(error): {
-                eprint(error);
+                Console.Error.WriteLine(error);
                 return 1;
             }
         }
@@ -325,7 +325,7 @@ int main()
             return serve(server);
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

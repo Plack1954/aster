@@ -1,5 +1,5 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern void NativeFailHandle(NativeHandle handle);
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern void NativeFailHandle(NativeHandle handle);
 
 int main()
 {
@@ -7,13 +7,13 @@ int main()
     {
         NativeHandle handle = NativeHandleOpenId(9);
         NativeFailHandle(handle);
-        print("unreachable");
+        Console.WriteLine("unreachable");
     }
     catch (Exception error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
 
-    print("native-recovered");
+    Console.WriteLine("native-recovered");
     return 0;
 }

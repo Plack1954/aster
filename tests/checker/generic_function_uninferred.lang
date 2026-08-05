@@ -1,4 +1,4 @@
-void unused<T>() {
+private void unused<T>() {
 }
 
 int main() {

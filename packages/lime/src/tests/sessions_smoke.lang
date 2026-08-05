@@ -3,7 +3,7 @@ namespace Tests.SessionsSmoke;
 using Lime;
 using Lime.Sessions;
 
-Request MakeRequest(string cookie)
+private Request MakeRequest(string cookie)
 {
     return RequestNew(
         "GET", "/account", "example.test", "", cookie, ""

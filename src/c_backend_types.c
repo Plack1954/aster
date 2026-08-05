@@ -536,10 +536,9 @@ static bool emit_aggregate_type(
                 if (argument != 0U) fputs(", ", emitter->output);
                 c_backend_emit_type(
                     emitter, type->argument_types[argument]);
-                if (type->checked_type != NULL &&
-                    argument < 32U &&
-                    (type->checked_type->borrowed_argument_mask &
-                     (UINT32_C(1) << (unsigned)argument)) != 0U)
+                if (type->parameter_modes != NULL &&
+                    parameter_mode_is_reference(
+                        type->parameter_modes[argument]))
                     fputs(" *", emitter->output);
             }
         }
@@ -699,8 +698,7 @@ void c_backend_emit_type(CEmitter *emitter, IrTypeId type_id) {
 bool c_backend_type_needs_drop(
     const CEmitter *emitter, IrTypeId type_id) {
     return type_id < emitter->ir->type_count &&
-           (emitter->ir->types[type_id].requires_cleanup ||
-            emitter->ir->types[type_id].managed) &&
+           emitter->ir->types[type_id].drop_policy != IR_DROP_TRIVIAL &&
            c_backend_type_is_supported(emitter->ir, type_id);
 }
 

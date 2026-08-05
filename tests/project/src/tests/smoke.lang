@@ -4,7 +4,7 @@ using Lib.Math;
 
 int main() {
     if (Lib.Math.answer() == 42) {
-        print("project test");
+        Console.WriteLine("project test");
         return 0;
     }
     return 1;

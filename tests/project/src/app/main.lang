@@ -3,6 +3,6 @@ namespace App.Main;
 using Numbers = Lib.Math;
 
 int main() {
-    print(Numbers.answer() + Numbers.answer());
+    Console.WriteLine(Numbers.answer() + Numbers.answer());
     return 0;
 }

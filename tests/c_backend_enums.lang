@@ -13,7 +13,7 @@ enum Phase {
     Done,
 }
 
-int PhaseValue(Phase phase) {
+private int PhaseValue(Phase phase) {
     switch (phase) {
         case Phase.Start: {
             return 1;
@@ -24,7 +24,7 @@ int PhaseValue(Phase phase) {
     }
 }
 
-int StateValue(State state) {
+private int StateValue(State state) {
     switch (state) {
         case State.Value(int value): {
             return value;
@@ -35,7 +35,7 @@ int StateValue(State state) {
     }
 }
 
-int MaybeValue(Maybe<int> value) {
+private int MaybeValue(Maybe<int> value) {
     switch (value) {
         case Maybe.Some(int inner): {
             return inner;
@@ -46,19 +46,19 @@ int MaybeValue(Maybe<int> value) {
     }
 }
 
-Result<int, int> source(bool succeed) {
+private Result<int, int> source(bool succeed) {
     if (succeed) {
         return Result.Ok(41);
     }
     return Result.Err(-7);
 }
 
-Result<int, int> through(bool succeed) {
+private Result<int, int> through(bool succeed) {
     int value = try source(succeed);
     return Result.Ok(value + 1);
 }
 
-int ResultValue(Result<int, int> value) {
+private int ResultValue(Result<int, int> value) {
     switch (value) {
         case Result.Ok(int inner): {
             return inner;

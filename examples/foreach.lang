@@ -15,9 +15,9 @@ int main() {
 
     foreach (Article article in articles)
     {
-        print(article.title);
+        Console.WriteLine(article.title);
     }
 
-    print(articles.Count);
+    Console.WriteLine(articles.Count);
     return 0;
 }

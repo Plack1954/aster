@@ -6,13 +6,13 @@ using HttpApp = Aster.Web.HttpApp;
 using Aster.Web.Middleware;
 using HtmlRouter = Aster.Web.Router;
 
-Html frame(Html page) {
+private Html frame(Html page) {
     return <div>
         {page}
     </div>;
 }
 
-Html identity(Html page) {
+private Html identity(Html page) {
     return page;
 }
 
@@ -46,21 +46,21 @@ public long StatusFor(string path) {
     return 404;
 }
 
-HttpApp.Response HomeHandler(HttpApp.Request request) {
+private HttpApp.Response HomeHandler(HttpApp.Request request) {
     Html page = home(request.path);
     Html framed =
         MiddlewareApply(SiteMiddleware(), page);
     return HttpApp.Response.Ok(framed);
 }
 
-HttpApp.Response GuideHandler(HttpApp.Request request) {
+private HttpApp.Response GuideHandler(HttpApp.Request request) {
     Html page = guide(request.path);
     Html framed =
         MiddlewareApply(SiteMiddleware(), page);
     return HttpApp.Response.Ok(framed);
 }
 
-HttpApp.Response MissingHandler(HttpApp.Request request) {
+private HttpApp.Response MissingHandler(HttpApp.Request request) {
     Html page = missing(request.path);
     Html framed =
         MiddlewareApply(SiteMiddleware(), page);

@@ -1,9 +1,9 @@
 namespace Lib.Math;
 
-pub long answer() {
+public long answer() {
     return 42;
 }
 
-pub long NotSelected() {
+public long NotSelected() {
     return 7;
 }

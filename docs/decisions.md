@@ -62,22 +62,24 @@ statement forms as code at child boundaries.
 
 Context: requiring `"..."` around every fixed sentence made native HTML look
 like a tree of Aster string expressions and obscured the language's primary UI
-advantage. Static entities also should not pass through dynamic escaping twice.
+advantage. Static text must receive the same safe escaping guarantee as dynamic
+text.
 
 Alternatives: retain mandatory string literals, require a heredoc-like text
 form, treat all element bodies as an unrelated template language, or guess
 whether statement-shaped content is prose.
 
 Reason: HTML already has an unambiguous structural boundary. Static text can
-lower directly into the destination buffer without allocation, while dynamic
-expressions retain the existing escaped path. Code keeps priority when it uses
-valid statement syntax; deliberately code-shaped prose can use an explicit
-string expression.
+lower directly into the destination buffer without allocation and still use
+context-aware escaping. Code keeps priority when it has the expected control-
+flow shape; deliberately code-shaped prose can use an explicit braced string
+expression.
 
 Consequences: indentation-only text disappears, normal source whitespace is
-normalized, and authored entities pass through as markup. Dynamic strings still
-escape by destination. Literal `<` and `{` use HTML entities or an explicit
-string expression. Existing quoted children remain compatible.
+normalized, and both static and dynamic text escape by destination. Tag-shaped
+literal `<` and literal `{` use an explicit braced string expression. Quoted
+child expressions require braces; the former unbraced quoted-child grammar is
+not retained.
 
 ## Preserve native HTML attribute spelling and semantics
 

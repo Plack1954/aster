@@ -9,7 +9,7 @@ using Aster.Web.HttpApp;
 using Aster.Data.Sqlite;
 using System.Text;
 
-Result<int, SqliteError> run() {
+private Result<int, SqliteError> run() {
     var parsed = ParseConfig(
         "database_path=:memory:\nmax_title_bytes=80\n"
     );
@@ -66,7 +66,7 @@ Result<int, SqliteError> run() {
     }
     var issues = try ListIssues(database);
     var page = IssueListPage(issues);
-    var rendered = HtmlRender(page);
+    var rendered = page.ToHtmlString();
     var source = rendered;
     if (!source.Contains("font-family: sans-serif")) {
         return Result.Err("sans-serif CSS missing");
@@ -113,8 +113,8 @@ Result<int, SqliteError> run() {
             return Result.Err("expected redirect");
         }
     }
-    print("issue tracker model passed");
-    print("issue tracker design passed");
+    Console.WriteLine("issue tracker model passed");
+    Console.WriteLine("issue tracker design passed");
     return Result.Ok(0);
 }
 
@@ -125,7 +125,7 @@ int main() {
             return status;
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

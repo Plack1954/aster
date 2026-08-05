@@ -1,41 +1,41 @@
-int Choose(int value)
+private int Choose(int value)
 {
     return value + 1;
 }
 
-string Choose(string value)
+private string Choose(string value)
 {
     return value;
 }
 
-int Add(int left, int right)
+private int Add(int left, int right)
 {
     return left + right;
 }
 
-int Add(int left, int middle, int right)
+private int Add(int left, int middle, int right)
 {
     return left + middle + right;
 }
 
 delegate int IntChooser(int value);
 
-T First<T>(T value)
+private T First<T>(T value)
 {
     return value;
 }
 
-T First<T>(T value, T ignored)
+private T First<T>(T value, T ignored)
 {
     return value;
 }
 
-int Change(Counter value)
+private int Change(Counter value)
 {
     return value.Base + 1;
 }
 
-int Change(ref Counter value)
+private int Change(ref Counter value)
 {
     value.Base += 2;
     return value.Base;
@@ -46,12 +46,12 @@ struct Counter
     int Base;
 }
 
-int Counter.Add(Counter self, int value)
+private int Counter.Add(Counter self, int value)
 {
     return self.Base + value;
 }
 
-int Counter.Add(Counter self, int left, int right)
+private int Counter.Add(Counter self, int left, int right)
 {
     return self.Base + left + right;
 }
@@ -62,30 +62,30 @@ int main()
     {
         Base = 10
     };
-    print(Choose(4));
-    print(Choose("aster"));
-    print(Add(2, 3));
-    print(Add(2, 3, 4));
-    print(counter.Add(5));
-    print(counter.Add(5, 6));
+    Console.WriteLine(Choose(4));
+    Console.WriteLine(Choose("aster"));
+    Console.WriteLine(Add(2, 3));
+    Console.WriteLine(Add(2, 3, 4));
+    Console.WriteLine(counter.Add(5));
+    Console.WriteLine(counter.Add(5, 6));
     string text = "Aster";
-    print(text.Length);
-    print(text[1]);
+    Console.WriteLine(text.Length);
+    Console.WriteLine(text[1]);
     List<int> values = new();
     values.Add(7);
     values.Add(9);
-    print(values.Count);
-    print(values[1]);
+    Console.WriteLine(values.Count);
+    Console.WriteLine(values[1]);
     IntChooser chooser = Choose;
-    print(chooser(8));
-    print(First(12));
-    print(First(13, 14));
+    Console.WriteLine(chooser(8));
+    Console.WriteLine(First(12));
+    Console.WriteLine(First(13, 14));
     Counter changed = new()
     {
         Base = 20
     };
-    print(Change(changed));
-    print(Change(ref changed));
-    print(changed.Base);
+    Console.WriteLine(Change(changed));
+    Console.WriteLine(Change(ref changed));
+    Console.WriteLine(changed.Base);
     return 0;
 }

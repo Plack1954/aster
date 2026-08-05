@@ -3,7 +3,7 @@ namespace Variants.Router;
 using Aster.Web.HttpApp;
 using Site.View;
 
-Router application() {
+private Router application() {
     Router router = RouterNew(missing);
     RouterGetMut(router, "/", home);
     RouterGetMut(router, "/about/", about);

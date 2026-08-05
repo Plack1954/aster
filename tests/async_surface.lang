@@ -1,12 +1,12 @@
-extern Task<int> LoadNumberAsync();
+private extern Task<int> LoadNumberAsync();
 
-async Task<int> AddOneAsync()
+private async Task<int> AddOneAsync()
 {
     int value = await LoadNumberAsync();
     return value + 1;
 }
 
-async Task PrintLaterAsync()
+private async Task PrintLaterAsync()
 {
     await LoadNumberAsync();
 }

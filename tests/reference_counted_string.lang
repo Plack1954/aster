@@ -3,11 +3,11 @@ int main()
     string first = "Aster";
     string second = first;
 
-    print(first);
-    print(second);
+    Console.WriteLine(first);
+    Console.WriteLine(second);
 
     second = "Lime";
-    print(first);
-    print(second);
+    Console.WriteLine(first);
+    Console.WriteLine(second);
     return 0;
 }

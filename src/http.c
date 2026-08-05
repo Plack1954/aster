@@ -102,7 +102,8 @@ static LangNativeResult http_form_value(
         while (equals < pair_end && body.data[equals] != '=')
             ++equals;
         if (equals - cursor == name.length &&
-            memcmp(body.data + cursor, name.data, name.length) == 0) {
+            (name.length == 0U ||
+             memcmp(body.data + cursor, name.data, name.length) == 0)) {
             size_t value_start =
                 equals < pair_end ? equals + 1U : pair_end;
             char *decoded = malloc(pair_end - value_start + 1U);
@@ -1115,8 +1116,9 @@ static bool next_path_segment(LangStringView path, size_t *offset,
            path.data[*offset] != '/' &&
            path.data[*offset] != '?')
         ++*offset;
+    size_t length = *offset - start;
     *segment = (LangStringView){
-        path.data + start, *offset - start
+        length == 0U ? NULL : path.data + start, length
     };
     return segment->length != 0U;
 }
@@ -1124,7 +1126,8 @@ static bool next_path_segment(LangStringView path, size_t *offset,
 static bool path_segment_equal(LangStringView left,
                                LangStringView right) {
     return left.length == right.length &&
-           memcmp(left.data, right.data, left.length) == 0;
+           (left.length == 0U ||
+            memcmp(left.data, right.data, left.length) == 0);
 }
 
 static LangNativeResult http_path_matches(LangVM *vm,
@@ -1207,8 +1210,9 @@ static LangNativeResult http_path_param(LangVM *vm,
             };
         if (pattern_segment.length == name.length + 1U &&
             pattern_segment.data[0] == ':' &&
-            memcmp(pattern_segment.data + 1U,
-                   name.data, name.length) == 0)
+            (name.length == 0U ||
+             memcmp(pattern_segment.data + 1U,
+                    name.data, name.length) == 0))
             result = path_segment;
     }
     return (LangNativeResult){

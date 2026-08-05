@@ -91,7 +91,7 @@ public struct BinaryWriter
     bool disposed;
 }
 
-T FileResultOrThrow<T>(Result<T, IoError> result)
+private T FileResultOrThrow<T>(Result<T, IoError> result)
 {
     switch (result)
     {
@@ -100,7 +100,7 @@ T FileResultOrThrow<T>(Result<T, IoError> result)
     }
 }
 
-Stream CreateFileStream(string path, string mode, bool read, bool write)
+private Stream CreateFileStream(string path, string mode, bool read, bool write)
 {
     Result<NativeHandle, IoError> opened = NativeFileOpen(path, mode);
     NativeHandle handle = FileResultOrThrow(opened);
@@ -159,7 +159,7 @@ public MemoryStream MemoryStream.Create(List<byte> buffer)
     };
 }
 
-void Stream.EnsureOpen(Stream self)
+private void Stream.EnsureOpen(Stream self)
 {
     if (self.disposed)
     {
@@ -472,7 +472,7 @@ public Stream BinaryWriter.BaseStream(BinaryWriter self)
     };
 }
 
-List<byte> BinaryReader.ReadExactly(ref BinaryReader self, int count)
+private List<byte> BinaryReader.ReadExactly(ref BinaryReader self, int count)
 {
     if (self.disposed)
     {
@@ -594,7 +594,7 @@ public long BinaryReader.ReadInt64(ref BinaryReader self)
     return result;
 }
 
-int BinaryReader.Read7BitEncodedInt(ref BinaryReader self)
+private int BinaryReader.Read7BitEncodedInt(ref BinaryReader self)
 {
     int result = 0;
     int shift = 0;
@@ -725,7 +725,7 @@ public void BinaryWriter.Write(ref BinaryWriter self, long value)
     }
 }
 
-void BinaryWriter.Write7BitEncodedInt(ref BinaryWriter self, int value)
+private void BinaryWriter.Write7BitEncodedInt(ref BinaryWriter self, int value)
 {
     uint remaining = (uint)value;
     while (remaining >= 128)
@@ -1060,17 +1060,17 @@ public extern string NativePathGetFileName(string path);
 public extern string NativePathGetFileNameWithoutExtension(string path);
 public extern string NativePathGetExtension(string path);
 public extern bool NativePathIsPathFullyQualified(string path);
-extern bool NativePathIsRoot(string path);
+private extern bool NativePathIsRoot(string path);
 public extern string NativePathGetDirectoryName(string path);
 public extern string NativePathGetPathRoot(string path);
-extern string NativePathChangeExtension(
+private extern string NativePathChangeExtension(
     string path,
     string extension,
     bool removeExtension
 );
 public extern string NativeDirectoryGetCurrentDirectory();
 public extern void NativeDirectorySetCurrentDirectory(string path);
-extern string NativeEnvironmentNewLine();
+private extern string NativeEnvironmentNewLine();
 
 public extern Result<unit, FilesystemError> NativeCreateDirectory(
     string path
@@ -1281,7 +1281,7 @@ public string Path.ChangeExtension(string path, string? extension)
     return NativePathChangeExtension(path, extension.Value, false);
 }
 
-List<string> Directory.GetEntries(string path, int kind)
+private List<string> Directory.GetEntries(string path, int kind)
 {
     DirectoryStream directory = FileResultOrThrow(
         NativeDirectoryOpen(path)
@@ -1330,7 +1330,7 @@ public List<string> Directory.GetDirectories(string path)
     return Directory.GetEntries(path, 2);
 }
 
-string File.LinesToText(List<string> contents)
+private string File.LinesToText(List<string> contents)
 {
     string newLine = NativeEnvironmentNewLine();
     StringBuilder builder = new();

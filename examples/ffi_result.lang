@@ -1,6 +1,6 @@
-extern Result<long, string> NativeCheckedValue(bool ok);
+private extern Result<long, string> NativeCheckedValue(bool ok);
 
-Result<long, string> checked() {
+private Result<long, string> checked() {
     long value = try NativeCheckedValue(true);
     return Result.Ok(value);
 }
@@ -9,10 +9,10 @@ int main() {
     Result<long, string> result = checked();
     switch (result) {
         case Result.Ok(value): {
-            print(value);
+            Console.WriteLine(value);
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
         }
     }
     return 0;

@@ -9,7 +9,17 @@ void lang_bytecode_free(BytecodeModule *bytecode) {
     for (size_t i = 0U; i < bytecode->function_count; ++i)
         free(bytecode->functions[i].local_destructors);
     for (size_t i = 0U; i < bytecode->function_count; ++i)
+        free(bytecode->functions[i].parameter_modes);
+    for (size_t i = 0U; i < bytecode->function_count; ++i)
         free(bytecode->functions[i].spans);
+    for (size_t i = 0U; i < bytecode->function_count; ++i) {
+        for (size_t instruction = 0U;
+             instruction < bytecode->functions[i].code_capacity;
+             ++instruction)
+            free(bytecode->functions[i].call_sites[instruction]
+                     .argument_modes);
+        free(bytecode->functions[i].call_sites);
+    }
     for (size_t i = 0U; i < bytecode->function_count; ++i)
         free(bytecode->functions[i].code);
     for (size_t i = 0U; i < bytecode->constant_count; ++i)
@@ -22,7 +32,8 @@ void lang_bytecode_free(BytecodeModule *bytecode) {
 static const char *op_name(OpCode op) {
     static const char *names[] = {
         "CONSTANT","UNIT","TRUE","FALSE","POP","LOAD_LOCAL","STORE_LOCAL",
-        "MOVE_LOCAL","REFERENCE_LOCAL","ADD_I64","SUB_I64","MUL_I64","DIV_I64","REM_I64",
+        "MOVE_LOCAL","REFERENCE_LOCAL","REFERENCE_FIELD_LOCAL","INVALIDATE_LOCAL",
+        "ADD_I64","SUB_I64","MUL_I64","DIV_I64","REM_I64",
         "SHIFT_LEFT","SHIFT_RIGHT",
         "BIT_AND","BIT_OR","BIT_XOR","BIT_NOT",
         "ADD_F64","SUB_F64","MUL_F64","DIV_F64",
@@ -73,14 +84,16 @@ static const char *op_name(OpCode op) {
 void lang_dump_bytecode(const BytecodeModule *bytecode) {
     for (size_t f = 0U; f < bytecode->function_count; ++f) {
         const BytecodeFunction *function = &bytecode->functions[f];
-        printf("function %s:\n", function->name);
+        printf("%sfunction %s:\n",
+               function->is_entry ? "" :
+                   function->is_public ? "public " : "private ",
+               function->name);
         for (size_t i = 0U; i < function->code_count; ++i) {
             const Instruction *instruction = &function->code[i];
             if (instruction->op == OP_CALL_NATIVE) {
-                uint32_t encoded = (uint32_t)instruction->b;
-                printf("%04zu %-18s %d argc=%u borrowed=0x%x\n", i,
+                printf("%04zu %-18s %d argc=%d\n", i,
                        op_name(instruction->op), instruction->a,
-                       encoded & UINT32_C(0xff), encoded >> 8U);
+                       instruction->b);
             } else if (instruction->op == OP_BINARY_LOCALS ||
                        instruction->op == OP_BINARY_LOCAL_IMMEDIATE) {
                 OpCode operation = (OpCode)(

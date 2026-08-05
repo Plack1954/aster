@@ -1,4 +1,4 @@
-void mutate(long values[2]) {
+private void mutate(long values[2]) {
     values[0] = 3;
 }
 

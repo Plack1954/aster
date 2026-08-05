@@ -3,33 +3,33 @@ using Aster.Net.Http;
 using Aster.Web.Middleware;
 using Aster.Web.Router;
 
-Html home(string path) {
+private Html home(string path) {
     return <section>
-        <h2>"Aster HTTP server"</h2>
+        <h2>Aster HTTP server</h2>
         <p>{path}</p>
     </section>;
 }
 
-Html health(string path) {
-    return <strong>"healthy"</strong>;
+private Html health(string path) {
+    return <strong>healthy</strong>;
 }
 
-Html NotFound(string path) {
+private Html NotFound(string path) {
     return <section>
-        <h2>"Not found"</h2>
+        <h2>Not found</h2>
         <p>{path}</p>
     </section>;
 }
 
-Html frame(Html page) {
+private Html frame(Html page) {
     return <div>{page}</div>;
 }
 
-Html IdentityMiddleware(Html page) {
+private Html IdentityMiddleware(Html page) {
     return page;
 }
 
-long RouteStatus(string path) {
+private long RouteStatus(string path) {
     if (path == "/") {
         return 200;
     }
@@ -39,7 +39,7 @@ long RouteStatus(string path) {
     return 404;
 }
 
-Html RenderRequest(
+private Html RenderRequest(
     string path,
     Router router,
     MiddlewareChain middleware
@@ -57,8 +57,8 @@ int main() {
         5000,
         100,
     );
-    print("listening on 127.0.0.1, port:");
-    print(HttpServerPort(server));
+    Console.WriteLine("listening on 127.0.0.1, port:");
+    Console.WriteLine(HttpServerPort(server));
 
     Router router = RouterNew(NotFound);
     router = RouterAdd(router, "/", home);
@@ -74,14 +74,14 @@ int main() {
             string path = HttpRequestPath(request);
             string host = HttpRequestHeader(request, "host");
             string body = HttpRequestBody(request);
-            print(method);
-            print(host);
-            print(body);
+            Console.WriteLine(method);
+            Console.WriteLine(host);
+            Console.WriteLine(body);
 
             long status = RouteStatus(path);
             Html document =
                 RenderRequest(path, router, middleware);
-            string rendered = HtmlRender(document);
+            string rendered = document.ToHtmlString();
             active = HttpRespondHtmlReuse(
                 request,
                 status,

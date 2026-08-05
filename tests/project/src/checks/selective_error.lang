@@ -2,6 +2,6 @@ namespace Checks.SelectiveError;
 
 using Lib.Math;
 
-long WholeNamespaceVisible() {
+private long WholeNamespaceVisible() {
     return answer();
 }

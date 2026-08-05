@@ -1,10 +1,10 @@
 namespace Shared;
 
-pub struct Box<T> {
+public struct Box<T> {
     value: T,
 }
 
-pub T identity<T>(T value) {
+public T identity<T>(T value) {
     return value;
 }
 
@@ -12,11 +12,11 @@ namespace First;
 
 using Shared;
 
-void AcceptFirst(Shared.Box<long> value) {
-    print(value.value);
+private void AcceptFirst(Shared.Box<long> value) {
+    Console.WriteLine(value.value);
 }
 
-long CallFirst(long value) {
+private long CallFirst(long value) {
     return Shared.identity(value);
 }
 
@@ -24,11 +24,11 @@ namespace Second;
 
 using Shared;
 
-void AcceptSecond(Shared.Box<long> value) {
-    print(value.value);
+private void AcceptSecond(Shared.Box<long> value) {
+    Console.WriteLine(value.value);
 }
 
-long CallSecond(long value) {
+private long CallSecond(long value) {
     return Shared.identity(value);
 }
 

@@ -10,7 +10,7 @@ public int ServeOpen(
     NativeHandle server,
     long maxConnections
 ) {
-    print(HttpServerPort(server));
+    Console.WriteLine(HttpServerPort(server));
 
     Router router = ApplicationRouter();
     bool running = true;
@@ -41,7 +41,7 @@ public int ServeOpen(
                                         active = reuse;
                                     }
                                     case Result.Err(error): {
-                                        eprint(error);
+                                        Console.Error.WriteLine(error);
                                         active = false;
                                     }
                                 }
@@ -61,7 +61,7 @@ public int ServeOpen(
                                         active = reuse;
                                     }
                                     case Result.Err(sendError): {
-                                        eprint(sendError);
+                                        Console.Error.WriteLine(sendError);
                                         active = false;
                                     }
                                 }
@@ -84,7 +84,7 @@ public int ServeOpen(
                                 active = reuse;
                             }
                             case Result.Err(error): {
-                                eprint(error);
+                                Console.Error.WriteLine(error);
                                 active = false;
                             }
                         }
@@ -97,7 +97,7 @@ public int ServeOpen(
                                 active = available;
                             }
                             case Result.Err(error): {
-                                eprint(error);
+                                Console.Error.WriteLine(error);
                                 active = false;
                             }
                         }
@@ -105,7 +105,7 @@ public int ServeOpen(
                 }
             }
             case Result.Err(error): {
-                eprint(error);
+                Console.Error.WriteLine(error);
             }
         }
         connectionCount = connectionCount + 1;
@@ -137,13 +137,13 @@ int main() {
                     return ServeOpen(server, 0);
                 }
                 case Result.Err(error): {
-                    eprint(error);
+                    Console.Error.WriteLine(error);
                     return 1;
                 }
             }
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

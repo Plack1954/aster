@@ -1,4 +1,4 @@
-string BuildMessage() {
+private string BuildMessage() {
     StringBuilder builder = new();
     builder.Append("Hello");
     builder.Append(", ");
@@ -8,9 +8,9 @@ string BuildMessage() {
 
 int main() {
     string message = BuildMessage();
-    print(message);
+    Console.WriteLine(message);
 
     string copied = "owned text";
-    print(copied);
+    Console.WriteLine(copied);
     return 0;
 }

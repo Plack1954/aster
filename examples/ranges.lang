@@ -1,10 +1,10 @@
-long RangeStart() {
-    print(100);
+private long RangeStart() {
+    Console.WriteLine(100);
     return 2;
 }
 
-long RangeEnd() {
-    print(200);
+private long RangeEnd() {
+    Console.WriteLine(200);
     return 7;
 }
 
@@ -19,23 +19,23 @@ int main() {
         }
         total += index;
     }
-    print(total);
+    Console.WriteLine(total);
 
     usize limit = 4;
     usize unsignedTotal = 0;
     for (index in 0..limit) {
         unsignedTotal += index;
     }
-    print(unsignedTotal);
+    Console.WriteLine(unsignedTotal);
 
     for (ignored in 5..2) {
-        print(ignored);
+        Console.WriteLine(ignored);
     }
 
     byte narrowStart = 254;
     byte narrowEnd = 255;
     for (value in narrowStart..narrowEnd) {
-        print(value);
+        Console.WriteLine(value);
     }
     return 0;
 }

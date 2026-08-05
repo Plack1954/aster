@@ -5,14 +5,14 @@ union ViewState {
     Empty,
 }
 
-Html StateView(ViewState state) {
+private Html StateView(ViewState state) {
     return <section>
         switch (state) {
             case ViewState.Ready(message): {
                 <strong>{message}</strong>
             }
             case ViewState.Empty: {
-                <p>"Nothing yet"</p>
+                <p>Nothing yet</p>
             }
         }
     </section>;
@@ -20,6 +20,6 @@ Html StateView(ViewState state) {
 
 int main() {
     Html output = StateView(ViewState.Ready("Loaded"));
-    print(HtmlRender(output));
+    Console.WriteLine(output.ToHtmlString());
     return 0;
 }

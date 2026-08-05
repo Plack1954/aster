@@ -158,7 +158,7 @@ static int repl(void) {
         while (length != 0U && (line[length - 1U] == '\n' ||
                line[length - 1U] == '\r' || line[length - 1U] == ';'))
             line[--length] = '\0';
-        const char prefix[] = "int main() { print(";
+        const char prefix[] = "int main() { Console.WriteLine(";
         const char suffix[] = "); return 0; }";
         size_t source_length = sizeof(prefix) - 1U + length + sizeof(suffix);
         char *source = malloc(source_length);

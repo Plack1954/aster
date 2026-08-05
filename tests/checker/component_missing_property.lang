@@ -1,6 +1,6 @@
 using Aster.Html;
 
-Html Card(string title) {
+private Html Card(string title) {
     return <h2>{title}</h2>;
 }
 

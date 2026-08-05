@@ -7,12 +7,12 @@ int main()
         case Result.Ok(paths): {
             foreach (string path in paths)
             {
-                print(path);
+                Console.WriteLine(path);
             }
             return 0;
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

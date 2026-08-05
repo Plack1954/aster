@@ -1,6 +1,6 @@
-extern long MissingNative();
+private extern long MissingNative();
 
 int main() {
-    print(MissingNative());
+    Console.WriteLine(MissingNative());
     return 0;
 }

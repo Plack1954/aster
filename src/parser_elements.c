@@ -68,6 +68,14 @@ static bool body_statement_start(TokenKind kind) {
            kind == TOK_CONTINUE || kind == TOK_UNSAFE;
 }
 
+static bool braced_element_block_start(TokenKind kind) {
+    return kind == TOK_VAR || kind == TOK_WHILE || kind == TOK_FOR ||
+           kind == TOK_FOREACH || kind == TOK_RETURN ||
+           kind == TOK_BREAK || kind == TOK_CONTINUE ||
+           kind == TOK_UNSAFE || kind == TOK_LBRACE ||
+           kind == TOK_RBRACE;
+}
+
 static void element_body_sync(Parser *parser, size_t offset) {
     parser->lexer.offset = offset;
     parser->lexer.interpolation_pending = false;
@@ -88,14 +96,47 @@ static Token element_body_probe(const Parser *parser, size_t offset) {
 }
 
 static bool element_body_code_start(Parser *parser, Token first) {
-    if (body_statement_start(first.kind) ||
-        first.kind == TOK_STRING || first.kind == TOK_DOLLAR)
+    if (body_statement_start(first.kind)) {
+        Token next = element_body_probe(parser, first.span.end);
+        if (first.kind == TOK_IF || first.kind == TOK_WHILE ||
+            first.kind == TOK_FOR || first.kind == TOK_FOREACH ||
+            first.kind == TOK_MATCH)
+            return next.kind == TOK_LPAREN;
+        if (first.kind == TOK_UNSAFE)
+            return next.kind == TOK_LBRACE;
         return true;
+    }
+    const LangSource *source = parser->lexer.source;
+    size_t offset = first.span.end;
+    while (offset < source->length &&
+           (source->text[offset] == ' ' || source->text[offset] == '\t' ||
+            source->text[offset] == '\r' || source->text[offset] == '\n'))
+        ++offset;
+    if (offset >= source->length)
+        return false;
+    unsigned char next = (unsigned char)source->text[offset];
+    bool type_continuation =
+        (next >= 'a' && next <= 'z') ||
+        (next >= 'A' && next <= 'Z') || next == '_' ||
+        next == '.' || next == '<' || next == '[' ||
+        next == '?' || next == '*';
+    if (!type_continuation)
+        return false;
     Parser probe = *parser;
     probe.lexer.offset = first.span.end;
     probe.lexer.interpolation_pending = false;
     probe.current = first;
     return parser_looks_like_c_local(&probe);
+}
+
+static bool element_tag_start(const LangSource *source, size_t offset) {
+    if (offset >= source->length || source->text[offset] != '<' ||
+        offset + 1U >= source->length)
+        return false;
+    unsigned char next = (unsigned char)source->text[offset + 1U];
+    if (next == '/' || next == '>') return true;
+    return (next >= 'a' && next <= 'z') ||
+           (next >= 'A' && next <= 'Z') || next == '_';
 }
 
 static Expr *element_body_text(
@@ -141,16 +182,13 @@ static Expr *element_body_text(
 }
 
 static void append_element_expression(
-    Parser *parser, Expr *element, Expr *child, bool static_text) {
-    element->as.element.body = parser_grow_array(
-        &parser->module->arena, element->as.element.body,
-        element->as.element.body_count, sizeof(ElementBodyItem));
-    element->as.element.body[element->as.element.body_count++] =
-        (ElementBodyItem){
+    ParserArrayBuilder *body, Expr *child, bool static_text) {
+    ElementBodyItem item = {
             .is_statement=false,
             .is_static_text=static_text,
             .as.expression=child
         };
+    parser_array_push(body, &item);
 }
 
 static bool native_style_name(const char *name) {
@@ -177,7 +215,9 @@ static const char *ensure_css_scope(Parser *parser, LangSpan span) {
                   "`scoped` styles are only valid inside an Html function");
         return NULL;
     }
-    if (strcmp(function->return_type, "Html") != 0) {
+    const TypeSyntax *return_type = function->return_type_syntax;
+    if (return_type == NULL || return_type->kind != TYPE_SYNTAX_NAMED ||
+        strcmp(return_type->as.name, "Html") != 0) {
         lang_diag(parser->diagnostics, span,
                   "`scoped` styles require an Html-returning component");
         return NULL;
@@ -198,9 +238,9 @@ static const char *ensure_css_scope(Parser *parser, LangSpan span) {
     return attribute;
 }
 
-static size_t find_native_style_close(const LangSource *source,
-                                      size_t start, const char *name,
-                                      size_t *close_length) {
+static size_t find_native_raw_text_close(const LangSource *source,
+                                         size_t start, const char *name,
+                                         size_t *close_length) {
     for (size_t offset = start; offset + 3U <= source->length; ++offset) {
         if (source->text[offset] != '<' ||
             source->text[offset + 1U] != '/')
@@ -228,12 +268,13 @@ static size_t find_native_style_close(const LangSource *source,
     return SIZE_MAX;
 }
 
-static void parse_native_style_body(Parser *parser, Expr *expr,
-                                    Token open_end) {
+static void parse_native_raw_text_body(Parser *parser, Expr *expr,
+                                       ParserArrayBuilder *body,
+                                       Token open_end) {
     const LangSource *source = parser->lexer.source;
     size_t body_start = open_end.span.end;
     size_t close_length = 0U;
-    size_t close_start = find_native_style_close(
+    size_t close_start = find_native_raw_text_close(
         source, body_start, expr->as.element.name, &close_length);
     size_t body_end = close_start == SIZE_MAX
         ? source->length : close_start;
@@ -241,25 +282,19 @@ static void parse_native_style_body(Parser *parser, Expr *expr,
         source, body_start, body_end, &parser->module->arena,
         parser->diagnostics, &expr->as.element.css);
 
+    Expr *style_text = NULL;
     if (body_start != body_end) {
-        Expr *text = parser_new_expr(
+        style_text = parser_new_expr(
             parser, EXPR_STRING,
             (LangSpan){
                 lang_source_path_at(source, body_start),
                 body_start, body_end
             });
-        text->as.string.data = lang_arena_strndup(
+        style_text->as.string.data = lang_arena_strndup(
             &parser->module->arena,
             source->text + body_start, body_end - body_start);
-        text->as.string.length = body_end - body_start;
-        expr->as.element.body = parser_grow_array(
-            &parser->module->arena, expr->as.element.body,
-            expr->as.element.body_count, sizeof(ElementBodyItem));
-        expr->as.element.body[expr->as.element.body_count++] =
-            (ElementBodyItem){
-                .is_statement=false,
-                .as.expression=text
-            };
+        style_text->as.string.length = body_end - body_start;
+        append_element_expression(body, style_text, true);
     }
 
     if (close_start == SIZE_MAX) {
@@ -277,15 +312,14 @@ static void parse_native_style_body(Parser *parser, Expr *expr,
     }
     if (expr->as.element.css_scoped) {
         const char *attribute = ensure_css_scope(parser, expr->span);
-        if (attribute != NULL && expr->as.element.body_count != 0U) {
-            Expr *text = expr->as.element.body[0].as.expression;
+        if (attribute != NULL && style_text != NULL) {
             const char *rewritten = NULL;
             size_t rewritten_length = 0U;
             if (lang_css_scope(source, expr->as.element.css, attribute,
                                &parser->module->arena, &rewritten,
                                &rewritten_length)) {
-                text->as.string.data = rewritten;
-                text->as.string.length = rewritten_length;
+                style_text->as.string.data = rewritten;
+                style_text->as.string.length = rewritten_length;
                 uint64_t style_hash = css_identity_hash(
                     UINT64_C(1469598103934665603), rewritten,
                     rewritten_length);
@@ -308,6 +342,10 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
         parser->suppress_element_lookahead;
     parser->suppress_element_lookahead = false;
     Expr *expr = parser_new_expr(parser, EXPR_ELEMENT, open_span);
+    ParserArrayBuilder properties = parser_array_builder(
+        sizeof(ElementProperty));
+    ParserArrayBuilder body = parser_array_builder(
+        sizeof(ElementBodyItem));
     expr->as.element.name =
         parser->current.kind == TOK_GREATER
         ? "#fragment" : parser_parse_path(parser);
@@ -364,10 +402,7 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
             .css_custom_property=css_custom_property
         };
         parser->stop_at_element_slash = false;
-        expr->as.element.properties = parser_grow_array(&parser->module->arena,
-            expr->as.element.properties, expr->as.element.property_count,
-            sizeof(ElementProperty));
-        expr->as.element.properties[expr->as.element.property_count++] = item;
+        parser_array_push(&properties, &item);
         (void)parser_accept(parser, TOK_COMMA);
     }
     if (parser_accept(parser, TOK_SLASH)) {
@@ -376,6 +411,11 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
         expr->as.element.self_closing = true;
         expr->as.element.open_span.end = close.span.end;
         expr->span.end = close.span.end;
+        expr->as.element.property_count = properties.count;
+        expr->as.element.properties =
+            parser_array_freeze(parser, &properties);
+        expr->as.element.body_count = body.count;
+        expr->as.element.body = parser_array_freeze(parser, &body);
         finish_element_parse(
             parser, close.span.end, suppress_finish_lookahead);
         return expr;
@@ -385,7 +425,12 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
         Token open_end = parser->current;
         parser->previous = open_end;
         expr->as.element.open_span.end = open_end.span.end;
-        parse_native_style_body(parser, expr, open_end);
+        parse_native_raw_text_body(parser, expr, &body, open_end);
+        expr->as.element.property_count = properties.count;
+        expr->as.element.properties =
+            parser_array_freeze(parser, &properties);
+        expr->as.element.body_count = body.count;
+        expr->as.element.body = parser_array_freeze(parser, &body);
         finish_element_parse(
             parser, expr->span.end, suppress_finish_lookahead);
         return expr;
@@ -433,8 +478,7 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
             first_byte == '$';
         if (can_start_code)
             probe = element_body_probe(parser, significant);
-        if (significant < source->length &&
-            source->text[significant] == '<') {
+        if (element_tag_start(source, significant)) {
             element_body_sync(parser, significant);
             (void)parser_accept(parser, TOK_LESS);
             LangSpan less = parser->previous.span;
@@ -465,7 +509,7 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
             }
             parser->suppress_element_lookahead = true;
             Expr *child = parser_parse_element(parser, less);
-            append_element_expression(parser, expr, child, false);
+            append_element_expression(&body, child, false);
             body_offset = child->span.end;
             continue;
         }
@@ -475,10 +519,8 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
             (void)parser_accept(parser, TOK_LBRACE);
             Token brace = parser->previous;
             ElementBodyItem item;
-            if (body_statement_start(parser->current.kind) ||
-                parser_looks_like_c_local(parser) ||
-                parser->current.kind == TOK_LBRACE ||
-                parser->current.kind == TOK_RBRACE) {
+            if (braced_element_block_start(parser->current.kind) ||
+                parser_looks_like_c_local(parser)) {
                 item.is_statement = true;
                 item.is_static_text = false;
                 item.as.statement =
@@ -493,10 +535,7 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
                     "expected `}` after element child expression");
                 body_offset = close.span.end;
             }
-            expr->as.element.body = parser_grow_array(
-                &parser->module->arena, expr->as.element.body,
-                expr->as.element.body_count, sizeof(ElementBodyItem));
-            expr->as.element.body[expr->as.element.body_count++] = item;
+            parser_array_push(&body, &item);
             continue;
         }
         if (can_start_code && element_body_code_start(parser, probe)) {
@@ -512,24 +551,26 @@ Expr *parser_parse_element(Parser *parser, LangSpan open_span) {
                 item.as.expression = parser_parse_primary(parser);
                 body_offset = item.as.expression->span.end;
             }
-            expr->as.element.body = parser_grow_array(
-                &parser->module->arena, expr->as.element.body,
-                expr->as.element.body_count, sizeof(ElementBodyItem));
-            expr->as.element.body[expr->as.element.body_count++] = item;
+            parser_array_push(&body, &item);
             continue;
         }
         size_t text_end = significant;
         while (text_end < source->length &&
-               source->text[text_end] != '<' &&
+               !element_tag_start(source, text_end) &&
                source->text[text_end] != '{')
             ++text_end;
         Expr *text = element_body_text(
             parser, body_offset, text_end);
         if (text != NULL)
-            append_element_expression(parser, expr, text, true);
+            append_element_expression(&body, text, true);
         body_offset = text_end;
         continue;
     }
+    expr->as.element.property_count = properties.count;
+    expr->as.element.properties =
+        parser_array_freeze(parser, &properties);
+    expr->as.element.body_count = body.count;
+    expr->as.element.body = parser_array_freeze(parser, &body);
     finish_element_parse(
         parser, expr->span.end, suppress_finish_lookahead);
     return expr;

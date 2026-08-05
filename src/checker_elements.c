@@ -41,6 +41,10 @@ static bool is_element_child_type(const Type *type) {
         type->kind == TYPE_HTML || type->kind == TYPE_UNIT ||
         type->kind == TYPE_ERROR)
         return true;
+    if (type->kind == TYPE_BOOL || type->kind == TYPE_CHAR ||
+        (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) ||
+        type->kind == TYPE_F32 || type->kind == TYPE_F64)
+        return true;
     if (type->kind == TYPE_OPTION || type->kind == TYPE_VEC ||
         type->kind == TYPE_ARRAY)
         return type->element != NULL &&
@@ -326,7 +330,7 @@ Type *check_element(Checker *checker, Expr *expr) {
                     lang_diag(
                         checker->diagnostics,
                         item->as.expression->span,
-                        "fragment child must produce `string`, `Html`, or `unit`; found `%s`",
+                        "fragment child must produce text, a scalar, `Html`, or `unit`; found `%s`",
                         child->name);
             }
         }
@@ -349,8 +353,9 @@ Type *check_element(Checker *checker, Expr *expr) {
         expr->resolved_decl = function_declaration(checker, component);
         const char *component_module =
             function_module_name(checker, component);
-        Type *component_result = resolve_type_in_module(
-            checker, component->return_type, component->span,
+        Type *component_result = resolve_declared_type_in_module(
+            checker, component->return_type_syntax,
+            component->return_type, component->span,
             component_module);
         if (component_result->kind != TYPE_HTML)
             lang_diag(checker->diagnostics, expr->span,
@@ -385,8 +390,9 @@ Type *check_element(Checker *checker, Expr *expr) {
                           "unknown property `%s` on component `%s`",
                           property->name, component->name);
             } else {
-                Type *expected = resolve_type_in_module(
-                    checker, parameter->type_name, parameter->span,
+                Type *expected = resolve_declared_type_in_module(
+                    checker, parameter->type_syntax,
+                    parameter->type_name, parameter->span,
                     component_module);
                 Type *actual;
                 if (parameter->borrowed) {
@@ -439,16 +445,18 @@ Type *check_element(Checker *checker, Expr *expr) {
         }
         for (size_t p = 0U; p < component->param_count; ++p) {
             if (strcmp(component->params[p].name, "children") == 0) {
-                Type *children_type = resolve_type_in_module(
-                    checker, component->params[p].type_name,
+                Type *children_type = resolve_declared_type_in_module(
+                    checker, component->params[p].type_syntax,
+                    component->params[p].type_name,
                     component->params[p].span, component_module);
                 if (children_type->kind != TYPE_HTML)
                     lang_diag(checker->diagnostics, component->params[p].span,
                               "component `children` parameter must have type `Html`");
                 continue;
             }
-            Type *parameter_type = resolve_type_in_module(
-                checker, component->params[p].type_name,
+            Type *parameter_type = resolve_declared_type_in_module(
+                checker, component->params[p].type_syntax,
+                component->params[p].type_name,
                 component->params[p].span, component_module);
             bool found = false;
             for (size_t i = 0U; i < expr->as.element.property_count; ++i)
@@ -483,7 +491,7 @@ Type *check_element(Checker *checker, Expr *expr) {
                     if (!is_element_child_type(child))
                         lang_diag(checker->diagnostics,
                                   item->as.expression->span,
-                                  "component child must produce `string`, `Html`, or `unit`; found `%s`",
+                                  "component child must produce text, a scalar, `Html`, or `unit`; found `%s`",
                                   child->name);
                 }
             }
@@ -494,8 +502,9 @@ Type *check_element(Checker *checker, Expr *expr) {
     }
     if (descriptor != NULL) {
         expr->resolved_decl = descriptor;
-        Type *result = resolve_type_in_module(
-            checker, descriptor->as.element.result_type, descriptor->span,
+        Type *result = resolve_declared_type_in_module(
+            checker, descriptor->as.element.result_type_syntax,
+            descriptor->as.element.result_type, descriptor->span,
             descriptor->module_name);
         if (result->kind != TYPE_HTML)
             lang_diag(checker->diagnostics, descriptor->span,
@@ -520,8 +529,9 @@ Type *check_element(Checker *checker, Expr *expr) {
                 &descriptor->as.element.properties[p];
             if (strcmp(declared->name, "children") == 0) {
                 accepts_children = true;
-                Type *children = resolve_type_in_module(
-                    checker, declared->type_name, declared->span,
+                Type *children = resolve_declared_type_in_module(
+                    checker, declared->type_syntax,
+                    declared->type_name, declared->span,
                     descriptor->module_name);
                 if (children->kind != TYPE_HTML)
                     lang_diag(checker->diagnostics, declared->span,
@@ -576,8 +586,9 @@ Type *check_element(Checker *checker, Expr *expr) {
                 continue;
             }
             Type *expected = declared != NULL
-                ? resolve_type_in_module(
-                      checker, declared->type_name, declared->span,
+                ? resolve_declared_type_in_module(
+                      checker, declared->type_syntax,
+                      declared->type_name, declared->span,
                       descriptor->module_name)
                 : html_global_attribute_type(property->name);
             if (declared == NULL) {
@@ -600,8 +611,9 @@ Type *check_element(Checker *checker, Expr *expr) {
                 &descriptor->as.element.properties[p];
             if (strcmp(declared->name, "children") == 0)
                 continue;
-            Type *property_type = resolve_type_in_module(
-                checker, declared->type_name, declared->span,
+            Type *property_type = resolve_declared_type_in_module(
+                checker, declared->type_syntax,
+                declared->type_name, declared->span,
                 descriptor->module_name);
             if (property_type->kind == TYPE_OPTION)
                 continue;
@@ -634,7 +646,7 @@ Type *check_element(Checker *checker, Expr *expr) {
                 if (!is_element_child_type(child))
                     lang_diag(checker->diagnostics,
                               item->as.expression->span,
-                              "element child must produce `string`, `Html`, or `unit`; found `%s`",
+                              "element child must produce text, a scalar, `Html`, or `unit`; found `%s`",
                               child->name);
             }
         }

@@ -3,7 +3,7 @@ struct Pair<A, B> {
     second: B,
 }
 
-void invalid(Pair<long> value) {
+private void invalid(Pair<long> value) {
 }
 
 int main() {

@@ -132,7 +132,7 @@ static size_t direct_render_static_bytes_inner(
                 continue;
             }
             if (instruction->opcode ==
-                    IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT) {
+                    IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT) {
                 total = add_render_size(
                     total, instruction->symbol_length);
                 continue;

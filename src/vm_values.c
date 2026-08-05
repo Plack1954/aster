@@ -75,7 +75,9 @@ static uint64_t native_name_hash(const char *name) {
 }
 
 LangVM *lang_vm_new(void) {
-    return vm_allocate(1U, sizeof(LangVM));
+    /* Construction is the recoverable embedding boundary. Internal runtime
+     * allocations intentionally retain their documented fail-fast policy. */
+    return calloc(1U, sizeof(LangVM));
 }
 
 void lang_vm_set_process_arguments(
@@ -212,6 +214,9 @@ void *lang_native_handle_data(const LangValue *value) {
 bool lang_value_string_view(const LangValue *value, LangStringView *out_view) {
     if (value == NULL || out_view == NULL) return false;
     if (value->tag == LANG_VALUE_STRING_VIEW) {
+        if (value->as.string.data == NULL &&
+            value->as.string.length != 0U)
+            return false;
         *out_view = value->as.string;
         return true;
     }
@@ -231,6 +236,9 @@ bool lang_value_html_view(const LangValue *value, LangStringView *out_view) {
     /* Generated C passes the already typed Html storage as a call-scoped
      * view; the VM passes its owning Html object directly. */
     if (value->tag == LANG_VALUE_STRING_VIEW) {
+        if (value->as.string.data == NULL &&
+            value->as.string.length != 0U)
+            return false;
         *out_view = value->as.string;
         return true;
     }
@@ -302,7 +310,8 @@ void vm_raise_exception_message(LangVM *vm, const char *message) {
 bool lang_value_byte_slice(const LangValue *value,
                            LangByteSlice *out_slice) {
     if (value == NULL || out_slice == NULL ||
-        value->tag != LANG_VALUE_BYTE_SLICE)
+        value->tag != LANG_VALUE_BYTE_SLICE ||
+        (value->as.bytes.data == NULL && value->as.bytes.length != 0U))
         return false;
     *out_slice = value->as.bytes;
     return true;
@@ -631,7 +640,9 @@ static Object *object_clone(const Object *source) {
         case OBJECT_BUFFER:
             copy->as.buffer.length = source->as.buffer.length;
             copy->as.buffer.data = vm_allocate(copy->as.buffer.length, 1U);
-            memcpy(copy->as.buffer.data, source->as.buffer.data, copy->as.buffer.length);
+            if (copy->as.buffer.length != 0U)
+                memcpy(copy->as.buffer.data, source->as.buffer.data,
+                       copy->as.buffer.length);
             break;
         case OBJECT_ARENA:
             copy->as.arena.blocks = NULL;

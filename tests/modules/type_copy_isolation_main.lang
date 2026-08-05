@@ -9,6 +9,6 @@ struct Resource {
 int main() {
     Resource local = Resource { id: 42 };
     Resource copy = local;
-    print(copy.id);
+    Console.WriteLine(copy.id);
     return 0;
 }

@@ -74,7 +74,7 @@ public SessionStore SessionStore.Create(
     return new() { database = database, options = options };
 }
 
-string CreateSessionId(Database database)
+private string CreateSessionId(Database database)
 {
     Statement random = database.Prepare(
         "SELECT lower(hex(randomblob(32)))"
@@ -88,7 +88,7 @@ string CreateSessionId(Database database)
     return random.CurrentRow().GetString(0);
 }
 
-bool SessionExists(Database database, string id)
+private bool SessionExists(Database database, string id)
 {
     Statement query = database.Prepare(
         "SELECT 1 FROM LimeSessions WHERE Id = @id AND ExpiresAt > unixepoch()"
@@ -97,7 +97,7 @@ bool SessionExists(Database database, string id)
     return query.Read();
 }
 
-void RefreshSession(
+private void RefreshSession(
     Database database,
     string id,
     long idleTimeoutSeconds

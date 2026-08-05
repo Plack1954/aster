@@ -5,12 +5,12 @@ struct OperationHolder
     Operation operation;
 }
 
-int Fail()
+private int Fail()
 {
     throw new Exception("indirect failure");
 }
 
-int Boundary(Operation operation)
+private int Boundary(Operation operation)
 {
     try
     {
@@ -26,12 +26,12 @@ int Boundary(Operation operation)
     }
 }
 
-void OperationHolder.Set(ref OperationHolder self, Operation operation)
+private void OperationHolder.Set(ref OperationHolder self, Operation operation)
 {
     self.operation = operation;
 }
 
-int Succeed()
+private int Succeed()
 {
     return 7;
 }

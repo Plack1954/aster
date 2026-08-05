@@ -12,6 +12,6 @@ async Task<int> main()
 {
     await Task.CompletedTask();
     int value = await Task.FromResult((int)42);
-    print(value);
+    Console.WriteLine(value);
     return 0;
 }

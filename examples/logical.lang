@@ -1,22 +1,22 @@
-bool touch(long marker) {
-    print(marker);
+private bool touch(long marker) {
+    Console.WriteLine(marker);
     return true;
 }
 
 int main() {
     if (false && touch(1)) {
-        print(1);
+        Console.WriteLine(1);
     }
     if (true || touch(2)) {
-        print(3);
+        Console.WriteLine(3);
     }
     if (true && touch(4)) {
-        print(5);
+        Console.WriteLine(5);
     }
     if (false || touch(6)) {
-        print(7);
+        Console.WriteLine(7);
     }
 
-    print(8);
+    Console.WriteLine(8);
     return 0;
 }

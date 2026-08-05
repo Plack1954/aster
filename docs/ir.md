@@ -11,6 +11,10 @@ The current foundation represents:
 - explicit local load, store, move, clone, drop, and discard operations;
 - checked integer arithmetic and distinct floating-point arithmetic;
 - direct Aster calls, indirect calls, and native calls;
+- parameter descriptors with names, types, modes, and source spans;
+- function ABI, async-suspension, and render metadata;
+- closed copy/drop policies and verified copy/destructor function IDs;
+- native-call descriptors with operand types, modes, ABI, and result type;
 - basic blocks with jump, branch, return, exception propagation, and trap terminators;
 - source spans and host target metadata;
 - monomorphized functions as independent IR functions;
@@ -180,9 +184,11 @@ Components remain ordinary calls, while their collected children use a
 fragment builder. Live HTTP integration tests exercise both compiler paths,
 including routing, keep-alive, static files, HTML, and socket cleanup.
 
-The bootstrap type table retains a borrowed link to the checker's canonical
-type object. That link is temporary compiler metadata; backends must consume
-the IR type table and must not inspect the AST or checker structures.
+During lowering, the type table temporarily retains a borrowed link to the
+checker's canonical type object and functions retain source declarations.
+Lowering clears both links before returning the completed module. The verifier
+rejects a module that still contains either link, and backend-boundary tests
+compile bytecode and generated C with those links absent.
 
 Each concrete IR type also records its target size and alignment when the
 target layout is known. Struct and union types record a verified destructor
@@ -191,6 +197,10 @@ backend as two explicit facts:
 
 - control-flow edges contain `local_drop` instructions in deterministic order;
 - the dropped type identifies its concrete destructor without name lookup.
+
+The verifier also checks copy/drop policy consistency, parameter descriptors,
+native-call operand signatures, aggregate discriminants, function ABI flags,
+and the recorded number of async suspension points.
 
 Backends remain responsible for representing whether an owning local is live.
 The C backend uses a local boolean. A move must clear the source state, and a

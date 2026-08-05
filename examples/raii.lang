@@ -1,16 +1,16 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern long NativeHandleDropLog();
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern long NativeHandleDropLog();
 
-Result<long, string> AlwaysError() {
+private Result<long, string> AlwaysError() {
     return Result.Err("failure");
 }
 
-long EarlyReturn() {
+private long EarlyReturn() {
     NativeHandle handle = NativeHandleOpenId(3);
     return 7;
 }
 
-Result<long, string> CleanupThroughTry() {
+private Result<long, string> CleanupThroughTry() {
     NativeHandle handle = NativeHandleOpenId(4);
     long value = try AlwaysError();
     return Result.Ok(value);
@@ -23,12 +23,12 @@ int main() {
     }
 
     // Reverse declaration order: 2, then 1.
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
 
     long value = EarlyReturn();
     Result<long, string> failed = CleanupThroughTry();
 
     // Early return adds 3; try propagation adds 4.
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
     return 0;
 }

@@ -3,7 +3,7 @@ using Aster.Html;
 int main() {
     Html trusted = Html.UnsafeRaw("<em>trusted</em>");
     Html document = <section>{trusted}</section>;
-    string output = HtmlRender(document);
-    print(output);
+    string output = document.ToHtmlString();
+    Console.WriteLine(output);
     return 0;
 }

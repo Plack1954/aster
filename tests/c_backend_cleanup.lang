@@ -3,52 +3,52 @@ struct Tracked {
 }
 
 ~Tracked() {
-    print(self.id);
+    Console.WriteLine(self.id);
 }
 
-Result<long, long> fail() {
+private Result<long, long> fail() {
     return Result.Err(-1);
 }
 
-void ReverseScope() {
+private void ReverseScope() {
     Tracked first = Tracked { id: 1 };
     Tracked second = Tracked { id: 2 };
 }
 
-long EarlyReturn() {
+private long EarlyReturn() {
     Tracked value = Tracked { id: 3 };
     return 7;
 }
 
-Result<long, long> CleanupThroughTry() {
+private Result<long, long> CleanupThroughTry() {
     Tracked value = Tracked { id: 4 };
     long result = try fail();
     return Result.Ok(result);
 }
 
-void CleanupThroughBreak() {
+private void CleanupThroughBreak() {
     while (true) {
         Tracked value = Tracked { id: 5 };
         break;
     }
 }
 
-void consume(Tracked value) {
+private void consume(Tracked value) {
 }
 
-void MovedValueCleanup() {
+private void MovedValueCleanup() {
     Tracked value = Tracked { id: 6 };
     consume(value);
 }
 
-string ThrowAfterFirstArgument() {
+private string ThrowAfterFirstArgument() {
     throw new IOException("argument evaluation");
 }
 
-void ConsumePair(Tracked first, string second) {
+private void ConsumePair(Tracked first, string second) {
 }
 
-void CleanupTemporaryOnExceptionTransfer() {
+private void CleanupTemporaryOnExceptionTransfer() {
     try {
         ConsumePair(
             new Tracked { id = 7 },
@@ -56,26 +56,26 @@ void CleanupTemporaryOnExceptionTransfer() {
         );
     }
     catch (IOException error) {
-        print(70);
+        Console.WriteLine(70);
     }
 }
 
-void CleanupAcrossMismatchedCatch() {
+private void CleanupAcrossMismatchedCatch() {
     try {
         Tracked outer = new() { id = 8 };
         try {
             throw new IOException("mismatch");
         }
         catch (FormatException error) {
-            print(-1);
+            Console.WriteLine(-1);
         }
     }
     catch (Exception error) {
-        print(80);
+        Console.WriteLine(80);
     }
 }
 
-void CleanupCatchBeforeExceptionalFinally() {
+private void CleanupCatchBeforeExceptionalFinally() {
     try {
         try {
             throw new IOException("caught");
@@ -85,24 +85,24 @@ void CleanupCatchBeforeExceptionalFinally() {
             throw new FormatException(error.Message);
         }
         finally {
-            print(90);
+            Console.WriteLine(90);
         }
     }
     catch (FormatException error) {
-        print(91);
+        Console.WriteLine(91);
     }
 }
 
-void CleanupMatchBindingOnNormalExit() {
+private void CleanupMatchBindingOnNormalExit() {
     Result<Tracked, long> result = Result.Ok(
         new Tracked { id = 10 }
     );
     switch (result) {
         case Result.Ok(value): {
-            print(100);
+            Console.WriteLine(100);
         }
         case Result.Err(error): {
-            print(-1);
+            Console.WriteLine(-1);
         }
     }
 }

@@ -1,4 +1,4 @@
-void consume(long* pointer) {
+private void consume(long* pointer) {
 }
 
 int main() {

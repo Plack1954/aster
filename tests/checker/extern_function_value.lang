@@ -1,4 +1,4 @@
-extern long NativeClock();
+private extern long NativeClock();
 
 int main() {
     long() clock = nativeClock;

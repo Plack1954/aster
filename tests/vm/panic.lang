@@ -1,4 +1,4 @@
-int fail() {
+private int fail() {
     panic("intentional panic");
 }
 

@@ -188,6 +188,83 @@ add_test(NAME hello_check COMMAND lang check examples/hello.lang)
 set_tests_properties(hello_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+add_test(NAME function_visibility_vm
+    COMMAND lang run-ir tests/function_visibility.lang)
+set_tests_properties(function_visibility_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42")
+add_aster_generated_c_test(
+    function_visibility_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/function_visibility.lang
+    aster_function_visibility
+        "-DEXPECTED_OUTPUT=42\n")
+foreach(visibility_failure
+        function_visibility_required
+        public_main_rejected
+        private_main_rejected
+        pub_function_rejected)
+    add_test(NAME ${visibility_failure}
+        COMMAND lang check tests/checker/${visibility_failure}.lang)
+    set_tests_properties(${visibility_failure} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        WILL_FAIL TRUE)
+endforeach()
+add_test(NAME function_visibility_ast_dump
+    COMMAND lang dump-ast tests/function_visibility.lang)
+set_tests_properties(function_visibility_ast_dump PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "private long Internal")
+add_test(NAME function_visibility_type_dump
+    COMMAND lang dump-types tests/function_visibility.lang)
+set_tests_properties(function_visibility_type_dump PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "public long Exported")
+add_test(NAME function_visibility_ir_dump
+    COMMAND lang dump-ir tests/function_visibility.lang)
+set_tests_properties(function_visibility_ir_dump PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "private function.*Internal")
+add_test(NAME function_visibility_bytecode_dump
+    COMMAND lang dump-bytecode tests/function_visibility.lang)
+set_tests_properties(function_visibility_bytecode_dump PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "public function Exported")
+add_test(NAME var_inference_vm COMMAND lang run-ir tests/var_inference.lang)
+set_tests_properties(var_inference_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "Ada[\r\n]+2[\r\n]+Grace"
+)
+add_aster_generated_c_test(
+    var_inference_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/var_inference.lang
+    aster_var_inference
+        "-DEXPECTED_OUTPUT=Ada\n2\nGrace\n")
+add_test(NAME var_remains_statically_typed
+    COMMAND lang check tests/checker/var_remains_statically_typed.lang)
+set_tests_properties(var_remains_statically_typed PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME console_surface_vm COMMAND lang run tests/console.lang)
+set_tests_properties(console_surface_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "output"
+)
+add_aster_generated_c_test(
+    console_surface_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/console.lang
+    console_surface
+        -DEXPECTED_OUTPUT=output\n42\ntrue\n1.5\n
+        -DEXPECTED_ERROR=error\nwarning\n)
+foreach(removed_console_global IN ITEMS print eprint)
+    add_test(NAME global_${removed_console_global}_removed
+        COMMAND lang check
+            tests/checker/global_${removed_console_global}_removed.lang)
+    set_tests_properties(global_${removed_console_global}_removed PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        WILL_FAIL TRUE
+    )
+endforeach()
 add_test(NAME stdlib_path_resolution
     COMMAND ${CMAKE_COMMAND}
         -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
@@ -702,6 +779,36 @@ add_aster_generated_c_test(
     out_parameter_surface_generated_c
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/out_parameter_surface.lang
     aster_out_parameter_surface)
+add_test(NAME out_definite_assignment_vm
+    COMMAND lang run-ir tests/out_definite_assignment.lang)
+set_tests_properties(out_definite_assignment_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "11[\r\n]+22[\r\n]+output failure[\r\n]+77")
+add_aster_generated_c_test(
+    out_definite_assignment_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/out_definite_assignment.lang
+    aster_out_definite_assignment
+        "-DEXPECTED_OUTPUT=11\n22\noutput failure\n77\n")
+foreach(out_flow_failure
+        out_read_before_assignment
+        out_missing_branch_assignment
+        out_loop_only_assignment
+        out_early_return_assignment)
+    add_test(NAME ${out_flow_failure}
+        COMMAND lang check tests/checker/${out_flow_failure}.lang)
+    set_tests_properties(${out_flow_failure} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} WILL_FAIL TRUE)
+endforeach()
+add_test(NAME empty_values_vm
+    COMMAND lang run-ir tests/empty_values.lang)
+set_tests_properties(empty_values_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "0[\r\n]+0[\r\n]+0[\r\n]+0[\r\n]+0")
+add_aster_generated_c_test(
+    empty_values_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/empty_values.lang
+    aster_empty_values
+        "-DEXPECTED_OUTPUT=0\n0\n0\n0\n0\n")
 add_test(NAME out_parameter_requires_out
     COMMAND lang check tests/checker/out_parameter_requires_out.lang)
 set_tests_properties(out_parameter_requires_out PROPERTIES
@@ -1044,6 +1151,26 @@ add_aster_generated_c_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/ref_value_copy.lang
     aster_ref_parameter_value_copy
         "-DEXPECTED_OUTPUT=0\n1\n")
+add_test(NAME ref_aliasing_vm
+    COMMAND lang run-ir tests/ref_aliasing.lang)
+set_tests_properties(ref_aliasing_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+8[\r\n]+19[\r\n]+alias failure[\r\n]+changed[\r\n]+7[\r\n]+8")
+add_aster_generated_c_test(
+    ref_aliasing_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/ref_aliasing.lang
+    aster_ref_aliasing
+        "-DEXPECTED_OUTPUT=7\n8\n19\nalias failure\nchanged\n7\n8\n")
+add_test(NAME parameter_mode_boundaries_vm
+    COMMAND lang run-ir tests/parameter_mode_boundaries.lang)
+set_tests_properties(parameter_mode_boundaries_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "41[\r\n]+52[\r\n]+63")
+add_aster_generated_c_test(
+    parameter_mode_boundaries_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/parameter_mode_boundaries.lang
+    aster_parameter_mode_boundaries
+        "-DEXPECTED_OUTPUT=41\n52\n63\n")
 add_test(NAME foreach_value_copy_vm
     COMMAND lang run-ir tests/foreach_value_copy.lang)
 set_tests_properties(foreach_value_copy_vm PROPERTIES
@@ -1358,6 +1485,12 @@ set_tests_properties(unknown_element_diagnostic PROPERTIES
 add_test(NAME mismatched_element_closing_diagnostic
     COMMAND lang check tests/parser/mismatched_element.lang)
 set_tests_properties(mismatched_element_closing_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME malformed_element_brace_diagnostic
+    COMMAND lang check tests/parser/malformed_element_brace.lang)
+set_tests_properties(malformed_element_brace_diagnostic PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE
 )
@@ -1834,6 +1967,18 @@ add_test(NAME parser_reports_multiple_errors COMMAND parser_recovery_test)
 set_tests_properties(parser_reports_multiple_errors PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+add_executable(parser_collections_test tests/parser_collections.c)
+target_include_directories(parser_collections_test PRIVATE src)
+target_link_libraries(parser_collections_test PRIVATE langlib)
+lang_enable_warnings(parser_collections_test)
+add_test(NAME parser_geometric_collection_stress
+    COMMAND parser_collections_test)
+add_executable(parser_type_syntax_test tests/parser_type_syntax.c)
+target_include_directories(parser_type_syntax_test PRIVATE src)
+target_link_libraries(parser_type_syntax_test PRIVATE langlib)
+lang_enable_warnings(parser_type_syntax_test)
+add_test(NAME parser_structural_type_syntax
+    COMMAND parser_type_syntax_test)
 add_test(NAME enum_multiple_payloads_diagnostic
     COMMAND lang check tests/parser/enum_multiple_payloads.lang)
 set_tests_properties(enum_multiple_payloads_diagnostic PROPERTIES
@@ -2112,6 +2257,16 @@ target_include_directories(malformed_bytecode_test PRIVATE src)
 target_link_libraries(malformed_bytecode_test PRIVATE langlib)
 lang_enable_warnings(malformed_bytecode_test)
 add_test(NAME malformed_bytecode_rejected COMMAND malformed_bytecode_test)
+if(UNIX AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_executable(vm_allocation_failure_test
+        tests/vm_allocation_failure.c)
+    target_link_libraries(vm_allocation_failure_test PRIVATE langlib)
+    target_link_options(vm_allocation_failure_test PRIVATE
+        -Wl,--wrap=calloc)
+    lang_enable_warnings(vm_allocation_failure_test)
+    add_test(NAME vm_allocation_failure_returns_null
+        COMMAND vm_allocation_failure_test)
+endif()
 
 add_test(NAME http_language_router_check
     COMMAND lang check examples/http_server.lang)

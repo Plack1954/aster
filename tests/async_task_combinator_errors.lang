@@ -1,15 +1,15 @@
-extern Task Task.Delay(int milliseconds);
+private extern Task Task.Delay(int milliseconds);
 
-async Task<int> FailAfter(int milliseconds)
+private async Task<int> FailAfter(int milliseconds)
 {
     await Task.Delay(milliseconds);
     throw new IOException("failed input");
 }
 
-async Task<int> FinishAndReport(int milliseconds)
+private async Task<int> FinishAndReport(int milliseconds)
 {
     await Task.Delay(milliseconds);
-    print("settled");
+    Console.WriteLine("settled");
     return 7;
 }
 
@@ -22,22 +22,22 @@ async Task<int> main()
     try
     {
         List<int> ignored = await Task.WhenAll(tasks);
-        print(ignored.Count);
+        Console.WriteLine(ignored.Count);
     }
     catch (IOException error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
 
     List<Task<int>> empty = new();
     try
     {
         Task<int> impossible = await Task.WhenAny(empty);
-        print(await impossible);
+        Console.WriteLine(await impossible);
     }
     catch (ArgumentException error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
     return 0;
 }

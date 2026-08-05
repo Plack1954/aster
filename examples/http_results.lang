@@ -12,11 +12,11 @@ int main() {
         );
     switch (invalid) {
         case Result.Ok(server): {
-            print("invalid address accepted");
+            Console.WriteLine("invalid address accepted");
             return 1;
         }
         case Result.Err(error): {
-            print("HTTP error returned as Result");
+            Console.WriteLine("HTTP error returned as Result");
         }
     }
 
@@ -31,10 +31,10 @@ int main() {
         );
     switch (opened) {
         case Result.Ok(server): {
-            print("HTTP server returned as Result");
+            Console.WriteLine("HTTP server returned as Result");
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }

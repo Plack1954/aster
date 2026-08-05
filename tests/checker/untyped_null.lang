@@ -1,4 +1,4 @@
 int main() {
-    print(null);
+    Console.WriteLine(null);
     return 0;
 }

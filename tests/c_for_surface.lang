@@ -3,7 +3,7 @@ int main() {
     for (int i = 0; i < 5; i++) {
         total += i;
     }
-    print(total);
+    Console.WriteLine(total);
 
     int skipped = 0;
     for (int i = 0; i < 5; i++) {
@@ -12,7 +12,7 @@ int main() {
         }
         skipped += i;
     }
-    print(skipped);
+    Console.WriteLine(skipped);
 
     int stopped = 0;
     for (int i = 0; i < 10; i++) {
@@ -21,13 +21,13 @@ int main() {
         }
         stopped += i;
     }
-    print(stopped);
+    Console.WriteLine(stopped);
 
     int i = 0;
     int external = 0;
     for (; i < 3; i++) {
         external += i;
     }
-    print(external);
+    Console.WriteLine(external);
     return 0;
 }

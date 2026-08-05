@@ -1,4 +1,4 @@
-long mix(long value, long iteration) {
+private long mix(long value, long iteration) {
     long next = value + iteration + 1;
     if (next > 1000000000) {
         return next - 1000000000;
@@ -13,6 +13,6 @@ int main() {
         value = mix(value, iteration);
         iteration = iteration + 1;
     }
-    print(value);
+    Console.WriteLine(value);
     return 0;
 }

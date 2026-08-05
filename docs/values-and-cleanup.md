@@ -1,5 +1,14 @@
 # Values and cleanup
 
+## Empty pointer/length values
+
+String views, byte slices, buffers, and other pointer/length views may use a
+null data pointer when their length is zero. A null data pointer with a nonzero
+length is invalid. Runtime, FFI, VM, and generated-C operations must
+short-circuit zero-length library calls and must not perform pointer arithmetic
+on a null data pointer. Empty values therefore require no allocation while
+remaining valid in both backends.
+
 Aster does not use garbage collection and does not have a borrow checker.
 Its model is deliberately C/C++-like:
 

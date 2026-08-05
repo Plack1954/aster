@@ -1,6 +1,6 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern long NativeHandleId(NativeHandle handle);
-extern long NativeHandleDropLog();
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern long NativeHandleId(NativeHandle handle);
+private extern long NativeHandleDropLog();
 
 struct ArticleResource {
     handle: NativeHandle,
@@ -15,12 +15,12 @@ int main() {
 
         foreach (ArticleResource article in articles)
         {
-            print(NativeHandleId(article.handle));
+            Console.WriteLine(NativeHandleId(article.handle));
         }
 
-        print(articles.Count);
-        print(NativeHandleDropLog());
+        Console.WriteLine(articles.Count);
+        Console.WriteLine(NativeHandleDropLog());
     }
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
     return 0;
 }

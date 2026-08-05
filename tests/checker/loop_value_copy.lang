@@ -2,7 +2,7 @@ int main() {
     Buffer value = Buffer.allocate(8);
     while (true) {
         Buffer consumed = value;
-        print(consumed.len);
+        Console.WriteLine(consumed.len);
     }
     return 0;
 }

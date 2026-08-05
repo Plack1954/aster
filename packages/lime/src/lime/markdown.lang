@@ -3,7 +3,7 @@ namespace Lime.Markdown;
 using Aster.Html;
 using System.Text;
 
-void MarkdownAppendEscaped(ref StringBuilder output, string value)
+private void MarkdownAppendEscaped(ref StringBuilder output, string value)
 {
     for (usize index = 0; index < value.Length; index++)
     {
@@ -16,7 +16,7 @@ void MarkdownAppendEscaped(ref StringBuilder output, string value)
     }
 }
 
-void MarkdownAppendInline(ref StringBuilder output, string value)
+private void MarkdownAppendInline(ref StringBuilder output, string value)
 {
     usize cursor = 0;
     usize segment = 0;
@@ -44,7 +44,7 @@ void MarkdownAppendInline(ref StringBuilder output, string value)
     if (strong) { output.Append("</strong>"); }
 }
 
-bool MarkdownOrderedItem(string line)
+private bool MarkdownOrderedItem(string line)
 {
     usize cursor = 0;
     while (cursor < line.Length &&
@@ -58,7 +58,7 @@ bool MarkdownOrderedItem(string line)
         StringByteAt(line, cursor + 1) == 32;
 }
 
-usize MarkdownOrderedTextStart(string line)
+private usize MarkdownOrderedTextStart(string line)
 {
     usize cursor = 0;
     while (cursor < line.Length &&
@@ -70,7 +70,7 @@ usize MarkdownOrderedTextStart(string line)
     return cursor + 2;
 }
 
-usize MarkdownHeadingLevel(string line)
+private usize MarkdownHeadingLevel(string line)
 {
     usize level = 0;
     while (level < line.Length && level < 6 &&
@@ -86,7 +86,7 @@ usize MarkdownHeadingLevel(string line)
     return level;
 }
 
-string MarkdownHeadingOpen(usize level)
+private string MarkdownHeadingOpen(usize level)
 {
     if (level == 1) { return "<h1>"; }
     if (level == 2) { return "<h2>"; }
@@ -96,7 +96,7 @@ string MarkdownHeadingOpen(usize level)
     return "<h6>";
 }
 
-string MarkdownHeadingClose(usize level)
+private string MarkdownHeadingClose(usize level)
 {
     if (level == 1) { return "</h1>"; }
     if (level == 2) { return "</h2>"; }

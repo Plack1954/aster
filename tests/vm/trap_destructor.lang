@@ -3,12 +3,12 @@ struct Tracked {
 }
 
 ~Tracked() {
-    print(self.id);
+    Console.WriteLine(self.id);
 }
 
 int main() {
     Tracked tracked = Tracked { id: 9 };
     long zero = 0;
-    print(1 / zero);
+    Console.WriteLine(1 / zero);
     return 0;
 }

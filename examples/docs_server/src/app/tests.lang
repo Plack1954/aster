@@ -13,11 +13,11 @@ int main() {
     );
     switch (parsed) {
         case Result.Ok(config): {
-            print(config.port);
-            print(config.timeoutMs);
+            Console.WriteLine(config.port);
+            Console.WriteLine(config.timeoutMs);
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }
@@ -26,11 +26,11 @@ int main() {
         ParseConfig("unknown=1\n");
     switch (invalid) {
         case Result.Ok(config): {
-            print("invalid configuration accepted");
+            Console.WriteLine("invalid configuration accepted");
             return 1;
         }
         case Result.Err(error): {
-            print("invalid configuration rejected");
+            Console.WriteLine("invalid configuration rejected");
         }
     }
 
@@ -38,13 +38,13 @@ int main() {
     switch (markdown) {
         case Result.Ok(count): {
             if (count < 1) {
-                print("documentation traversal found no files");
+                Console.WriteLine("documentation traversal found no files");
                 return 1;
             }
-            print("documentation traversal passed");
+            Console.WriteLine("documentation traversal passed");
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }
@@ -53,10 +53,10 @@ int main() {
         LoadAsset("examples/docs_server/assets/site.css");
     switch (asset) {
         case Result.Ok(contents): {
-            print("static asset test passed");
+            Console.WriteLine("static asset test passed");
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }
@@ -72,19 +72,19 @@ int main() {
         AppHttp.RouterDispatch(appRouter, request);
     switch (response) {
         case AppHttp.Response.Ok(page): {
-            string body = HtmlRender(page);
-            print("typed HTTP handler passed");
+            string body = page.ToHtmlString();
+            Console.WriteLine("typed HTTP handler passed");
         }
         case AppHttp.Response.Redirect(location): {
-            print("typed HTTP handler unexpectedly redirected");
+            Console.WriteLine("typed HTTP handler unexpectedly redirected");
             return 1;
         }
         case AppHttp.Response.NotFound(page): {
-            print("typed HTTP handler returned 404");
+            Console.WriteLine("typed HTTP handler returned 404");
             return 1;
         }
         case AppHttp.Response.InternalError(page): {
-            print("typed HTTP handler returned 500");
+            Console.WriteLine("typed HTTP handler returned 500");
             return 1;
         }
     }
@@ -92,8 +92,8 @@ int main() {
     HtmlRouter.Router router = SiteRouter();
     MiddlewareChain middleware = SiteMiddleware();
     Html page = RenderPath(router, middleware, "/missing");
-    string rendered = HtmlRender(page);
-    print(rendered);
-    print("docs smoke passed");
+    string rendered = page.ToHtmlString();
+    Console.WriteLine(rendered);
+    Console.WriteLine("docs smoke passed");
     return 0;
 }

@@ -11,7 +11,7 @@ struct Entry
     List<byte> Payload;
 }
 
-Entry ReadEntry(Row row)
+private Entry ReadEntry(Row row)
 {
     return new()
     {
@@ -24,14 +24,14 @@ Entry ReadEntry(Row row)
     };
 }
 
-long CountEntries(Database database)
+private long CountEntries(Database database)
 {
     Statement count = database.Prepare("SELECT COUNT(*) FROM Entries");
     if (!count.Read()) { return -1; }
     return count.CurrentRow().GetInt64(0);
 }
 
-void InsertSimple(Database database, string name)
+private void InsertSimple(Database database, string name)
 {
     Statement insert = database.Prepare(
         "INSERT INTO Entries (Name, Active, Score, Note, Payload) VALUES (@name, 1, 1.0, NULL, X'')"

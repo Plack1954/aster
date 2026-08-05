@@ -22,13 +22,23 @@ static void dump_expr_types(const Expr *expr, int depth) {
 void lang_dump_types(const Module *module) {
     for (size_t i = 0U; i < module->count; ++i)
         if (module->decls[i]->kind == DECL_FUNCTION) {
+            const Decl *decl = module->decls[i];
+            const Function *function = &decl->as.function;
+            bool is_main = decl->type_param_count == 0U &&
+                !function->is_extern &&
+                strcmp(function->name, "main") == 0;
+            const char *visibility =
+                function->is_drop || is_main
+                    ? ""
+                    : decl->is_public ? "public " : "private ";
             if (module->decls[i]->type_param_count != 0U) {
-                printf("%s %s<template>\n",
+                printf("%s%s %s<template>\n", visibility,
                        module->decls[i]->as.function.return_type,
                        module->decls[i]->as.function.name);
                 continue;
             }
-            printf("%s %s\n", module->decls[i]->as.function.return_type,
+            printf("%s%s %s\n", visibility,
+                   module->decls[i]->as.function.return_type,
                    module->decls[i]->as.function.name);
             if (module->decls[i]->as.function.body != NULL)
                 dump_stmt_types(module->decls[i]->as.function.body, 1);
@@ -89,8 +99,9 @@ static ComputedLayout declaration_layout(
     const char *previous_module = checker->current_module;
     checker->current_module = decl->module_name;
     if (decl->kind == DECL_ALIAS) {
-        Type *target_type = resolve_type(
-            checker, decl->as.alias.target, decl->span);
+        Type *target_type = resolve_declared_type(
+            checker, decl->as.alias.target_syntax,
+            decl->as.alias.target, decl->span);
         ComputedLayout result = type_layout(
             checker, target_type, target, next_stack, stack_count);
         checker->current_module = previous_module;
@@ -106,8 +117,9 @@ static ComputedLayout declaration_layout(
     size_t aggregate_alignment = 1U;
     if (decl->kind == DECL_STRUCT) {
         for (size_t i = 0U; i < field_count; ++i) {
-            Type *field_type = resolve_type_in_applied_declaration(
-                checker, applied, fields[i].type_name,
+            Type *field_type = resolve_type_syntax_in_applied_declaration(
+                checker, applied, fields[i].type_syntax,
+                fields[i].type_name,
                 fields[i].span);
             ComputedLayout field = type_layout(
                 checker, field_type, target, next_stack, stack_count);
@@ -130,8 +142,9 @@ static ComputedLayout declaration_layout(
         };
     }
     for (size_t i = 0U; i < field_count; ++i) {
-        Type *payload_type = resolve_type_in_applied_declaration(
-            checker, applied, fields[i].type_name,
+        Type *payload_type = resolve_type_syntax_in_applied_declaration(
+            checker, applied, fields[i].type_syntax,
+            fields[i].type_name,
             fields[i].span);
         ComputedLayout payload = type_layout(
             checker, payload_type, target, next_stack, stack_count);
@@ -276,8 +289,9 @@ static void dump_named_type_layout(
              field < decl->as.structure.field_count; ++field) {
             FieldDecl *field_decl =
                 &decl->as.structure.fields[field];
-            Type *field_type = resolve_type_in_applied_declaration(
-                checker, type, field_decl->type_name,
+            Type *field_type = resolve_type_syntax_in_applied_declaration(
+                checker, type, field_decl->type_syntax,
+                field_decl->type_name,
                 field_decl->span);
             ComputedLayout field_layout = type_layout(
                 checker, field_type, target, NULL, 0U);

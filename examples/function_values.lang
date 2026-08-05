@@ -1,22 +1,22 @@
-long AddOne(long value) {
+private long AddOne(long value) {
     return value + 1;
 }
 
 delegate long Operation(long value);
 
-long apply(long value, Operation operation) {
+private long apply(long value, Operation operation) {
     return operation(value);
 }
 
-T ApplyT<T>(T value, Func<T, T> operation) {
+private T ApplyT<T>(T value, Func<T, T> operation) {
     return operation(value);
 }
 
 int main() {
     Operation operation = AddOne;
-    print(operation(4));
-    print(apply(9, AddOne));
+    Console.WriteLine(operation(4));
+    Console.WriteLine(apply(9, AddOne));
     long genericResult = ApplyT(20, AddOne);
-    print(genericResult);
+    Console.WriteLine(genericResult);
     return 0;
 }

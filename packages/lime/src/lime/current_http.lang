@@ -5,7 +5,7 @@ using Aster.Net.Http;
 using System.IO;
 using System.Text;
 
-string AssetContentType(AssetKind kind)
+private string AssetContentType(AssetKind kind)
 {
     switch (kind)
     {

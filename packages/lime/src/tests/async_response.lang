@@ -3,9 +3,9 @@ namespace Tests.AsyncResponse;
 using Lime;
 using Aster.Html;
 
-extern Task Task.Delay(int milliseconds);
+private extern Task Task.Delay(int milliseconds);
 
-async Task<Response> LoadResponseAsync()
+private async Task<Response> LoadResponseAsync()
 {
     await Task.Delay(1);
     return Response.Ok(
@@ -23,11 +23,11 @@ async Task<int> main()
         List<ResponseHeader> firstHeaders) = first;
     (int secondStatus, ResponseBody secondBody,
         List<ResponseHeader> secondHeaders) = second;
-    print(firstStatus);
-    print(secondStatus);
+    Console.WriteLine(firstStatus);
+    Console.WriteLine(secondStatus);
     switch (firstBody)
     {
-        case ResponseBody.Html(page): { print(HtmlRender(page)); }
+        case ResponseBody.Html(page): { Console.WriteLine(page.ToHtmlString()); }
         case ResponseBody.Text(text): { return 1; }
         case ResponseBody.Css(text): { return 2; }
         case ResponseBody.Asset(asset): { return 3; }
@@ -36,7 +36,7 @@ async Task<int> main()
     }
     switch (secondBody)
     {
-        case ResponseBody.Html(page): { print(HtmlRender(page)); }
+        case ResponseBody.Html(page): { Console.WriteLine(page.ToHtmlString()); }
         case ResponseBody.Text(text): { return 6; }
         case ResponseBody.Css(text): { return 7; }
         case ResponseBody.Asset(asset): { return 8; }

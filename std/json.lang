@@ -37,22 +37,22 @@ struct JsonParser
     usize Position;
 }
 
-void JsonFail()
+private void JsonFail()
 {
     throw new JsonException("The JSON value could not be parsed.");
 }
 
-bool JsonIsWhiteSpace(byte value)
+private bool JsonIsWhiteSpace(byte value)
 {
     return value == 32 || value == 9 || value == 10 || value == 13;
 }
 
-bool JsonIsDigit(byte value)
+private bool JsonIsDigit(byte value)
 {
     return value >= 48 && value <= 57;
 }
 
-int JsonHexValue(byte value)
+private int JsonHexValue(byte value)
 {
     if (value >= 48 && value <= 57) { return (int)(value - 48); }
     if (value >= 65 && value <= 70) { return (int)(value - 65) + 10; }
@@ -61,7 +61,7 @@ int JsonHexValue(byte value)
     return 0;
 }
 
-void JsonSkipWhiteSpace(ref JsonParser parser)
+private void JsonSkipWhiteSpace(ref JsonParser parser)
 {
     while (parser.Position < parser.Source.Length &&
            JsonIsWhiteSpace(parser.Source[parser.Position]))
@@ -70,7 +70,7 @@ void JsonSkipWhiteSpace(ref JsonParser parser)
     }
 }
 
-uint JsonReadHex4(ref JsonParser parser)
+private uint JsonReadHex4(ref JsonParser parser)
 {
     if (parser.Position + 4 > parser.Source.Length) { JsonFail(); }
     uint value = 0;
@@ -82,7 +82,7 @@ uint JsonReadHex4(ref JsonParser parser)
     return value;
 }
 
-void JsonConsumeUtf8(ref JsonParser parser)
+private void JsonConsumeUtf8(ref JsonParser parser)
 {
     byte first = parser.Source[parser.Position];
     usize remaining = parser.Source.Length - parser.Position;
@@ -128,7 +128,7 @@ void JsonConsumeUtf8(ref JsonParser parser)
     parser.Position += (usize)count;
 }
 
-void JsonParseStringToken(ref JsonParser parser)
+private void JsonParseStringToken(ref JsonParser parser)
 {
     if (parser.Position >= parser.Source.Length ||
         parser.Source[parser.Position] != 34)
@@ -187,7 +187,7 @@ void JsonParseStringToken(ref JsonParser parser)
     JsonFail();
 }
 
-void JsonExpectLiteral(ref JsonParser parser, string literal)
+private void JsonExpectLiteral(ref JsonParser parser, string literal)
 {
     if (parser.Position + literal.Length > parser.Source.Length)
     {
@@ -203,7 +203,7 @@ void JsonExpectLiteral(ref JsonParser parser, string literal)
     parser.Position += literal.Length;
 }
 
-void JsonParseNumber(ref JsonParser parser)
+private void JsonParseNumber(ref JsonParser parser)
 {
     if (parser.Source[parser.Position] == 45)
     {
@@ -274,7 +274,7 @@ void JsonParseNumber(ref JsonParser parser)
     }
 }
 
-JsonElement JsonParseValue(ref JsonParser parser, int depth)
+private JsonElement JsonParseValue(ref JsonParser parser, int depth)
 {
     if (depth > 64) { JsonFail(); }
     JsonSkipWhiteSpace(ref parser);
@@ -382,7 +382,7 @@ JsonElement JsonParseValue(ref JsonParser parser, int depth)
     };
 }
 
-JsonElement JsonParseComplete(string json)
+private JsonElement JsonParseComplete(string json)
 {
     JsonParser parser = new()
     {
@@ -395,7 +395,7 @@ JsonElement JsonParseComplete(string json)
     return root;
 }
 
-void JsonAppendCodePoint(ref StringBuilder builder, uint codePoint)
+private void JsonAppendCodePoint(ref StringBuilder builder, uint codePoint)
 {
     if (codePoint <= 127)
     {
@@ -421,7 +421,7 @@ void JsonAppendCodePoint(ref StringBuilder builder, uint codePoint)
     }
 }
 
-string JsonDecodeString(string source, usize start, usize end)
+private string JsonDecodeString(string source, usize start, usize end)
 {
     StringBuilder builder = new();
     JsonParser parser = new()
@@ -477,13 +477,13 @@ string JsonDecodeString(string source, usize start, usize end)
     return builder.ToString();
 }
 
-byte JsonHexDigit(uint value)
+private byte JsonHexDigit(uint value)
 {
     if (value < 10) { return (byte)(48 + value); }
     return (byte)(65 + value - 10);
 }
 
-void JsonAppendHex4(ref StringBuilder builder, uint value)
+private void JsonAppendHex4(ref StringBuilder builder, uint value)
 {
     builder.AppendByte(92);
     builder.AppendByte(117);
@@ -493,7 +493,7 @@ void JsonAppendHex4(ref StringBuilder builder, uint value)
     builder.AppendByte(JsonHexDigit(value & 15));
 }
 
-uint JsonDecodeUtf8CodePoint(ref JsonParser parser)
+private uint JsonDecodeUtf8CodePoint(ref JsonParser parser)
 {
     byte first = parser.Source[parser.Position];
     usize remaining = parser.Source.Length - parser.Position;
@@ -538,7 +538,7 @@ uint JsonDecodeUtf8CodePoint(ref JsonParser parser)
     return codePoint;
 }
 
-void JsonAppendEscapedString(ref StringBuilder builder, string value)
+private void JsonAppendEscapedString(ref StringBuilder builder, string value)
 {
     builder.AppendByte(34);
     JsonParser parser = new() { Source = value, Position = 0 };
@@ -605,14 +605,14 @@ void JsonAppendEscapedString(ref StringBuilder builder, string value)
     builder.AppendByte(34);
 }
 
-string JsonSerializeString(string value)
+private string JsonSerializeString(string value)
 {
     StringBuilder builder = new();
     JsonAppendEscapedString(ref builder, value);
     return builder.ToString();
 }
 
-string JsonValidateNumberText(string value)
+private string JsonValidateNumberText(string value)
 {
     JsonElement parsed = JsonParseComplete(value);
     if (parsed.ValueKind != JsonValueKind.Number) { JsonFail(); }

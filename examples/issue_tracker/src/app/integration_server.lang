@@ -23,7 +23,7 @@ int main() {
             );
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

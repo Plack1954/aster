@@ -1,16 +1,16 @@
 using Aster.Interop;
 
 int main() {
-    print(NativeProcessArgCount());
+    Console.WriteLine(NativeProcessArgCount());
 
     Result<string, ProcessError> argument =
         NativeProcessArg(0);
     switch (argument) {
         case Result.Ok(value): {
-            print(value);
+            Console.WriteLine(value);
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
         }
     }
 
@@ -18,10 +18,10 @@ int main() {
         NativeProcessEnvironment("ASTER_PROCESS_TEST");
     switch (environment) {
         case Result.Ok(value): {
-            print(value);
+            Console.WriteLine(value);
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
         }
     }
     return 0;

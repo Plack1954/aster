@@ -10,7 +10,7 @@ using Aster.Web.HttpApp;
 using Aster.Data.Sqlite;
 using System.Text;
 
-Result<long, string> SeedDatabase(
+private Result<long, string> SeedDatabase(
     Database database,
     List<string> titles,
     usize maxTitleBytes
@@ -33,7 +33,7 @@ Result<long, string> SeedDatabase(
     return Result.Ok(inserted);
 }
 
-bool VerifyRoute() {
+private bool VerifyRoute() {
     Router router = ApplicationRouter();
     Response response = RouterDispatch(router, new Request {
         method = "GET",
@@ -43,7 +43,7 @@ bool VerifyRoute() {
     });
     switch (response) {
         case Response.Ok(page): {
-            string rendered = HtmlRender(page);
+            string rendered = page.ToHtmlString();
             return rendered.Length > 0;
         }
         case Response.Redirect(location): {
@@ -58,7 +58,7 @@ bool VerifyRoute() {
     }
 }
 
-Result<int, string> run(
+private Result<int, string> run(
     AppConfig config,
     List<string> titles
 ) {
@@ -76,7 +76,7 @@ Result<int, string> run(
 
     var issues = try ListIssues(database);
     Html page = IssueListPage(issues);
-    string rendered = HtmlRender(page);
+    string rendered = page.ToHtmlString();
     string source = rendered;
     if (!source.Contains("Add an export command")) {
         return Result.Err("seeded issue missing");
@@ -88,9 +88,9 @@ Result<int, string> run(
         return Result.Err("router proof failed");
     }
 
-    print("configuration and file processing passed");
-    print("validation and SQLite passed");
-    print("routing and typed HTML passed");
+    Console.WriteLine("configuration and file processing passed");
+    Console.WriteLine("validation and SQLite passed");
+    Console.WriteLine("routing and typed HTML passed");
     return Result.Ok(0);
 }
 
@@ -112,19 +112,19 @@ int main() {
                             return status;
                         }
                         case Result.Err(error): {
-                            eprint(error);
+                            Console.Error.WriteLine(error);
                             return 1;
                         }
                     }
                 }
                 case Result.Err(error): {
-                    eprint(error);
+                    Console.Error.WriteLine(error);
                     return 1;
                 }
             }
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

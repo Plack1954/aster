@@ -1,4 +1,4 @@
-long fibonacci(long n) {
+private long fibonacci(long n) {
     if (n < 2) {
         return n;
     }
@@ -6,6 +6,6 @@ long fibonacci(long n) {
 }
 
 int main() {
-    print(fibonacci(10));
+    Console.WriteLine(fibonacci(10));
     return 0;
 }

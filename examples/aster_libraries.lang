@@ -8,48 +8,48 @@ using Aster.Web.Router;
 using System.Text;
 using System.Collections.Generic;
 
-Html home(string path) {
-    return <section><h2>"Home"</h2></section>;
+private Html home(string path) {
+    return <section><h2>Home</h2></section>;
 }
 
-Html health(string path) {
+private Html health(string path) {
     string id = HttpPathParam("/users/:id", path, "id");
     return <strong>{id}</strong>;
 }
 
-Html missing(string path) {
+private Html missing(string path) {
     return <p>{path}</p>;
 }
 
-Html frame(Html page) {
+private Html frame(Html page) {
     return <section>{page}</section>;
 }
 
-Html emphasize(Html page) {
+private Html emphasize(Html page) {
     return <strong>{page}</strong>;
 }
 
 int main() {
     Pair<long, long> numbers = pair(20, 22);
-    print(numbers.first + numbers.second);
+    Console.WriteLine(numbers.first + numbers.second);
 
     Option<long> some = Option.Some(1);
-    print(OptionIsSome(some));
+    Console.WriteLine(OptionIsSome(some));
     Option<long> none = Option.None;
-    print(OptionIsNone(none));
+    Console.WriteLine(OptionIsNone(none));
 
     Result<long, string> ok = Result.Ok(1);
-    print(ResultIsOk(ok));
+    Console.WriteLine(ResultIsOk(ok));
     Result<long, string> error = Result.Err("error");
-    print(ResultIsErr(error));
+    Console.WriteLine(ResultIsErr(error));
 
     List<long> values = new();
     values.Add(1);
     List<long> extended = values;
     extended.Add(2);
-    print(extended.Count);
+    Console.WriteLine(extended.Count);
 
-    print(
+    Console.WriteLine(
         HttpPathParam(
             "/users/:id",
             "/admins/42",
@@ -61,17 +61,17 @@ int main() {
     router = RouterAdd(router, "/", home);
     router = RouterAdd(router, "/users/:id", health);
     Html page = RouterDispatch(router, "/users/42?full=true");
-    string rendered = HtmlRender(page);
-    print(rendered);
+    string rendered = page.ToHtmlString();
+    Console.WriteLine(rendered);
 
     string joined = string.Concat("Aster ", "libraries");
-    print(joined);
+    Console.WriteLine(joined);
 
     MiddlewareChain chain =
         MiddlewareChain(frame, emphasize);
-    Html content = <p>"content"</p>;
+    Html content = <p>content</p>;
     Html wrapped = MiddlewareApply(chain, content);
-    string wrappedText = HtmlRender(wrapped);
-    print(wrappedText);
+    string wrappedText = wrapped.ToHtmlString();
+    Console.WriteLine(wrappedText);
     return 0;
 }

@@ -14,7 +14,7 @@ public struct IssueRepository
     Database Database;
 }
 
-Issue ReadIssue(Row row)
+private Issue ReadIssue(Row row)
 {
     return new()
     {

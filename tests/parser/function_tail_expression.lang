@@ -3,16 +3,16 @@ struct Pair {
     second: long,
 }
 
-long add(long first, long second) {
+private long add(long first, long second) {
     return first + second;
 }
 
-Pair MakePair(long first, long second) {
+private Pair MakePair(long first, long second) {
     return Pair { first, second };
 }
 
 int main() {
     var pair = MakePair(20, 22);
-    print(add(pair.first, pair.second));
+    Console.WriteLine(add(pair.first, pair.second));
     return 0;
 }

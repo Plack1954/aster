@@ -2,7 +2,7 @@ struct Point {
     x: long,
 }
 
-void mutate(Point point) {
+private void mutate(Point point) {
     point.x = 2;
 }
 

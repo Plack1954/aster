@@ -11,6 +11,8 @@ typedef struct Local {
     unsigned depth;
     LangSpan declaration;
     size_t id;
+    bool is_out_parameter;
+    bool definitely_assigned;
 } Local;
 
 typedef struct Checker {
@@ -38,6 +40,7 @@ typedef struct Checker {
     size_t substitution_argument_count;
     size_t generic_instantiation_depth;
     bool html_interpolation_destination;
+    const Expr *allowed_unassigned_out_place;
 } Checker;
 
 extern Type type_error;
@@ -103,7 +106,13 @@ bool split_generic_application(Checker *checker, const char *name,
 Type *resolve_type_in_applied_declaration(Checker *checker,
                                          const Type *applied,
                                          const char *name, LangSpan span);
+Type *resolve_type_syntax_in_applied_declaration(
+    Checker *checker, const Type *applied, const TypeSyntax *syntax,
+    const char *fallback_name, LangSpan span);
 Type *resolve_type(Checker *checker, const char *name, LangSpan span);
+Type *resolve_type_syntax(Checker *checker, const TypeSyntax *syntax);
+Type *resolve_declared_type(Checker *checker, const TypeSyntax *syntax,
+                            const char *fallback_name, LangSpan span);
 bool same_type(const Type *a, const Type *b);
 const char *type_display_name(Checker *checker, const Type *type);
 bool coerce_literal(Checker *checker, Expr *expr, Type *expected);
@@ -118,6 +127,9 @@ const char *function_module_name(const Checker *checker,
                                  const Function *function);
 Type *resolve_type_in_module(Checker *checker, const char *name,
                              LangSpan span, const char *module_name);
+Type *resolve_declared_type_in_module(
+    Checker *checker, const TypeSyntax *syntax, const char *fallback_name,
+    LangSpan span, const char *module_name);
 Type *check_place(Checker *checker, Expr *expr);
 Type *checker_check_name(Checker *checker, Expr *expr);
 const char *checker_static_call_path(Checker *checker, Expr *expr);

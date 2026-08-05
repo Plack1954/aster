@@ -1,4 +1,4 @@
-void AppendValue(List<long> values) {
+private void AppendValue(List<long> values) {
     values.Add(1);
 }
 

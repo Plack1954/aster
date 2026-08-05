@@ -1,6 +1,6 @@
 using Aster.Html;
 
-Html card(string title) {
+private Html card(string title) {
     return <section>
         <h2>{title}</h2>
         <p>Benchmark content & escaping.</p>

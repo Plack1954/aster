@@ -4,7 +4,7 @@ using Docs.Model;
 using Aster.Html;
 using Aster.Core;
 
-Html RenderDocument(
+private Html RenderDocument(
     Document<Pair<string, string>> page
 ) {
     return <section>
@@ -37,7 +37,7 @@ public Html guide(string path) {
 
 public Html missing(string path) {
     return <section>
-        <h2>"Document not found"</h2>
+        <h2>Document not found</h2>
         <p>{path}</p>
     </section>;
 }

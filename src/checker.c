@@ -75,6 +75,17 @@ Type *resolve_type_in_module(Checker *checker, const char *name,
     return type;
 }
 
+Type *resolve_declared_type_in_module(
+    Checker *checker, const TypeSyntax *syntax, const char *fallback_name,
+    LangSpan span, const char *module_name) {
+    const char *previous_module = checker->current_module;
+    checker->current_module = module_name;
+    Type *type = resolve_declared_type(
+        checker, syntax, fallback_name, span);
+    checker->current_module = previous_module;
+    return type;
+}
+
 Type *check_expr(Checker *checker, Expr *expr);
 /* Returns true when execution can continue after the statement. */
 bool check_stmt(Checker *checker, Stmt *stmt);
@@ -108,6 +119,39 @@ static void set_cleanup_plan(Checker *checker, CleanupPlan *plan,
     }
 }
 
+static void snapshot_out_assignment(const Checker *checker,
+                                    bool assigned[256]) {
+    for (size_t i = 0U; i < checker->local_count; ++i)
+        assigned[i] = checker->locals[i].definitely_assigned;
+}
+
+static void restore_out_assignment(Checker *checker,
+                                   const bool assigned[256]) {
+    for (size_t i = 0U; i < checker->local_count; ++i)
+        if (checker->locals[i].is_out_parameter)
+            checker->locals[i].definitely_assigned = assigned[i];
+}
+
+static void merge_out_assignment(Checker *checker,
+                                 const bool left[256],
+                                 const bool right[256]) {
+    for (size_t i = 0U; i < checker->local_count; ++i)
+        if (checker->locals[i].is_out_parameter)
+            checker->locals[i].definitely_assigned =
+                left[i] && right[i];
+}
+
+static void require_assigned_out_parameters(Checker *checker,
+                                            LangSpan span) {
+    for (size_t i = 0U; i < checker->local_count; ++i) {
+        const Local *local = &checker->locals[i];
+        if (local->is_out_parameter && !local->definitely_assigned)
+            lang_diag(checker->diagnostics, span,
+                      "`out` parameter `%s` must be assigned before returning",
+                      local->name);
+    }
+}
+
 Type *check_place(Checker *checker, Expr *expr) {
     if (expr->kind == EXPR_NAME) {
         Local *local = find_local(checker, expr->as.name);
@@ -119,6 +163,12 @@ Type *check_place(Checker *checker, Expr *expr) {
         }
         expr->type = local->type;
         expr->resolved_local_id = local->id;
+        if (local->is_out_parameter &&
+            !local->definitely_assigned &&
+            checker->allowed_unassigned_out_place != expr)
+            lang_diag(checker->diagnostics, expr->span,
+                      "`out` parameter `%s` cannot be read before assignment",
+                      local->name);
         return local->type;
     }
     if (expr->kind == EXPR_FIELD) {
@@ -137,8 +187,9 @@ Type *check_place(Checker *checker, Expr *expr) {
                     if (strcmp(
                             decl->as.structure.fields[field].name,
                             expr->as.field.field) == 0)
-                        result = resolve_type_in_applied_declaration(
+                        result = resolve_type_syntax_in_applied_declaration(
                             checker, object,
+                            decl->as.structure.fields[field].type_syntax,
                             decl->as.structure.fields[field].type_name,
                             decl->as.structure.fields[field].span);
                 checker->current_module = previous_module;
@@ -290,8 +341,7 @@ static Type *rewrite_builtin_call(
     expr->as.call.callee = callee;
     expr->as.call.arguments.items = arguments;
     expr->as.call.arguments.count = second == NULL ? 1U : 2U;
-    expr->as.call.ref_argument_mask = 0U;
-    expr->as.call.out_argument_mask = 0U;
+    expr->as.call.argument_modes = NULL;
     expr->as.call.implicit_enum_value = false;
     return checker_check_call(checker, expr);
 }
@@ -308,8 +358,7 @@ static Type *rewrite_zero_argument_builtin_call(
     expr->as.call.callee = callee;
     expr->as.call.arguments.items = NULL;
     expr->as.call.arguments.count = 0U;
-    expr->as.call.ref_argument_mask = 0U;
-    expr->as.call.out_argument_mask = 0U;
+    expr->as.call.argument_modes = NULL;
     expr->as.call.implicit_enum_value = false;
     return checker_check_call(checker, expr);
 }
@@ -514,8 +563,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
                     expr->as.call.callee = callee;
                     expr->as.call.arguments.items = arguments;
                     expr->as.call.arguments.count = 2U;
-                    expr->as.call.ref_argument_mask = 0U;
-                    expr->as.call.out_argument_mask = 0U;
+                    expr->as.call.argument_modes = NULL;
                     expr->as.call.implicit_enum_value = false;
                     result = checker_check_call(checker, expr);
                     goto checked_expression;
@@ -553,8 +601,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
                     expr->as.call.callee = callee;
                     expr->as.call.arguments.items = arguments;
                     expr->as.call.arguments.count = 3U;
-                    expr->as.call.ref_argument_mask = 0U;
-                    expr->as.call.out_argument_mask = 0U;
+                    expr->as.call.argument_modes = NULL;
                     expr->as.call.implicit_enum_value = false;
                     result = checker_check_call(checker, expr);
                     goto checked_expression;
@@ -586,7 +633,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
                               "pointer store requires a raw pointer");
                 } else {
                     place_type = pointer->element;
-                    if (strncmp(pointer->name, "*mut ", 5U) != 0)
+                    if (!pointer->pointer_mutable)
                         lang_diag(checker->diagnostics, target->span,
                                   "cannot store through a const pointer");
                     if (place_type->kind != TYPE_I64)
@@ -629,6 +676,13 @@ Type *check_expr(Checker *checker, Expr *expr) {
                               type_display_name(checker, value));
                 validate_compound_assignment(
                     checker, expr, local->type);
+                if (local->is_out_parameter &&
+                    !local->definitely_assigned &&
+                    expr->as.assign.compound_op != TOK_ERROR)
+                    lang_diag(checker->diagnostics, expr->span,
+                              "`out` parameter `%s` cannot be read before assignment",
+                              local->name);
+                local->definitely_assigned = true;
                 target->type = local->type;
                 target->resolved_local_id = local->id;
                 result = &type_unit;
@@ -653,6 +707,11 @@ Type *check_expr(Checker *checker, Expr *expr) {
             if (!local->mutable_)
                 lang_diag(checker->diagnostics, expr->span,
                           "cannot mutate immutable local `%s`", local->name);
+            if (local->is_out_parameter &&
+                !local->definitely_assigned)
+                lang_diag(checker->diagnostics, object_expr->span,
+                          "`out` parameter `%s` cannot be read before assignment",
+                          local->name);
             Type *place_type = &type_error;
             if (target->kind == EXPR_FIELD) {
                 if (local->type->kind != TYPE_NAMED ||
@@ -668,8 +727,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
                                 structure->as.structure.fields[i].name,
                                 target->as.field.field) == 0)
                             place_type =
-                                resolve_type_in_applied_declaration(
+                                resolve_type_syntax_in_applied_declaration(
                                 checker, local->type,
+                                structure->as.structure.fields[i].type_syntax,
                                 structure->as.structure.fields[i].type_name,
                                 structure->as.structure.fields[i].span);
                     if (place_type == &type_error)
@@ -790,8 +850,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
         }
         case EXPR_CAST: {
             Type *source = check_expr(checker, expr->as.cast.value);
-            Type *target = resolve_type(
-                checker, expr->as.cast.type_name, expr->span);
+            Type *target = resolve_declared_type(
+                checker, expr->as.cast.type_syntax,
+                expr->as.cast.type_name, expr->span);
             bool numeric_cast =
                 (is_numeric(source) || source->kind == TYPE_CHAR) &&
                 (is_numeric(target) || target->kind == TYPE_CHAR);
@@ -1051,8 +1112,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
                     for (size_t f = 0U; f < decl->as.structure.field_count; ++f)
                         if (strcmp(decl->as.structure.fields[f].name,
                                    expr->as.field.field) == 0)
-                            result = resolve_type_in_applied_declaration(
+                            result = resolve_type_syntax_in_applied_declaration(
                                 checker, object,
+                                decl->as.structure.fields[f].type_syntax,
                                 decl->as.structure.fields[f].type_name,
                                 decl->as.structure.fields[f].span);
                     checker->current_module = previous_module;
@@ -1092,8 +1154,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
                      checker->expected_type->declaration->module_name)))
                 result = checker->expected_type;
             else if (expr->as.structure.name != NULL)
-                result = resolve_type(
-                    checker, expr->as.structure.name, expr->span);
+                result = resolve_declared_type(
+                    checker, expr->as.structure.type_syntax,
+                    expr->as.structure.name, expr->span);
             else {
                 lang_diag(checker->diagnostics, expr->span,
                           "target-typed `new()` requires an expected struct type");
@@ -1128,8 +1191,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
                             declared_field =
                                 &structure->as.structure.fields[f];
                 Type *expected = declared_field != NULL
-                    ? resolve_type_in_applied_declaration(
+                    ? resolve_type_syntax_in_applied_declaration(
                         checker, result,
+                        declared_field->type_syntax,
                         declared_field->type_name,
                         declared_field->span)
                     : NULL;
@@ -1192,8 +1256,9 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                               "duplicate local `%s` in this scope", stmt->as.let.name);
             }
             Type *declared = stmt->as.let.type_name != NULL
-                           ? resolve_type(checker, stmt->as.let.type_name,
-                                          stmt->span)
+                           ? resolve_declared_type(
+                                 checker, stmt->as.let.type_syntax,
+                                 stmt->as.let.type_name, stmt->span)
                            : NULL;
             Type *previous_expected = checker->expected_type;
             checker->expected_type = declared;
@@ -1211,7 +1276,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             checker->locals[checker->local_count++] = (Local){
                 stmt->as.let.name, declared, stmt->as.let.mutable_,
                 false, checker->depth, stmt->span,
-                ++checker->next_local_id
+                ++checker->next_local_id, false, true
             };
             stmt->as.let.binding_id =
                 checker->locals[checker->local_count - 1U].id;
@@ -1259,13 +1324,14 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                               "too many local variables");
                     break;
                 }
-                Type *expected = resolve_type_in_applied_declaration(
+                Type *expected = resolve_type_syntax_in_applied_declaration(
                     checker, aggregate,
+                    structure->as.structure.fields[field].type_syntax,
                     structure->as.structure.fields[field].type_name,
                     structure->as.structure.fields[field].span);
-                Type *declared = resolve_type(
-                    checker, stmt->as.destructure.type_names[field],
-                    stmt->span);
+                Type *declared = resolve_declared_type(
+                    checker, stmt->as.destructure.type_syntaxes[field],
+                    stmt->as.destructure.type_names[field], stmt->span);
                 stmt->as.destructure.checked_types[field] = expected;
                 if (!same_type(expected, declared))
                     lang_diag(
@@ -1285,7 +1351,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 checker->locals[checker->local_count++] = (Local){
                     name, expected, true, false,
                     checker->depth, stmt->span,
-                    binding_id
+                    binding_id, false, true
                 };
                 stmt->as.destructure.binding_ids[field] = binding_id;
             }
@@ -1318,6 +1384,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 lang_diag(checker->diagnostics, stmt->span,
                           "return expects `%s`, found `%s`",
                           logical_return->name, actual->name);
+            require_assigned_out_parameters(checker, stmt->span);
             set_cleanup_plan(checker, &stmt->exit_cleanup, 0U);
             return false;
         }
@@ -1368,14 +1435,21 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 : 0U;
             set_cleanup_plan(
                 checker, &stmt->exit_cleanup, transfer_base);
+            bool before_try[256];
+            bool body_state[256];
+            bool catch_state[256];
+            snapshot_out_assignment(checker, before_try);
             checker->exception_local_bases[checker->exception_depth++] =
                 checker->local_count;
             bool body_falls = check_stmt(checker, stmt->as.try_.body);
+            snapshot_out_assignment(checker, body_state);
             --checker->exception_depth;
             bool catch_falls = false;
             if (stmt->as.try_.catch_body != NULL) {
-                Type *caught = resolve_type(
-                    checker, stmt->as.try_.catch_type_name, stmt->span);
+                restore_out_assignment(checker, before_try);
+                Type *caught = resolve_declared_type(
+                    checker, stmt->as.try_.catch_type_syntax,
+                    stmt->as.try_.catch_type_name, stmt->span);
                 stmt->as.try_.catch_type = caught;
                 if (!is_exception_type(caught))
                     lang_diag(checker->diagnostics, stmt->span,
@@ -1384,7 +1458,8 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 size_t binding = ++checker->next_local_id;
                 checker->locals[checker->local_count++] = (Local){
                     stmt->as.try_.catch_name, caught, false, false,
-                    checker->depth + 1U, stmt->span, binding
+                    checker->depth + 1U, stmt->span, binding,
+                    false, true
                 };
                 stmt->as.try_.catch_binding_id = binding;
                 bool catch_has_finally_handler =
@@ -1413,12 +1488,21 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 }
                 catch_falls = check_stmt(
                     checker, stmt->as.try_.catch_body);
+                snapshot_out_assignment(checker, catch_state);
                 if (pushed_catch)
                     --checker->catch_depth;
                 if (catch_has_finally_handler)
                     --checker->exception_depth;
                 checker->local_count = base;
             }
+            if (body_falls && catch_falls)
+                merge_out_assignment(checker, body_state, catch_state);
+            else if (body_falls)
+                restore_out_assignment(checker, body_state);
+            else if (catch_falls)
+                restore_out_assignment(checker, catch_state);
+            else
+                restore_out_assignment(checker, before_try);
             bool finally_falls = true;
             if (stmt->as.try_.finally_body != NULL) {
                 ++checker->finally_depth;
@@ -1432,16 +1516,31 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             if (check_expr(checker, stmt->as.if_.condition)->kind != TYPE_BOOL)
                 lang_diag(checker->diagnostics, stmt->as.if_.condition->span,
                           "`if` condition must be `bool`");
+            bool before[256];
+            bool then_state[256];
+            bool else_state[256];
+            snapshot_out_assignment(checker, before);
             bool then_falls = check_stmt(checker, stmt->as.if_.then_branch);
+            snapshot_out_assignment(checker, then_state);
+            restore_out_assignment(checker, before);
             bool else_falls = true;
             if (stmt->as.if_.else_branch != NULL)
                 else_falls = check_stmt(checker, stmt->as.if_.else_branch);
+            snapshot_out_assignment(checker, else_state);
+            if (then_falls && else_falls)
+                merge_out_assignment(checker, then_state, else_state);
+            else if (then_falls)
+                restore_out_assignment(checker, then_state);
+            else if (else_falls)
+                restore_out_assignment(checker, else_state);
             return then_falls || else_falls;
         }
         case STMT_WHILE: {
             if (check_expr(checker, stmt->as.while_.condition)->kind != TYPE_BOOL)
                 lang_diag(checker->diagnostics, stmt->as.while_.condition->span,
                           "`while` condition must be `bool`");
+            bool before_loop[256];
+            snapshot_out_assignment(checker, before_loop);
             size_t count = checker->local_count;
             if (checker->loop_depth >=
                 sizeof(checker->loop_local_bases) /
@@ -1454,6 +1553,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             ++checker->loop_depth;
             (void)check_stmt(checker, stmt->as.while_.body);
             --checker->loop_depth;
+            restore_out_assignment(checker, before_loop);
             break;
         }
         case STMT_FOR: {
@@ -1527,14 +1627,17 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             stmt->as.for_.element_type = element;
             if (stmt->as.for_.foreach &&
                 stmt->as.for_.type_name != NULL) {
-                Type *declared = resolve_type(
-                    checker, stmt->as.for_.type_name, stmt->span);
+                Type *declared = resolve_declared_type(
+                    checker, stmt->as.for_.type_syntax,
+                    stmt->as.for_.type_name, stmt->span);
                 if (!same_type(declared, element))
                     lang_diag(
                         checker->diagnostics, stmt->span,
                         "`foreach` variable expects `%s`, found `%s`",
                         declared->name, element->name);
             }
+            bool before_loop[256];
+            snapshot_out_assignment(checker, before_loop);
             size_t outer_count = checker->local_count;
             ++checker->depth;
             if (checker->local_count < 256U)
@@ -1543,7 +1646,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                     element,
                     true, false,
                     checker->depth, stmt->span,
-                    ++checker->next_local_id
+                    ++checker->next_local_id, false, true
                 };
             if (checker->local_count > outer_count)
                 stmt->as.for_.binding_id =
@@ -1562,6 +1665,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             (void)check_stmt(checker, stmt->as.for_.body);
             --checker->loop_depth;
             checker->local_count = outer_count;
+            restore_out_assignment(checker, before_loop);
             --checker->depth;
             break;
         }
@@ -1577,6 +1681,9 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 lang_diag(checker->diagnostics,
                           stmt->as.c_for.condition->span,
                           "`for` condition must be `bool`");
+
+            bool before_loop[256];
+            snapshot_out_assignment(checker, before_loop);
 
             size_t loop_count = checker->local_count;
             if (checker->loop_depth >=
@@ -1594,6 +1701,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                         checker, stmt->as.c_for.increment);
                 --checker->loop_depth;
             }
+            restore_out_assignment(checker, before_loop);
             set_cleanup_plan(
                 checker, &stmt->exit_cleanup, outer_count);
             checker->local_count = outer_count;
@@ -1605,6 +1713,9 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             const Decl *enum_decl = NULL;
             size_t match_local_count = checker->local_count;
             bool have_fallthrough_arm = false;
+            bool before_match[256];
+            bool merged_match[256];
+            snapshot_out_assignment(checker, before_match);
             if (matched->kind == TYPE_NAMED &&
                 matched->declaration != NULL &&
                 matched->declaration->kind == DECL_ENUM)
@@ -1617,6 +1728,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             }
             for (size_t a = 0U; a < stmt->as.match_.arm_count; ++a) {
                 checker->local_count = match_local_count;
+                restore_out_assignment(checker, before_match);
                 MatchArm *arm = &stmt->as.match_.arms[a];
                 if (enum_decl != NULL) {
                     const char *separator =
@@ -1685,8 +1797,9 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                                 valid = true;
                                 if (strcmp(variant->type_name, "unit") != 0)
                                     payload =
-                                        resolve_type_in_applied_declaration(
+                                        resolve_type_syntax_in_applied_declaration(
                                             checker, matched,
+                                            variant->type_syntax,
                                             variant->type_name,
                                             variant->span);
                             }
@@ -1703,8 +1816,9 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                               arm->variant);
                 if (payload != NULL &&
                     arm->binding_type_name != NULL) {
-                    Type *declared = resolve_type(
-                        checker, arm->binding_type_name, arm->span);
+                    Type *declared = resolve_declared_type(
+                        checker, arm->binding_type_syntax,
+                        arm->binding_type_name, arm->span);
                     if (!same_type(declared, payload))
                         lang_diag(
                             checker->diagnostics, arm->span,
@@ -1717,14 +1831,28 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                     checker->locals[checker->local_count++] = (Local){
                         arm->binding, payload, false, false,
                         checker->depth + 1U, arm->span,
-                        ++checker->next_local_id
+                        ++checker->next_local_id, false, true
                     };
                 if (arm->binding != NULL && payload != NULL &&
                     checker->local_count > match_local_count)
                     arm->binding_id =
                         checker->locals[checker->local_count - 1U].id;
                 bool arm_falls = check_stmt(checker, arm->body);
-                if (arm_falls) have_fallthrough_arm = true;
+                if (arm_falls) {
+                    bool arm_state[256];
+                    snapshot_out_assignment(checker, arm_state);
+                    if (!have_fallthrough_arm) {
+                        memcpy(merged_match, arm_state,
+                               match_local_count *
+                                   sizeof(*merged_match));
+                    } else {
+                        for (size_t local = 0U;
+                             local < match_local_count; ++local)
+                            merged_match[local] =
+                                merged_match[local] && arm_state[local];
+                    }
+                    have_fallthrough_arm = true;
+                }
             }
             if (matched->kind == TYPE_RESULT ||
                 matched->kind == TYPE_OPTION) {
@@ -1764,6 +1892,8 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 }
             }
             checker->local_count = match_local_count;
+            if (have_fallthrough_arm)
+                restore_out_assignment(checker, merged_match);
             return have_fallthrough_arm;
         }
         case STMT_BREAK:
@@ -1796,9 +1926,14 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             size_t start = checker->local_count;
             bool falls_through = true;
             for (size_t i = 0U; i < stmt->as.block.count; ++i) {
+                bool before_unreachable[256];
+                if (!falls_through)
+                    snapshot_out_assignment(checker, before_unreachable);
                 bool statement_falls =
                     check_stmt(checker, stmt->as.block.items[i]);
                 if (falls_through) falls_through = statement_falls;
+                else
+                    restore_out_assignment(checker, before_unreachable);
             }
             set_cleanup_plan(
                 checker, &stmt->exit_cleanup,
@@ -1844,8 +1979,9 @@ static bool type_has_c_abi(Checker *checker, Type *type,
             const char *previous_module = checker->current_module;
             checker->current_module = decl->module_name;
             if (decl->kind == DECL_ALIAS) {
-                Type *target = resolve_type(
-                    checker, decl->as.alias.target, decl->span);
+                Type *target = resolve_declared_type(
+                    checker, decl->as.alias.target_syntax,
+                    decl->as.alias.target, decl->span);
                 bool safe = type_has_c_abi(
                     checker, target, next_seen, seen_count);
                 checker->current_module = previous_module;
@@ -1865,9 +2001,9 @@ static bool type_has_c_abi(Checker *checker, Type *type,
                  field < decl->as.structure.field_count; ++field) {
                 FieldDecl *field_decl =
                     &decl->as.structure.fields[field];
-                Type *field_type = resolve_type(
-                    checker, field_decl->type_name,
-                    field_decl->span);
+                Type *field_type = resolve_declared_type(
+                    checker, field_decl->type_syntax,
+                    field_decl->type_name, field_decl->span);
                 if (!type_has_c_abi(
                         checker, field_type,
                         next_seen, seen_count)) {
@@ -1940,14 +2076,39 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
              field < decl->as.structure.field_count; ++field) {
             FieldDecl *field_decl =
                 &decl->as.structure.fields[field];
-            Type *field_type = resolve_type(
-                &checker, field_decl->type_name, field_decl->span);
+            Type *field_type = resolve_declared_type(
+                &checker, field_decl->type_syntax,
+                field_decl->type_name, field_decl->span);
             if (!type_has_c_abi(&checker, field_type, NULL, 0U))
                 lang_diag(
                     diagnostics, field_decl->span,
                     "field `%s` of extern struct `%s` has non-C-ABI type `%s`",
                     field_decl->name, decl->as.structure.name,
                     field_decl->type_name);
+        }
+    }
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *decl = module->decls[i];
+        if (decl->kind != DECL_FUNCTION ||
+            decl->generic_origin != NULL ||
+            decl->as.function.is_drop)
+            continue;
+        bool is_main = decl->type_param_count == 0U &&
+            !decl->as.function.is_extern &&
+            strcmp(decl->as.function.name, "main") == 0;
+        if (is_main && decl->has_explicit_visibility) {
+            LangDiagnostic *diagnostic = lang_diag(
+                diagnostics, decl->span,
+                "`main` must not declare `public` or `private` visibility");
+            lang_diag_help(diagnostic, "write the entry point as `int main()`");
+        } else if (!is_main && !decl->has_explicit_visibility) {
+            LangDiagnostic *diagnostic = lang_diag(
+                diagnostics, decl->span,
+                "function `%s` must begin with `public` or `private`",
+                decl->as.function.name);
+            lang_diag_help(
+                diagnostic,
+                "use `private` for module-internal functions or `public` for exported functions");
         }
     }
     /* Resolve callable ownership before checking any body. */
@@ -1962,12 +2123,14 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
         checker.diagnostics = diagnostics;
         checker.current_module = decl->module_name;
         Function *function = &decl->as.function;
-        function->checked_return_type = resolve_type(
-            &checker, function->return_type, function->span);
+        function->checked_return_type = resolve_declared_type(
+            &checker, function->return_type_syntax,
+            function->return_type, function->span);
         for (size_t p = 0U; p < function->param_count; ++p) {
             Param *parameter = &function->params[p];
-            Type *type = resolve_type(
-                &checker, parameter->type_name, parameter->span);
+            Type *type = resolve_declared_type(
+                &checker, parameter->type_syntax,
+                parameter->type_name, parameter->span);
             parameter->checked_type = type;
         }
     }
@@ -2027,8 +2190,9 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
             checker.substitution_argument_count =
                 module->decls[i]->generic_argument_count;
         }
-        function->checked_return_type = resolve_type(&checker, function->return_type,
-                                                     function->span);
+        function->checked_return_type = resolve_declared_type(
+            &checker, function->return_type_syntax,
+            function->return_type, function->span);
         if (function->is_async && function->is_extern)
             lang_diag(diagnostics, function->span,
                       "extern functions cannot be declared async");
@@ -2047,8 +2211,10 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                         function->params[parameter].span,
                         "async functions cannot have ref or out parameters");
         for (size_t j = 0U; j < function->param_count; ++j) {
-            Type *type = resolve_type(&checker, function->params[j].type_name,
-                                      function->params[j].span);
+            Type *type = resolve_declared_type(
+                &checker, function->params[j].type_syntax,
+                function->params[j].type_name,
+                function->params[j].span);
             function->params[j].checked_type = type;
             function->params[j].borrowed = function->params[j].by_ref;
             function->params[j].mutable_ = true;
@@ -2058,7 +2224,9 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 function->params[j].mutable_,
                 function->params[j].borrowed, 0U,
                 function->params[j].span,
-                function->params[j].binding_id
+                function->params[j].binding_id,
+                function->params[j].by_out,
+                !function->params[j].by_out
             };
         }
         if (function->is_extern) {
@@ -2081,6 +2249,8 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
             lang_diag(diagnostics, function->span,
                       "function `%s` may exit without returning `%s`",
                       function->name, logical_return->name);
+        if (falls_through)
+            require_assigned_out_parameters(&checker, function->span);
     }
     bool found_main = false;
     for (size_t i = 0U; i < module->count; ++i)

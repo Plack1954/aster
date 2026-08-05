@@ -3,7 +3,7 @@ union Status {
     Empty,
 }
 
-long describe(Status status) {
+private long describe(Status status) {
     switch (status) {
         case Status.Ready(value): {
             return value;
@@ -15,7 +15,7 @@ long describe(Status status) {
 }
 
 int main() {
-    print(describe(Status.Ready(42)));
-    print(describe(Status.Empty));
+    Console.WriteLine(describe(Status.Ready(42)));
+    Console.WriteLine(describe(Status.Empty));
     return 0;
 }

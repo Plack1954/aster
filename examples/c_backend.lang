@@ -1,4 +1,4 @@
-int combine(int left, int right) {
+private int combine(int left, int right) {
     return left * 2 + right;
 }
 

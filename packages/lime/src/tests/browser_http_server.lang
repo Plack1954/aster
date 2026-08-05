@@ -14,12 +14,12 @@ struct BrowserState
     BrowserAssets assets;
 }
 
-Response home(BrowserState state, Request request)
+private Response home(BrowserState state, Request request)
 {
     return Response.Ok(BrowserPage(state.assets.loader()));
 }
 
-Response BrowserAsset(BrowserState state, Request request)
+private Response BrowserAsset(BrowserState state, Request request)
 {
     switch (state.assets.serve(request))
     {
@@ -30,7 +30,7 @@ Response BrowserAsset(BrowserState state, Request request)
     }
 }
 
-Response FormFallback(BrowserState state, Request request)
+private Response FormFallback(BrowserState state, Request request)
 {
     switch (request.FormValues())
     {
@@ -43,12 +43,12 @@ Response FormFallback(BrowserState state, Request request)
     }
 }
 
-Response missing(BrowserState state, Request request)
+private Response missing(BrowserState state, Request request)
 {
     return Response.NotFound(<h1>Missing</h1>);
 }
 
-int serve(NativeHandle server, BrowserAssets assets)
+private int serve(NativeHandle server, BrowserAssets assets)
 {
     BrowserState state = new() { assets = assets };
     StatefulApp<BrowserState> app = StatefulAppNew(state, missing);
@@ -58,13 +58,13 @@ int serve(NativeHandle server, BrowserAssets assets)
     app.post("/todo", FormFallback);
     app.post("/message", FormFallback);
 
-    print(HttpServerPort(server));
+    Console.WriteLine(HttpServerPort(server));
     for (int count = 0; count < 5; count++)
     {
         switch (HttpTryAccept(server))
         {
             case Result.Err(error): {
-                eprint(error);
+                Console.Error.WriteLine(error);
                 return 1;
             }
             case Result.Ok(request): {
@@ -73,7 +73,7 @@ int serve(NativeHandle server, BrowserAssets assets)
                     case Result.Ok(reuse): {
                     }
                     case Result.Err(error): {
-                        eprint(error);
+                        Console.Error.WriteLine(error);
                         return 1;
                     }
                 }
@@ -90,7 +90,7 @@ int main()
     {
         case Result.Ok(value): { assetDirectory = value; }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }
@@ -99,7 +99,7 @@ int main()
     ))
     {
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
         case Result.Ok(assets): {
@@ -111,7 +111,7 @@ int main()
                     return serve(server, assets);
                 }
                 case Result.Err(error): {
-                    eprint(error);
+                    Console.Error.WriteLine(error);
                     return 1;
                 }
             }

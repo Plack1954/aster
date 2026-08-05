@@ -1,7 +1,7 @@
 using Thousand = long[1_000];
 
-void AcceptLarge(Thousand value) {
-    print(value[0]);
+private void AcceptLarge(Thousand value) {
+    Console.WriteLine(value[0]);
 }
 
 int main() {
@@ -9,11 +9,11 @@ int main() {
         [1, 2],
         [3, 4],
     ];
-    print(matrix[1][0]);
+    Console.WriteLine(matrix[1][0]);
 
     const long* pointers[2] = [null, null];
     if (pointers[0] == null) {
-        print("null element");
+        Console.WriteLine("null element");
     }
     return 0;
 }

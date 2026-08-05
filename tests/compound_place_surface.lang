@@ -2,19 +2,19 @@ struct Counter {
     int Value;
 }
 
-int SelectedIndex() {
-    print(99);
+private int SelectedIndex() {
+    Console.WriteLine(99);
     return 1;
 }
 
 int main() {
     Counter counter = new() { Value = 10 };
     counter.Value += 5;
-    print(counter.Value);
+    Console.WriteLine(counter.Value);
 
     int values[3] = [1, 2, 3];
     values[SelectedIndex()] += 5;
-    print(values[1]);
+    Console.WriteLine(values[1]);
 
     counter.Value *= 2;
     counter.Value /= 3;
@@ -25,6 +25,6 @@ int main() {
     counter.Value |= 1;
     counter.Value &= 6;
     counter.Value ^= 3;
-    print(counter.Value);
+    Console.WriteLine(counter.Value);
     return 0;
 }

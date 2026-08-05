@@ -54,7 +54,7 @@ implicit ownership behavior.
 
 ## Semantic boundary
 
-Typed IR must express Aster semantics completely before any backend runs:
+Typed IR is the intended complete semantic boundary before any backend runs:
 
 - typed virtual values and concrete monomorphized types;
 - basic blocks and explicit branches;
@@ -110,16 +110,21 @@ The initial invariants are:
 - concrete types carry target size/alignment and a verified destructor
   function ID where applicable.
 
-The bootstrap IR may temporarily retain a borrowed link to the checked type
-object while its owned backend-facing type table is expanded. Backends must
-consume the IR, never inspect or reinterpret the raw AST.
+The IR owns parameter descriptors (name, type, mode, and span), function
+ABI/async/render metadata, aggregate member metadata, native-call signatures,
+and closed copy/drop policies. Checked-type and source-declaration links exist
+only while lowering and are cleared before verification. The bytecode and C
+backends therefore cannot recover semantics from frontend objects.
 
-Aggregate metadata is now backend-facing: every struct field has a canonical
-resolved `IrTypeId`, and every enum or union member has either a canonical
-payload `IrTypeId` or the explicit payloadless marker. This includes concrete
-generic substitution. The verifier checks the tables and struct construction
-operands against them. C layout emission consumes the same table rather than
-rebuilding aggregate types from declarations.
+Copy policy is one of trivial, deep, shared retain, noncopyable, or custom.
+Drop policy is trivial, recursively generated, or custom. A language
+destructor is a verified function ID, not a backend name lookup.
+
+Aggregate metadata is backend-facing: every struct field has a name, source
+span, and canonical resolved `IrTypeId`; every enum or union member has a name,
+span, stable discriminant, and either a canonical payload `IrTypeId` or the
+explicit payloadless marker. This includes concrete generic substitution. The
+verifier checks the tables and struct construction operands against them.
 
 The portable C representation currently uses generated wrapper structs for
 fixed arrays, declaration-order fields for structs, declaration-order

@@ -296,11 +296,12 @@ closing behavior; broader property lowering remains deliberately lower
 priority than C and VM.
 
 Native element bodies now accept ordinary unquoted HTML text. Static text lowers
-as a distinct allocation-free typed-IR operation, so authored entities are not
-escaped twice; dynamic `{...}` children retain destination escaping. Formatting
-indentation is omitted, inline spacing is normalized, and statement-shaped
-content continues to parse as Aster code at child boundaries. Both bytecode
-paths and generated C produce identical output.
+as a distinct allocation-free typed-IR operation and is escaped by the same
+context-aware policy as dynamic `{...}` children. Formatting indentation is
+omitted, inline spacing is normalized, and syntactically recognized control
+flow continues to parse as Aster code at child boundaries. String-valued child
+expressions require braces. Both bytecode paths and generated C produce
+identical output.
 
 Typed HTTP responses now consume `Html` directly in both the VM and primary C
 backend. The runtime borrows the completed value's existing contiguous buffer

@@ -9,7 +9,7 @@ public int ServeRouter(
     Router router,
     long maxConnections
 ) {
-    print(HttpServerPort(server));
+    Console.WriteLine(HttpServerPort(server));
     bool running = true;
     long connectionCount = 0;
     while (running) {
@@ -35,7 +35,7 @@ public int ServeRouter(
                             active = reuse;
                         }
                         case Result.Err(error): {
-                            eprint(error);
+                            Console.Error.WriteLine(error);
                             active = false;
                         }
                     }
@@ -47,7 +47,7 @@ public int ServeRouter(
                                 active = available;
                             }
                             case Result.Err(error): {
-                                eprint(error);
+                                Console.Error.WriteLine(error);
                                 active = false;
                             }
                         }
@@ -55,7 +55,7 @@ public int ServeRouter(
                 }
             }
             case Result.Err(error): {
-                eprint(error);
+                Console.Error.WriteLine(error);
             }
         }
         connectionCount += 1;
@@ -87,7 +87,7 @@ int main() {
             );
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

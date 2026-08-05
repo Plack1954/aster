@@ -183,8 +183,9 @@ static void print_value(FILE *stream, LangValue value) {
         case LANG_VALUE_U64: fprintf(stream, "%" PRIu64, value.as.u64); break;
         case LANG_VALUE_F64: fprintf(stream, "%g", value.as.f64); break;
         case LANG_VALUE_STRING_VIEW:
-            (void)fwrite(value.as.string.data, 1U,
-                         value.as.string.length, stream);
+            if (value.as.string.length != 0U)
+                (void)fwrite(value.as.string.data, 1U,
+                             value.as.string.length, stream);
             break;
         case LANG_VALUE_BYTE_SLICE:
             fprintf(stream, "Slice<u8>(%zu)", value.as.bytes.length);
@@ -540,32 +541,28 @@ bool vm_call_builtin(LangVM *vm, int32_t index, LangValue *args,
                      size_t count, LangValue *result,
                      LangSpan instruction_span) {
     *result = (LangValue){.tag = LANG_VALUE_UNIT};
-    if ((index == -1 || index == -2) && count == 1U) {
-        print_value(index == -1 ? stdout : stderr, args[0]);
-        fputc('\n', index == -1 ? stdout : stderr);
+    if ((index == -1 || index == -2 || index == -89 || index == -90) &&
+        count == 1U) {
+        FILE *stream = (index == -1 || index == -89) ? stdout : stderr;
+        print_value(stream, args[0]);
+        if (index == -1 || index == -2)
+            fputc('\n', stream);
+        (void)fflush(stream);
         return true;
     }
     if (index == -3 && count == 1U && args[0].tag == LANG_VALUE_OBJECT &&
         ((Object *)args[0].as.object)->kind == OBJECT_HTML) {
         Object *html = args[0].as.object;
-        if (html->as.html.destination != NULL) {
+        if (html->as.html.destination != NULL || html->as.html.open) {
             runtime_error(
                 vm, instruction,
-                "cannot render an attached Html child");
+                "cannot convert unfinished or attached Html to string");
             return false;
         }
-        char *data = html->as.html.data;
-        size_t length = html->as.html.length;
-        vm_html_release_style_state(html);
-        html->kind = OBJECT_STRING;
-        html->references = 1U;
-        html->as.string.data = data;
-        html->as.string.length = length;
-        html->as.string.embedded_data = false;
-        args[0] = (LangValue){.tag=LANG_VALUE_UNIT};
-        result->tag = LANG_VALUE_OBJECT;
-        result->as.object = html;
-        return true;
+        return lang_string_value(
+            vm,
+            (LangStringView){html->as.html.data, html->as.html.length},
+            result);
     }
     if (index == -4 && count == 1U && args[0].tag == LANG_VALUE_I64 &&
         args[0].as.i64 >= 0) {

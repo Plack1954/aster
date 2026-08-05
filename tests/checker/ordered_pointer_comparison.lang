@@ -2,7 +2,7 @@ int main() {
     long* first = null;
     long* second = null;
     if (first < second) {
-        print("ordered");
+        Console.WriteLine("ordered");
     }
     return 0;
 }

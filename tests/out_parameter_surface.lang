@@ -1,4 +1,4 @@
-bool TryDouble(int input, out int value)
+private bool TryDouble(int input, out int value)
 {
     if (input < 0)
     {

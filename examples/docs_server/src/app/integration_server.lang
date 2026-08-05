@@ -23,13 +23,13 @@ int main() {
                     return ServeOpen(server, 1);
                 }
                 case Result.Err(error): {
-                    eprint(error);
+                    Console.Error.WriteLine(error);
                     return 1;
                 }
             }
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

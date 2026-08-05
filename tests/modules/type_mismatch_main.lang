@@ -7,7 +7,7 @@ struct Resource {
 }
 
 ~Resource() {
-    print(self.id);
+    Console.WriteLine(self.id);
 }
 
 int main() {

@@ -349,10 +349,12 @@ static bool h2o_integer_arg(const LangValue *value, int64_t *result) {
 }
 
 static char *copy_c_string(LangStringView source) {
-    if (memchr(source.data, '\0', source.length) != NULL) return NULL;
+    if (source.length != 0U &&
+        memchr(source.data, '\0', source.length) != NULL) return NULL;
     char *copy = malloc(source.length + 1U);
     if (copy == NULL) return NULL;
-    memcpy(copy, source.data, source.length);
+    if (source.length != 0U)
+        memcpy(copy, source.data, source.length);
     copy[source.length] = '\0';
     return copy;
 }

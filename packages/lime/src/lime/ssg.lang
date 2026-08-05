@@ -16,7 +16,7 @@ struct SsgResponse
     bool html;
 }
 
-bool SsgStringsContains(List<string> values, string value)
+private bool SsgStringsContains(List<string> values, string value)
 {
     foreach (string existing in values)
     {
@@ -25,7 +25,7 @@ bool SsgStringsContains(List<string> values, string value)
     return false;
 }
 
-Result<bool, string> SsgEnsureDirectory(string path)
+private Result<bool, string> SsgEnsureDirectory(string path)
 {
     bool exists = try NativePathExists(path);
     if (exists)
@@ -40,7 +40,7 @@ Result<bool, string> SsgEnsureDirectory(string path)
     return Result.Ok(true);
 }
 
-Result<bool, string> SsgEnsureTree(string path)
+private Result<bool, string> SsgEnsureTree(string path)
 {
     usize length = path.Length;
     if (length == 0) { return Result.Err("SSG output root cannot be empty"); }
@@ -68,13 +68,13 @@ Result<bool, string> SsgEnsureTree(string path)
     return Result.Ok(true);
 }
 
-bool SsgPathEndsSlash(string path)
+private bool SsgPathEndsSlash(string path)
 {
     return path.Length != 0 &&
         StringByteAt(path, path.Length - 1) == 47;
 }
 
-string SsgOutputPath(
+private string SsgOutputPath(
     string outputRoot,
     string url,
     bool html,
@@ -95,7 +95,7 @@ string SsgOutputPath(
     return output.ToString();
 }
 
-Result<bool, string> SsgEnsureParent(string path)
+private Result<bool, string> SsgEnsureParent(string path)
 {
     usize separator = 0;
     for (usize index = 0; index < path.Length; index++)
@@ -106,7 +106,7 @@ Result<bool, string> SsgEnsureParent(string path)
     return SsgEnsureTree(StringSlice(path, 0, separator));
 }
 
-Result<bool, string> SsgWrite(string path, string bytes)
+private Result<bool, string> SsgWrite(string path, string bytes)
 {
     try SsgEnsureParent(path);
     NativeHandle output = try NativeFileOpen(path, "wb");
@@ -118,7 +118,7 @@ Result<bool, string> SsgWrite(string path, string bytes)
     return Result.Ok(true);
 }
 
-Result<SsgResponse, string> SsgResponseBytes(
+private Result<SsgResponse, string> SsgResponseBytes(
     string url,
     int expectedStatus,
     bool directHtml,
@@ -147,7 +147,7 @@ Result<SsgResponse, string> SsgResponseBytes(
             }
             return Result.Ok(new()
             {
-                bytes = HtmlRender(page),
+                bytes = page.ToHtmlString(),
                 html = true
             });
         }
@@ -230,7 +230,7 @@ Result<SsgResponse, string> SsgResponseBytes(
     }
 }
 
-Result<bool, string> SsgMaterialize(
+private Result<bool, string> SsgMaterialize(
     string url,
     string outputRoot,
     int expectedStatus,
@@ -260,7 +260,7 @@ Result<bool, string> SsgMaterialize(
     return Result.Ok(true);
 }
 
-string SsgJoinPath(string root, string relative)
+private string SsgJoinPath(string root, string relative)
 {
     StringBuilder path = new();
     path.Append(root);
@@ -272,7 +272,7 @@ string SsgJoinPath(string root, string relative)
     return path.ToString();
 }
 
-string SsgJoinRelative(string parent, string name)
+private string SsgJoinRelative(string parent, string name)
 {
     if (parent.Length == 0) { return name; }
     StringBuilder path = new();
@@ -282,7 +282,7 @@ string SsgJoinRelative(string parent, string name)
     return path.ToString();
 }
 
-string SsgStaticUrl(string prefix, string relative)
+private string SsgStaticUrl(string prefix, string relative)
 {
     StringBuilder url = new();
     url.Append(prefix);
@@ -290,7 +290,7 @@ string SsgStaticUrl(string prefix, string relative)
     return url.ToString();
 }
 
-Result<int, string> SsgCopyStaticTree(
+private Result<int, string> SsgCopyStaticTree(
     StaticDirectory mounted,
     string relative,
     string outputRoot,
@@ -368,7 +368,7 @@ Result<int, string> SsgCopyStaticTree(
     return Result.Ok(files);
 }
 
-Result<int, string> SsgCopyStaticDirectories(
+private Result<int, string> SsgCopyStaticDirectories(
     List<StaticDirectory> directories,
     string outputRoot,
     ref List<string> urls,
@@ -389,7 +389,7 @@ Result<int, string> SsgCopyStaticDirectories(
     return Result.Ok(files);
 }
 
-Result<SiteBuild, string> SsgBuildAppPages(
+private Result<SiteBuild, string> SsgBuildAppPages(
     List<BuildPage> pages,
     App app,
     string outputRoot
@@ -421,7 +421,7 @@ Result<SiteBuild, string> SsgBuildAppPages(
     return Result.Ok(new() { files = files });
 }
 
-Result<SiteBuild, string> SsgBuildStatefulPages<State>(
+private Result<SiteBuild, string> SsgBuildStatefulPages<State>(
     List<BuildPage> pages,
     StatefulApp<State> app,
     string outputRoot

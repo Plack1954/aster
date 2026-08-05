@@ -4,7 +4,7 @@ union Value
     Empty,
 }
 
-long Read(Value value)
+private long Read(Value value)
 {
     switch (value)
     {

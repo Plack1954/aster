@@ -1,0 +1,21 @@
+using Aster.Memory;
+using System.IO;
+using System.Text;
+
+int main()
+{
+    string empty = StringSlice("", 0, 0);
+    string suffix = "abc".Substring(3, 0);
+    Console.WriteLine(empty.Length);
+    Console.WriteLine(suffix.Length);
+    Console.WriteLine(Path.GetFileName("/tmp/").Length);
+    Console.WriteLine(Path.GetExtension("readme").Length);
+
+    Buffer buffer = Buffer.allocate(0);
+    unsafe
+    {
+        Slice<byte> bytes = BufferAsMutSlice(buffer);
+        Console.WriteLine(ByteSliceLen(bytes));
+    }
+    return 0;
+}

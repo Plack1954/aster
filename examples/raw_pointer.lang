@@ -3,7 +3,7 @@ int main() {
     unsafe {
         long* pointer = ArenaAlloc(arena, 8);
         *pointer = 42;
-        print(*pointer);
+        Console.WriteLine(*pointer);
     }
 
     return 0;

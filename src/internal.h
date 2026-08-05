@@ -37,7 +37,8 @@ typedef enum TokenKind {
     TOK_TRUE, TOK_FALSE, TOK_NULL,
     TOK_UNSAFE, TOK_TRY, TOK_CATCH, TOK_FINALLY, TOK_THROW,
     TOK_ASYNC, TOK_AWAIT,
-    TOK_NAMESPACE, TOK_USING, TOK_AS, TOK_PUB, TOK_EXTERN, TOK_TYPE,
+    TOK_NAMESPACE, TOK_USING, TOK_AS, TOK_PUB, TOK_PRIVATE, TOK_EXTERN,
+    TOK_TYPE,
     TOK_DELEGATE,
     TOK_ELEMENT,
     TOK_LPAREN, TOK_RPAREN, TOK_LBRACE, TOK_RBRACE, TOK_LBRACKET, TOK_RBRACKET,
@@ -91,6 +92,66 @@ typedef enum TypeKind {
     TYPE_ARRAY, TYPE_OPTION, TYPE_RESULT, TYPE_TASK, TYPE_FUNCTION, TYPE_NAMED
 } TypeKind;
 
+typedef enum ParameterMode {
+    PARAMETER_MODE_VALUE,
+    PARAMETER_MODE_IMMUTABLE_REFERENCE,
+    PARAMETER_MODE_MUTABLE_REFERENCE,
+    PARAMETER_MODE_OUT
+} ParameterMode;
+
+typedef enum TypeSyntaxKind {
+    TYPE_SYNTAX_NAMED,
+    TYPE_SYNTAX_GENERIC,
+    TYPE_SYNTAX_FUNCTION,
+    TYPE_SYNTAX_POINTER,
+    TYPE_SYNTAX_ARRAY,
+    TYPE_SYNTAX_TUPLE,
+    TYPE_SYNTAX_ERROR
+} TypeSyntaxKind;
+
+typedef struct TypeSyntax TypeSyntax;
+/* Arena-backed source structure. Semantic resolution must consume this tree;
+ * canonical Type.name strings are derived output, not a second type grammar. */
+struct TypeSyntax {
+    TypeSyntaxKind kind;
+    LangSpan span;
+    union {
+        const char *name;
+        struct {
+            TypeSyntax *base;
+            TypeSyntax **arguments;
+            size_t argument_count;
+        } generic;
+        struct {
+            TypeSyntax **parameters;
+            ParameterMode *parameter_modes;
+            size_t parameter_count;
+            TypeSyntax *return_type;
+        } function;
+        struct {
+            bool mutable_;
+            TypeSyntax *element;
+        } pointer;
+        struct {
+            TypeSyntax *element;
+            size_t count;
+        } array;
+        struct {
+            TypeSyntax **elements;
+            size_t element_count;
+        } tuple;
+    } as;
+};
+
+static inline bool parameter_mode_is_reference(ParameterMode mode) {
+    return mode != PARAMETER_MODE_VALUE;
+}
+
+static inline bool parameter_mode_is_mutable(ParameterMode mode) {
+    return mode == PARAMETER_MODE_MUTABLE_REFERENCE ||
+           mode == PARAMETER_MODE_OUT;
+}
+
 struct Decl;
 typedef struct Type {
     TypeKind kind;
@@ -100,16 +161,13 @@ typedef struct Type {
     struct Type *error_type;
     struct Type **arguments; /* Applied named-type arguments. */
     size_t argument_count;
-    /* Function parameters passed by explicit `ref`. */
-    uint32_t borrowed_argument_mask;
-    /* Function parameters which require a mutable place (`ref`). */
-    uint32_t mutable_borrow_argument_mask;
-    /* Function parameters declared with C#-style `out`. */
-    uint32_t out_argument_mask;
+    /* Owned by the arena and parallel to arguments for function types. */
+    ParameterMode *parameter_modes;
     size_t array_length;
     bool requires_cleanup;
     /* Copyable value whose copies share automatically managed storage. */
     bool managed;
+    bool pointer_mutable; /* Meaningful for TYPE_RAW_POINTER. */
     bool instantiation_resolving;
 } Type;
 
@@ -180,6 +238,7 @@ typedef struct MatchArm {
     const char *variant;
     const char *binding;
     const char *binding_type_name;
+    TypeSyntax *binding_type_syntax;
     size_t binding_id; /* Checker-assigned local identity; zero means none. */
     Type *binding_type;
     Stmt *body;
@@ -232,8 +291,8 @@ struct Expr {
         struct {
             Expr *callee;
             ExprList arguments;
-            uint32_t ref_argument_mask;
-            uint32_t out_argument_mask;
+            /* Arena-owned and parallel to arguments. */
+            ParameterMode *argument_modes;
             bool implicit_receiver;
             bool implicit_enum_value;
         } call;
@@ -244,7 +303,11 @@ struct Expr {
         } assign;
         struct { Expr *value; } clone;
         struct { Expr *value; } try_;
-        struct { Expr *value; const char *type_name; } cast;
+        struct {
+            Expr *value;
+            const char *type_name;
+            TypeSyntax *type_syntax;
+        } cast;
         ExprList array;
         struct {
             Expr *object;
@@ -252,7 +315,12 @@ struct Expr {
             bool unchecked; /* Written in unsafe context; VM still traps. */
         } index;
         struct { Expr *object; const char *field; } field;
-        struct { const char *name; ElementProperty *fields; size_t field_count; } structure;
+        struct {
+            const char *name;
+            TypeSyntax *type_syntax;
+            ElementProperty *fields;
+            size_t field_count;
+        } structure;
         struct { Expr *condition; Stmt *then_branch; Stmt *else_branch; } if_;
         struct { Expr *value; MatchArm *arms; size_t arm_count; } match_;
         struct {
@@ -280,6 +348,7 @@ struct Stmt {
         struct {
             const char *name;
             const char *type_name;
+            TypeSyntax *type_syntax;
             bool mutable_;
             size_t binding_id; /* Checker-assigned local identity. */
             Expr *value;
@@ -287,6 +356,7 @@ struct Stmt {
         struct {
             const char **names;
             const char **type_names;
+            TypeSyntax **type_syntaxes;
             Type **checked_types;
             size_t *binding_ids;
             size_t count;
@@ -299,6 +369,7 @@ struct Stmt {
         struct {
             const char *name;
             const char *type_name; /* Explicit only for `foreach`. */
+            TypeSyntax *type_syntax;
             size_t binding_id; /* Checker-assigned iteration-local identity. */
             bool borrowed; /* Non-consuming iteration over a stable local. */
             bool foreach;
@@ -317,6 +388,7 @@ struct Stmt {
         struct {
             Stmt *body;
             const char *catch_type_name;
+            TypeSyntax *catch_type_syntax;
             const char *catch_name;
             Type *catch_type;
             size_t catch_binding_id;
@@ -332,6 +404,7 @@ struct Stmt {
 typedef struct Param {
     const char *name;
     const char *type_name;
+    TypeSyntax *type_syntax;
     bool borrowed;
     bool mutable_;
     bool by_ref;
@@ -341,11 +414,19 @@ typedef struct Param {
     size_t binding_id; /* Checker-assigned parameter-local identity. */
 } Param;
 
+static inline ParameterMode parameter_mode_from_param(const Param *param) {
+    if (param->by_out) return PARAMETER_MODE_OUT;
+    if (param->by_ref) return PARAMETER_MODE_MUTABLE_REFERENCE;
+    if (param->borrowed) return PARAMETER_MODE_IMMUTABLE_REFERENCE;
+    return PARAMETER_MODE_VALUE;
+}
+
 typedef struct Function {
     const char *name;
     Param *params;
     size_t param_count;
     const char *return_type;
+    TypeSyntax *return_type_syntax;
     Stmt *body;
     LangSpan span;
     size_t local_count;
@@ -360,12 +441,18 @@ typedef struct Function {
 typedef enum DeclKind {
     DECL_FUNCTION, DECL_STRUCT, DECL_ENUM, DECL_ALIAS, DECL_ELEMENT
 } DeclKind;
-typedef struct FieldDecl { const char *name; const char *type_name; LangSpan span; } FieldDecl;
+typedef struct FieldDecl {
+    const char *name;
+    const char *type_name;
+    LangSpan span;
+    TypeSyntax *type_syntax;
+} FieldDecl;
 typedef struct Decl {
     DeclKind kind;
     LangSpan span;
     const char *module_name; /* Arena-backed; declaration's source module. */
     bool is_public;
+    bool has_explicit_visibility;
     const char **type_params; /* Generic parameters declared by this item. */
     size_t type_param_count;
     const struct Decl *generic_origin; /* Template for a function instance. */
@@ -385,10 +472,15 @@ typedef struct Decl {
             size_t variant_count;
             bool is_union;
         } enumeration;
-        struct { const char *name; const char *target; } alias;
+        struct {
+            const char *name;
+            const char *target;
+            TypeSyntax *target_syntax;
+        } alias;
         struct {
             const char *name;
             const char *result_type;
+            TypeSyntax *result_type_syntax;
             FieldDecl *properties;
             size_t property_count;
         } element;
@@ -460,6 +552,56 @@ typedef enum IrTypeShape {
     IR_TYPE_ENUM,
     IR_TYPE_UNION
 } IrTypeShape;
+
+typedef enum IrCopyPolicy {
+    IR_COPY_TRIVIAL,
+    IR_COPY_DEEP,
+    IR_COPY_SHARED_RETAIN,
+    IR_COPY_NONCOPYABLE,
+    IR_COPY_CUSTOM
+} IrCopyPolicy;
+
+typedef enum IrDropPolicy {
+    IR_DROP_TRIVIAL,
+    IR_DROP_RECURSIVE,
+    IR_DROP_CUSTOM
+} IrDropPolicy;
+
+typedef enum IrCallingConvention {
+    IR_CALLING_CONVENTION_ASTER,
+    IR_CALLING_CONVENTION_NATIVE
+} IrCallingConvention;
+
+typedef struct IrParameter {
+    const char *name;
+    IrTypeId type;
+    ParameterMode mode;
+    LangSpan span;
+} IrParameter;
+
+typedef struct IrFunctionAbi {
+    IrCallingConvention calling_convention;
+    bool may_propagate_exception;
+    bool returns_async_task;
+} IrFunctionAbi;
+
+typedef struct IrStaticCss {
+    const char *scope_attribute;
+    const char *text;
+    size_t text_length;
+    LangSpan span;
+} IrStaticCss;
+
+typedef struct IrNativeCallDescriptor {
+    const char *name;
+    IrTypeId return_type;
+    IrTypeId *parameter_types;
+    ParameterMode *parameter_modes;
+    size_t parameter_count;
+    IrCallingConvention calling_convention;
+    bool may_propagate_exception;
+    bool compiler_generated;
+} IrNativeCallDescriptor;
 
 typedef enum IrOpcode {
     IR_OP_PARAMETER,
@@ -535,7 +677,7 @@ typedef enum IrOpcode {
     IR_OP_LOCAL_ELEMENT_CSS_VALUE,
     IR_OP_LOCAL_ELEMENT_PROPERTY_END,
     IR_OP_LOCAL_ELEMENT_APPEND,
-    IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT,
+    IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT,
     IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED,
     IR_OP_LOCAL_ELEMENT_FINISH,
     IR_OP_COUNT
@@ -552,15 +694,19 @@ typedef enum IrTerminatorKind {
 
 typedef struct IrType {
     const char *name; /* Borrowed from checked module or static storage. */
-    const Type *checked_type; /* Bootstrap link; never interpreted by backends. */
+    /* Lowering-only identity link; cleared before the IR reaches a backend. */
+    const Type *checked_type;
     const char *module_name; /* Borrowed; NULL for structural/builtin types. */
     IrTypeShape shape;
     IrTypeId element_type; /* Arrays, pointers, and slices; else invalid. */
     IrTypeId error_type; /* Result error type; else invalid. */
     IrTypeId *argument_types; /* Owned function/generic arguments. */
+    ParameterMode *parameter_modes; /* Owned for function arguments. */
     size_t argument_count;
     const char **field_names; /* Owned array; names borrowed from declarations. */
     IrTypeId *field_types; /* Owned array; resolved concrete field types. */
+    LangSpan *field_spans; /* Owned array; declaration order. */
+    size_t *field_offsets; /* Owned target offsets; valid when member_layout_known. */
     size_t field_count;
     const char **variant_names; /* Owned array; declaration order. */
     /*
@@ -568,12 +714,20 @@ typedef struct IrType {
      * payloadless variant.
      */
     IrTypeId *variant_payload_types;
+    LangSpan *variant_spans; /* Owned array; declaration order. */
+    uint32_t *variant_discriminants; /* Owned, stable declaration order. */
+    size_t *variant_payload_offsets; /* Owned; ignored for payloadless variants. */
     size_t variant_count;
+    IrCopyPolicy copy_policy;
+    IrDropPolicy drop_policy;
+    /* Future user-defined copy hook; invalid for built-in/deep policies. */
+    IrFunctionId copy_function;
     /* Concrete Aster destructor function, or IR_INVALID_ID. */
     IrFunctionId destructor_function;
     size_t target_size;
     size_t target_alignment;
     bool target_layout_known;
+    bool member_layout_known;
     size_t array_length;
     uint8_t bit_width;
     bool pointer_mutable;
@@ -590,6 +744,10 @@ typedef struct IrInstruction {
     size_t operand_count;
     uint32_t *labels; /* Owned aggregate operand-to-field/variant mapping. */
     size_t label_count;
+    ParameterMode *argument_modes; /* Owned for call operands. */
+    size_t argument_mode_count;
+    /* Present only for IR_OP_CALL_NATIVE; owns its parallel arrays. */
+    IrNativeCallDescriptor *native_call;
     uint64_t integer;
     double floating;
     uint32_t index;
@@ -626,12 +784,15 @@ typedef struct IrLocal {
 typedef struct IrFunction {
     const char *name;
     const char *module_name;
-    const Decl *declaration; /* Borrowed monomorphic typed declaration. */
+    /* Lowering-only source link; cleared before verification/backend use. */
+    const Decl *declaration;
+    LangSpan span;
     IrTypeId return_type;
     /* Completion value produced by an async function; otherwise return_type. */
     IrTypeId async_result_type;
-    IrTypeId *parameter_types;
+    IrParameter *parameters;
     size_t parameter_count;
+    IrFunctionAbi abi;
     IrLocal *locals;
     size_t local_count;
     size_t local_capacity;
@@ -643,8 +804,14 @@ typedef struct IrFunction {
     size_t block_capacity;
     IrBlockId entry_block;
     LangSpan render_root_span;
+    const char *css_scope_attribute;
+    IrStaticCss *static_css;
+    size_t static_css_count;
+    size_t static_css_capacity;
+    size_t async_suspension_count;
     bool has_render_root;
     bool is_entry;
+    bool is_public;
     bool is_destructor;
     bool is_web_export;
     bool is_async;
@@ -686,6 +853,7 @@ void lang_ir_free_module(IrModule *ir);
 typedef enum OpCode {
     OP_CONSTANT, OP_UNIT, OP_TRUE, OP_FALSE, OP_POP,
     OP_LOAD_LOCAL, OP_STORE_LOCAL, OP_MOVE_LOCAL, OP_REFERENCE_LOCAL,
+    OP_REFERENCE_FIELD_LOCAL, OP_INVALIDATE_LOCAL,
     OP_ADD_I64, OP_SUB_I64, OP_MUL_I64, OP_DIV_I64, OP_REM_I64,
     OP_SHIFT_LEFT, OP_SHIFT_RIGHT,
     OP_BIT_AND, OP_BIT_OR, OP_BIT_XOR, OP_BIT_NOT,
@@ -753,19 +921,24 @@ typedef struct Constant {
     char *owned_string;
 } Constant;
 
+typedef struct BytecodeCallSite {
+    ParameterMode *argument_modes;
+    size_t argument_count;
+} BytecodeCallSite;
+
 typedef struct BytecodeFunction {
     const char *name;
     const char *module_name;
     bool is_public;
     bool is_entry;
     bool is_async;
-    const Decl *declaration; /* Borrowed typed-AST declaration. */
     Instruction *code;
     LangSpan *spans;
+    BytecodeCallSite *call_sites; /* Parallel to code. */
     size_t code_count;
     size_t code_capacity;
     size_t arity;
-    uint32_t borrowed_parameter_mask;
+    ParameterMode *parameter_modes;
     bool may_have_object_locals;
     bool object_local_mask_valid;
     uint64_t object_local_mask;

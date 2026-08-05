@@ -3,11 +3,11 @@ int main() {
     unsafe {
         byte* first = ArenaAlloc(arena, 128);
         byte* second = ArenaAlloc(arena, 256);
-        print(first);
-        print(second);
+        Console.WriteLine(first);
+        Console.WriteLine(second);
         ArenaReset(arena);
         byte* third = ArenaAlloc(arena, 64);
-        print(third);
+        Console.WriteLine(third);
     }
     return 0;
 }

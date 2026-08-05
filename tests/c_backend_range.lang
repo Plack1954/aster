@@ -9,6 +9,6 @@ int main() {
         }
         total += value;
     }
-    print(total);
+    Console.WriteLine(total);
     return 0;
 }

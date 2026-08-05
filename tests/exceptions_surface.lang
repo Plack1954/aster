@@ -5,10 +5,10 @@ struct Tracked
 
 ~Tracked()
 {
-    print("cleaned");
+    Console.WriteLine("cleaned");
 }
 
-void Fail()
+private void Fail()
 {
     Tracked value = new()
     {
@@ -17,7 +17,7 @@ void Fail()
     throw new IOException("database unavailable");
 }
 
-void ThrowKnownException(int kind)
+private void ThrowKnownException(int kind)
 {
     if (kind == 0) { throw new FormatException("format"); }
     if (kind == 1) { throw new OverflowException("overflow"); }
@@ -65,13 +65,13 @@ int main()
     try
     {
         Fail();
-        print("unreachable");
+        Console.WriteLine("unreachable");
     }
     catch (Exception error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
 
-    print("recovered");
+    Console.WriteLine("recovered");
     return 0;
 }

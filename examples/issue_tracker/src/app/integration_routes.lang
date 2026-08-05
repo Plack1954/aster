@@ -8,17 +8,17 @@ using Aster.Web.HttpApp;
 using Aster.Data.Sqlite;
 using System.Text;
 
-string DatabasePath() {
+private string DatabasePath() {
     return "examples/issue_tracker/integration-test.db";
 }
 
-Response DatabaseError(SqliteError error) {
+private Response DatabaseError(SqliteError error) {
     return Response.InternalError(
         ErrorPage(error)
     );
 }
 
-Response ListHandler(Request _request) {
+private Response ListHandler(Request _request) {
     var opened = SqliteOpen(DatabasePath());
     switch (opened) {
         case Result.Ok(database): {
@@ -40,7 +40,7 @@ Response ListHandler(Request _request) {
     }
 }
 
-Response ShowHandler(Request request) {
+private Response ShowHandler(Request request) {
     string id =
         HttpPathParam("/issues/:id", request.path, "id");
     var opened = SqliteOpen(DatabasePath());
@@ -73,7 +73,7 @@ Response ShowHandler(Request request) {
     }
 }
 
-Response CreateHandler(Request request) {
+private Response CreateHandler(Request request) {
     var decoded = HttpFormValue(request.body, "title");
     switch (decoded) {
         case Result.Ok(title): {
@@ -123,7 +123,7 @@ Response CreateHandler(Request request) {
     }
 }
 
-Response MissingHandler(Request request) {
+private Response MissingHandler(Request request) {
     return Response.NotFound(MissingPage(request.path));
 }
 

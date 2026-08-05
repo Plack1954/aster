@@ -7,7 +7,7 @@ not to be replaced with Aster-specific synonyms without an explicit design
 reason and review.
 
 ```aster
-async Task<User> GetUserAsync(HttpClient client, int id)
+private async Task<User> GetUserAsync(HttpClient client, int id)
 {
     HttpResponseMessage response = await client.GetAsync($"/users/{id}");
     response.EnsureSuccessStatusCode();

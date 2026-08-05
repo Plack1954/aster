@@ -6,7 +6,7 @@ int main() {
     dep.Resource resource =
         new dep.Resource { id = 1 };
     dep.Resource invalidCopy = resource;
-    print(resource.id);
-    print(invalidCopy.id);
+    Console.WriteLine(resource.id);
+    Console.WriteLine(invalidCopy.id);
     return 0;
 }

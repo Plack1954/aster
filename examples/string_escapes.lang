@@ -1,9 +1,9 @@
 int main() {
-    print(TextLen("A\0B"));
-    print("line\n\"quote\"\\");
+    Console.WriteLine(TextLen("A\0B"));
+    Console.WriteLine("line\n\"quote\"\\");
 
     var text = "x\0y";
-    print(TextLen(text));
-    print(TextLen(text));
+    Console.WriteLine(TextLen(text));
+    Console.WriteLine(TextLen(text));
     return 0;
 }

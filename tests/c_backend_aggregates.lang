@@ -3,14 +3,14 @@ struct Pair<A, B> {
     second: B,
 }
 
-Pair<int, int> MakePair(int first, int second) {
+private Pair<int, int> MakePair(int first, int second) {
     return Pair {
         second: second,
         first: first,
     };
 }
 
-int total(Pair<int, int> pair, [int; 3] values) {
+private int total(Pair<int, int> pair, [int; 3] values) {
     return pair.first + pair.second +
            values[0] + values[1] + values[2];
 }

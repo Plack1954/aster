@@ -1,4 +1,4 @@
-bool TryRead(out int value)
+private bool TryRead(out int value)
 {
     value = 1;
     return true;

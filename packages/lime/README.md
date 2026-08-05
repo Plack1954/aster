@@ -36,7 +36,7 @@ CSS, and redirects untouched. Both phases run in registration order, use
 non-capturing function values, and allocate no middleware environments.
 
 ```aster
-FilterResult protect(Request request)
+private FilterResult protect(Request request)
 {
     if (request.path == "/private")
     {
@@ -47,7 +47,7 @@ FilterResult protect(Request request)
     return FilterResult.Continue();
 }
 
-Html frame(Request request, Html page)
+private Html frame(Request request, Html page)
 {
     return <main data-path=request.path>{page}</main>;
 }
@@ -118,7 +118,7 @@ bounded website assets rather than large downloads or streaming.
 A parameterized handler remains ordinary Aster:
 
 ```aster
-Response article(Request request)
+private Response article(Request request)
 {
     string slug = request.param("slug");
     return Response.Ok(<article>{slug}</article>);
@@ -137,7 +137,7 @@ struct Site
     Database database;
 }
 
-Response Home(Site site, Request request)
+private Response Home(Site site, Request request)
 {
     return Response.Ok(<h1>{string_view(site.title)}</h1>);
 }
@@ -154,13 +154,13 @@ adapter exposes `current_http_dispatch_stateful`; a future H2O adapter can do
 the same without changing the application.
 
 ```aster
-FilterResult Protect(Site site, Request request)
+private FilterResult Protect(Site site, Request request)
 {
     // Query site.database or inspect configuration here.
     return FilterResult.Continue();
 }
 
-Html Frame(Site site, Request request, Html page)
+private Html Frame(Site site, Request request, Html page)
 {
     return <body data-site=string_view(site.title)>{page}</body>;
 }
@@ -296,7 +296,7 @@ browser files, maps them through Lime's typed static responses, and emits the
 ordinary module script tag:
 
 ```aster
-Response BrowserAsset(Site site, Request request)
+private Response BrowserAsset(Site site, Request request)
 {
     switch (site.browser.serve(request))
     {
@@ -307,7 +307,7 @@ Response BrowserAsset(Site site, Request request)
     }
 }
 
-Html Page(Site site) {
+private Html Page(Site site) {
     return <body>
     <Counter />
     {site.browser.loader()}
@@ -349,7 +349,7 @@ derives finite concrete URLs from the same content or application state used
 by SSR, so there is no second handwritten page list:
 
 ```aster
-List<string> ArticlePagesFrom(List<Article> articles)
+private List<string> ArticlePagesFrom(List<Article> articles)
 {
     List<string> paths = new();
     foreach (Article article in articles)
@@ -359,7 +359,7 @@ List<string> ArticlePagesFrom(List<Article> articles)
     return paths;
 }
 
-List<string> ArticlePages(Site site)
+private List<string> ArticlePages(Site site)
 {
     return ArticlePagesFrom(site.articles);
 }
@@ -379,7 +379,7 @@ Route, filter, middleware, and fallback exceptions are caught at the app
 boundary. The default response is HTTP 500; applications can replace it once:
 
 ```aster
-Response HandleException(Exception error)
+private Response HandleException(Exception error)
 {
     Log(error.Message);
     return Response.InternalError(<h1>Something went wrong</h1>);

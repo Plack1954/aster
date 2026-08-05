@@ -17,12 +17,12 @@ public struct ContentDocument
     string body;
 }
 
-bool ContentSpace(byte value)
+private bool ContentSpace(byte value)
 {
     return value == 32 || value == 9 || value == 13;
 }
 
-string ContentTrim(string value)
+private string ContentTrim(string value)
 {
     usize start = 0;
     usize end = value.Length;
@@ -37,7 +37,7 @@ string ContentTrim(string value)
     return StringSlice(value, start, end);
 }
 
-Result<string, string> ContentScalar(string raw)
+private Result<string, string> ContentScalar(string raw)
 {
     usize length = raw.Length;
     if (length >= 2 && StringByteAt(raw, 0) == 34 &&
@@ -53,7 +53,7 @@ Result<string, string> ContentScalar(string raw)
     return Result.Ok(raw);
 }
 
-bool ContentFieldsContain(List<ContentField> fields, string name)
+private bool ContentFieldsContain(List<ContentField> fields, string name)
 {
     foreach (ContentField field in fields)
     {
@@ -62,7 +62,7 @@ bool ContentFieldsContain(List<ContentField> fields, string name)
     return false;
 }
 
-Result<ContentDocument, string> ParseContentDocument(
+private Result<ContentDocument, string> ParseContentDocument(
     string path,
     string source
 )
@@ -133,7 +133,7 @@ Result<ContentDocument, string> ParseContentDocument(
     return Result.Err("content file requires closing `+++`");
 }
 
-Result<string, string> ContentRequiredFrom(
+private Result<string, string> ContentRequiredFrom(
     List<ContentField> fields,
     string name
 )
@@ -145,7 +145,7 @@ Result<string, string> ContentRequiredFrom(
     return Result.Err("missing required frontmatter field");
 }
 
-T ContentResultOrThrow<T>(Result<T, string> result)
+private T ContentResultOrThrow<T>(Result<T, string> result)
 {
     switch (result)
     {
@@ -170,7 +170,7 @@ public string ContentDocument.Required(
     return ContentResultOrThrow(ContentRequiredFrom(self.fields, name));
 }
 
-Result<List<string>, string> ContentStringList(string raw)
+private Result<List<string>, string> ContentStringList(string raw)
 {
     usize length = raw.Length;
     if (length < 2 || StringByteAt(raw, 0) != 91 ||

@@ -4,7 +4,7 @@ using Lime;
 using System.IO;
 using System.Text;
 
-byte StaticAsciiLower(byte value)
+private byte StaticAsciiLower(byte value)
 {
     if (value >= 65 && value <= 90)
     {
@@ -13,7 +13,7 @@ byte StaticAsciiLower(byte value)
     return value;
 }
 
-bool StaticEndsWith(string value, string suffix)
+private bool StaticEndsWith(string value, string suffix)
 {
     usize valueLength = value.Length;
     usize suffixLength = suffix.Length;
@@ -52,7 +52,7 @@ public AssetKind StaticAssetKind(string path)
     return AssetKind.Binary;
 }
 
-bool StaticPathSafe(string path)
+private bool StaticPathSafe(string path)
 {
     usize length = path.Length;
     if (length < 2 || StringByteAt(path, 0) != 47)
@@ -124,7 +124,7 @@ public Result<Response, string> StaticFile(
     ));
 }
 
-bool StaticPrefixValid(string prefix)
+private bool StaticPrefixValid(string prefix)
 {
     usize length = prefix.Length;
     return length >= 3 &&
@@ -133,7 +133,7 @@ bool StaticPrefixValid(string prefix)
         StaticPathSafe(StringSlice(prefix, 0, length - 1));
 }
 
-Option<Response> StaticResponseWithCache(
+private Option<Response> StaticResponseWithCache(
     Response response,
     StaticFileOptions options
 )
@@ -157,7 +157,7 @@ Option<Response> StaticResponseWithCache(
     }
 }
 
-Option<Response> ResolveStatic(
+private Option<Response> ResolveStatic(
     string urlPrefix,
     string root,
     StaticFileOptions options,
@@ -204,7 +204,7 @@ Option<Response> ResolveStatic(
     }
 }
 
-T StaticResultOrThrow<T>(Result<T, string> result)
+private T StaticResultOrThrow<T>(Result<T, string> result)
 {
     switch (result)
     {

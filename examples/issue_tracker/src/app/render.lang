@@ -4,7 +4,7 @@ using Issues.Model;
 using Issues.Pages;
 using Aster.Data.Sqlite;
 
-int run() {
+private int run() {
     Database database = Database.Open(":memory:");
     IssueRepository issues = IssueRepository.Create(database);
     issues.EnsureSchema();
@@ -16,7 +16,7 @@ int run() {
     );
     List<Issue> all = issues.ListIssues();
     Html page = IssueListPage(all);
-    print(HtmlRender(page));
+    Console.WriteLine(page.ToHtmlString());
     return 0;
 }
 

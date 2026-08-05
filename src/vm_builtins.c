@@ -652,7 +652,8 @@ static LangNativeResult native_path_get_file_name_value(
         };
     size_t start = native_path_file_name_start(path);
     return native_path_string_result(
-        vm, path.data + start, path.length - start);
+        vm, path.length == start ? NULL : path.data + start,
+        path.length - start);
 }
 
 static LangNativeResult native_path_get_extension_value(
@@ -666,7 +667,8 @@ static LangNativeResult native_path_get_extension_value(
     size_t file_start = native_path_file_name_start(path);
     size_t extension = native_path_extension_start(path, file_start);
     return native_path_string_result(
-        vm, path.data + extension, path.length - extension);
+        vm, path.length == extension ? NULL : path.data + extension,
+        path.length - extension);
 }
 
 static LangNativeResult native_path_get_file_name_without_extension_value(
@@ -680,7 +682,8 @@ static LangNativeResult native_path_get_file_name_without_extension_value(
     size_t file_start = native_path_file_name_start(path);
     size_t extension = native_path_extension_start(path, file_start);
     return native_path_string_result(
-        vm, path.data + file_start, extension - file_start);
+        vm, extension == file_start ? NULL : path.data + file_start,
+        extension - file_start);
 }
 
 static LangNativeResult native_path_is_root_value(
@@ -769,10 +772,12 @@ static LangNativeResult native_path_change_extension_value(
         };
     size_t length = base_length + extension.length + (has_dot ? 0U : 1U);
     char *changed = vm_allocate(length == 0U ? 1U : length, 1U);
-    memcpy(changed, path.data, base_length);
+    if (base_length != 0U)
+        memcpy(changed, path.data, base_length);
     size_t cursor = base_length;
     if (!has_dot) changed[cursor++] = '.';
-    memcpy(changed + cursor, extension.data, extension.length);
+    if (extension.length != 0U)
+        memcpy(changed + cursor, extension.data, extension.length);
     LangNativeResult result = native_path_string_result(vm, changed, length);
     free(changed);
     return result;
@@ -1278,7 +1283,10 @@ static LangNativeResult native_byte_slice_string_value(
     LangValue string;
     if (!lang_string_value(
             vm,
-            (LangStringView){(const char *)bytes.data + start, end - start},
+            (LangStringView){
+                end == start ? NULL : (const char *)bytes.data + start,
+                end - start
+            },
             &string))
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},
@@ -1597,7 +1605,9 @@ static LangNativeResult native_str_slice_value(
     size_t end = (size_t)args[2].as.u64;
     LangValue result;
     if (!lang_string_value(
-            vm, (LangStringView){view.data + start, end - start},
+            vm, (LangStringView){
+                end == start ? NULL : view.data + start, end - start
+            },
             &result))
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},

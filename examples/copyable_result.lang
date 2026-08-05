@@ -9,8 +9,8 @@ int main() {
     var copied = pair;
 
     switch (copied.result) {
-        case Result.Ok(value): { print(value); }
-        case Result.Err(error): { print(error); }
+        case Result.Ok(value): { Console.WriteLine(value); }
+        case Result.Err(error): { Console.WriteLine(error); }
     }
     return 0;
 }

@@ -25,7 +25,7 @@ public string SubmitName(string name)
     return $"Thanks, {name}.";
 }
 
-Html TodoItem(int id, string title)
+private Html TodoItem(int id, string title)
 {
     return <li id=$"todo-{id}">
         <span>{title}</span>
@@ -106,6 +106,6 @@ public Html BrowserPage(Html browserLoader)
 
 int main()
 {
-    print(HtmlRender(BrowserPage(<></>)));
+    Console.WriteLine(BrowserPage(<></>).ToHtmlString());
     return 0;
 }

@@ -4,7 +4,7 @@ struct Counter {
 
 ~Counter() {
     self.value = self.value + 1;
-    print(self.value);
+    Console.WriteLine(self.value);
 }
 
 int main() {

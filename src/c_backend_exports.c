@@ -36,7 +36,7 @@ void c_backend_mark_function(CEmitter *emitter,
     const IrFunction *function = &emitter->ir->functions[function_id];
     mark_c_type(emitter, function->return_type);
     for (size_t i = 0U; i < function->parameter_count; ++i)
-        mark_c_type(emitter, function->parameter_types[i]);
+        mark_c_type(emitter, function->parameters[i].type);
     for (size_t i = 0U; i < function->local_count; ++i)
         mark_c_type(emitter, function->locals[i].type);
     for (size_t i = 0U; i < function->value_count; ++i)
@@ -98,8 +98,7 @@ bool c_backend_function_is_entry_module_export(
     const IrModule *ir, size_t function_index, size_t entry) {
     const IrFunction *function = &ir->functions[function_index];
     return function->is_web_export &&
-           function->declaration != NULL &&
-           function->declaration->is_public &&
+           function->is_public &&
            !function->is_destructor &&
            function->module_name != NULL &&
            ir->functions[entry].module_name != NULL &&
@@ -147,14 +146,14 @@ static void emit_public_export_signature(
              parameter < function->parameter_count; ++parameter) {
             if (parameter != 0U) fputs(", ", emitter->output);
             const IrType *type = &emitter->ir->types[
-                function->parameter_types[parameter]];
+                function->parameters[parameter].type];
             if (web_parameter_is_string(type)) {
                 fprintf(emitter->output,
                         "const unsigned char *p%zu_data, size_t p%zu_length",
                         parameter, parameter);
             } else {
                 c_backend_emit_type(
-                    emitter, function->parameter_types[parameter]);
+                    emitter, function->parameters[parameter].type);
                 fprintf(emitter->output, " p%zu", parameter);
             }
         }
@@ -175,7 +174,7 @@ void c_backend_emit_public_export_wrapper(
     for (size_t parameter = 0U;
          parameter < function->parameter_count; ++parameter) {
         const IrType *type = &emitter->ir->types[
-            function->parameter_types[parameter]];
+            function->parameters[parameter].type];
         if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
             strcmp(type->name, "string") == 0)
             fprintf(emitter->output,
@@ -199,7 +198,7 @@ void c_backend_emit_public_export_wrapper(
          parameter < function->parameter_count; ++parameter) {
         if (parameter != 0U) fputs(", ", emitter->output);
         const IrType *type = &emitter->ir->types[
-            function->parameter_types[parameter]];
+            function->parameters[parameter].type];
         if (type->shape == IR_TYPE_STRING_VIEW)
             fprintf(emitter->output,
                     "(aster_str){p%zu_data, p%zu_length}",
@@ -252,7 +251,7 @@ void c_backend_emit_public_aggregate_accessors(
             &emitter->ir->types[field_type_id];
         char code = web_ir_type_code(field_type);
         if (code == '?') {
-            c_backend_unsupported(emitter, function->declaration->span,
+            c_backend_unsupported(emitter, function->span,
                         "browser aggregate result field type");
             return;
         }
@@ -328,7 +327,7 @@ bool c_backend_web_exports_use_strings(
         for (size_t parameter = 0U;
              parameter < candidate->parameter_count; ++parameter)
             if (web_parameter_is_string(
-                    &ir->types[candidate->parameter_types[parameter]]))
+                    &ir->types[candidate->parameters[parameter].type]))
                 return true;
     }
     return false;

@@ -1,6 +1,6 @@
 using Aster.Html;
 
-Html Card(string title) {
+private Html Card(string title) {
     return <article class="card">
         <style scoped>
             .card,
@@ -26,14 +26,14 @@ Html Card(string title) {
     </article>;
 }
 
-Html Plain() {
+private Html Plain() {
     return <aside class="card">
         <style>.card { color: aster; }</style>
         {"Plain"}
     </aside>;
 }
 
-Html ManyCards() {
+private Html ManyCards() {
     return <section>
         for (ignored in 0..20) {
             <Card title="Repeated" />
@@ -50,6 +50,6 @@ int main() {
         <ManyCards />
         <Plain />
     </main>;
-    print(HtmlRender(page));
+    Console.WriteLine(page.ToHtmlString());
     return 0;
 }

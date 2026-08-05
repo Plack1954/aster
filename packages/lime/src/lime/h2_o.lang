@@ -30,7 +30,7 @@ public H2OServerOptions H2OServerOptions()
     };
 }
 
-extern Result<NativeHandle, string> H2OTryServerOpenNative(
+private extern Result<NativeHandle, string> H2OTryServerOpenNative(
     string address,
     long port,
     long maxBodyBytes,
@@ -131,7 +131,7 @@ public Result<bool, string> H2OBindStateful<State>(
     return Result.Ok(true);
 }
 
-string H2OAssetContentType(AssetKind kind)
+private string H2OAssetContentType(AssetKind kind)
 {
     switch (kind)
     {
@@ -152,7 +152,7 @@ string H2OAssetContentType(AssetKind kind)
     }
 }
 
-Result<bool, string> H2OSendStream(
+private Result<bool, string> H2OSendStream(
     NativeHandle request,
     long status,
     string contentType,
@@ -234,7 +234,7 @@ public Result<bool, string> H2OSend(
         case ResponseBody.Html(page): {
             return H2OTryRespond(
                 request, (long)status, "text/html; charset=utf-8",
-                headerBlock, HtmlRender(page), head
+                headerBlock, page.ToHtmlString(), head
             );
         }
         case ResponseBody.Text(text): {
@@ -305,7 +305,7 @@ public Result<bool, string> H2OServe(
                 switch (H2ODispatch(app, request))
                 {
                     case Result.Ok(sent): { }
-                    case Result.Err(error): { eprint(error); }
+                    case Result.Err(error): { Console.Error.WriteLine(error); }
                 }
             }
             case Result.Err(error): {
@@ -332,7 +332,7 @@ public Result<bool, string> H2OServeStateful<State>(
                 switch (H2ODispatchStateful(app, request))
                 {
                     case Result.Ok(sent): { }
-                    case Result.Err(error): { eprint(error); }
+                    case Result.Err(error): { Console.Error.WriteLine(error); }
                 }
             }
             case Result.Err(error): {

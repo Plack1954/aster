@@ -22,9 +22,11 @@ The filename and bytes are deterministic. Normal `emit-c` remains the optional
 inline mode, matching VM development behavior. Manifest targets use
 `lang project emit-c-site aster.toml public/assets [TARGET]`.
 
-The backend consumes only verified typed IR. It does not inspect or lower the
-raw AST, which makes it an independent test of the shared backend boundary
-also available to the VM adapter.
+Executable lowering consumes verified typed IR. The IR owns parameter, ABI,
+type-policy, aggregate, async, render, static-CSS, and native-call metadata.
+Frontend declaration and checked-type links are cleared before the backend is
+invoked. Site assets are emitted from IR static-CSS entries rather than by
+walking raw function bodies.
 
 The optional site-asset pass is build orchestration around that backend: it
 reads the already-checked static CSS metadata retained by reachable typed

@@ -1,4 +1,4 @@
-bool predicate(long value) {
+private bool predicate(long value) {
     return value > 0;
 }
 

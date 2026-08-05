@@ -1,12 +1,12 @@
-sbyte AddI8(sbyte left, sbyte right) {
+private sbyte AddI8(sbyte left, sbyte right) {
     return left + right;
 }
 
-ushort AddU16(ushort left, ushort right) {
+private ushort AddU16(ushort left, ushort right) {
     return left + right;
 }
 
-float half(float value) {
+private float half(float value) {
     return value / 2.0;
 }
 
@@ -23,14 +23,14 @@ int main() {
     float convertedFloat = (float)narrowed;
     char scalar = (char)65;
 
-    print(signed);
-    print(unsigned);
-    print(floating);
-    print(values[index]);
-    print(maximum);
-    print(minimum);
-    print(narrowed);
-    print(convertedFloat);
-    print(scalar);
+    Console.WriteLine(signed);
+    Console.WriteLine(unsigned);
+    Console.WriteLine(floating);
+    Console.WriteLine(values[index]);
+    Console.WriteLine(maximum);
+    Console.WriteLine(minimum);
+    Console.WriteLine(narrowed);
+    Console.WriteLine(convertedFloat);
+    Console.WriteLine(scalar);
     return 0;
 }

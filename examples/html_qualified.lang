@@ -5,8 +5,8 @@ using Aster.Html;
 int main() {
     Html document =
         <Html.section>
-            <Aster.Html.h2>"Qualified names"</Aster.Html.h2>
+            <Aster.Html.h2>Qualified names</Aster.Html.h2>
         </Html.section>;
-    print(HtmlRender(document));
+    Console.WriteLine(document.ToHtmlString());
     return 0;
 }

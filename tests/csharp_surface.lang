@@ -18,15 +18,15 @@ int main()
 {
     Article article = MakeArticle();
     Article backup = article;
-    print(article.Id);
-    print(backup.Id);
+    Console.WriteLine(article.Id);
+    Console.WriteLine(backup.Id);
 
     string title = "Aster";
     string copiedTitle = title;
-    print(title);
-    print(copiedTitle);
+    Console.WriteLine(title);
+    Console.WriteLine(copiedTitle);
 
     var status = 0;
-    print(status);
+    Console.WriteLine(status);
     return 0;
 }

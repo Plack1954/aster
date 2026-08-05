@@ -1,5 +1,5 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern void NativeFailHandle(NativeHandle handle);
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern void NativeFailHandle(NativeHandle handle);
 
 int main() {
     NativeHandle handle = NativeHandleOpenId(9);

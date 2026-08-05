@@ -7,9 +7,9 @@ element Html notice {
 
 int main() {
     Html document = <notice tone="warning">
-        <strong>"Careful"</strong>
+        <strong>Careful</strong>
     </notice>;
-    string output = HtmlRender(document);
-    print(output);
+    string output = document.ToHtmlString();
+    Console.WriteLine(output);
     return 0;
 }

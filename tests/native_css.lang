@@ -38,6 +38,6 @@ int main() {
             to { opacity: 1; }
         }
     </style>;
-    print(HtmlRender(stylesheet));
+    Console.WriteLine(stylesheet.ToHtmlString());
     return 0;
 }

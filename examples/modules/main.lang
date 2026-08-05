@@ -3,6 +3,6 @@ namespace Demo.Main;
 using Demo.Math;
 
 int main() {
-    print(double(21));
+    Console.WriteLine(double(21));
     return 0;
 }

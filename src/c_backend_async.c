@@ -11,11 +11,8 @@ bool c_backend_async_function_supported(
     if (!c_backend_type_is_supported(emitter->ir, result) ||
         (c_backend_type_needs_drop(emitter, result) &&
          !c_backend_type_clone_supported(emitter->ir, result))) {
-        LangSpan span = function->declaration != NULL
-                      ? function->declaration->span
-                      : (LangSpan){NULL, 0U, 0U};
         c_backend_unsupported(
-            emitter, span,
+            emitter, function->span,
             "an async completion type without generated copy and cleanup support");
         return false;
     }
@@ -565,7 +562,7 @@ void c_backend_emit_async_frame_declaration(
     fputs("    size_t state;\n    aster_task *task;\n", output);
     for (size_t p = 0U; p < function->parameter_count; ++p) {
         fputs("    ", output);
-        c_backend_emit_type(emitter, function->parameter_types[p]);
+        c_backend_emit_type(emitter, function->parameters[p].type);
         fprintf(output, " p%zu;\n", p);
     }
     for (size_t l = 0U; l < function->local_count; ++l) {
@@ -733,7 +730,7 @@ void c_backend_emit_async_function(
     } else {
         for (size_t p = 0U; p < function->parameter_count; ++p) {
             if (p != 0U) fputs(", ", output);
-            c_backend_emit_type(emitter, function->parameter_types[p]);
+            c_backend_emit_type(emitter, function->parameters[p].type);
             fprintf(output, " p%zu", p);
         }
     }
@@ -757,7 +754,7 @@ void c_backend_emit_async_function(
             function_index, function_index, function_index);
     for (size_t p = 0U; p < function->parameter_count; ++p) {
         fputs("    ", output);
-        c_backend_emit_type(emitter, function->parameter_types[p]);
+        c_backend_emit_type(emitter, function->parameters[p].type);
         fprintf(output, " p%zu = frame->p%zu;\n", p, p);
     }
     for (size_t l = 0U; l < function->local_count; ++l) {

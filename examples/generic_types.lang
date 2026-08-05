@@ -12,8 +12,8 @@ union Maybe<T> {
     Some(T),
 }
 
-void ConsumeBox(Box<string> value) {
-    print("owned box");
+private void ConsumeBox(Box<string> value) {
+    Console.WriteLine("owned box");
 }
 
 int main() {
@@ -21,11 +21,11 @@ int main() {
         first = 42,
         second = "answer",
     };
-    print(pair.first);
+    Console.WriteLine(pair.first);
 
     Box<long> numbers = new() { value = 7 };
     Box<long> numbersCopy = numbers;
-    print(numbersCopy.value);
+    Console.WriteLine(numbersCopy.value);
 
     Box<string> box = new() {
         value = "resource",
@@ -37,10 +37,10 @@ int main() {
     Maybe<long> maybe = Maybe.Some(9);
     switch (maybe) {
         case Maybe.Some(value): {
-            print(value);
+            Console.WriteLine(value);
         }
         case Maybe.None: {
-            print(0);
+            Console.WriteLine(0);
         }
     }
     return 0;

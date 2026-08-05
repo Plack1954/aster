@@ -1,10 +1,10 @@
 using Aster.Html;
 
-Html Card(string accent) {
-    return <article --accent=accent>"Aster"</article>;
+private Html Card(string accent) {
+    return <article --accent=accent>Aster</article>;
 }
 
 int main() {
-    print(HtmlRender(<Card accent="red;display:none" />));
+    Console.WriteLine(<Card accent="red;display:none" />.ToHtmlString());
     return 0;
 }

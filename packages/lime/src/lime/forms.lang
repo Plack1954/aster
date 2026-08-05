@@ -78,7 +78,7 @@ public List<FormFile> FormCollection.Files(FormCollection self)
     return self.files;
 }
 
-Option<usize> FindBytes(string source, string value, usize start)
+private Option<usize> FindBytes(string source, string value, usize start)
 {
     if (value.Length == 0 || value.Length > source.Length)
     {
@@ -101,13 +101,13 @@ Option<usize> FindBytes(string source, string value, usize start)
     return Option.None;
 }
 
-byte FormAsciiLower(byte value)
+private byte FormAsciiLower(byte value)
 {
     if (value >= 65 && value <= 90) { return value + 32; }
     return value;
 }
 
-bool FormAsciiEqual(string left, string right)
+private bool FormAsciiEqual(string left, string right)
 {
     if (left.Length != right.Length) { return false; }
     for (usize index = 0; index < left.Length; index += 1)
@@ -121,7 +121,7 @@ bool FormAsciiEqual(string left, string right)
     return true;
 }
 
-bool FormMediaTypeIs(string value, string expected)
+private bool FormMediaTypeIs(string value, string expected)
 {
     usize index = 0;
     while (index < value.Length &&
@@ -149,7 +149,7 @@ bool FormMediaTypeIs(string value, string expected)
     return index == value.Length || StringByteAt(value, index) == 59;
 }
 
-string TrimHttpWhitespace(string value)
+private string TrimHttpWhitespace(string value)
 {
     usize start = 0;
     usize end = value.Length;
@@ -168,7 +168,7 @@ string TrimHttpWhitespace(string value)
     return value.Substring(start, end - start);
 }
 
-string UnquoteHeaderValue(string value)
+private string UnquoteHeaderValue(string value)
 {
     string trimmed = TrimHttpWhitespace(value);
     if (trimmed.Length >= 2 && StringByteAt(trimmed, 0) == 34 &&
@@ -179,7 +179,7 @@ string UnquoteHeaderValue(string value)
     return trimmed;
 }
 
-Option<string> HeaderParameter(string value, string parameter)
+private Option<string> HeaderParameter(string value, string parameter)
 {
     usize cursor = 0;
     while (cursor < value.Length)
@@ -259,7 +259,7 @@ Option<string> HeaderParameter(string value, string parameter)
     return Option.None;
 }
 
-Option<string> PartHeader(string headers, string name)
+private Option<string> PartHeader(string headers, string name)
 {
     usize cursor = 0;
     while (cursor < headers.Length)
@@ -294,7 +294,7 @@ Option<string> PartHeader(string headers, string name)
     return Option.None;
 }
 
-FormCollection ParseUrlEncodedForm(string body)
+private FormCollection ParseUrlEncodedForm(string body)
 {
     List<FormField> fields = new();
     List<FormFile> files = new();
@@ -337,7 +337,7 @@ FormCollection ParseUrlEncodedForm(string body)
     return new() { fields = fields, files = files };
 }
 
-FormCollection ParseMultipartForm(
+private FormCollection ParseMultipartForm(
     string body,
     string contentType
 )

@@ -1,5 +1,5 @@
 int main() {
     byte value = 1;
-    print(value << 8);
+    Console.WriteLine(value << 8);
     return 0;
 }

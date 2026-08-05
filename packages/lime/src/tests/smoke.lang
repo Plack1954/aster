@@ -9,7 +9,7 @@ using Lime.Static;
 using Aster.Html;
 using System.Text;
 
-Response home(Request request)
+private Response home(Request request)
 {
     return Response.Ok(
         <section>
@@ -19,18 +19,18 @@ Response home(Request request)
     );
 }
 
-Response article(Request request)
+private Response article(Request request)
 {
     string slug = request.param("slug");
     return Response.Ok(<article>{slug}</article>);
 }
 
-Response create(Request request)
+private Response create(Request request)
 {
     return Response.Redirect("/");
 }
 
-Response search(Request request)
+private Response search(Request request)
 {
     switch (request.QueryValues())
     {
@@ -67,24 +67,24 @@ Response search(Request request)
     }
 }
 
-Response missing(Request request)
+private Response missing(Request request)
 {
     return Response.NotFound(
         <section><h1>Not found</h1></section>
     );
 }
 
-Response broken(Request request)
+private Response broken(Request request)
 {
     throw new Exception("route failed");
 }
 
-Response HandleRouteException(Exception error)
+private Response HandleRouteException(Exception error)
 {
     return Response.Plain(503, error.Message);
 }
 
-bool ExceptionBoundaryWorks()
+private bool ExceptionBoundaryWorks()
 {
     App app = AppNew(missing);
     app.OnException(HandleRouteException);
@@ -103,7 +103,7 @@ bool ExceptionBoundaryWorks()
     }
 }
 
-bool ContentLibrariesWork()
+private bool ContentLibrariesWork()
 {
     switch (TryLoadContentDirectory("packages/lime/test_content", ".md"))
     {
@@ -134,12 +134,12 @@ bool ContentLibrariesWork()
             }
         }
     }
-    if (HtmlRender(Markdown("Hello **Aster**.")) !=
+    if (Markdown("Hello **Aster**.").ToHtmlString() !=
         "<p>Hello <strong>Aster</strong>.</p>")
     {
         return false;
     }
-    return HtmlRender(Markdown("### Gratitude & **Reflection**")) ==
+    return Markdown("### Gratitude & **Reflection**").ToHtmlString() ==
         "<h3>Gratitude &amp; <strong>Reflection</strong></h3>";
 }
 
@@ -148,30 +148,30 @@ struct SiteState
     string title;
 }
 
-Response StateHome(SiteState state, Request request)
+private Response StateHome(SiteState state, Request request)
 {
     return Response.Ok(<h1>{state.title}</h1>);
 }
 
-Response StateMissing(SiteState state, Request request)
+private Response StateMissing(SiteState state, Request request)
 {
     return Response.NotFound(
         <p>{state.title}:missing</p>
     );
 }
 
-void RegisterDynamicRoute(ref StatefulApp<SiteState> app)
+private void RegisterDynamicRoute(ref StatefulApp<SiteState> app)
 {
     string path = "/dynamic";
     app.Get(path, StateHome);
 }
 
-Request request(string method, string path)
+private Request request(string method, string path)
 {
     return RequestNew(method, path, "example.test", "", "", "");
 }
 
-bool RejectsMalformedValues()
+private bool RejectsMalformedValues()
 {
     switch (UrlValuesParse("first=ready&broken=%GG"))
     {
@@ -184,7 +184,7 @@ bool RejectsMalformedValues()
     }
 }
 
-bool RejectsUnsafeResponseMetadata()
+private bool RejectsUnsafeResponseMetadata()
 {
     switch (ResponseHeader("Content-Length", "4"))
     {
@@ -205,7 +205,7 @@ bool RejectsUnsafeResponseMetadata()
     }
 }
 
-bool HttpPrimitivesWork()
+private bool HttpPrimitivesWork()
 {
     Request withHeaders = RequestNewWithHeaders(
         "GET", "/", "example.test", "", "", "",
@@ -276,14 +276,14 @@ bool HttpPrimitivesWork()
     }
 }
 
-Response Origin(Request request)
+private Response Origin(Request request)
 {
     return Response.Text(
         $"{request.Scheme()}|{request.Host()}|{request.RemoteIpAddress()}"
     );
 }
 
-bool ForwardedHeadersAreTrustedExplicitly()
+private bool ForwardedHeadersAreTrustedExplicitly()
 {
     App app = AppNew(missing);
     app.Get("/origin", Origin);
@@ -337,7 +337,7 @@ bool ForwardedHeadersAreTrustedExplicitly()
     }
 }
 
-bool StaticAssetsWork()
+private bool StaticAssetsWork()
 {
     switch (StaticFile("packages/lime/testdata", "/../README.md"))
     {
@@ -391,7 +391,7 @@ bool StaticAssetsWork()
     }
 }
 
-bool StaticCssWorks()
+private bool StaticCssWorks()
 {
     switch (StaticFile("packages/lime/testdata", "/site.css"))
     {
@@ -415,7 +415,7 @@ bool StaticCssWorks()
     }
 }
 
-bool StaticDirectoriesWork()
+private bool StaticDirectoriesWork()
 {
     App app = AppNew(missing);
     switch (app.TryStatic("/assets/", "packages/lime/testdata"))
@@ -440,7 +440,7 @@ bool StaticDirectoriesWork()
     }
 }
 
-bool StaticCachePolicyWorks()
+private bool StaticCachePolicyWorks()
 {
     StaticFileOptions options = StaticFileOptions();
     options.MaxAgeSeconds = 60;
@@ -468,7 +468,7 @@ bool StaticCachePolicyWorks()
     }
 }
 
-bool MultipartFormsWork()
+private bool MultipartFormsWork()
 {
     StringBuilder uploadBody = new();
     uploadBody.Append("--lime-boundary\r\n");
@@ -512,7 +512,7 @@ bool MultipartFormsWork()
     }
 }
 
-bool PrintHtmlResponse(Response response, int expectedStatus)
+private bool PrintHtmlResponse(Response response, int expectedStatus)
 {
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     if (status != expectedStatus)
@@ -522,7 +522,7 @@ bool PrintHtmlResponse(Response response, int expectedStatus)
     switch (body)
     {
         case ResponseBody.Html(page): {
-            print(HtmlRender(page));
+            Console.WriteLine(page.ToHtmlString());
             return true;
         }
         case ResponseBody.Text(text): { return false; }
@@ -533,7 +533,7 @@ bool PrintHtmlResponse(Response response, int expectedStatus)
     }
 }
 
-bool PrintRedirect(Response response)
+private bool PrintRedirect(Response response)
 {
     (int status, ResponseBody body, List<ResponseHeader> headers) = response;
     if (status != 303 || headers.Count != 1)
@@ -546,7 +546,7 @@ bool PrintRedirect(Response response)
         {
             return false;
         }
-        print(header.value);
+        Console.WriteLine(header.value);
     }
     switch (body)
     {
@@ -559,7 +559,7 @@ bool PrintRedirect(Response response)
     }
 }
 
-bool StatefulRoutes()
+private bool StatefulRoutes()
 {
     SiteState state = new()
     {

@@ -1,21 +1,21 @@
 using Aster.Html;
 using Aster.Net.Http;
 
-Html page(string path) {
+private Html page(string path) {
     <main>
-        <h1>"Aster versus Rust"</h1>
-        <p>$"Path: {path}"</p>
+        <h1>Aster versus Rust</h1>
+        <p>Path: {path}</p>
     </main>
 }
 
-int serve(NativeHandle server) {
+private int serve(NativeHandle server) {
     while (true) {
         Result<NativeHandle, string> accepted =
             HttpTryAccept(server);
         switch (accepted) {
             case Result.Ok(request): {
                 string path = HttpRequestPath(request);
-                String body = HtmlRender(page(path));
+                String body = page(path).ToHtmlString();
                 Result<bool, string> sent =
                     HttpTryRespondHtmlReuse(
                         request, 200, body
@@ -46,7 +46,7 @@ int main() {
             return serve(server);
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

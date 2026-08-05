@@ -2,7 +2,7 @@ struct Grow<T> {
     next: Grow<List<T>>,
 }
 
-void invalid(Grow<long> value) {
+private void invalid(Grow<long> value) {
 }
 
 int main() {

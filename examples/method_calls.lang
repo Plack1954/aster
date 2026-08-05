@@ -3,7 +3,7 @@ struct Point {
     long y;
 }
 
-long Point.sum(Point self, long offset) {
+private long Point.sum(Point self, long offset) {
     return self.x + self.y + offset;
 }
 
@@ -14,20 +14,20 @@ struct Counter {
 ~Counter() {
 }
 
-void Counter.Add(ref Counter self, long amount) {
+private void Counter.Add(ref Counter self, long amount) {
     self.value = self.value + amount;
 }
 
-long Counter.read(Counter self) {
+private long Counter.read(Counter self) {
     return self.value;
 }
 
-long Counter.consume(Counter self) {
+private long Counter.consume(Counter self) {
     self.value = self.value + 1;
     return self.value;
 }
 
-long IncrementTwice(long value) {
+private long IncrementTwice(long value) {
     value += 1;
     value += 1;
     return value;
@@ -35,24 +35,24 @@ long IncrementTwice(long value) {
 
 int main() {
     var point = new Point { x = 10, y = 20 };
-    print(point.sum(12));
+    Console.WriteLine(point.sum(12));
 
     List<long> values = new();
     values.Add(7);
     values.Add(9);
-    print(values.Count);
-    print(values[1]);
+    Console.WriteLine(values.Count);
+    Console.WriteLine(values[1]);
 
     StringBuilder builder = new();
     builder.Append("method");
     builder.Append(" calls");
     var output = (builder).ToString();
-    print(output);
+    Console.WriteLine(output);
 
     var counter = new Counter { value = 39 };
     counter.Add(2);
-    print(counter.read());
-    print((counter).consume());
-    print(IncrementTwice(40));
+    Console.WriteLine(counter.read());
+    Console.WriteLine((counter).consume());
+    Console.WriteLine(IncrementTwice(40));
     return 0;
 }

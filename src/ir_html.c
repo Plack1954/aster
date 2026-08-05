@@ -19,6 +19,25 @@ static bool push_element_context(IrBuilder *builder, uint32_t local,
 
 void ir_append_element_child(IrBuilder *builder, IrValueId child,
                                  const Type *type, LangSpan span) {
+    bool formatted = type != NULL &&
+        (type->kind == TYPE_BOOL || type->kind == TYPE_CHAR ||
+         (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) ||
+         type->kind == TYPE_F32 || type->kind == TYPE_F64);
+    if (formatted) {
+        if (builder->element_count == 0U) {
+            lang_diag(builder->diagnostics, span,
+                      "internal IR error: element child without a builder");
+            builder->failed = true;
+            return;
+        }
+        IrInstruction *append = ir_append_instruction(
+            builder, IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED,
+            IR_INVALID_ID, &child, 1U, span);
+        if (append != NULL)
+            append->index =
+                builder->elements[builder->element_count - 1U].local;
+        return;
+    }
     if (!ir_type_produces_element_child(type)) {
         IrInstruction *discard = ir_append_instruction(
             builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
@@ -185,7 +204,7 @@ static IrValueId lower_element_body(IrBuilder *builder,
             ir_lower_stmt(builder, item->as.statement);
         } else if (item->is_static_text) {
             IrInstruction *text = ir_append_instruction(
-                builder, IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT,
+                builder, IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT,
                 IR_INVALID_ID, NULL, 0U,
                 item->as.expression->span);
             if (text != NULL) {
@@ -432,6 +451,17 @@ static IrValueId lower_component_element(IrBuilder *builder,
     call->symbol = component->name;
     call->symbol_length = strlen(component->name);
     call->index = ir_find_function(builder->module, decl);
+    if (call->index < builder->module->function_count) {
+        const IrFunction *target =
+            &builder->module->functions[call->index];
+        call->argument_mode_count = count;
+        if (count != 0U)
+            call->argument_modes = ir_resize(
+                NULL, count, sizeof(*call->argument_modes));
+        for (size_t parameter = 0U; parameter < count; ++parameter)
+            call->argument_modes[parameter] =
+                target->parameters[parameter].mode;
+    }
     if (parent_local != IR_INVALID_ID &&
         call->index < builder->module->function_count &&
         builder->module->functions[
@@ -449,8 +479,33 @@ static IrValueId lower_component_element(IrBuilder *builder,
     return call_result;
 }
 
+static void record_static_css(IrBuilder *builder, const Expr *expr) {
+    const char *scope = expr->as.element.css_style_attribute;
+    if (scope == NULL || expr->as.element.body_count == 0U ||
+        expr->as.element.body[0].is_statement ||
+        expr->as.element.body[0].as.expression->kind != EXPR_STRING)
+        return;
+    IrFunction *function = builder->function;
+    for (size_t i = 0U; i < function->static_css_count; ++i)
+        if (strcmp(function->static_css[i].scope_attribute, scope) == 0)
+            return;
+    if (function->static_css_count == function->static_css_capacity) {
+        size_t capacity = function->static_css_capacity == 0U
+                        ? 4U : function->static_css_capacity * 2U;
+        function->static_css = ir_resize(
+            function->static_css, capacity,
+            sizeof(*function->static_css));
+        function->static_css_capacity = capacity;
+    }
+    const Expr *text = expr->as.element.body[0].as.expression;
+    function->static_css[function->static_css_count++] = (IrStaticCss){
+        scope, text->as.string.data, text->as.string.length, expr->span
+    };
+}
+
 IrValueId ir_lower_element_with_parent(
     IrBuilder *builder, const Expr *expr, uint32_t parent_local) {
+    record_static_css(builder, expr);
     const Decl *resolved = expr->resolved_decl;
     if (resolved != NULL && resolved->kind == DECL_FUNCTION)
         return lower_component_element(
@@ -572,12 +627,7 @@ IrValueId ir_lower_element_with_parent(
             set->symbol_length = strlen(expr->as.element.css_style_attribute);
         }
     }
-    const Function *source_function =
-        builder->function->declaration != NULL &&
-        builder->function->declaration->kind == DECL_FUNCTION
-        ? &builder->function->declaration->as.function : NULL;
-    if (source_function != NULL &&
-        source_function->css_scope_attribute != NULL &&
+    if (builder->function->css_scope_attribute != NULL &&
         strcmp(name, "#fragment") != 0 &&
         !ir_style_name(name)) {
         IrInstruction *constant = ir_append_instruction(
@@ -593,8 +643,8 @@ IrValueId ir_lower_element_with_parent(
             expr->as.element.open_span);
         if (set != NULL) {
             set->index = local;
-            set->symbol = source_function->css_scope_attribute;
-            set->symbol_length = strlen(source_function->css_scope_attribute);
+            set->symbol = builder->function->css_scope_attribute;
+            set->symbol_length = strlen(builder->function->css_scope_attribute);
         }
     }
     if (!push_element_context(builder, local, expr->span))
@@ -606,7 +656,7 @@ IrValueId ir_lower_element_with_parent(
             ir_lower_stmt(builder, item->as.statement);
         } else if (item->is_static_text) {
             IrInstruction *text = ir_append_instruction(
-                builder, IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT,
+                builder, IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT,
                 IR_INVALID_ID, NULL, 0U,
                 item->as.expression->span);
             if (text != NULL) {

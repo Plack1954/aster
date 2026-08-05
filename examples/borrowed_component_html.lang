@@ -5,7 +5,7 @@ struct Article {
     string title;
 }
 
-Html ArticleCard(Article article) {
+private Html ArticleCard(Article article) {
     return <article><h2>{article.title}</h2></article>;
 }
 
@@ -13,7 +13,7 @@ int main() {
     Article article = new() {
         title = "Aster & HTML",
     };
-    print(HtmlRender(<ArticleCard article=article />));
-    print(article.title);
+    Console.WriteLine(<ArticleCard article=article />.ToHtmlString());
+    Console.WriteLine(article.title);
     return 0;
 }

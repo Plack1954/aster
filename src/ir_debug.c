@@ -100,7 +100,9 @@ void lang_ir_dump_module(const IrModule *ir) {
     }
     for (size_t f = 0U; f < ir->function_count; ++f) {
         const IrFunction *function = &ir->functions[f];
-        printf("\n%sfunction %s%s%s -> t%" PRIu32,
+        printf("\n%s%sfunction %s%s%s -> t%" PRIu32,
+               function->is_entry ? "" :
+                   function->is_public ? "public " : "private ",
                function->is_async ? "async " : "",
                function->module_name != NULL
                    ? function->module_name : "",
@@ -187,13 +189,21 @@ void lang_ir_free_module(IrModule *ir) {
         IrFunction *function = &ir->functions[f];
         for (size_t b = 0U; b < function->block_count; ++b) {
             IrBlock *block = &function->blocks[b];
-            for (size_t i = 0U; i < block->instruction_count; ++i)
+            for (size_t i = 0U; i < block->instruction_count; ++i) {
                 free(block->instructions[i].labels);
+                free(block->instructions[i].argument_modes);
+                if (block->instructions[i].native_call != NULL) {
+                    free(block->instructions[i].native_call->parameter_types);
+                    free(block->instructions[i].native_call->parameter_modes);
+                    free(block->instructions[i].native_call);
+                }
+            }
             for (size_t i = 0U; i < block->instruction_count; ++i)
                 free(block->instructions[i].operands);
             free(block->instructions);
         }
-        free(function->parameter_types);
+        free(function->parameters);
+        free(function->static_css);
         free(function->locals);
         free(function->value_types);
         free(function->blocks);
@@ -201,13 +211,25 @@ void lang_ir_free_module(IrModule *ir) {
     for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].argument_types);
     for (size_t t = 0U; t < ir->type_count; ++t)
+        free(ir->types[t].parameter_modes);
+    for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].field_names);
     for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].field_types);
     for (size_t t = 0U; t < ir->type_count; ++t)
+        free(ir->types[t].field_spans);
+    for (size_t t = 0U; t < ir->type_count; ++t)
+        free(ir->types[t].field_offsets);
+    for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].variant_names);
     for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].variant_payload_types);
+    for (size_t t = 0U; t < ir->type_count; ++t)
+        free(ir->types[t].variant_spans);
+    for (size_t t = 0U; t < ir->type_count; ++t)
+        free(ir->types[t].variant_discriminants);
+    for (size_t t = 0U; t < ir->type_count; ++t)
+        free(ir->types[t].variant_payload_offsets);
     free(ir->functions);
     free(ir->types);
     memset(ir, 0, sizeof(*ir));

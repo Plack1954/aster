@@ -2,38 +2,38 @@ struct Box<T> {
     T value;
 }
 
-T identity<T>(T value) {
+private T identity<T>(T value) {
     return value;
 }
 
-T SumTo<T>(T value) {
+private T SumTo<T>(T value) {
     if (value == 0) {
         return value;
     }
     return value + SumTo(value - 1);
 }
 
-T unbox<T>(Box<T> value) {
+private T unbox<T>(Box<T> value) {
     return value.value;
 }
 
 int main() {
     long number = identity(42);
-    print(number);
+    Console.WriteLine(number);
 
     string text = "generic";
     string returned = identity(text);
-    print(returned);
+    Console.WriteLine(returned);
 
     string item = "boxed";
     Box<string> boxed = new() { value = item };
     Box<string> returnedBox = identity(boxed);
-    print("boxed");
+    Console.WriteLine("boxed");
 
     long total = SumTo(5);
-    print(total);
+    Console.WriteLine(total);
 
     Box<long> numberBox = new() { value = 8 };
-    print(unbox(numberBox));
+    Console.WriteLine(unbox(numberBox));
     return 0;
 }

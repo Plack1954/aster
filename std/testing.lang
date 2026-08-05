@@ -121,23 +121,23 @@ public TestSummary TestRecord(
     switch (result) {
         case Result.Ok(value): {
             output.passed = output.passed + 1;
-            print("[pass]");
-            print(name);
+            Console.WriteLine("[pass]");
+            Console.WriteLine(name);
         }
         case Result.Err(error): {
             output.failed = output.failed + 1;
-            print("[FAIL]");
-            print(name);
-            print(error);
+            Console.WriteLine("[FAIL]");
+            Console.WriteLine(name);
+            Console.WriteLine(error);
         }
     }
     return output;
 }
 
 public int TestFinish(TestSummary summary) {
-    print("test summary");
-    print(summary.passed);
-    print(summary.failed);
+    Console.WriteLine("test summary");
+    Console.WriteLine(summary.passed);
+    Console.WriteLine(summary.failed);
     if (summary.failed > 0) {
         return 1;
     }

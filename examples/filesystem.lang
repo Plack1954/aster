@@ -1,7 +1,7 @@
 using System.IO;
 using Aster.Interop;
 
-Result<int, string> exercise() {
+private Result<int, string> exercise() {
     string directory = try NativeProcessArg(0);
     string firstFile = try NativeProcessArg(1);
     string secondFile = try NativeProcessArg(2);
@@ -15,16 +15,16 @@ Result<int, string> exercise() {
     bool isFile = File.Exists(firstPath);
     bool isDirectory = Directory.Exists(directoryPath);
     string contents = File.ReadAllText(firstPath);
-    print(isFile);
-    print(isDirectory);
-    print(contents.Length);
+    Console.WriteLine(isFile);
+    Console.WriteLine(isDirectory);
+    Console.WriteLine(contents.Length);
 
     File.Copy(firstPath, secondPath);
     File.Delete(firstPath);
     bool oldExists = File.Exists(firstPath);
     bool newExists = File.Exists(secondPath);
-    print(oldExists);
-    print(newExists);
+    Console.WriteLine(oldExists);
+    Console.WriteLine(newExists);
 
     File.Move(secondPath, firstPath);
     File.Delete(firstPath);
@@ -39,7 +39,7 @@ int main() {
             return status;
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }

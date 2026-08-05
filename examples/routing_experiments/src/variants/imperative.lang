@@ -4,7 +4,7 @@ using Aster.Net.Http;
 using Aster.Web.HttpApp;
 using Site.View;
 
-Response dispatch(Request request) {
+private Response dispatch(Request request) {
     if (request.method == "GET" && request.path == "/") {
         return home(request);
     }

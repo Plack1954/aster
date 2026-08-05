@@ -1,12 +1,12 @@
 using Aster.Net.Http;
 using System.IO;
 
-MemoryStream RequestBytes(NativeHandle request)
+private MemoryStream RequestBytes(NativeHandle request)
 {
     return HttpRequestBodyStream(request);
 }
 
-Result<bool, string> RespondBytes(
+private Result<bool, string> RespondBytes(
     NativeHandle request,
     List<byte> body
 )

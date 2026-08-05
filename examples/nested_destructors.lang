@@ -3,7 +3,7 @@ struct Tracked {
 }
 
 ~Tracked() {
-    print(self.id);
+    Console.WriteLine(self.id);
 }
 
 struct Wrapper {

@@ -1,5 +1,5 @@
 namespace Checks.DifferentName;
 
-pub long value() {
+public long value() {
     return 1;
 }

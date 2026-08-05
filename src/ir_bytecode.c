@@ -26,6 +26,7 @@ typedef struct IrBytecodeBuilder {
     size_t patch_count;
     size_t patch_capacity;
     uint32_t *value_source_locals;
+    int32_t *value_source_fields;
     bool failed;
 } IrBytecodeBuilder;
 
@@ -536,15 +537,6 @@ no_html_constant_fusion:
                 --function->code_count;
                 return function->code_count;
             }
-            if (producer->op == OP_CALL &&
-                producer->a == -3 && producer->b == 1 &&
-                previous->a >= 0 && previous->a < 1024) {
-                producer->op = OP_HTML_RENDER_LOCAL;
-                producer->a = previous->a;
-                producer->b = 0;
-                --function->code_count;
-                return function->code_count;
-            }
             if ((producer->op == OP_HTML_BEGIN ||
                  producer->op == OP_HTML_FRAGMENT) &&
                 previous->a >= 0 && previous->a < 1024 &&
@@ -693,15 +685,22 @@ no_html_constant_fusion:
         }
     }
     if (function->code_count == function->code_capacity) {
+        size_t old_capacity = function->code_capacity;
         size_t next = function->code_capacity == 0U
                     ? 32U : function->code_capacity * 2U;
         function->code = ir_bc_resize(
             function->code, next, sizeof(*function->code));
         function->spans = ir_bc_resize(
             function->spans, next, sizeof(*function->spans));
+        function->call_sites = ir_bc_resize(
+            function->call_sites, next, sizeof(*function->call_sites));
+        memset(function->call_sites + old_capacity, 0,
+               (next - old_capacity) * sizeof(*function->call_sites));
         function->code_capacity = next;
     }
     size_t index = function->code_count++;
+    free(function->call_sites[index].argument_modes);
+    function->call_sites[index] = (BytecodeCallSite){0};
     function->code[index] = (Instruction){opcode, a, b};
     function->spans[index] = span;
     return index;
@@ -787,9 +786,9 @@ static void add_patch(IrBytecodeBuilder *builder, size_t instruction,
 
 static int32_t builtin_index(const char *name) {
     if (name == NULL) return INT32_MIN;
-    if (strcmp(name, "print") == 0) return -1;
-    if (strcmp(name, "eprint") == 0) return -2;
-    if (strcmp(name, "HtmlRender") == 0) return -3;
+    if (strcmp(name, "Console::WriteLine") == 0) return -1;
+    if (strcmp(name, "Console::Error::WriteLine") == 0) return -2;
+    if (strcmp(name, "Html::ToHtmlString") == 0) return -3;
     if (strcmp(name, "Buffer::allocate") == 0) return -4;
     if (strcmp(name, "Arena::new") == 0) return -5;
     if (strcmp(name, "ArenaAlloc") == 0) return -6;
@@ -875,6 +874,8 @@ static int32_t builtin_index(const char *name) {
     if (strcmp(name, "Queue::TryPeek") == 0) return -86;
     if (strcmp(name, "Stack::TryPop") == 0) return -87;
     if (strcmp(name, "Stack::TryPeek") == 0) return -88;
+    if (strcmp(name, "Console::Write") == 0) return -89;
+    if (strcmp(name, "Console::Error::Write") == 0) return -90;
     return INT32_MIN;
 }
 
@@ -1073,16 +1074,28 @@ static void lower_call(IrBytecodeBuilder *builder,
     if (instruction->opcode == IR_OP_CALL_INDIRECT) {
         for (size_t i = 1U; i < instruction->operand_count; ++i) {
             IrValueId value = instruction->operands[i];
-            uint32_t bit = i - 1U < 32U
-                ? UINT32_C(1) << (unsigned)(i - 1U) : 0U;
             uint32_t local = value < builder->source->value_count
                 ? builder->value_source_locals[value] : UINT32_MAX;
-            if ((instruction->auxiliary & bit) != 0U &&
-                local != UINT32_MAX)
-                (void)emit_instruction(
-                    builder, OP_REFERENCE_LOCAL, (int32_t)local,
-                    (int32_t)value_slot(builder, value),
-                    instruction->span);
+            if (i - 1U < instruction->argument_mode_count &&
+                parameter_mode_is_reference(
+                    instruction->argument_modes[i - 1U]) &&
+                local != UINT32_MAX) {
+                int32_t field = builder->value_source_fields[value];
+                if (field >= 0) {
+                    (void)emit_instruction(
+                        builder, OP_REFERENCE_FIELD_LOCAL,
+                        (int32_t)local, field, instruction->span);
+                    (void)emit_instruction(
+                        builder, OP_INVALIDATE_LOCAL,
+                        (int32_t)value_slot(builder, value), 0,
+                        instruction->span);
+                } else {
+                    (void)emit_instruction(
+                        builder, OP_REFERENCE_LOCAL, (int32_t)local,
+                        (int32_t)value_slot(builder, value),
+                        instruction->span);
+                }
+            }
             else
                 move_value(builder, value, instruction->span);
         }
@@ -1099,22 +1112,34 @@ static void lower_call(IrBytecodeBuilder *builder,
     }
     for (size_t i = 0U; i < instruction->operand_count; ++i) {
         IrValueId value = instruction->operands[i];
-        uint32_t bit = i < 32U
-            ? UINT32_C(1) << (unsigned)i : 0U;
         uint32_t local = value < builder->source->value_count
             ? builder->value_source_locals[value] : UINT32_MAX;
+        ParameterMode mode = i < instruction->argument_mode_count
+            ? instruction->argument_modes[i]
+            : PARAMETER_MODE_VALUE;
         bool reference_argument =
             instruction->opcode == IR_OP_CALL_DIRECT
-                ? (instruction->auxiliary & bit) != 0U
+                ? parameter_mode_is_reference(mode)
                 : instruction->opcode == IR_OP_CALL_NATIVE
-                ? (instruction->integer & bit) != 0U
+                ? parameter_mode_is_mutable(mode)
                 : false;
-        if (reference_argument &&
-            local != UINT32_MAX)
-            (void)emit_instruction(
-                builder, OP_REFERENCE_LOCAL, (int32_t)local,
-                (int32_t)value_slot(builder, value),
-                instruction->span);
+        if (reference_argument && local != UINT32_MAX) {
+            int32_t field = builder->value_source_fields[value];
+            if (field >= 0) {
+                (void)emit_instruction(
+                    builder, OP_REFERENCE_FIELD_LOCAL,
+                    (int32_t)local, field, instruction->span);
+                (void)emit_instruction(
+                    builder, OP_INVALIDATE_LOCAL,
+                    (int32_t)value_slot(builder, value), 0,
+                    instruction->span);
+            } else {
+                (void)emit_instruction(
+                    builder, OP_REFERENCE_LOCAL, (int32_t)local,
+                    (int32_t)value_slot(builder, value),
+                    instruction->span);
+            }
+        }
         else
             move_value(builder, value, instruction->span);
     }
@@ -1191,13 +1216,10 @@ static void lower_call(IrBytecodeBuilder *builder,
             builder->ir->types[builder->source->value_types[
                 instruction->operands[1]]].shape == IR_TYPE_CHAR)
             builtin = -89;
-        uint32_t borrowed = instruction->auxiliary == UINT32_MAX
-                          ? 0U : instruction->auxiliary;
+        size_t call_index;
         if (builtin != INT32_MIN) {
-            uint32_t encoded =
-                (uint32_t)count | (borrowed << 8U);
-            (void)emit_instruction(
-                builder, OP_CALL, builtin, (int32_t)encoded,
+            call_index = emit_instruction(
+                builder, OP_CALL, builtin, count,
                 instruction->span);
         } else {
             LangValue unit = {.tag = LANG_VALUE_UNIT};
@@ -1208,11 +1230,20 @@ static void lower_call(IrBytecodeBuilder *builder,
             if (!as_i32(builder, constant,
                         instruction->span, &name_index))
                 return;
-            uint32_t encoded =
-                (uint32_t)count | (borrowed << 8U);
-            (void)emit_instruction(
+            call_index = emit_instruction(
                 builder, OP_CALL_NATIVE, name_index,
-                (int32_t)encoded, instruction->span);
+                count, instruction->span);
+        }
+        BytecodeCallSite *call_site =
+            &builder->function->call_sites[call_index];
+        call_site->argument_count = instruction->argument_mode_count;
+        if (call_site->argument_count != 0U) {
+            call_site->argument_modes = ir_bc_resize(
+                NULL, call_site->argument_count,
+                sizeof(*call_site->argument_modes));
+            memcpy(call_site->argument_modes, instruction->argument_modes,
+                   call_site->argument_count *
+                       sizeof(*call_site->argument_modes));
         }
     }
     store_result(builder, instruction);
@@ -1227,11 +1258,10 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                         instruction->span, &index))
                 return;
             {
-            const Function *declaration =
-                &builder->source->declaration->as.function;
             bool borrowed =
-                instruction->index < declaration->param_count &&
-                declaration->params[instruction->index].borrowed;
+                instruction->index < builder->source->parameter_count &&
+                parameter_mode_is_reference(
+                    builder->source->parameters[instruction->index].mode);
             /*
              * VM parameter slots are already the function's first locals.
              * A borrowed parameter must remain an alias to that slot: copying
@@ -1339,10 +1369,9 @@ static void lower_instruction(IrBytecodeBuilder *builder,
             return;
         case IR_OP_LOCAL_STORE:
             {
-            const Function *declaration =
-                &builder->source->declaration->as.function;
-            if (instruction->index < declaration->param_count &&
-                declaration->params[instruction->index].borrowed &&
+            if (instruction->index < builder->source->parameter_count &&
+                parameter_mode_is_reference(
+                    builder->source->parameters[instruction->index].mode) &&
                 instruction->operand_count == 1U &&
                 instruction->operands[0] == instruction->index)
                 return;
@@ -1654,17 +1683,34 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 builder, instruction->operands[0], instruction->span);
             move_value(
                 builder, instruction->operands[1], instruction->span);
-            (void)emit_instruction(
+            {
+            size_t call_index = emit_instruction(
                 builder, OP_CALL,
                 instruction->opcode == IR_OP_RAW_ALLOC ? -6 : -9,
                 2, instruction->span);
+            BytecodeCallSite *call_site =
+                &builder->function->call_sites[call_index];
+            call_site->argument_count = 2U;
+            call_site->argument_modes = ir_bc_resize(
+                NULL, 2U, sizeof(*call_site->argument_modes));
+            call_site->argument_modes[0] = PARAMETER_MODE_VALUE;
+            call_site->argument_modes[1] = PARAMETER_MODE_VALUE;
+            }
             store_result(builder, instruction);
             return;
         case IR_OP_RAW_LOAD:
             move_value(
                 builder, instruction->operands[0], instruction->span);
-            (void)emit_instruction(
+            {
+            size_t call_index = emit_instruction(
                 builder, OP_CALL, -8, 1, instruction->span);
+            BytecodeCallSite *call_site =
+                &builder->function->call_sites[call_index];
+            call_site->argument_count = 1U;
+            call_site->argument_modes = ir_bc_resize(
+                NULL, 1U, sizeof(*call_site->argument_modes));
+            call_site->argument_modes[0] = PARAMETER_MODE_VALUE;
+            }
             store_result(builder, instruction);
             return;
         case IR_OP_ELEMENT_BEGIN:
@@ -1762,7 +1808,7 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 builder, OP_HTML_APPEND_LOCAL, index, 0,
                 instruction->span);
             return;
-        case IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT: {
+        case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT: {
             if (!as_i32(builder, instruction->index,
                         instruction->span, &index))
                 return;
@@ -1770,7 +1816,7 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 builder, instruction->symbol,
                 instruction->symbol_length, instruction->span);
             (void)emit_instruction(
-                builder, OP_HTML_APPEND_RAW_CONSTANT_LOCAL,
+                builder, OP_HTML_APPEND_CONSTANT_LOCAL,
                 index, text, instruction->span);
             return;
         }
@@ -1845,6 +1891,11 @@ static void lower_instruction(IrBytecodeBuilder *builder,
             int32_t field = add_symbol_constant(
                 builder, instruction->symbol,
                 instruction->symbol_length, instruction->span);
+            if (instruction->result != IR_INVALID_ID) {
+                builder->value_source_locals[instruction->result] =
+                    instruction->index;
+                builder->value_source_fields[instruction->result] = field;
+            }
             (void)emit_instruction(
                 builder, OP_GET_FIELD_BORROW, field, 0,
                 instruction->span);
@@ -1962,7 +2013,7 @@ static bool lower_function(IrBytecodeBuilder *builder) {
     BytecodeFunction *function = builder->function;
     size_t local_count = source->local_count + source->value_count;
     if (local_count > IR_BC_MAX_LOCALS) {
-        lang_diag(builder->diagnostics, source->declaration->span,
+        lang_diag(builder->diagnostics, source->span,
                   "IR bytecode function requires %zu locals; limit is %u",
                   local_count, (unsigned)IR_BC_MAX_LOCALS);
         return false;
@@ -1970,7 +2021,7 @@ static bool lower_function(IrBytecodeBuilder *builder) {
     for (size_t l = 0U; l < source->local_count; ++l)
         if (!runtime_type_supported(
                 &builder->ir->types[source->locals[l].type])) {
-            lang_diag(builder->diagnostics, source->declaration->span,
+            lang_diag(builder->diagnostics, source->span,
                       "IR bytecode backend does not yet support this local type");
             return false;
         }
@@ -1997,14 +2048,15 @@ static bool lower_function(IrBytecodeBuilder *builder) {
         NULL, local_count, sizeof(*function->local_destructors));
     for (size_t i = 0U; i < local_count; ++i)
         function->local_destructors[i] = -1;
-    for (size_t i = 0U; i < source->local_count; ++i)
-        if (source->locals[i].borrowed)
-            function->local_destructors[i] = -2;
     builder->value_base = source->local_count;
     builder->value_source_locals = ir_bc_resize(
         NULL, source->value_count, sizeof(*builder->value_source_locals));
     for (size_t i = 0U; i < source->value_count; ++i)
         builder->value_source_locals[i] = UINT32_MAX;
+    builder->value_source_fields = ir_bc_resize(
+        NULL, source->value_count, sizeof(*builder->value_source_fields));
+    for (size_t i = 0U; i < source->value_count; ++i)
+        builder->value_source_fields[i] = -1;
     builder->block_offsets = ir_bc_resize(
         NULL, source->block_count, sizeof(*builder->block_offsets));
     for (size_t b = 0U; b < source->block_count; ++b) {
@@ -2024,7 +2076,7 @@ static bool lower_function(IrBytecodeBuilder *builder) {
         if (patch.target >= source->block_count) return false;
         int32_t target;
         if (!as_i32(builder, builder->block_offsets[patch.target],
-                    source->declaration->span, &target))
+                    source->span, &target))
             return false;
         function->code[patch.instruction].a = target;
     }
@@ -2046,30 +2098,30 @@ static bool lower_function(IrBytecodeBuilder *builder) {
     bool fast_signed_scalar_types = true;
     for (size_t l = 0U;
          l < source->local_count && fast_signed_scalar_types; ++l) {
-        const Type *checked = builder->ir->types[
-            source->locals[l].type].checked_type;
-        TypeKind kind = checked != NULL
-            ? checked->kind : TYPE_ERROR;
+        const IrType *type = &builder->ir->types[source->locals[l].type];
         fast_signed_scalar_types =
-            (kind >= TYPE_I8 && kind <= TYPE_I64) ||
-            kind == TYPE_ISIZE || kind == TYPE_BOOL ||
-            kind == TYPE_UNIT || kind == TYPE_NEVER;
+            type->shape == IR_TYPE_SIGNED_INT ||
+            type->shape == IR_TYPE_BOOL || type->shape == IR_TYPE_UNIT ||
+            type->shape == IR_TYPE_NEVER;
     }
     for (size_t value = 0U;
          value < source->value_count && fast_signed_scalar_types;
          ++value) {
-        const Type *checked = builder->ir->types[
-            source->value_types[value]].checked_type;
-        TypeKind kind = checked != NULL
-            ? checked->kind : TYPE_ERROR;
+        const IrType *type =
+            &builder->ir->types[source->value_types[value]];
         fast_signed_scalar_types =
-            (kind >= TYPE_I8 && kind <= TYPE_I64) ||
-            kind == TYPE_ISIZE || kind == TYPE_BOOL ||
-            kind == TYPE_UNIT || kind == TYPE_NEVER;
+            type->shape == IR_TYPE_SIGNED_INT ||
+            type->shape == IR_TYPE_BOOL || type->shape == IR_TYPE_UNIT ||
+            type->shape == IR_TYPE_NEVER;
     }
+    bool no_reference_parameters = true;
+    for (size_t parameter = 0U; parameter < function->arity; ++parameter)
+        if (parameter_mode_is_reference(
+                function->parameter_modes[parameter]))
+            no_reference_parameters = false;
     function->fast_scalar_leaf =
         !function->is_async && !function->may_have_object_locals &&
-        function->borrowed_parameter_mask == 0U &&
+        no_reference_parameters &&
         function->local_count <= 64U &&
         fast_signed_scalar_types;
     for (size_t i = 0U;
@@ -2176,22 +2228,18 @@ bool lang_ir_compile_bytecode(const IrModule *ir,
         BytecodeFunction *output = &bytecode->functions[f];
         output->name = source->name;
         output->module_name = source->module_name;
-        output->declaration = source->declaration;
         output->arity = source->parameter_count;
-        if (source->declaration != NULL &&
-            source->declaration->kind == DECL_FUNCTION)
+        if (output->arity != 0U) {
+            output->parameter_modes = ir_bc_resize(
+                NULL, output->arity, sizeof(*output->parameter_modes));
             for (size_t parameter = 0U;
-                 parameter < source->declaration->as.function.param_count &&
-                 parameter < 32U; ++parameter)
-                if (source->declaration->as.function
-                        .params[parameter].borrowed)
-                    output->borrowed_parameter_mask |=
-                        UINT32_C(1) << (unsigned)parameter;
+                 parameter < output->arity; ++parameter)
+                output->parameter_modes[parameter] =
+                    source->parameters[parameter].mode;
+        }
         output->is_entry = source->is_entry;
         output->is_async = source->is_async;
-        output->is_public =
-            source->declaration != NULL &&
-            source->declaration->is_public;
+        output->is_public = source->is_public;
     }
     for (size_t f = 0U; f < ir->function_count; ++f) {
         IrBytecodeBuilder builder;
@@ -2205,6 +2253,7 @@ bool lang_ir_compile_bytecode(const IrModule *ir,
         free(builder.block_offsets);
         free(builder.patches);
         free(builder.value_source_locals);
+        free(builder.value_source_fields);
         if (!ok || builder.failed) {
             lang_bytecode_free(bytecode);
             return false;

@@ -4,13 +4,13 @@ using App.Math;
 using Aster.Testing;
 using System.Text;
 
-TestResult AdditionTest() {
+private TestResult AdditionTest() {
     bool checked =
         try AssertEqI64(add(20, 22), 42, "addition");
     return TestPass();
 }
 
-TestResult GreetingTest() {
+private TestResult GreetingTest() {
     string greetingText = greeting("Aster");
     string view = greetingText;
     bool exact = try AssertEqStr(
@@ -26,7 +26,7 @@ TestResult GreetingTest() {
     return TestPass();
 }
 
-TestResult PrimitiveTest() {
+private TestResult PrimitiveTest() {
     bool truth = try AssertTrue(true, "true assertion");
     bool falsehood =
         try AssertFalse(false, "false assertion");

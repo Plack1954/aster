@@ -8,6 +8,6 @@ int main() {
         }
         iteration = iteration + 1;
     }
-    print(value);
+    Console.WriteLine(value);
     return 0;
 }

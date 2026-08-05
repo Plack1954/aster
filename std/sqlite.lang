@@ -52,99 +52,99 @@ public enum TransactionMode
     Exclusive,
 }
 
-extern Result<NativeHandle, SqliteError> NativeSqliteOpen(string path);
-extern Result<unit, SqliteError> NativeSqliteExecute(
+private extern Result<NativeHandle, SqliteError> NativeSqliteOpen(string path);
+private extern Result<unit, SqliteError> NativeSqliteExecute(
     NativeHandle database,
     string sql
 );
-extern Result<NativeHandle, SqliteError> NativeSqlitePrepare(
+private extern Result<NativeHandle, SqliteError> NativeSqlitePrepare(
     NativeHandle database,
     string sql
 );
-extern Result<unit, SqliteError> NativeSqliteBindI64(
+private extern Result<unit, SqliteError> NativeSqliteBindI64(
     NativeHandle statement,
     long index,
     long value
 );
-extern Result<unit, SqliteError> NativeSqliteBindText(
+private extern Result<unit, SqliteError> NativeSqliteBindText(
     NativeHandle statement,
     long index,
     string value
 );
-extern Result<unit, SqliteError> NativeSqliteBindDouble(
+private extern Result<unit, SqliteError> NativeSqliteBindDouble(
     NativeHandle statement,
     long index,
     double value
 );
-extern Result<unit, SqliteError> NativeSqliteBindNull(
+private extern Result<unit, SqliteError> NativeSqliteBindNull(
     NativeHandle statement,
     long index
 );
-extern Result<unit, SqliteError> NativeSqliteBindBlob(
+private extern Result<unit, SqliteError> NativeSqliteBindBlob(
     NativeHandle statement,
     long index,
     Slice<byte> value
 );
-extern Result<long, SqliteError> NativeSqliteParameterIndex(
+private extern Result<long, SqliteError> NativeSqliteParameterIndex(
     NativeHandle statement,
     string name
 );
-extern Result<bool, SqliteError> NativeSqliteStep(NativeHandle statement);
-extern Result<long, SqliteError> NativeSqliteColumnI64(
+private extern Result<bool, SqliteError> NativeSqliteStep(NativeHandle statement);
+private extern Result<long, SqliteError> NativeSqliteColumnI64(
     NativeHandle statement,
     long index
 );
-extern Result<string, SqliteError> NativeSqliteColumnText(
+private extern Result<string, SqliteError> NativeSqliteColumnText(
     NativeHandle statement,
     long index
 );
-extern Result<double, SqliteError> NativeSqliteColumnDouble(
+private extern Result<double, SqliteError> NativeSqliteColumnDouble(
     NativeHandle statement,
     long index
 );
-extern Result<long, SqliteError> NativeSqliteColumnType(
+private extern Result<long, SqliteError> NativeSqliteColumnType(
     NativeHandle statement,
     long index
 );
-extern Result<long, SqliteError> NativeSqliteColumnCount(
+private extern Result<long, SqliteError> NativeSqliteColumnCount(
     NativeHandle statement
 );
-extern Result<string, SqliteError> NativeSqliteColumnName(
+private extern Result<string, SqliteError> NativeSqliteColumnName(
     NativeHandle statement,
     long index
 );
-extern Result<long, SqliteError> NativeSqliteColumnBlobLength(
+private extern Result<long, SqliteError> NativeSqliteColumnBlobLength(
     NativeHandle statement,
     long index
 );
-extern Result<unit, SqliteError> NativeSqliteColumnBlobCopy(
+private extern Result<unit, SqliteError> NativeSqliteColumnBlobCopy(
     NativeHandle statement,
     long index,
     Slice<byte> destination
 );
-extern Result<unit, SqliteError> NativeSqliteReset(NativeHandle statement);
-extern Result<unit, SqliteError> NativeSqliteClearBindings(
+private extern Result<unit, SqliteError> NativeSqliteReset(NativeHandle statement);
+private extern Result<unit, SqliteError> NativeSqliteClearBindings(
     NativeHandle statement
 );
-extern Result<long, SqliteError> NativeSqliteStatementChanges(
+private extern Result<long, SqliteError> NativeSqliteStatementChanges(
     NativeHandle statement
 );
-extern Result<long, SqliteError> NativeSqliteChanges(NativeHandle database);
-extern Result<long, SqliteError> NativeSqliteLastInsertId(
+private extern Result<long, SqliteError> NativeSqliteChanges(NativeHandle database);
+private extern Result<long, SqliteError> NativeSqliteLastInsertId(
     NativeHandle database
 );
-extern Result<NativeHandle, SqliteError> NativeSqliteBeginTransaction(
+private extern Result<NativeHandle, SqliteError> NativeSqliteBeginTransaction(
     NativeHandle database,
     long mode
 );
-extern Result<unit, SqliteError> NativeSqliteCommitTransaction(
+private extern Result<unit, SqliteError> NativeSqliteCommitTransaction(
     NativeHandle transaction
 );
-extern Result<unit, SqliteError> NativeSqliteRollbackTransaction(
+private extern Result<unit, SqliteError> NativeSqliteRollbackTransaction(
     NativeHandle transaction
 );
 
-T SqliteResultOrThrow<T>(Result<T, SqliteError> result)
+private T SqliteResultOrThrow<T>(Result<T, SqliteError> result)
 {
     switch (result)
     {
@@ -153,14 +153,14 @@ T SqliteResultOrThrow<T>(Result<T, SqliteError> result)
     }
 }
 
-long Statement.ParameterIndex(Statement self, string name)
+private long Statement.ParameterIndex(Statement self, string name)
 {
     return SqliteResultOrThrow(
         NativeSqliteParameterIndex(self.Handle, name)
     );
 }
 
-long Row.ColumnIndex(Row self, string name)
+private long Row.ColumnIndex(Row self, string name)
 {
     long count = self.Statement.ColumnCount();
     for (long index = 0; index < count; index += 1)
@@ -558,7 +558,7 @@ public void Transaction.Rollback(Transaction self)
     );
 }
 
-List<string> MigrationFiles(string directory)
+private List<string> MigrationFiles(string directory)
 {
     List<string> files = Directory.GetFiles(directory);
     List<string> selected = new();

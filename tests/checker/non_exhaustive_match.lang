@@ -6,7 +6,7 @@ union State {
 int main() {
     switch (State.Ready(1)) {
         case State.Ready(value): {
-            print(value);
+            Console.WriteLine(value);
         }
     }
     return 0;

@@ -1,4 +1,4 @@
-async int WrongAsync()
+private async int WrongAsync()
 {
     return 1;
 }

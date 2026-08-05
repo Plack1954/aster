@@ -69,6 +69,10 @@ static bool contains_pair_type_metadata(const IrModule *ir) {
             strcmp(type->field_names[0], "first") == 0 &&
             strcmp(type->field_names[1], "second") == 0 &&
             type->field_types != NULL &&
+            type->member_layout_known &&
+            type->field_offsets != NULL &&
+            type->field_offsets[0] == 0U &&
+            type->field_offsets[1] > type->field_offsets[0] &&
             type->field_types[0] < ir->type_count &&
             type->field_types[1] < ir->type_count &&
             ir->types[type->field_types[0]].shape ==
@@ -89,6 +93,8 @@ static bool contains_result_variant_metadata(const IrModule *ir) {
             strcmp(type->variant_names[0], "Ok") == 0 &&
             strcmp(type->variant_names[1], "Err") == 0 &&
             type->variant_payload_types != NULL &&
+            type->member_layout_known &&
+            type->variant_payload_offsets != NULL &&
             type->variant_payload_types[0] ==
                 type->element_type &&
             type->variant_payload_types[1] ==
@@ -129,6 +135,89 @@ static bool contains_destructor_metadata(const IrModule *ir) {
     return false;
 }
 
+static bool contains_complete_function_metadata(const IrModule *ir) {
+    for (size_t f = 0U; f < ir->function_count; ++f) {
+        const IrFunction *function = &ir->functions[f];
+        if (strcmp(function->name, "factorial") != 0)
+            continue;
+        return function->span.file != NULL &&
+               function->abi.calling_convention ==
+                   IR_CALLING_CONVENTION_ASTER &&
+               function->abi.may_propagate_exception &&
+               !function->abi.returns_async_task &&
+               function->parameter_count == 1U &&
+               function->parameters != NULL &&
+               strcmp(function->parameters[0].name, "n") == 0 &&
+               function->parameters[0].span.file != NULL &&
+               function->parameters[0].mode == PARAMETER_MODE_VALUE &&
+               function->parameters[0].type < ir->type_count;
+    }
+    return false;
+}
+
+static bool contains_complete_native_metadata(const IrModule *ir) {
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        for (size_t b = 0U; b < ir->functions[f].block_count; ++b)
+            for (size_t i = 0U;
+                 i < ir->functions[f].blocks[b].instruction_count; ++i) {
+                const IrInstruction *call =
+                    &ir->functions[f].blocks[b].instructions[i];
+                if (call->opcode != IR_OP_CALL_NATIVE ||
+                    call->native_call == NULL)
+                    continue;
+                const IrNativeCallDescriptor *native = call->native_call;
+                if (native->name != call->symbol ||
+                    native->return_type != call->result_type ||
+                    native->parameter_count != call->operand_count ||
+                    native->calling_convention !=
+                        IR_CALLING_CONVENTION_NATIVE)
+                    return false;
+                for (size_t p = 0U; p < native->parameter_count; ++p)
+                    if (native->parameter_types[p] >= ir->type_count ||
+                        native->parameter_modes[p] !=
+                            call->argument_modes[p])
+                        return false;
+                if (strcmp(native->name, "NativeHandleOpenId") == 0 &&
+                    !native->compiler_generated)
+                    return true;
+            }
+    return false;
+}
+
+static bool contains_complete_type_policy(const IrModule *ir) {
+    bool trivial = false;
+    bool shared = false;
+    bool noncopyable = false;
+    bool custom_drop = false;
+    for (size_t t = 0U; t < ir->type_count; ++t) {
+        const IrType *type = &ir->types[t];
+        trivial |= type->shape == IR_TYPE_SIGNED_INT &&
+                   type->copy_policy == IR_COPY_TRIVIAL &&
+                   type->drop_policy == IR_DROP_TRIVIAL;
+        shared |= strcmp(type->name, "string") == 0 &&
+                  type->copy_policy == IR_COPY_SHARED_RETAIN;
+        noncopyable |= strcmp(type->name, "Arena") == 0 &&
+                       type->copy_policy == IR_COPY_NONCOPYABLE;
+        custom_drop |= strcmp(type->name, "Marker") == 0 &&
+                       type->copy_policy == IR_COPY_DEEP &&
+                       type->drop_policy == IR_DROP_CUSTOM &&
+                       type->destructor_function < ir->function_count;
+    }
+    return trivial && shared && noncopyable && custom_drop;
+}
+
+static bool contains_static_css_metadata(const IrModule *ir) {
+    for (size_t f = 0U; f < ir->function_count; ++f)
+        for (size_t css = 0U;
+             css < ir->functions[f].static_css_count; ++css) {
+            const IrStaticCss *entry = &ir->functions[f].static_css[css];
+            if (entry->scope_attribute != NULL && entry->text != NULL &&
+                entry->text_length != 0U && entry->span.file != NULL)
+                return true;
+        }
+    return false;
+}
+
 int main(void) {
     LangSource source;
     if (!lang_source_load("tests/ir_test.lang", &source))
@@ -148,6 +237,19 @@ int main(void) {
         ir = (IrModule){0};
     bool initially_valid =
         ok && lang_ir_verify_module(&ir, &diagnostics);
+    bool closed_backend_input = initially_valid;
+    for (size_t f = 0U; f < ir.function_count; ++f)
+        closed_backend_input &= ir.functions[f].declaration == NULL;
+    for (size_t t = 0U; t < ir.type_count; ++t)
+        closed_backend_input &= ir.types[t].checked_type == NULL;
+    BytecodeModule bytecode = {0};
+    bool bytecode_from_closed_ir = closed_backend_input &&
+        lang_ir_compile_bytecode(&ir, &diagnostics, &bytecode);
+    lang_bytecode_free(&bytecode);
+    FILE *generated = tmpfile();
+    bool c_from_closed_ir = generated != NULL && closed_backend_input &&
+        lang_c_emit_module(&ir, &diagnostics, generated);
+    if (generated != NULL) fclose(generated);
     bool has_typed_math = contains_opcode(&ir, IR_OP_MUL_CHECKED);
     bool has_drop = contains_opcode(&ir, IR_OP_LOCAL_DROP);
     bool has_aggregate = contains_opcode(&ir, IR_OP_AGGREGATE_MAKE);
@@ -181,6 +283,11 @@ int main(void) {
         contains_plain_enum_metadata(&ir);
     bool has_destructor_metadata =
         contains_destructor_metadata(&ir);
+    bool has_function_metadata =
+        contains_complete_function_metadata(&ir);
+    bool has_native_metadata = contains_complete_native_metadata(&ir);
+    bool has_type_policy = contains_complete_type_policy(&ir);
+    bool has_static_css = contains_static_css_metadata(&ir);
     bool has_control_flow = false;
     bool rejected_malformed = false;
     bool rejected_bad_struct_metadata = false;
@@ -189,6 +296,12 @@ int main(void) {
     bool rejected_bad_variant_payload_type = false;
     bool rejected_bad_enum_constructor = false;
     bool rejected_bad_destructor = false;
+    bool rejected_bad_parameter_metadata = false;
+    bool rejected_bad_native_metadata = false;
+    bool rejected_bad_copy_policy = false;
+    bool rejected_bad_async_metadata = false;
+    bool rejected_frontend_link = false;
+    bool rejected_bad_static_css = false;
     bool rejected_unknown_opcode = false;
     bool rejected_bad_operand_signature = false;
     bool rejected_bad_result_type = false;
@@ -204,6 +317,61 @@ int main(void) {
             if (ir.types[t].shape == IR_TYPE_SIGNED_INT) {
                 integer_type = (IrTypeId)t;
                 break;
+            }
+        for (size_t f = 0U; f < ir.function_count; ++f)
+            if (ir.functions[f].parameter_count != 0U) {
+                const char *saved = ir.functions[f].parameters[0].name;
+                ir.functions[f].parameters[0].name = NULL;
+                rejected_bad_parameter_metadata =
+                    !lang_ir_verify_module(&ir, &diagnostics);
+                ir.functions[f].parameters[0].name = saved;
+                break;
+            }
+        for (size_t f = 0U;
+             f < ir.function_count && !rejected_bad_native_metadata; ++f)
+            for (size_t b = 0U;
+                 b < ir.functions[f].block_count &&
+                 !rejected_bad_native_metadata; ++b)
+                for (size_t i = 0U;
+                     i < ir.functions[f].blocks[b].instruction_count; ++i) {
+                    IrInstruction *instruction =
+                        &ir.functions[f].blocks[b].instructions[i];
+                    if (instruction->opcode != IR_OP_CALL_NATIVE ||
+                        instruction->native_call == NULL)
+                        continue;
+                    IrTypeId saved = instruction->native_call->return_type;
+                    instruction->native_call->return_type = IR_INVALID_ID;
+                    rejected_bad_native_metadata =
+                        !lang_ir_verify_module(&ir, &diagnostics);
+                    instruction->native_call->return_type = saved;
+                    break;
+                }
+        for (size_t t = 0U; t < ir.type_count; ++t)
+            if (ir.types[t].requires_cleanup || ir.types[t].managed) {
+                IrCopyPolicy saved = ir.types[t].copy_policy;
+                ir.types[t].copy_policy = IR_COPY_TRIVIAL;
+                rejected_bad_copy_policy =
+                    !lang_ir_verify_module(&ir, &diagnostics);
+                ir.types[t].copy_policy = saved;
+                break;
+            }
+        ir.functions[0].async_suspension_count++;
+        rejected_bad_async_metadata =
+            !lang_ir_verify_module(&ir, &diagnostics);
+        ir.functions[0].async_suspension_count--;
+        ir.functions[0].declaration = module.decls[0];
+        rejected_frontend_link =
+            !lang_ir_verify_module(&ir, &diagnostics);
+        ir.functions[0].declaration = NULL;
+        for (size_t f = 0U;
+             f < ir.function_count && !rejected_bad_static_css; ++f)
+            if (ir.functions[f].static_css_count != 0U) {
+                const char *saved =
+                    ir.functions[f].static_css[0].scope_attribute;
+                ir.functions[f].static_css[0].scope_attribute = NULL;
+                rejected_bad_static_css =
+                    !lang_ir_verify_module(&ir, &diagnostics);
+                ir.functions[f].static_css[0].scope_attribute = saved;
             }
         for (size_t f = 0U; f < ir.function_count; ++f)
             for (size_t b = 0U; b < ir.functions[f].block_count; ++b)
@@ -399,7 +567,9 @@ int main(void) {
     lang_diagnostics_free(&diagnostics);
     lang_source_free(&source);
     bool passed =
-           initially_valid && has_typed_math && has_drop &&
+           initially_valid && closed_backend_input &&
+           bytecode_from_closed_ir && c_from_closed_ir &&
+           has_typed_math && has_drop &&
            has_aggregate && has_field_get && has_field_set &&
            has_index_get && has_index_set && has_enum_test &&
            has_payload_move && has_iterator && has_raw_pointer &&
@@ -408,12 +578,19 @@ int main(void) {
            preserves_field_order && has_field_metadata &&
            has_variant_metadata && has_plain_enum_metadata &&
            has_destructor_metadata &&
+           has_function_metadata && has_native_metadata &&
+           has_type_policy && has_static_css &&
            rejected_bad_struct_metadata &&
            rejected_bad_struct_field_type &&
            rejected_bad_variant_metadata &&
            rejected_bad_variant_payload_type &&
            rejected_bad_enum_constructor &&
            rejected_bad_destructor &&
+           rejected_bad_parameter_metadata &&
+           rejected_bad_native_metadata &&
+           rejected_bad_copy_policy &&
+           rejected_bad_async_metadata &&
+           rejected_frontend_link && rejected_bad_static_css &&
            rejected_unknown_opcode &&
            rejected_bad_operand_signature &&
            rejected_bad_result_type &&

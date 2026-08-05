@@ -1,4 +1,4 @@
 int main() {
-    print("unterminated);
+    Console.WriteLine("unterminated);
     return 0;
 }

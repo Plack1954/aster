@@ -1,7 +1,7 @@
 using Aster.Html;
 
-Html Card(string accent) {
-    return <article --accent=$"{accent}">"Aster"</article>;
+private Html Card(string accent) {
+    return <article --accent=$"{accent}">Aster</article>;
 }
 
 int main() {

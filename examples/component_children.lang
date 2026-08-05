@@ -1,16 +1,16 @@
 using Aster.Html;
 
-Html Panel(string title, Html children) {
+private Html Panel(string title, Html children) {
     return <section class="panel">
         <h2>{title}</h2>
         {children}
     </section>;
 }
 
-Html page(bool showExtra, string names[2]) {
+private Html page(bool showExtra, string names[2]) {
     return <Panel title="People">
         if (showExtra) {
-            <strong>"Featured"</strong>
+            <strong>Featured</strong>
         }
         <ul>
             foreach (string name in names) {
@@ -23,6 +23,6 @@ Html page(bool showExtra, string names[2]) {
 int main() {
     string names[2] = ["Ada", "Lin"];
     Html output = page(true, names);
-    print(HtmlRender(output));
+    Console.WriteLine(output.ToHtmlString());
     return 0;
 }

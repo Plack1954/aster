@@ -16,26 +16,26 @@ int main()
     foreach (Article article in articles)
     {
         article.Views = 99;
-        print(article.Views);
+        Console.WriteLine(article.Views);
     }
 
     foreach (Article article in articles)
     {
-        print(article.Views);
+        Console.WriteLine(article.Views);
     }
 
     Article fixedArticles[1] = [new() { Views = 2 }];
     foreach (Article article in fixedArticles)
     {
         article.Views = 88;
-        print(article.Views);
+        Console.WriteLine(article.Views);
     }
-    print(fixedArticles[0].Views);
+    Console.WriteLine(fixedArticles[0].Views);
 
     ArticleSet set = new() { Items = articles };
     foreach (Article article in set.Items)
     {
-        print(article.Views);
+        Console.WriteLine(article.Views);
     }
     return 0;
 }

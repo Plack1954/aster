@@ -10,7 +10,7 @@ union Status {
 
 int main() {
     Point point = new() { x = 10, y = 20 };
-    print(point.x);
+    Console.WriteLine(point.x);
     Status status = Status.Ready(42);
     return 0;
 }

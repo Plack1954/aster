@@ -1,4 +1,4 @@
-bool Contains(List<string> values, string wanted)
+private bool Contains(List<string> values, string wanted)
 {
     foreach (string value in values)
     {
@@ -7,10 +7,10 @@ bool Contains(List<string> values, string wanted)
     return false;
 }
 
-void AppendAfterRead(ref List<string> values)
+private void AppendAfterRead(ref List<string> values)
 {
     int found = if (Contains(values, "missing")) { 1 } else { 0 };
-    print(found);
+    Console.WriteLine(found);
     values.Add("added");
 }
 
@@ -18,6 +18,6 @@ int main()
 {
     List<string> values = new();
     AppendAfterRead(values);
-    print(values.Count);
+    Console.WriteLine(values.Count);
     return 0;
 }

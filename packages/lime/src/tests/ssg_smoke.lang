@@ -9,7 +9,7 @@ using Aster.Html;
 using Aster.Interop;
 using System.Text;
 
-Response home(Request request)
+private Response home(Request request)
 {
     return Response.Ok(
         <html>
@@ -19,35 +19,35 @@ Response home(Request request)
     );
 }
 
-Response about(Request request)
+private Response about(Request request)
 {
     return Response.Ok(<main><h1>About</h1></main>);
 }
 
-Response ArticlePage(Request request)
+private Response ArticlePage(Request request)
 {
     string slug = request.param("slug");
     return Response.Ok(<article><h1>{slug}</h1></article>);
 }
 
-Response robots(Request request)
+private Response robots(Request request)
 {
     return Response.Text("User-agent: *\nAllow: /\n");
 }
 
-Response missing(Request request)
+private Response missing(Request request)
 {
     return Response.NotFound(<h1>Not found</h1>);
 }
 
-List<string> ArticlePages()
+private List<string> ArticlePages()
 {
     List<string> paths = new();
     paths.Add("/articles/aster/");
     return paths;
 }
 
-Result<int, string> build()
+private Result<int, string> build()
 {
     string outputRoot = try NativeProcessArg(0);
     List<ContentDocument> documents = LoadContentDirectory(
@@ -78,9 +78,9 @@ Result<int, string> build()
             "content discovery must filter and sort files"
         );
     }
-    string markdown = HtmlRender(Markdown(
+    string markdown = Markdown(
         "Hello **Aster**.\n\n1. One\n2. Two"
-    ));
+    ).ToHtmlString();
     if (markdown !=
         "<p>Hello <strong>Aster</strong>.</p><ol><li>One</li><li>Two</li></ol>")
     {
@@ -107,7 +107,7 @@ int main()
     {
         case Result.Ok(status): { return status; }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }

@@ -1,22 +1,22 @@
 using System.Collections.Generic;
 using System.Text;
 
-bool IsEven(int value)
+private bool IsEven(int value)
 {
     return value % 2 == 0;
 }
 
-bool IsPositive(int value)
+private bool IsPositive(int value)
 {
     return value > 0;
 }
 
-void RequirePositive(int value)
+private void RequirePositive(int value)
 {
     int observed = value;
 }
 
-bool StartsWithA(string value)
+private bool StartsWithA(string value)
 {
     return value.StartsWith("A");
 }

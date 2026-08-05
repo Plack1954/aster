@@ -18,16 +18,16 @@ public struct Convert {}
 public struct Encoding { byte marker; }
 public struct UTF8Encoding { byte marker; }
 
-extern char UnicodeToUpper(char value);
-extern char UnicodeToLower(char value);
-extern ulong UnicodeSpecialUpper(char value);
-extern ulong UnicodeSpecialLower(char value);
-extern bool UnicodeIsLetter(char value);
-extern bool UnicodeIsDigit(char value);
-extern bool UnicodeIsUpper(char value);
-extern bool UnicodeIsLower(char value);
-extern bool UnicodeIsWhiteSpace(char value);
-extern ulong UnicodeDecodeScalar(string value, usize index);
+private extern char UnicodeToUpper(char value);
+private extern char UnicodeToLower(char value);
+private extern ulong UnicodeSpecialUpper(char value);
+private extern ulong UnicodeSpecialLower(char value);
+private extern bool UnicodeIsLetter(char value);
+private extern bool UnicodeIsDigit(char value);
+private extern bool UnicodeIsUpper(char value);
+private extern bool UnicodeIsLower(char value);
+private extern bool UnicodeIsWhiteSpace(char value);
+private extern ulong UnicodeDecodeScalar(string value, usize index);
 
 // Aster strings are immutable, reference-counted UTF-8 values. The public
 // member names follow System.String, while positions and Length count bytes.
@@ -54,7 +54,7 @@ public extern string F32ToString(float value);
 
 public extern string F64ToString(double value);
 
-void AppendUnicodeScalar(ref StringBuilder builder, char value)
+private void AppendUnicodeScalar(ref StringBuilder builder, char value)
 {
     uint scalar = (uint)value;
     if (scalar <= 127)
@@ -81,7 +81,7 @@ void AppendUnicodeScalar(ref StringBuilder builder, char value)
     }
 }
 
-void AppendSpecialCasing(ref StringBuilder builder, ulong packed)
+private void AppendSpecialCasing(ref StringBuilder builder, ulong packed)
 {
     while (packed != 0)
     {
@@ -90,7 +90,7 @@ void AppendSpecialCasing(ref StringBuilder builder, ulong packed)
     }
 }
 
-char DecodeUnicodeScalar(string value, usize index, out usize length)
+private char DecodeUnicodeScalar(string value, usize index, out usize length)
 {
     ulong decoded = UnicodeDecodeScalar(value, index);
     if (decoded == ~(ulong)0)
@@ -216,12 +216,12 @@ public string usize.ToString(usize self) { return U64ToString((ulong)self); }
 public string float.ToString(float self) { return F32ToString(self); }
 public string double.ToString(double self) { return F64ToString(self); }
 
-void BooleanFormatError()
+private void BooleanFormatError()
 {
     throw new FormatException("String was not recognized as a valid Boolean.");
 }
 
-bool ParseBoolean(string value)
+private bool ParseBoolean(string value)
 {
     string text = value.Trim();
     if (text.Length == 4 &&
@@ -239,92 +239,92 @@ bool ParseBoolean(string value)
     return false;
 }
 
-sbyte ConvertSignedToSByte(long value)
+private sbyte ConvertSignedToSByte(long value)
 {
     if (value < -128 || value > 127) { NumericOverflowError(); }
     return (sbyte)value;
 }
 
-sbyte ConvertUnsignedToSByte(ulong value)
+private sbyte ConvertUnsignedToSByte(ulong value)
 {
     if (value > 127) { NumericOverflowError(); }
     return (sbyte)value;
 }
 
-short ConvertSignedToInt16(long value)
+private short ConvertSignedToInt16(long value)
 {
     if (value < -32768 || value > 32767) { NumericOverflowError(); }
     return (short)value;
 }
 
-short ConvertUnsignedToInt16(ulong value)
+private short ConvertUnsignedToInt16(ulong value)
 {
     if (value > 32767) { NumericOverflowError(); }
     return (short)value;
 }
 
-int ConvertSignedToInt32(long value)
+private int ConvertSignedToInt32(long value)
 {
     if (value < -2147483647 - 1 || value > 2147483647)
         { NumericOverflowError(); }
     return (int)value;
 }
 
-int ConvertUnsignedToInt32(ulong value)
+private int ConvertUnsignedToInt32(ulong value)
 {
     if (value > 2147483647) { NumericOverflowError(); }
     return (int)value;
 }
 
-long ConvertUnsignedToInt64(ulong value)
+private long ConvertUnsignedToInt64(ulong value)
 {
     if (value > 9223372036854775807) { NumericOverflowError(); }
     return (long)value;
 }
 
-byte ConvertSignedToByte(long value)
+private byte ConvertSignedToByte(long value)
 {
     if (value < 0 || value > 255) { NumericOverflowError(); }
     return (byte)value;
 }
 
-byte ConvertUnsignedToByte(ulong value)
+private byte ConvertUnsignedToByte(ulong value)
 {
     if (value > 255) { NumericOverflowError(); }
     return (byte)value;
 }
 
-ushort ConvertSignedToUInt16(long value)
+private ushort ConvertSignedToUInt16(long value)
 {
     if (value < 0 || value > 65535) { NumericOverflowError(); }
     return (ushort)value;
 }
 
-ushort ConvertUnsignedToUInt16(ulong value)
+private ushort ConvertUnsignedToUInt16(ulong value)
 {
     if (value > 65535) { NumericOverflowError(); }
     return (ushort)value;
 }
 
-uint ConvertSignedToUInt32(long value)
+private uint ConvertSignedToUInt32(long value)
 {
     if (value < 0 || value > 4294967295) { NumericOverflowError(); }
     return (uint)value;
 }
 
-uint ConvertUnsignedToUInt32(ulong value)
+private uint ConvertUnsignedToUInt32(ulong value)
 {
     if (value > 4294967295) { NumericOverflowError(); }
     return (uint)value;
 }
 
-ulong ConvertSignedToUInt64(long value)
+private ulong ConvertSignedToUInt64(long value)
 {
     if (value < 0) { NumericOverflowError(); }
     return (ulong)value;
 }
 
-long RoundConvertToInt64(double value)
+private long RoundConvertToInt64(double value)
 {
     if (value != value ||
         value < -9223372036854775808.0 ||
@@ -347,7 +347,7 @@ long RoundConvertToInt64(double value)
     return whole;
 }
 
-ulong RoundConvertToUInt64(double value)
+private ulong RoundConvertToUInt64(double value)
 {
     if (value != value || value <= -1.0 ||
         value >= 18446744073709551616.0)
@@ -520,7 +520,7 @@ public string Convert.ToString(float value) { return value.ToString(); }
 public string Convert.ToString(double value) { return value.ToString(); }
 public string Convert.ToString(string value) { return value; }
 
-byte Base64Digit(byte value)
+private byte Base64Digit(byte value)
 {
     if (value < 26) { return 65 + value; }
     if (value < 52) { return 97 + value - 26; }
@@ -528,7 +528,7 @@ byte Base64Digit(byte value)
     return if (value == 62) { 43 } else { 47 };
 }
 
-int Base64Value(byte value)
+private int Base64Value(byte value)
 {
     if (value >= 65 && value <= 90) { return (int)(value - 65); }
     if (value >= 97 && value <= 122) { return (int)(value - 97 + 26); }
@@ -538,12 +538,12 @@ int Base64Value(byte value)
     return -1;
 }
 
-bool IsBase64WhiteSpace(byte value)
+private bool IsBase64WhiteSpace(byte value)
 {
     return value == 32 || value == 9 || value == 13 || value == 10;
 }
 
-void Base64FormatError()
+private void Base64FormatError()
 {
     throw new FormatException("The input is not a valid Base-64 string.");
 }
@@ -580,7 +580,7 @@ public string Convert.ToBase64String(
     );
 }
 
-void AppendBase64Character(
+private void AppendBase64Character(
     ref StringBuilder builder,
     byte value,
     ref int lineLength,
@@ -716,12 +716,12 @@ public List<byte> Convert.FromBase64String(string value)
     return bytes;
 }
 
-bool IsAsciiWhiteSpace(byte value)
+private bool IsAsciiWhiteSpace(byte value)
 {
     return value == 32 || (value >= 9 && value <= 13);
 }
 
-usize WhiteSpaceLengthAt(string value, usize index)
+private usize WhiteSpaceLengthAt(string value, usize index)
 {
     byte first = value[index];
     if (IsAsciiWhiteSpace(first)) { return 1; }
@@ -742,7 +742,7 @@ usize WhiteSpaceLengthAt(string value, usize index)
     return 0;
 }
 
-usize WhiteSpaceLengthBefore(string value, usize end)
+private usize WhiteSpaceLengthBefore(string value, usize end)
 {
     byte last = value[end - 1];
     if (IsAsciiWhiteSpace(last)) { return 1; }
@@ -760,17 +760,17 @@ usize WhiteSpaceLengthBefore(string value, usize end)
     return 0;
 }
 
-void NumericFormatError()
+private void NumericFormatError()
 {
     throw new FormatException("Input string was not in a correct format.");
 }
 
-void NumericOverflowError()
+private void NumericOverflowError()
 {
     throw new OverflowException("Value was either too large or too small.");
 }
 
-long ParseSignedDecimal(
+private long ParseSignedDecimal(
     string text,
     ulong positiveLimit,
     ulong negativeLimit
@@ -815,7 +815,7 @@ long ParseSignedDecimal(
     return -(long)value;
 }
 
-ulong ParseUnsignedDecimal(string text, ulong limit)
+private ulong ParseUnsignedDecimal(string text, ulong limit)
 {
     usize start = 0;
     usize end = text.Length;
@@ -850,7 +850,7 @@ ulong ParseUnsignedDecimal(string text, ulong limit)
     return value;
 }
 
-double ParseInvariantFloating(string text)
+private double ParseInvariantFloating(string text)
 {
     usize start = 0;
     usize end = text.Length;
@@ -1326,7 +1326,7 @@ public string string.Trim(string self)
     return self.Substring(start, end - start);
 }
 
-bool HasSplitOption(
+private bool HasSplitOption(
     StringSplitOptions options,
     StringSplitOptions option
 )
@@ -1334,7 +1334,7 @@ bool HasSplitOption(
     return (options & option) != StringSplitOptions.None;
 }
 
-void AddSplitEntry(
+private void AddSplitEntry(
     ref List<string> parts,
     string value,
     StringSplitOptions options

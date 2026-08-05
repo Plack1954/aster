@@ -4,7 +4,7 @@ struct Record {
     name: string,
 }
 
-string ViewName(string value) {
+private string ViewName(string value) {
     return value;
 }
 
@@ -12,6 +12,6 @@ int main() {
     Record record = Record {
         name: "borrowed field",
     };
-    print(ViewName(record.name));
+    Console.WriteLine(ViewName(record.name));
     return 0;
 }

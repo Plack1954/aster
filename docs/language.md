@@ -1,5 +1,14 @@
 # Language reference
 
+`ref T` and `out T` parameters are direct aliases of caller storage. Reads and
+writes therefore go through the caller's place immediately, including when two
+arguments name the same local or field. An `out` parameter starts definitely
+unassigned: it cannot be read until assigned, and every normally returning
+control-flow path must assign it. Assignment through an `out` alias is visible
+immediately, so a value assigned before a propagated exception remains visible
+to caller-side exception handling; if no assignment occurred, the caller's
+previous value is unchanged.
+
 Aster source uses UTF-8 bytes. Identifiers are currently ASCII. `//` comments,
 nested `/* ... */` comments, strings, integers, and decimal floats are lexed
 with byte-accurate spans. Integers may be decimal or use `0x`, `0o`, and `0b`
@@ -27,7 +36,7 @@ is null. Flow-sensitive C#-style narrowing is not implemented yet.
 Functions have statically typed parameters and results:
 
 ```text
-long add(long a, long b) {
+private long add(long a, long b) {
     return a + b;
 }
 ```
@@ -42,8 +51,8 @@ signature and may be written at a direct call site when needed to select the
 mutable-reference overload:
 
 ```aster
-int Change(Counter value) { return value.Value + 1; }
-int Change(ref Counter value) { value.Value += 2; return value.Value; }
+private int Change(Counter value) { return value.Value + 1; }
+private int Change(ref Counter value) { value.Value += 2; return value.Value; }
 
 Change(counter);
 Change(ref counter);
@@ -53,11 +62,30 @@ The compiler reports every candidate when a call remains ambiguous. An
 overloaded function used as a value is selected from its target delegate type.
 
 Functions use C-style declarations: there is no `fn` or `function` keyword.
+Every ordinary function declaration begins with exactly one explicit
+visibility keyword: `public` exports the function from its module and
+`private` keeps it module-local. Visibility is never inferred from naming or
+usage. The entry point is the sole exception and retains the conventional
+unmodified spelling `int main()`. Writing `public int main()` or
+`private int main()` is an error. The former `pub` abbreviation is not valid
+for functions.
+
 Non-`void` functions require an explicit `return`; ordinary function bodies
 do not have implicit tail returns.
 
 Typed locals are mutable and always require an initializer, as in
-`int count = 0;`. `var` creates an inferred mutable local.
+`int count = 0;`. `var` creates an inferred mutable local and keeps the same
+runtime, copy, and cleanup semantics as spelling the inferred type explicitly:
+
+```text
+var user = new User { name = "Ada" };
+var result = GetUser();
+var count = 5;
+```
+
+Inference uses the initializer's compile-time type; `var` is not a dynamic or
+variant type. The declaration still requires an initializer, and its local can
+be assigned later under the ordinary static type-checking rules.
 The executable subset includes `if`, `while`, array/`List` `for`,
 `break`, `continue`, `return`, blocks, arrays, struct construction/field
 access, and concrete enum variant construction. Arithmetic operands must have matching types. The
@@ -95,7 +123,7 @@ Fixed arrays use C declarators. Their length remains part of the static type:
 int values[3] = [7, 11, 13];
 int matrix[2][2] = [[1, 2], [3, 4]];
 
-int sum(int values[3]) {
+private int sum(int values[3]) {
     // ...
 }
 ```
@@ -136,7 +164,7 @@ with method syntax. Receivers use the same explicit type-first syntax as every
 other parameter:
 
 ```text
-long Point.offset(Point self, long amount) {
+public long Point.offset(Point self, long amount) {
     return self.x + amount;
 }
 
@@ -148,7 +176,7 @@ there is no dynamic dispatch or inheritance. Mutation uses an explicit `ref`
 parameter:
 
 ```text
-void Router.Add(ref Router self, Route route) {
+public void Router.Add(ref Router self, Route route) {
     self.routes.Add(route);
 }
 ```
@@ -205,7 +233,7 @@ Named types can provide a read-only indexer with an ordinary `Item` member,
 matching the CLR metadata name used for C# indexers:
 
 ```aster
-Entry Catalog.Item(Catalog self, int index)
+public Entry Catalog.Item(Catalog self, int index)
 {
     return self.Entries[index];
 }
@@ -314,7 +342,7 @@ an implicit mutable local:
 
 ```text
 ~File() {
-    print("closing file");
+    Console.WriteLine("closing file");
 }
 ```
 
@@ -426,7 +454,7 @@ so it is restricted to copyable element types.
 Ordinary aggregate parameters are values:
 
 ```text
-usize Inspect(List<long> values) {
+private usize Inspect(List<long> values) {
     return values.Count();
 }
 ```
@@ -435,7 +463,7 @@ The callee receives a copy. A `ref` parameter instead permits in-place
 mutation:
 
 ```text
-void add_route(ref Router router, Route route) {
+private void add_route(ref Router router, Route route) {
     router.routes.Add(route);
 }
 ```
@@ -447,14 +475,14 @@ pointers safe.
 An `out` parameter uses the C# call shape for a value produced by the callee:
 
 ```text
-bool TryParse(string text, out int value) {
+private bool TryParse(string text, out int value) {
     value = 42;
     return true;
 }
 
 int value = 0;
 if (TryParse("42", out value)) {
-    print(value);
+    Console.WriteLine(value);
 }
 ```
 
@@ -482,9 +510,9 @@ may retain its allocation where safe. Thus `Url.relative($"/issues/{id}")`
 needs one interpolation builder rather than a second byte copy.
 `panic(message)` and `trap(message)` have type
 `never`, report the source location and stack, and unwind owning values.
-`HtmlRender` returns `string` by transferring the completed `Html` buffer; it
-does not copy the rendered bytes. HTTP applications normally skip that owner
-conversion entirely: `HttpTryRespondHtml` consumes `Html`, borrows its
+`Html.ToHtmlString()` returns an owned `string` without consuming the `Html`
+receiver. HTTP applications normally skip that string conversion entirely:
+`HttpTryRespondHtml` consumes `Html`, borrows its
 contiguous bytes for the synchronous response write, and then releases it.
 
 One file normally declares one namespace. `using App.Math;` loads `math.lang`
@@ -511,7 +539,7 @@ exceptions. Functions do not declare thrown types, and callers do not write a
 propagation operator:
 
 ```aster
-void Load()
+private void Load()
 {
     throw new IOException("database unavailable");
 }
@@ -522,7 +550,7 @@ try
 }
 catch (Exception error)
 {
-    print(error.Message);
+    Console.WriteLine(error.Message);
 }
 ```
 
@@ -584,7 +612,7 @@ Generic functions infer their type arguments from parameters and, when
 available, the expected return type:
 
 ```text
-T identity<T>(owned T value) {
+private T identity<T>(owned T value) {
     return value;
 }
 
@@ -607,7 +635,7 @@ Non-capturing language functions are copyable typed values:
 ```text
 delegate long Operation(long value);
 
-long apply(long value, Operation operation) {
+private long apply(long value, Operation operation) {
     return operation(value);
 }
 
@@ -640,9 +668,9 @@ it, and it remains usable afterward. This does not introduce a general
 reference or lifetime system.
 
 Elements are expressions and produce `Html`. Bare content is static
-HTML text; `<` starts markup and `{ expression }` inserts a dynamic child.
-String literals and interpolated strings remain valid direct children for
-deliberately code-shaped text and formatted values. For example:
+HTML text; tag-shaped `<` starts markup and `{ expression }` inserts a dynamic
+child. String literals and interpolated strings used as child expressions must
+also be inside braces. For example:
 
 ```text
 <a
@@ -653,11 +681,13 @@ deliberately code-shaped text and formatted values. For example:
 </a>
 ```
 
-Static text preserves authored entities instead of escaping them a second
-time. Dynamic values are still escaped. Formatting-only indentation is omitted
-and source whitespace inside text is normalized. At a child boundary, valid
-Aster statement syntax remains code; literal text that intentionally looks
-exactly like a statement can be written as `{"if (ready) { ... }"}`.
+Static and dynamic text are escaped automatically. Formatting-only indentation
+is omitted. Interior whitespace runs normalize to one space; leading or
+trailing whitespace containing a newline is omitted, while meaningful
+same-line boundary spacing is preserved as one space. At a child boundary,
+syntactically recognized Aster statement forms remain code; literal text that
+intentionally looks exactly like a statement can be written as
+`{"if (ready) { ... }"}`.
 
 HTML interpolation is destination-aware. Each literal and formatted value is
 escaped and appended directly to the active element buffer: text uses text
@@ -738,8 +768,8 @@ matching:
 
 ```text
 switch (result) {
-    case Result.Ok(T value): { print(value); }
-    case Result.Err(E error): { print(error); }
+    case Result.Ok(T value): { Console.WriteLine(value); }
+    case Result.Err(E error): { Console.WriteLine(error); }
 }
 ```
 

@@ -5,10 +5,10 @@ int main() {
         NativeProcessEnvironment("ASTER_C_ENV_TEST");
     switch (value) {
         case Result.Ok(configured): {
-            print(configured);
+            Console.WriteLine(configured);
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }

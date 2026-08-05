@@ -7,6 +7,6 @@ int main() {
             alt="image"
             unknown="value"
         />;
-    print(HtmlRender(document));
+    Console.WriteLine(document.ToHtmlString());
     return 0;
 }

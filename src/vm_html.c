@@ -337,8 +337,9 @@ static void html_append_document(Object *html, const Object *child) {
         if (occurrence->start < cursor || occurrence->end < occurrence->start ||
             occurrence->end > child->as.html.length)
             continue;
-        vm_html_bytes(html, child->as.html.data + cursor,
-                   occurrence->start - cursor);
+        if (occurrence->start != cursor)
+            vm_html_bytes(html, child->as.html.data + cursor,
+                          occurrence->start - cursor);
         if (!html_style_registered(root, occurrence->id)) {
             size_t output_start = root->as.html.length;
             html_register_style(root, occurrence->id);
@@ -349,8 +350,9 @@ static void html_append_document(Object *html, const Object *child) {
         }
         cursor = occurrence->end;
     }
-    vm_html_bytes(html, child->as.html.data + cursor,
-               child->as.html.length - cursor);
+    if (child->as.html.length != cursor)
+        vm_html_bytes(html, child->as.html.data + cursor,
+                      child->as.html.length - cursor);
 }
 
 void vm_html_append_value(LangVM *vm, Object *html, LangValue child) {

@@ -3,7 +3,7 @@ struct Point {
     y: long,
 }
 
-Point Point.offset(Point self, long amount) {
+private Point Point.offset(Point self, long amount) {
     self.x = self.x + amount;
     self.y = self.y + amount;
     return self;
@@ -12,6 +12,6 @@ Point Point.offset(Point self, long amount) {
 int main() {
     var point = Point { x: 20, y: 22 };
     var shifted = point.offset(10);
-    print(shifted.x + shifted.y);
+    Console.WriteLine(shifted.x + shifted.y);
     return 0;
 }

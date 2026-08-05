@@ -1,7 +1,7 @@
 int main() {
     const long* pointer = null;
     unsafe {
-        print(*pointer);
+        Console.WriteLine(*pointer);
     }
     return 0;
 }

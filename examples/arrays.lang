@@ -4,6 +4,6 @@ int main() {
     foreach (long value in values) {
         total = total + value;
     }
-    print(total);
+    Console.WriteLine(total);
     return 0;
 }

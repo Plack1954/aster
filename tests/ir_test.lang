@@ -1,11 +1,11 @@
-extern NativeHandle NativeHandleOpenId(long id);
+private extern NativeHandle NativeHandleOpenId(long id);
 
 struct Marker {
     id: long,
 }
 
 ~Marker() {
-    print(self.id);
+    Console.WriteLine(self.id);
 }
 
 struct Pair {
@@ -26,12 +26,17 @@ element strong -> Html {
     children: Html,
 }
 
-Html Badge(string label) {
+element style -> Html {
+    children: Html,
+}
+
+private Html Badge(string label) {
     return <strong>{label}</strong>;
 }
 
-Html render(bool show, [string; 2] labels) {
+private Html render(bool show, [string; 2] labels) {
     return <section>
+        <style scoped>.featured { color: red; }</style>
         if (show) {
             <Badge label="Featured" />
         }
@@ -41,10 +46,10 @@ Html render(bool show, [string; 2] labels) {
     </section>;
 }
 
-void consume(NativeHandle handle) {
+private void consume(NativeHandle handle) {
 }
 
-long factorial(long n) {
+private long factorial(long n) {
     long result = 1;
     long value = n;
     while (value > 1) {
@@ -54,17 +59,17 @@ long factorial(long n) {
     return result;
 }
 
-Result<long, string> fail() {
+private Result<long, string> fail() {
     return Result.Err("failed");
 }
 
-Result<long, string> propagate() {
+private Result<long, string> propagate() {
     NativeHandle cleanup = NativeHandleOpenId(9);
     long value = try fail();
     return Result.Ok(value);
 }
 
-long OptionValue(Option<long> option) {
+private long OptionValue(Option<long> option) {
     switch (option) {
         case Option.Some(value): {
             return value;
@@ -75,7 +80,7 @@ long OptionValue(Option<long> option) {
     }
 }
 
-long PhaseValue(Phase phase) {
+private long PhaseValue(Phase phase) {
     switch (phase) {
         case Phase.Start: {
             return 1;
@@ -96,29 +101,29 @@ int main() {
         first: 1,
     };
     pair.first = 9;
-    print(pair.second);
+    Console.WriteLine(pair.second);
 
     [long; 2] values = [3, 4];
     values[0] = 5;
-    print(values[1]);
+    Console.WriteLine(values[1]);
     long total = 0;
     for (item in values) {
         total = total + item;
     }
-    print(total);
+    Console.WriteLine(total);
 
     Arena arena = Arena.new();
     unsafe {
         long* pointer = ArenaAlloc(arena, 8);
         *pointer = 11;
-        print(*pointer);
+        Console.WriteLine(*pointer);
     }
 
     Option<long> present = Option.Some(8);
-    print(OptionValue(present));
+    Console.WriteLine(OptionValue(present));
     Result<long, string> propagated = propagate();
     Phase phase = Phase.Done;
-    print(PhaseValue(phase));
-    print(factorial(6));
+    Console.WriteLine(PhaseValue(phase));
+    Console.WriteLine(factorial(6));
     return 0;
 }

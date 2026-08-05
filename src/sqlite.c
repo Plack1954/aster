@@ -122,12 +122,14 @@ static LangNativeResult sqlite_open_value(
         !lang_value_string_view(&args[0], &path))
         return native_failure("sqlite_open expects one path string");
     if (path.length > (size_t)INT_MAX ||
-        memchr(path.data, '\0', path.length) != NULL)
+        (path.length != 0U &&
+         memchr(path.data, '\0', path.length) != NULL))
         return result_error(vm, "invalid SQLite path");
     char *path_c = malloc(path.length + 1U);
     if (path_c == NULL)
         return native_failure("out of memory opening SQLite database");
-    memcpy(path_c, path.data, path.length);
+    if (path.length != 0U)
+        memcpy(path_c, path.data, path.length);
     path_c[path.length] = '\0';
     sqlite3 *database = NULL;
     int status = sqlite3_open_v2(
@@ -170,12 +172,14 @@ static LangNativeResult sqlite_execute_value(
         return native_failure("sqlite_execute expects `(Database, string)`");
     if (sql.length > (size_t)INT_MAX)
         return result_error(vm, "SQLite statement is too large");
-    if (memchr(sql.data, '\0', sql.length) != NULL)
+    if (sql.length != 0U &&
+        memchr(sql.data, '\0', sql.length) != NULL)
         return result_error(vm, "SQLite statement contains a null byte");
     char *sql_c = malloc(sql.length + 1U);
     if (sql_c == NULL)
         return native_failure("out of memory executing SQLite statement");
-    memcpy(sql_c, sql.data, sql.length);
+    if (sql.length != 0U)
+        memcpy(sql_c, sql.data, sql.length);
     sql_c[sql.length] = '\0';
     char *message = NULL;
     int status = sqlite3_exec(
@@ -335,12 +339,14 @@ static LangNativeResult sqlite_parameter_index_value(
     if (arg_count != 2U || statement == NULL ||
         !lang_value_string_view(&args[1], &name) ||
         name.length > (size_t)INT_MAX ||
-        memchr(name.data, '\0', name.length) != NULL)
+        (name.length != 0U &&
+         memchr(name.data, '\0', name.length) != NULL))
         return native_failure(
             "sqlite_parameter_index expects `(Statement, string)`");
     char *copy = malloc(name.length + 1U);
     if (copy == NULL) return native_failure("out of memory reading parameter");
-    memcpy(copy, name.data, name.length);
+    if (name.length != 0U)
+        memcpy(copy, name.data, name.length);
     copy[name.length] = '\0';
     int index = sqlite3_bind_parameter_index(statement->as.statement, copy);
     free(copy);

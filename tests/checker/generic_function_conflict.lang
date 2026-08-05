@@ -1,4 +1,4 @@
-T choose<T>(T first, T second) {
+private T choose<T>(T first, T second) {
     return first;
 }
 

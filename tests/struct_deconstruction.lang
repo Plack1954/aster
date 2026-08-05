@@ -4,7 +4,7 @@ struct ResponseParts {
     List<string> headers;
 }
 
-ResponseParts MakeResponse() {
+private ResponseParts MakeResponse() {
     List<string> headers = new();
     headers.Add("Content-Type: text/html");
     return new() {
@@ -17,9 +17,9 @@ ResponseParts MakeResponse() {
 int main() {
     ResponseParts response = MakeResponse();
     (int status, string body, List<string> headers) = response;
-    print(status);
-    print(body);
-    print(headers.Count);
-    print(response.status);
+    Console.WriteLine(status);
+    Console.WriteLine(body);
+    Console.WriteLine(headers.Count);
+    Console.WriteLine(response.status);
     return 0;
 }

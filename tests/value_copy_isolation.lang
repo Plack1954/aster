@@ -9,13 +9,13 @@ int main()
     original.Add(1);
     List<int> copied = original;
     copied.Add(2);
-    print(original.Count);
-    print(copied.Count);
+    Console.WriteLine(original.Count);
+    Console.WriteLine(copied.Count);
 
     Collection first = new() { Values = original };
     Collection second = first;
     second.Values.Add(3);
-    print(first.Values.Count);
-    print(second.Values.Count);
+    Console.WriteLine(first.Values.Count);
+    Console.WriteLine(second.Values.Count);
     return 0;
 }

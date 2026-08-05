@@ -1,6 +1,6 @@
 using System.Text;
 
-bool RejectsInvalidInteger()
+private bool RejectsInvalidInteger()
 {
     try
     {
@@ -13,7 +13,7 @@ bool RejectsInvalidInteger()
     return false;
 }
 
-bool RejectsIntegerOverflow()
+private bool RejectsIntegerOverflow()
 {
     try
     {
@@ -26,7 +26,7 @@ bool RejectsIntegerOverflow()
     return false;
 }
 
-bool RejectsInvalidDouble()
+private bool RejectsInvalidDouble()
 {
     try
     {
@@ -39,7 +39,7 @@ bool RejectsInvalidDouble()
     return false;
 }
 
-bool RejectsConvertOverflow()
+private bool RejectsConvertOverflow()
 {
     try
     {
@@ -52,7 +52,7 @@ bool RejectsConvertOverflow()
     return false;
 }
 
-bool RejectsRoundedConvertOverflow()
+private bool RejectsRoundedConvertOverflow()
 {
     try
     {
@@ -65,7 +65,7 @@ bool RejectsRoundedConvertOverflow()
     return false;
 }
 
-bool RejectsInt64ConvertOverflow()
+private bool RejectsInt64ConvertOverflow()
 {
     try
     {
@@ -78,7 +78,7 @@ bool RejectsInt64ConvertOverflow()
     return false;
 }
 
-bool RejectsUInt64ConvertOverflow()
+private bool RejectsUInt64ConvertOverflow()
 {
     try
     {
@@ -91,7 +91,7 @@ bool RejectsUInt64ConvertOverflow()
     return false;
 }
 
-bool RejectsNegativeUInt64ConvertOverflow()
+private bool RejectsNegativeUInt64ConvertOverflow()
 {
     try
     {
@@ -104,7 +104,7 @@ bool RejectsNegativeUInt64ConvertOverflow()
     return false;
 }
 
-bool RejectsInvalidBase64()
+private bool RejectsInvalidBase64()
 {
     try
     {

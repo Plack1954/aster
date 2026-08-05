@@ -71,6 +71,21 @@ The standard library should not compensate for these gaps with permanent
 names such as `StringLen` or `ListGet`. Implement the prerequisite or record a
 temporary internal bridge.
 
+## Console output
+
+Application output uses the discoverable .NET-shaped surface:
+
+```aster
+Console.WriteLine("Hello");
+Console.Write("working");
+Console.Error.WriteLine("failed");
+Console.Error.Write("details");
+```
+
+`WriteLine` appends a newline and `Write` does not. The compiler and runtimes
+may use specialized output operations internally, but the former global
+`print` and `eprint` helpers are not part of the language surface.
+
 ## 1. Strings and text
 
 Target source shape:

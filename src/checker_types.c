@@ -80,7 +80,8 @@ Type type_cancellation_token_source = {
     .requires_cleanup=true, .managed=true
 };
 Type type_raw_pointer = {
-    .kind=TYPE_RAW_POINTER, .name="*mut u8", .element=&type_u8
+    .kind=TYPE_RAW_POINTER, .name="*mut u8", .element=&type_u8,
+    .pointer_mutable=true
 };
 Type type_u8_slice = {
     .kind=TYPE_SLICE, .name="Slice<u8>", .element=&type_u8
@@ -285,6 +286,13 @@ static const char *array_type_separator(const char *name) {
     return NULL;
 }
 
+static bool type_syntax_is_requires_cleanup(
+    Checker *checker, const TypeSyntax *syntax, const char **seen,
+    size_t seen_count);
+static bool type_syntax_is_managed(
+    Checker *checker, const TypeSyntax *syntax, const char **seen,
+    size_t seen_count);
+
 static bool type_name_is_requires_cleanup(Checker *checker, const char *name,
                                    const char **seen, size_t seen_count) {
     if (name == NULL) return false;
@@ -380,8 +388,12 @@ static bool type_name_is_requires_cleanup(Checker *checker, const char *name,
     const char *previous_module = checker->current_module;
     checker->current_module = decl->module_name;
     if (decl->kind == DECL_ALIAS) {
-        bool requires_cleanup = type_name_is_requires_cleanup(
-            checker, decl->as.alias.target, next_seen, seen_count);
+        bool requires_cleanup = decl->as.alias.target_syntax != NULL
+            ? type_syntax_is_requires_cleanup(
+                  checker, decl->as.alias.target_syntax,
+                  next_seen, seen_count)
+            : type_name_is_requires_cleanup(
+                  checker, decl->as.alias.target, next_seen, seen_count);
         checker->current_module = previous_module;
         return requires_cleanup;
     }
@@ -392,8 +404,13 @@ static bool type_name_is_requires_cleanup(Checker *checker, const char *name,
                        ? decl->as.structure.field_count
                        : decl->as.enumeration.variant_count;
     for (size_t field = 0U; field < field_count; ++field)
-        if (type_name_is_requires_cleanup(checker, fields[field].type_name,
-                                   next_seen, seen_count)) {
+        if ((fields[field].type_syntax != NULL
+                 ? type_syntax_is_requires_cleanup(
+                       checker, fields[field].type_syntax,
+                       next_seen, seen_count)
+                 : type_name_is_requires_cleanup(
+                       checker, fields[field].type_name,
+                       next_seen, seen_count))) {
             checker->current_module = previous_module;
             return true;
         }
@@ -458,8 +475,12 @@ static bool type_name_is_managed(Checker *checker, const char *name,
     const char *previous_module = checker->current_module;
     checker->current_module = decl->module_name;
     if (decl->kind == DECL_ALIAS) {
-        bool managed = type_name_is_managed(
-            checker, decl->as.alias.target, next_seen, seen_count);
+        bool managed = decl->as.alias.target_syntax != NULL
+            ? type_syntax_is_managed(
+                  checker, decl->as.alias.target_syntax,
+                  next_seen, seen_count)
+            : type_name_is_managed(
+                  checker, decl->as.alias.target, next_seen, seen_count);
         checker->current_module = previous_module;
         return managed;
     }
@@ -470,13 +491,107 @@ static bool type_name_is_managed(Checker *checker, const char *name,
                        ? decl->as.structure.field_count
                        : decl->as.enumeration.variant_count;
     for (size_t field = 0U; field < field_count; ++field) {
-        if (type_name_is_managed(checker, fields[field].type_name,
-                                 next_seen, seen_count)) {
+        if ((fields[field].type_syntax != NULL
+                 ? type_syntax_is_managed(
+                       checker, fields[field].type_syntax,
+                       next_seen, seen_count)
+                 : type_name_is_managed(
+                       checker, fields[field].type_name,
+                       next_seen, seen_count))) {
             checker->current_module = previous_module;
             return true;
         }
     }
     checker->current_module = previous_module;
+    return false;
+}
+
+static bool type_syntax_is_requires_cleanup(
+    Checker *checker, const TypeSyntax *syntax, const char **seen,
+    size_t seen_count) {
+    if (syntax == NULL) return false;
+    switch (syntax->kind) {
+        case TYPE_SYNTAX_NAMED:
+            return type_name_is_requires_cleanup(
+                checker, syntax->as.name, seen, seen_count);
+        case TYPE_SYNTAX_GENERIC: {
+            const TypeSyntax *base = syntax->as.generic.base;
+            if (base->kind != TYPE_SYNTAX_NAMED) return true;
+            const char *name = base->as.name;
+            if (strcmp(name, "List") == 0 ||
+                strcmp(name, "Dictionary") == 0 ||
+                strcmp(name, "HashSet") == 0 ||
+                strcmp(name, "Queue") == 0 ||
+                strcmp(name, "Stack") == 0 ||
+                strcmp(name, "Task") == 0)
+                return true;
+            if (strcmp(name, "Option") != 0 &&
+                strcmp(name, "Result") != 0)
+                return false;
+            for (size_t i = 0U; i < syntax->as.generic.argument_count; ++i)
+                if (type_syntax_is_requires_cleanup(
+                        checker, syntax->as.generic.arguments[i],
+                        seen, seen_count))
+                    return true;
+            return false;
+        }
+        case TYPE_SYNTAX_ARRAY:
+            return type_syntax_is_requires_cleanup(
+                checker, syntax->as.array.element, seen, seen_count);
+        case TYPE_SYNTAX_TUPLE:
+            for (size_t i = 0U; i < syntax->as.tuple.element_count; ++i)
+                if (type_syntax_is_requires_cleanup(
+                        checker, syntax->as.tuple.elements[i],
+                        seen, seen_count))
+                    return true;
+            return false;
+        case TYPE_SYNTAX_FUNCTION:
+        case TYPE_SYNTAX_POINTER:
+        case TYPE_SYNTAX_ERROR:
+            return false;
+    }
+    return false;
+}
+
+static bool type_syntax_is_managed(
+    Checker *checker, const TypeSyntax *syntax, const char **seen,
+    size_t seen_count) {
+    if (syntax == NULL) return false;
+    switch (syntax->kind) {
+        case TYPE_SYNTAX_NAMED:
+            return type_name_is_managed(
+                checker, syntax->as.name, seen, seen_count);
+        case TYPE_SYNTAX_GENERIC: {
+            const TypeSyntax *base = syntax->as.generic.base;
+            if (base->kind == TYPE_SYNTAX_NAMED &&
+                strcmp(base->as.name, "Task") == 0)
+                return true;
+            if (base->kind != TYPE_SYNTAX_NAMED ||
+                (strcmp(base->as.name, "Option") != 0 &&
+                 strcmp(base->as.name, "Result") != 0))
+                return false;
+            for (size_t i = 0U; i < syntax->as.generic.argument_count; ++i)
+                if (type_syntax_is_managed(
+                        checker, syntax->as.generic.arguments[i],
+                        seen, seen_count))
+                    return true;
+            return false;
+        }
+        case TYPE_SYNTAX_ARRAY:
+            return type_syntax_is_managed(
+                checker, syntax->as.array.element, seen, seen_count);
+        case TYPE_SYNTAX_TUPLE:
+            for (size_t i = 0U; i < syntax->as.tuple.element_count; ++i)
+                if (type_syntax_is_managed(
+                        checker, syntax->as.tuple.elements[i],
+                        seen, seen_count))
+                    return true;
+            return false;
+        case TYPE_SYNTAX_FUNCTION:
+        case TYPE_SYNTAX_POINTER:
+        case TYPE_SYNTAX_ERROR:
+            return false;
+    }
     return false;
 }
 
@@ -590,6 +705,315 @@ Type *resolve_type_in_applied_declaration(
     checker->substitution_arguments = previous_arguments;
     checker->substitution_argument_count = previous_count;
     return result;
+}
+
+Type *resolve_type_syntax_in_applied_declaration(
+    Checker *checker, const Type *applied, const TypeSyntax *syntax,
+    const char *fallback_name, LangSpan span) {
+    if (syntax == NULL)
+        return resolve_type_in_applied_declaration(
+            checker, applied, fallback_name, span);
+    if (applied == NULL || applied->kind != TYPE_NAMED ||
+        applied->declaration == NULL) {
+        lang_diag(checker->diagnostics, span,
+                  "cannot resolve `%s` without a concrete aggregate type",
+                  fallback_name != NULL ? fallback_name : "<unknown>");
+        return &type_error;
+    }
+    const char *previous_module = checker->current_module;
+    const Decl *previous_decl = checker->substitution_decl;
+    Type **previous_arguments = checker->substitution_arguments;
+    size_t previous_count = checker->substitution_argument_count;
+    checker->current_module = applied->declaration->module_name;
+    checker->substitution_decl = applied->declaration;
+    checker->substitution_arguments = applied->arguments;
+    checker->substitution_argument_count = applied->argument_count;
+    Type *result = resolve_type_syntax(checker, syntax);
+    checker->current_module = previous_module;
+    checker->substitution_decl = previous_decl;
+    checker->substitution_arguments = previous_arguments;
+    checker->substitution_argument_count = previous_count;
+    return result;
+}
+
+static const char *canonical_constructed_name(
+    Checker *checker, const char *base, Type **arguments,
+    size_t argument_count) {
+    size_t length = strlen(base) + 3U;
+    for (size_t i = 0U; i < argument_count; ++i)
+        length += strlen(arguments[i]->name) + (i == 0U ? 0U : 1U);
+    char *name = lang_arena_alloc(&checker->module->arena, length);
+    size_t offset = (size_t)snprintf(name, length, "%s<", base);
+    for (size_t i = 0U; i < argument_count; ++i) {
+        if (i != 0U) name[offset++] = ',';
+        size_t argument_length = strlen(arguments[i]->name);
+        memcpy(name + offset, arguments[i]->name, argument_length);
+        offset += argument_length;
+    }
+    name[offset++] = '>';
+    name[offset] = '\0';
+    return name;
+}
+
+static bool builtin_equality_type(const Type *type) {
+    return type->kind == TYPE_BOOL || type->kind == TYPE_CHAR ||
+           type->kind == TYPE_STRING || type->kind == TYPE_RAW_POINTER ||
+           is_numeric(type);
+}
+
+static Type *resolve_generic_syntax(Checker *checker,
+                                    const TypeSyntax *syntax) {
+    const TypeSyntax *base_syntax = syntax->as.generic.base;
+    if (base_syntax == NULL || base_syntax->kind != TYPE_SYNTAX_NAMED) {
+        lang_diag(checker->diagnostics, syntax->span,
+                  "generic type base must be a named type");
+        return &type_error;
+    }
+    const char *base = base_syntax->as.name;
+    size_t count = syntax->as.generic.argument_count;
+    Type **arguments = count == 0U ? NULL : lang_arena_alloc(
+        &checker->module->arena, count * sizeof(*arguments));
+    for (size_t i = 0U; i < count; ++i)
+        arguments[i] = resolve_type_syntax(
+            checker, syntax->as.generic.arguments[i]);
+    const char *name = canonical_constructed_name(
+        checker, base, arguments, count);
+
+    TypeKind kind = TYPE_ERROR;
+    size_t expected = 1U;
+    bool requires_cleanup = false;
+    bool managed = false;
+    if (strcmp(base, "Slice") == 0) kind = TYPE_SLICE;
+    else if (strcmp(base, "List") == 0) {
+        kind = TYPE_VEC;
+        requires_cleanup = true;
+    } else if (strcmp(base, "Dictionary") == 0) {
+        kind = TYPE_DICTIONARY;
+        expected = 2U;
+        requires_cleanup = true;
+    } else if (strcmp(base, "HashSet") == 0) {
+        kind = TYPE_HASH_SET;
+        requires_cleanup = true;
+    } else if (strcmp(base, "Queue") == 0) {
+        kind = TYPE_QUEUE;
+        requires_cleanup = true;
+    } else if (strcmp(base, "Stack") == 0) {
+        kind = TYPE_STACK;
+        requires_cleanup = true;
+    } else if (strcmp(base, "Option") == 0) {
+        kind = TYPE_OPTION;
+        if (count == 1U) {
+            requires_cleanup = arguments[0]->requires_cleanup;
+            managed = arguments[0]->managed;
+        }
+    } else if (strcmp(base, "Result") == 0) {
+        kind = TYPE_RESULT;
+        expected = 2U;
+        if (count == 2U) {
+            requires_cleanup = arguments[0]->requires_cleanup ||
+                arguments[1]->requires_cleanup;
+            managed = arguments[0]->managed || arguments[1]->managed;
+        }
+    } else if (strcmp(base, "Task") == 0) {
+        kind = TYPE_TASK;
+        requires_cleanup = true;
+        managed = true;
+    }
+    if (kind != TYPE_ERROR) {
+        if (count != expected) {
+            lang_diag(checker->diagnostics, syntax->span,
+                      "%s requires %zu type argument%s",
+                      base, expected, expected == 1U ? "" : "s");
+            return &type_error;
+        }
+        Type *type = lang_arena_alloc(
+            &checker->module->arena, sizeof(*type));
+        type->kind = kind;
+        type->name = name;
+        type->element = arguments[0];
+        if (count == 2U) type->error_type = arguments[1];
+        type->requires_cleanup = requires_cleanup;
+        type->managed = managed;
+        if ((kind == TYPE_DICTIONARY || kind == TYPE_HASH_SET) &&
+            !builtin_equality_type(arguments[0]))
+            lang_diag(checker->diagnostics, syntax->span,
+                      "%s key type `%s` does not have built-in equality",
+                      base, arguments[0]->name);
+        if (kind == TYPE_HASH_SET) type->error_type = &type_bool;
+        return type;
+    }
+
+    Decl *generic_decl = find_type_declaration(
+        checker, base, syntax->span);
+    if (generic_decl == NULL) {
+        lang_diag(checker->diagnostics, syntax->span,
+                  "unknown generic type `%s`", base);
+        return &type_error;
+    }
+    if ((generic_decl->kind != DECL_STRUCT &&
+         generic_decl->kind != DECL_ENUM) ||
+        generic_decl->type_param_count != count) {
+        lang_diag(checker->diagnostics, syntax->span,
+                  "generic type `%s` expects %zu type arguments, found %zu",
+                  base, generic_decl->type_param_count, count);
+        return &type_error;
+    }
+    if (checker->generic_instantiation_depth >= 64U) {
+        lang_diag(checker->diagnostics, syntax->span,
+                  "generic instantiation is recursively expanding `%s`",
+                  name);
+        return &type_error;
+    }
+    ++checker->generic_instantiation_depth;
+    Type *existing = find_type_instantiation(
+        checker->module, generic_decl, arguments, count);
+    if (existing != NULL) {
+        --checker->generic_instantiation_depth;
+        return existing;
+    }
+    Type *applied = lang_arena_alloc(
+        &checker->module->arena, sizeof(*applied));
+    applied->kind = TYPE_NAMED;
+    applied->declaration = generic_decl;
+    applied->arguments = arguments;
+    applied->argument_count = count;
+    applied->name = canonical_instantiation_name(
+        checker, generic_decl, arguments, count);
+    applied->instantiation_resolving = true;
+    Type **next = lang_arena_alloc(
+        &checker->module->arena,
+        (checker->module->type_instantiation_count + 1U) * sizeof(*next));
+    if (checker->module->type_instantiations != NULL)
+        memcpy(next, checker->module->type_instantiations,
+               checker->module->type_instantiation_count * sizeof(*next));
+    checker->module->type_instantiations = next;
+    checker->module->type_instantiations[
+        checker->module->type_instantiation_count++] = applied;
+    FieldDecl *fields = generic_decl->kind == DECL_STRUCT
+        ? generic_decl->as.structure.fields
+        : generic_decl->as.enumeration.variants;
+    size_t field_count = generic_decl->kind == DECL_STRUCT
+        ? generic_decl->as.structure.field_count
+        : generic_decl->as.enumeration.variant_count;
+    for (size_t i = 0U; i < field_count; ++i) {
+        Type *field_type = resolve_type_syntax_in_applied_declaration(
+            checker, applied, fields[i].type_syntax,
+            fields[i].type_name, fields[i].span);
+        if (field_type == applied) {
+            lang_diag(checker->diagnostics, fields[i].span,
+                      "generic type `%s` contains itself inline through field `%s`",
+                      applied->name, fields[i].name);
+            applied->requires_cleanup = true;
+        } else if (field_type->requires_cleanup) {
+            applied->requires_cleanup = true;
+        }
+        if (field_type->managed) applied->managed = true;
+    }
+    applied->instantiation_resolving = false;
+    --checker->generic_instantiation_depth;
+    return applied;
+}
+
+Type *resolve_type_syntax(Checker *checker, const TypeSyntax *syntax) {
+    if (syntax == NULL) return NULL;
+    switch (syntax->kind) {
+        case TYPE_SYNTAX_NAMED:
+            return resolve_type(checker, syntax->as.name, syntax->span);
+        case TYPE_SYNTAX_GENERIC:
+            return resolve_generic_syntax(checker, syntax);
+        case TYPE_SYNTAX_FUNCTION: {
+            Type *function = lang_arena_alloc(
+                &checker->module->arena, sizeof(*function));
+            function->kind = TYPE_FUNCTION;
+            function->argument_count = syntax->as.function.parameter_count;
+            if (function->argument_count != 0U) {
+                function->arguments = lang_arena_alloc(
+                    &checker->module->arena,
+                    function->argument_count * sizeof(*function->arguments));
+                function->parameter_modes = lang_arena_alloc(
+                    &checker->module->arena,
+                    function->argument_count *
+                        sizeof(*function->parameter_modes));
+                for (size_t i = 0U; i < function->argument_count; ++i) {
+                    function->arguments[i] = resolve_type_syntax(
+                        checker, syntax->as.function.parameters[i]);
+                    function->parameter_modes[i] =
+                        syntax->as.function.parameter_modes[i];
+                }
+            }
+            function->element = resolve_type_syntax(
+                checker, syntax->as.function.return_type);
+            size_t length = sizeof("fn()->") + strlen(function->element->name);
+            for (size_t i = 0U; i < function->argument_count; ++i)
+                length += strlen(function->arguments[i]->name) + 5U;
+            char *name = lang_arena_alloc(&checker->module->arena, length);
+            size_t offset = (size_t)snprintf(name, length, "fn(");
+            for (size_t i = 0U; i < function->argument_count; ++i) {
+                if (i != 0U) name[offset++] = ',';
+                ParameterMode mode = function->parameter_modes[i];
+                if (mode != PARAMETER_MODE_VALUE)
+                    offset += (size_t)snprintf(
+                        name + offset, length - offset, "%s ",
+                        mode == PARAMETER_MODE_OUT ? "out" : "ref");
+                size_t item_length = strlen(function->arguments[i]->name);
+                memcpy(name + offset, function->arguments[i]->name, item_length);
+                offset += item_length;
+            }
+            offset += (size_t)snprintf(
+                name + offset, length - offset, ")->%s",
+                function->element->name);
+            (void)offset;
+            function->name = name;
+            return function;
+        }
+        case TYPE_SYNTAX_POINTER: {
+            Type *element = resolve_type_syntax(
+                checker, syntax->as.pointer.element);
+            const char *prefix = syntax->as.pointer.mutable_
+                ? "*mut " : "*const ";
+            size_t length = strlen(prefix) + strlen(element->name) + 1U;
+            char *name = lang_arena_alloc(&checker->module->arena, length);
+            (void)snprintf(name, length, "%s%s", prefix, element->name);
+            Type *pointer = lang_arena_alloc(
+                &checker->module->arena, sizeof(*pointer));
+            pointer->kind = TYPE_RAW_POINTER;
+            pointer->name = name;
+            pointer->element = element;
+            pointer->pointer_mutable = syntax->as.pointer.mutable_;
+            return pointer;
+        }
+        case TYPE_SYNTAX_ARRAY: {
+            Type *element = resolve_type_syntax(
+                checker, syntax->as.array.element);
+            size_t length = strlen(element->name) + 32U;
+            char *name = lang_arena_alloc(&checker->module->arena, length);
+            (void)snprintf(name, length, "[%s;%zu]", element->name,
+                           syntax->as.array.count);
+            Type *array = lang_arena_alloc(
+                &checker->module->arena, sizeof(*array));
+            array->kind = TYPE_ARRAY;
+            array->name = name;
+            array->element = element;
+            array->array_length = syntax->as.array.count;
+            array->requires_cleanup = element->requires_cleanup;
+            array->managed = element->managed;
+            return array;
+        }
+        case TYPE_SYNTAX_TUPLE:
+            lang_diag(checker->diagnostics, syntax->span,
+                      "tuple types are not yet supported");
+            return &type_error;
+        case TYPE_SYNTAX_ERROR:
+            return &type_error;
+    }
+    return &type_error;
+}
+
+Type *resolve_declared_type(Checker *checker, const TypeSyntax *syntax,
+                            const char *fallback_name, LangSpan span) {
+    return syntax != NULL
+        ? resolve_type_syntax(checker, syntax)
+        : resolve_type(checker, fallback_name, span);
 }
 
 Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
@@ -708,6 +1132,15 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
                                function->argument_count *
                                    sizeof(*next));
                     function->arguments = next;
+                    ParameterMode *next_modes = lang_arena_alloc(
+                        &checker->module->arena,
+                        (function->argument_count + 1U) *
+                            sizeof(*next_modes));
+                    if (function->parameter_modes != NULL)
+                        memcpy(next_modes, function->parameter_modes,
+                               function->argument_count *
+                                   sizeof(*next_modes));
+                    function->parameter_modes = next_modes;
                     char *parameter_name = lang_arena_strndup(
                         &checker->module->arena, parameter_start,
                         (size_t)(cursor - parameter_start));
@@ -719,24 +1152,12 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
                         (by_ref || by_out ? 4U : 0U);
                     Type *argument_type =
                         resolve_type(checker, resolved_name, span);
-                    if ((by_ref || by_out) &&
-                        function->argument_count < 32U) {
-                        function->borrowed_argument_mask |=
-                            UINT32_C(1) <<
-                            (unsigned)function->argument_count;
-                        function->mutable_borrow_argument_mask |=
-                            UINT32_C(1) <<
-                            (unsigned)function->argument_count;
-                        if (by_out)
-                            function->out_argument_mask |=
-                                UINT32_C(1) <<
-                                (unsigned)function->argument_count;
-                    } else if ((by_ref || by_out) &&
-                               function->argument_count >= 32U) {
-                        lang_diag(
-                            checker->diagnostics, span,
-                            "function value `ref`/`out` parameters are limited to 32 parameters");
-                    }
+                    function->parameter_modes[
+                        function->argument_count] = by_out
+                        ? PARAMETER_MODE_OUT
+                        : by_ref
+                        ? PARAMETER_MODE_MUTABLE_REFERENCE
+                        : PARAMETER_MODE_VALUE;
                     function->arguments[
                         function->argument_count++] = argument_type;
                 }
@@ -763,6 +1184,7 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
         pointer->kind = TYPE_RAW_POINTER;
         pointer->name = name;
         pointer->element = resolve_type(checker, name + prefix, span);
+        pointer->pointer_mutable = prefix == 5U;
         pointer->requires_cleanup = false;
         return pointer;
     }
@@ -1064,9 +1486,9 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
                            ? generic_decl->as.structure.field_count
                            : generic_decl->as.enumeration.variant_count;
         for (size_t field = 0U; field < field_count; ++field) {
-            Type *field_type = resolve_type_in_applied_declaration(
-                checker, applied, fields[field].type_name,
-                fields[field].span);
+            Type *field_type = resolve_type_syntax_in_applied_declaration(
+                checker, applied, fields[field].type_syntax,
+                fields[field].type_name, fields[field].span);
             if (field_type == applied) {
                 lang_diag(
                     checker->diagnostics, fields[field].span,
@@ -1101,7 +1523,9 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
         checker->resolving_aliases[checker->resolving_alias_count++] = name;
         const char *previous_module = checker->current_module;
         checker->current_module = decl->module_name;
-        Type *target = resolve_type(checker, decl->as.alias.target, decl->span);
+        Type *target = resolve_declared_type(
+            checker, decl->as.alias.target_syntax,
+            decl->as.alias.target, decl->span);
         checker->current_module = previous_module;
         --checker->resolving_alias_count;
         return target;
@@ -1158,8 +1582,9 @@ Type *lang_checker_resolve_aggregate_member(
     memset(&checker, 0, sizeof(checker));
     checker.module = module;
     checker.diagnostics = diagnostics;
-    return resolve_type_in_applied_declaration(
-        &checker, aggregate, members[member_index].type_name,
+    return resolve_type_syntax_in_applied_declaration(
+        &checker, aggregate, members[member_index].type_syntax,
+        members[member_index].type_name,
         members[member_index].span);
 }
 
@@ -1182,17 +1607,15 @@ bool same_type(const Type *a, const Type *b) {
     if (a->kind == TYPE_STACK)
         return same_type(a->element, b->element);
     if (a->kind == TYPE_RAW_POINTER)
-        return strcmp(a->name, b->name) == 0;
+        return a->pointer_mutable == b->pointer_mutable &&
+               same_type(a->element, b->element);
     if (a->kind == TYPE_FUNCTION) {
         if (a->argument_count != b->argument_count ||
-            a->borrowed_argument_mask != b->borrowed_argument_mask ||
-            a->mutable_borrow_argument_mask !=
-                b->mutable_borrow_argument_mask ||
-            a->out_argument_mask != b->out_argument_mask ||
             !same_type(a->element, b->element))
             return false;
         for (size_t i = 0U; i < a->argument_count; ++i)
-            if (!same_type(a->arguments[i], b->arguments[i]))
+            if (a->parameter_modes[i] != b->parameter_modes[i] ||
+                !same_type(a->arguments[i], b->arguments[i]))
                 return false;
         return true;
     }
@@ -1364,8 +1787,9 @@ static bool type_is_copyable_inner(Checker *checker, Type *type,
     if (fields == NULL) return false;
     bool copyable = true;
     for (size_t field = 0U; field < field_count; ++field) {
-        Type *field_type = resolve_type_in_applied_declaration(
-            checker, type, fields[field].type_name,
+        Type *field_type = resolve_type_syntax_in_applied_declaration(
+            checker, type, fields[field].type_syntax,
+            fields[field].type_name,
             fields[field].span);
         if (!type_is_copyable_inner(
                 checker, field_type, next_seen, seen_count)) {

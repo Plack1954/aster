@@ -7,7 +7,7 @@ int main() {
 
         long* second = ArenaAlloc(arena, 8);
         *second = 2;
-        print(*second);
+        Console.WriteLine(*second);
     }
     return 0;
 }

@@ -1,4 +1,4 @@
 int main() {
-    print("bad\qescape");
+    Console.WriteLine("bad\qescape");
     return 0;
 }

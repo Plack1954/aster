@@ -1,4 +1,4 @@
-extern Task Task.Delay(int milliseconds);
+private extern Task Task.Delay(int milliseconds);
 
 struct Tracked
 {
@@ -7,10 +7,10 @@ struct Tracked
 
 ~Tracked()
 {
-    print("cleaned");
+    Console.WriteLine("cleaned");
 }
 
-async Task<int> FailAsync()
+private async Task<int> FailAsync()
 {
     Tracked value = new() { Value = 1 };
     await Task.Delay(1);
@@ -25,7 +25,7 @@ async Task<int> main()
     }
     catch (IOException error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
     return 0;
 }

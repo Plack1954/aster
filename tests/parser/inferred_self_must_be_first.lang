@@ -2,7 +2,7 @@ struct Point {
     x: long,
 }
 
-long Point.offset(long amount, self) {
+private long Point.offset(long amount, self) {
     self.x + amount
 }
 

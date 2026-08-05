@@ -1,5 +1,5 @@
 int main() {
     Html document = <notRegistered />;
-    print(HtmlRender(document));
+    Console.WriteLine(document.ToHtmlString());
     return 0;
 }

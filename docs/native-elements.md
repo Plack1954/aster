@@ -52,18 +52,25 @@ Ordinary content is native HTML text rather than an Aster string literal:
 ```text
 <section>
     <h2>{title}</h2>
-    <p>Benchmark content &amp; escaping.</p>
+    <p>Benchmark content & escaping.</p>
 </section>
 ```
 
-`<` starts a nested element and `{...}` evaluates an Aster expression.
-Formatting-only indentation between elements is discarded; whitespace inside a
-text segment is normalized to ordinary HTML spacing. Authored entities such as
-`&amp;` pass through once, while dynamic values remain destination-escaped.
-Recognized statement forms at a child boundary—`if`, `foreach`, `return`, and
-the other normal Aster statements—remain code. If literal content is
-deliberately indistinguishable from code, make that exceptional case explicit:
+Tag-shaped `<` starts a nested element and `{...}` evaluates an Aster
+expression. Static and dynamic text are HTML-escaped automatically. Formatting-
+only indentation between structural children is discarded. Within meaningful
+text, whitespace runs collapse to one space; a leading or trailing run that
+contains a newline is discarded, while same-line boundary spaces are preserved
+as one space. This rule is independent of platform newline spelling.
+Syntactically recognized statement forms at a child boundary—`if`, `foreach`,
+`switch`, and the other normal Aster statements—remain code. If literal content
+is deliberately indistinguishable from code, make that exceptional case explicit:
 `<code>{"if (ready) { ... }"}</code>`.
+
+String-valued expressions always use braces. For example,
+`<p>{GetMessage()}</p>` and `<p>{"computed text"}</p>` are expressions;
+`<p>computed text</p>` is a static text node. Quoted text without braces is not
+a second child-expression grammar.
 
 `<style>` is the one native element whose body enters another parsed source
 language. It accepts ordinary CSS directly:
@@ -91,13 +98,13 @@ An `Html` component can make a style region local to itself with the compile-tim
 `scoped` marker:
 
 ```text
-Html Card() {
+private Html Card() {
     return <article class="card">
         <style scoped>
             .card { padding: 1rem; }
             .card > .title::before { content: "Card: "; }
         </style>
-        <h2 class="title">{"Aster"}</h2>
+        <h2 class="title">Aster</h2>
     </article>;
 }
 ```
@@ -113,7 +120,7 @@ Dynamic values enter static CSS through custom properties, not through CSS
 grammar interpolation:
 
 ```text
-Html Card(string accent) {
+private Html Card(string accent) {
     return <article class="card" --accent=accent>
         <style scoped>
             .card { color: var(--accent); }
@@ -166,7 +173,7 @@ scope rules, ownership rules, and runtime semantics as control flow elsewhere.
 Fragments use `<>...</>` and produce the same cleanup-managed `Html` type:
 
 ```text
-Html IssueRows(List<Issue> issues) {
+private Html IssueRows(List<Issue> issues) {
     return <>
         foreach (Issue issue in issues) {
             <IssueRow issue=issue />
@@ -180,8 +187,8 @@ element body but emits no opening or closing tag. It is a typed builder, not a
 virtual node or untyped template splice. Fragments may be returned, stored,
 nested in elements, or used as a component root.
 
-The body may contain nested elements, direct string literals, direct
-`$"Hello, {name}"` interpolation, `{ expression }`, declarations, and ordinary
+The body may contain static text, nested elements, `{ expression }`,
+declarations, and ordinary
 `if`, `while`, `foreach`, and `switch` statements. A braced body
 beginning with a statement-only token such as `var` is parsed by the ordinary
 block parser and produces `STMT_BLOCK`; braces beginning with an expression
@@ -253,9 +260,9 @@ HTML directly into a socket: construction-time streaming requires chunked
 framing and explicit partial-write/error semantics and remains a separate API.
 
 The SSR backend escapes `&`, `<`, and `>` in ordinary text and additionally
-escapes quotes in attributes. In accordance with HTML parsing, `script` and
-`style` bodies are raw text: their string children are emitted verbatim rather
-than entity-escaped. Dynamic values in those two elements must therefore be
-trusted JavaScript or CSS, not user input. Unescaped insertion in every other
+escapes quotes in attributes. In accordance with HTML parsing, `style` and
+`script` bodies render as raw text rather than entity-escaped. Script expressions
+must therefore produce trusted JavaScript, not user input. CSS is parsed as the
+structural `<style>` body described above. Unescaped insertion in every other
 context requires the deliberately named `Html.UnsafeRaw(source)` operation.
 There is no DOM, CSS parser, or desktop lifecycle.

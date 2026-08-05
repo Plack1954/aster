@@ -8,7 +8,7 @@ int main(void) {
         "// leading comment\n"
         "fn let mut var owned take struct enum if else while for foreach in match switch case return break "
         "continue move clone borrow true false null unsafe try async await namespace using "
-        "as pub extern drop type delegate element ident 123 1.5 \"utf8: \xc3\xa9\" "
+        "as pub public private extern drop type delegate element ident 123 1.5 \"utf8: \xc3\xa9\" "
         "( ) { } [ ] , : ; . .. ..= :: + - * / % ++ -- += -= *= /= %= "
         "& | ^ ~ &= |= ^= <<= >>= && || "
         "= == ! != < <= > >= << >> -> => "
@@ -21,7 +21,7 @@ int main(void) {
         TOK_CONTINUE, TOK_IDENT, TOK_IDENT, TOK_IDENT, TOK_TRUE, TOK_FALSE,
         TOK_NULL, TOK_UNSAFE, TOK_TRY, TOK_ASYNC, TOK_AWAIT,
         TOK_NAMESPACE, TOK_USING, TOK_AS,
-        TOK_PUB, TOK_EXTERN, TOK_IDENT, TOK_TYPE, TOK_DELEGATE,
+        TOK_PUB, TOK_PUB, TOK_PRIVATE, TOK_EXTERN, TOK_IDENT, TOK_TYPE, TOK_DELEGATE,
         TOK_ELEMENT, TOK_IDENT,
         TOK_INT, TOK_FLOAT, TOK_STRING, TOK_LPAREN, TOK_RPAREN, TOK_LBRACE,
         TOK_RBRACE, TOK_LBRACKET, TOK_RBRACKET, TOK_COMMA, TOK_COLON,

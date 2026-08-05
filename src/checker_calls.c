@@ -12,6 +12,12 @@ typedef struct CallOverloadSet {
     size_t exact_count;
 } CallOverloadSet;
 
+static ParameterMode call_argument_mode(const Expr *call, size_t index) {
+    return call->as.call.argument_modes != NULL
+        ? call->as.call.argument_modes[index]
+        : PARAMETER_MODE_VALUE;
+}
+
 static bool list_element_has_default_equality(const Type *type) {
     return type != NULL &&
         (type->kind == TYPE_BOOL || is_numeric(type) ||
@@ -127,12 +133,10 @@ static CallOverloadSet collect_call_overloads(
         bool exact = true;
         size_t rank = 0U;
         for (size_t p = 0U; p < function->param_count; ++p) {
-            uint32_t bit = p < 32U
-                ? UINT32_C(1) << (unsigned)p : 0U;
+            ParameterMode call_mode = call_argument_mode(call, p);
             bool call_ref =
-                (call->as.call.ref_argument_mask & bit) != 0U;
-            bool call_out =
-                (call->as.call.out_argument_mask & bit) != 0U;
+                call_mode == PARAMETER_MODE_MUTABLE_REFERENCE;
+            bool call_out = call_mode == PARAMETER_MODE_OUT;
             bool parameter_ref = function->params[p].by_ref &&
                 !function->params[p].by_out;
             if (!(p == 0U && call->as.call.implicit_receiver) &&
@@ -209,14 +213,10 @@ static const Decl *resolve_function_value_overload(
             continue;
         bool exact = true;
         for (size_t p = 0U; p < function->param_count; ++p) {
-            uint32_t bit = p < 32U
-                ? UINT32_C(1) << (unsigned)p : 0U;
-            bool expected_ref =
-                (expected->borrowed_argument_mask & bit) != 0U;
-            bool expected_mutable =
-                (expected->mutable_borrow_argument_mask & bit) != 0U;
-            bool expected_out =
-                (expected->out_argument_mask & bit) != 0U;
+            ParameterMode expected_mode = expected->parameter_modes[p];
+            bool expected_ref = parameter_mode_is_reference(expected_mode);
+            bool expected_mutable = parameter_mode_is_mutable(expected_mode);
+            bool expected_out = expected_mode == PARAMETER_MODE_OUT;
             if (!same_type(function->params[p].checked_type,
                            expected->arguments[p]) ||
                 function->params[p].by_ref != expected_ref ||
@@ -277,27 +277,21 @@ static Type *function_value_type(
         type->arguments = lang_arena_alloc(
             &checker->module->arena,
             function->param_count * sizeof(*type->arguments));
+    if (function->param_count != 0U)
+        type->parameter_modes = lang_arena_alloc(
+            &checker->module->arena,
+            function->param_count * sizeof(*type->parameter_modes));
     for (size_t i = 0U; i < function->param_count; ++i) {
-        type->arguments[i] = resolve_type_in_module(
-            checker, function->params[i].type_name,
+        type->arguments[i] = resolve_declared_type_in_module(
+            checker, function->params[i].type_syntax,
+            function->params[i].type_name,
             function->params[i].span, declaration->module_name);
-        if (function->params[i].borrowed && i < 32U) {
-            type->borrowed_argument_mask |=
-                UINT32_C(1) << (unsigned)i;
-            if (function->params[i].mutable_)
-                type->mutable_borrow_argument_mask |=
-                    UINT32_C(1) << (unsigned)i;
-            if (function->params[i].by_out)
-                type->out_argument_mask |=
-                    UINT32_C(1) << (unsigned)i;
-        } else if (function->params[i].borrowed) {
-            lang_diag(
-                checker->diagnostics, function->params[i].span,
-                "function value `ref`/`out` parameters are limited to 32 parameters");
-        }
+        type->parameter_modes[i] =
+            parameter_mode_from_param(&function->params[i]);
     }
-    type->element = resolve_type_in_module(
-        checker, function->return_type,
+    type->element = resolve_declared_type_in_module(
+        checker, function->return_type_syntax,
+        function->return_type,
         function->span, declaration->module_name);
     size_t length = 7U + strlen(type->element->name);
     for (size_t i = 0U; i < type->argument_count; ++i)
@@ -310,12 +304,11 @@ static Type *function_value_type(
     offset += 3U;
     for (size_t i = 0U; i < type->argument_count; ++i) {
         if (i != 0U) name[offset++] = ',';
-        uint32_t bit = i < 32U
-            ? UINT32_C(1) << (unsigned)i : 0U;
-        if ((type->out_argument_mask & bit) != 0U) {
+        if (type->parameter_modes[i] == PARAMETER_MODE_OUT) {
             memcpy(name + offset, "out ", 4U);
             offset += 4U;
-        } else if ((type->mutable_borrow_argument_mask & bit) != 0U) {
+        } else if (type->parameter_modes[i] ==
+                   PARAMETER_MODE_MUTABLE_REFERENCE) {
             memcpy(name + offset, "ref ", 4U);
             offset += 4U;
         }
@@ -339,6 +332,11 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
     Local *local = find_local(checker, expr->as.name);
     if (local != NULL) {
         expr->resolved_local_id = local->id;
+        if (local->is_out_parameter &&
+            !local->definitely_assigned)
+            lang_diag(checker->diagnostics, expr->span,
+                      "`out` parameter `%s` cannot be read before assignment",
+                      local->name);
         if (local->type->requires_cleanup) {
             Expr *source = lang_arena_alloc(
                 &checker->module->arena, sizeof(*source));
@@ -360,9 +358,11 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
         return function_value_type(
             checker, declaration, expr->span);
     }
-    if (strcmp(expr->as.name, "print") == 0 ||
-        strcmp(expr->as.name, "eprint") == 0 ||
-        strcmp(expr->as.name, "HtmlRender") == 0 ||
+    if (strcmp(expr->as.name, "Console::WriteLine") == 0 ||
+        strcmp(expr->as.name, "Console::Write") == 0 ||
+        strcmp(expr->as.name, "Console::Error::WriteLine") == 0 ||
+        strcmp(expr->as.name, "Console::Error::Write") == 0 ||
+        strcmp(expr->as.name, "Html::ToHtmlString") == 0 ||
         strcmp(expr->as.name, "Html::UnsafeRaw") == 0 ||
         strcmp(expr->as.name, "Buffer::allocate") == 0 ||
         strcmp(expr->as.name, "StringBuilder::New") == 0 ||
@@ -685,10 +685,18 @@ Type *checker_check_call(Checker *checker, Expr *expr) {
             arguments[old_count + 1U] = present;
         }
         expr->as.call.arguments.items = arguments;
+        ParameterMode *argument_modes = lang_arena_alloc(
+            &checker->module->arena,
+            (old_count + (hash_set_add ? 2U : 1U)) *
+                sizeof(*argument_modes));
+        argument_modes[0] = PARAMETER_MODE_VALUE;
+        for (size_t i = 0U; i < old_count; ++i)
+            argument_modes[i + 1U] = call_argument_mode(expr, i);
+        if (hash_set_add)
+            argument_modes[old_count + 1U] = PARAMETER_MODE_VALUE;
+        expr->as.call.argument_modes = argument_modes;
         expr->as.call.arguments.count =
             old_count + (hash_set_add ? 2U : 1U);
-        expr->as.call.ref_argument_mask <<= 1U;
-        expr->as.call.out_argument_mask <<= 1U;
         expr->as.call.implicit_receiver =
             receiver_type->kind != TYPE_CANCELLATION_TOKEN &&
             receiver_type->kind != TYPE_CANCELLATION_TOKEN_SOURCE;
@@ -727,18 +735,14 @@ static_call:
             if (i < function_type->argument_count)
                 checker->expected_type =
                     function_type->arguments[i];
-            uint32_t bit = i < 32U
-                ? UINT32_C(1) << (unsigned)i : 0U;
-            bool borrowed =
-                (function_type->borrowed_argument_mask & bit) != 0U;
-            bool mutable_borrow =
-                (function_type->mutable_borrow_argument_mask & bit) != 0U;
+            ParameterMode expected_mode = function_type->parameter_modes[i];
+            ParameterMode actual_mode = call_argument_mode(expr, i);
+            bool borrowed = parameter_mode_is_reference(expected_mode);
+            bool mutable_borrow = parameter_mode_is_mutable(expected_mode);
             bool explicit_ref =
-                (expr->as.call.ref_argument_mask & bit) != 0U;
-            bool explicit_out =
-                (expr->as.call.out_argument_mask & bit) != 0U;
-            bool expected_out =
-                (function_type->out_argument_mask & bit) != 0U;
+                actual_mode == PARAMETER_MODE_MUTABLE_REFERENCE;
+            bool explicit_out = actual_mode == PARAMETER_MODE_OUT;
+            bool expected_out = expected_mode == PARAMETER_MODE_OUT;
             if (explicit_ref && (!mutable_borrow || expected_out))
                 lang_diag(
                     checker->diagnostics,
@@ -766,7 +770,12 @@ static_call:
                         "`ref` argument must be an available place");
                     (void)check_expr(checker, argument);
                 } else if (borrowable_place) {
+                    const Expr *previous_allowed =
+                        checker->allowed_unassigned_out_place;
+                    if (expected_out)
+                        checker->allowed_unassigned_out_place = argument;
                     (void)check_place(checker, argument);
+                    checker->allowed_unassigned_out_place = previous_allowed;
                     if (mutable_borrow) {
                         Expr *root = argument;
                         while (root->kind == EXPR_FIELD)
@@ -777,6 +786,12 @@ static_call:
                             lang_diag(
                                 checker->diagnostics, argument->span,
                                 "`ref` argument requires a mutable local");
+                    }
+                    if (expected_out && argument->kind == EXPR_NAME) {
+                        Local *local = find_local(
+                            checker, argument->as.name);
+                        if (local != NULL && local->is_out_parameter)
+                            local->definitely_assigned = true;
                     }
                 } else {
                     (void)check_expr(checker, argument);
@@ -905,12 +920,10 @@ static_call:
         strcmp(name, "Stack::TrimExcess") == 0 ||
         strcmp(name, "Stack::Capacity") == 0;
     for (size_t i = 0U; i < expr->as.call.arguments.count; ++i) {
-        uint32_t bit = i < 32U
-            ? UINT32_C(1) << (unsigned)i : 0U;
+        ParameterMode actual_mode = call_argument_mode(expr, i);
         bool explicit_call_ref =
-            (expr->as.call.ref_argument_mask & bit) != 0U;
-        bool explicit_call_out =
-            (expr->as.call.out_argument_mask & bit) != 0U;
+            actual_mode == PARAMETER_MODE_MUTABLE_REFERENCE;
+        bool explicit_call_out = actual_mode == PARAMETER_MODE_OUT;
         bool builtin_out =
             ((strcmp(name, "Dictionary::TryGetValue") == 0 && i == 2U) ||
              ((strcmp(name, "Queue::TryDequeue") == 0 ||
@@ -946,7 +959,10 @@ static_call:
                 "argument %zu to `%s` must use `out`",
                 i + 1U, name);
         bool output_local =
-            (strcmp(name, "print") == 0 || strcmp(name, "eprint") == 0) &&
+            (strcmp(name, "Console::WriteLine") == 0 ||
+             strcmp(name, "Console::Write") == 0 ||
+             strcmp(name, "Console::Error::WriteLine") == 0 ||
+             strcmp(name, "Console::Error::Write") == 0) &&
             i == 0U &&
             expr->as.call.arguments.items[i]->kind == EXPR_NAME;
         bool text_local =
@@ -1062,7 +1078,16 @@ static_call:
                               : "`ref` argument must be an available place");
                 (void)check_expr(checker, expr->as.call.arguments.items[i]);
             } else if (borrowable_place) {
-                (void)check_place(checker, expr->as.call.arguments.items[i]);
+                Expr *argument = expr->as.call.arguments.items[i];
+                bool expected_out = declared_function != NULL &&
+                    i < declared_function->param_count &&
+                    declared_function->params[i].by_out;
+                const Expr *previous_allowed =
+                    checker->allowed_unassigned_out_place;
+                if (expected_out)
+                    checker->allowed_unassigned_out_place = argument;
+                (void)check_place(checker, argument);
+                checker->allowed_unassigned_out_place = previous_allowed;
                 bool mutable_borrow =
                     declared_function != NULL &&
                     i < declared_function->param_count &&
@@ -1082,12 +1107,18 @@ static_call:
                             expr->as.call.arguments.items[i]->span,
                             "`ref` argument requires a mutable local");
                 }
+                if (expected_out && argument->kind == EXPR_NAME) {
+                    Local *local = find_local(checker, argument->as.name);
+                    if (local != NULL && local->is_out_parameter)
+                        local->definitely_assigned = true;
+                }
             } else {
                 Type *previous_expected = checker->expected_type;
                 if (declared_function != NULL &&
                     i < declared_function->param_count)
-                    checker->expected_type = resolve_type_in_module(
+                    checker->expected_type = resolve_declared_type_in_module(
                         checker,
+                        declared_function->params[i].type_syntax,
                         declared_function->params[i].type_name,
                         declared_function->params[i].span,
                         declared_module);
@@ -1099,8 +1130,9 @@ static_call:
             Type *previous_expected = checker->expected_type;
             if (declared_function != NULL &&
                 i < declared_function->param_count)
-                checker->expected_type = resolve_type_in_module(
+                checker->expected_type = resolve_declared_type_in_module(
                     checker,
+                    declared_function->params[i].type_syntax,
                     declared_function->params[i].type_name,
                     declared_function->params[i].span,
                     declared_module);
@@ -1318,7 +1350,10 @@ static_call:
                       "`ThrowIfCancellationRequested` expects one CancellationToken");
         return &type_unit;
     }
-    if (strcmp(name, "print") == 0 || strcmp(name, "eprint") == 0) {
+    if (strcmp(name, "Console::WriteLine") == 0 ||
+        strcmp(name, "Console::Write") == 0 ||
+        strcmp(name, "Console::Error::WriteLine") == 0 ||
+        strcmp(name, "Console::Error::Write") == 0) {
         if (expr->as.call.arguments.count != 1U)
             lang_diag(checker->diagnostics, expr->span,
                       "`%s` expects one argument", name);
@@ -1330,11 +1365,11 @@ static_call:
                 checker, expr->as.call.arguments.items[0], &type_f64);
         return &type_unit;
     }
-    if (strcmp(name, "HtmlRender") == 0) {
+    if (strcmp(name, "Html::ToHtmlString") == 0) {
         if (expr->as.call.arguments.count != 1U ||
             !same_type(expr->as.call.arguments.items[0]->type, &type_html))
             lang_diag(checker->diagnostics, expr->span,
-                      "`html_render` expects one Html value");
+                      "`Html.ToHtmlString` expects one Html value");
         return &type_string;
     }
     if (strcmp(name, "TextLen") == 0) {
@@ -1568,7 +1603,6 @@ static_call:
     if (strcmp(name, "Queue::TryDequeue") == 0 ||
         strcmp(name, "Queue::TryPeek") == 0) {
         bool dequeue = strcmp(name, "Queue::TryDequeue") == 0;
-        uint32_t output_bit = UINT32_C(1) << 1U;
         if (expr->as.call.arguments.count != 2U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_QUEUE) {
             lang_diag(checker->diagnostics, expr->span,
@@ -1577,7 +1611,7 @@ static_call:
             return &type_bool;
         }
         Type *queue = expr->as.call.arguments.items[0]->type;
-        if ((expr->as.call.out_argument_mask & output_bit) == 0U)
+        if (call_argument_mode(expr, 1U) != PARAMETER_MODE_OUT)
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[1]->span,
                       "argument 2 to `%s` must use `out`", name);
@@ -1675,7 +1709,6 @@ static_call:
     if (strcmp(name, "Stack::TryPop") == 0 ||
         strcmp(name, "Stack::TryPeek") == 0) {
         bool pop = strcmp(name, "Stack::TryPop") == 0;
-        uint32_t output_bit = UINT32_C(1) << 1U;
         if (expr->as.call.arguments.count != 2U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_STACK) {
             lang_diag(checker->diagnostics, expr->span,
@@ -1684,7 +1717,7 @@ static_call:
             return &type_bool;
         }
         Type *stack = expr->as.call.arguments.items[0]->type;
-        if ((expr->as.call.out_argument_mask & output_bit) == 0U)
+        if (call_argument_mode(expr, 1U) != PARAMETER_MODE_OUT)
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[1]->span,
                       "argument 2 to `%s` must use `out`", name);
@@ -1820,7 +1853,6 @@ static_call:
         return get ? dictionary->error_type : &type_bool;
     }
     if (strcmp(name, "Dictionary::TryGetValue") == 0) {
-        uint32_t output_bit = UINT32_C(1) << 2U;
         if (expr->as.call.arguments.count != 3U ||
             !is_hash_storage_type(expr->as.call.arguments.items[0]->type)) {
             lang_diag(checker->diagnostics, expr->span,
@@ -1837,7 +1869,7 @@ static_call:
                       "Dictionary key expects `%s`, found `%s`",
                       dictionary->element->name,
                       expr->as.call.arguments.items[1]->type->name);
-        if ((expr->as.call.out_argument_mask & output_bit) == 0U)
+        if (call_argument_mode(expr, 2U) != PARAMETER_MODE_OUT)
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[2]->span,
                       "argument 3 to `Dictionary::TryGetValue` must use `out`");
@@ -2246,7 +2278,8 @@ static_call:
             !same_type(callback->arguments[0], list->element) ||
             !same_type(callback->element,
                        action ? &type_unit : &type_bool) ||
-            callback->borrowed_argument_mask != 0U)
+            (callback->argument_count != 0U &&
+             callback->parameter_modes[0] != PARAMETER_MODE_VALUE))
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[callback_index]->span,
                       "`%s` expects a function taking `%s` and returning `%s`",
@@ -2386,8 +2419,7 @@ static_call:
                       "`raw_store_i64` requires an unsafe block");
         if (expr->as.call.arguments.count != 2U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_RAW_POINTER ||
-            strncmp(expr->as.call.arguments.items[0]->type->name,
-                    "*mut ", 5U) != 0 ||
+            !expr->as.call.arguments.items[0]->type->pointer_mutable ||
             expr->as.call.arguments.items[0]->type->element == NULL ||
             expr->as.call.arguments.items[0]->type->element->kind != TYPE_I64 ||
             expr->as.call.arguments.items[1]->type->kind != TYPE_I64)
@@ -2501,8 +2533,8 @@ static_call:
                                   name, payload ? 1U : 0U);
                     if (payload && expr->as.call.arguments.count == 1U) {
                         Type *expected =
-                            resolve_type_in_applied_declaration(
-                            checker, result,
+                            resolve_type_syntax_in_applied_declaration(
+                            checker, result, candidate->type_syntax,
                             candidate->type_name, candidate->span);
                         (void)coerce_literal(
                             checker, expr->as.call.arguments.items[0],
@@ -2533,8 +2565,9 @@ static_call:
     size_t count = function->param_count < expr->as.call.arguments.count
                  ? function->param_count : expr->as.call.arguments.count;
     for (size_t i = 0U; i < count; ++i) {
-        Type *expected = resolve_type_in_module(
-            checker, function->params[i].type_name,
+        Type *expected = resolve_declared_type_in_module(
+            checker, function->params[i].type_syntax,
+            function->params[i].type_name,
             function->params[i].span, declared_module);
         (void)coerce_literal(checker, expr->as.call.arguments.items[i],
                              expected);
@@ -2545,6 +2578,7 @@ static_call:
                       name, type_display_name(checker, expected),
                       type_display_name(checker, actual));
     }
-    return resolve_type_in_module(
-        checker, function->return_type, function->span, declared_module);
+    return resolve_declared_type_in_module(
+        checker, function->return_type_syntax,
+        function->return_type, function->span, declared_module);
 }

@@ -1,4 +1,4 @@
-long mix(long value, long iteration) {
+private long mix(long value, long iteration) {
     long next = value + iteration + 1;
     if (next > 1000000000) {
         return next - 1000000000;

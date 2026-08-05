@@ -5,6 +5,6 @@ int main() {
     value -= 0x4;
     value /= 0b10;
     value %= 0o11;
-    print(value);
+    Console.WriteLine(value);
     return 0;
 }

@@ -7,10 +7,10 @@ int main() {
     OptionalCount option = Option.Some(count);
     switch (option) {
         case Option.Some(value): {
-            print(value);
+            Console.WriteLine(value);
         }
         case Option.None: {
-            print(0);
+            Console.WriteLine(0);
         }
     }
     return 0;

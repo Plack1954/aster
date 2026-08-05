@@ -14,7 +14,7 @@ public struct BrowserAssets
     string target;
 }
 
-bool BrowserSegmentValid(string value)
+private bool BrowserSegmentValid(string value)
 {
     if (value.Length == 0) { return false; }
     for (usize index = 0; index < value.Length; index++)
@@ -62,7 +62,7 @@ public Result<BrowserAssets, string> BrowserAssets(
     });
 }
 
-string BrowserFilename(BrowserAssets self, string extension)
+private string BrowserFilename(BrowserAssets self, string extension)
 {
     StringBuilder output = new();
     output.Append(self.target);
@@ -70,7 +70,7 @@ string BrowserFilename(BrowserAssets self, string extension)
     return output.ToString();
 }
 
-string BrowserUrl(BrowserAssets self, string filename)
+private string BrowserUrl(BrowserAssets self, string filename)
 {
     StringBuilder output = new();
     output.Append(self.urlPrefix);

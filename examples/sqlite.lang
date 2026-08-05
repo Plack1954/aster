@@ -1,7 +1,7 @@
 using Aster.Data.Sqlite;
 using System.Text;
 
-Result<int, SqliteError> run() {
+private Result<int, SqliteError> run() {
     Database database = try SqliteOpen(":memory:");
     try SqliteExecute(
         database,
@@ -34,8 +34,8 @@ Result<int, SqliteError> run() {
         case Step.Row: {
             long id = try SqliteColumnI64(query, 0);
             string name = try SqliteColumnText(query, 1);
-            print(id);
-            print(name);
+            Console.WriteLine(id);
+            Console.WriteLine(name);
         }
         case Step.Done: {
             return Result.Err("user was not found");
@@ -51,7 +51,7 @@ int main() {
             return status;
         }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

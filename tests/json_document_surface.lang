@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-bool Rejects(string json)
+private bool Rejects(string json)
 {
     try
     {

@@ -14,7 +14,7 @@ struct TestState
     SessionStore sessions;
 }
 
-Response Hello(TestState state, Request request)
+private Response Hello(TestState state, Request request)
 {
     string source = "";
     switch (request.query("from"))
@@ -43,7 +43,7 @@ Response Hello(TestState state, Request request)
     return response;
 }
 
-Response Form(TestState state, Request request)
+private Response Form(TestState state, Request request)
 {
     try
     {
@@ -64,7 +64,7 @@ Response Form(TestState state, Request request)
     }
 }
 
-Response Upload(TestState state, Request request)
+private Response Upload(TestState state, Request request)
 {
     FormCollection form = request.ReadForm();
     switch (form.Get("title"))
@@ -84,7 +84,7 @@ Response Upload(TestState state, Request request)
     }
 }
 
-Response Cookie(TestState state, Request request)
+private Response Cookie(TestState state, Request request)
 {
     Response response = Response.Text("cookie");
     switch (ResponseCookie("theme", "aster"))
@@ -95,7 +95,7 @@ Response Cookie(TestState state, Request request)
     return response;
 }
 
-Response SessionValue(TestState state, Request request)
+private Response SessionValue(TestState state, Request request)
 {
     Session session = state.sessions.Open(request);
     string value = "";
@@ -117,24 +117,24 @@ Response SessionValue(TestState state, Request request)
     return response;
 }
 
-Response Redirect(TestState state, Request request)
+private Response Redirect(TestState state, Request request)
 {
     return Response.Redirect("/hello/Aster?from=redirect");
 }
 
-Response Explode(TestState state, Request request)
+private Response Explode(TestState state, Request request)
 {
     throw new InvalidOperationException("intentional H2O failure");
 }
 
-Response Origin(TestState state, Request request)
+private Response Origin(TestState state, Request request)
 {
     return Response.Text(
         $"{request.Scheme()}|{request.Host()}|{request.RemoteIpAddress()}"
     );
 }
 
-Response HandleException(Exception error)
+private Response HandleException(Exception error)
 {
     Response response = Response.Plain(500, $"caught:{error.Message}");
     switch (ResponseHeader("X-Lime-Exception", "handled"))
@@ -145,12 +145,12 @@ Response HandleException(Exception error)
     return response;
 }
 
-Response Stylesheet(TestState state, Request request)
+private Response Stylesheet(TestState state, Request request)
 {
     return Response.Css("body { color: aster; }\n");
 }
 
-Response Binary(TestState state, Request request)
+private Response Binary(TestState state, Request request)
 {
     MemoryStream stream = MemoryStream.Create();
     List<byte> bytes = new();
@@ -165,7 +165,7 @@ Response Binary(TestState state, Request request)
     return Response.Stream(stream, AssetKind.Binary);
 }
 
-Response LargeBinary(TestState state, Request request)
+private Response LargeBinary(TestState state, Request request)
 {
     MemoryStream stream = MemoryStream.Create();
     List<byte> bytes = new();
@@ -189,17 +189,17 @@ Response LargeBinary(TestState state, Request request)
     return Response.Stream(stream, AssetKind.Binary);
 }
 
-Response DisconnectBinary(TestState state, Request request)
+private Response DisconnectBinary(TestState state, Request request)
 {
     return Response.Stream(File.OpenRead("/dev/zero"), AssetKind.Binary);
 }
 
-Response Missing(TestState state, Request request)
+private Response Missing(TestState state, Request request)
 {
     return Response.NotFound(<h1>Missing</h1>);
 }
 
-int Serve(NativeHandle server)
+private int Serve(NativeHandle server)
 {
     TestState state = new() { sessions = SessionStore.Create() };
     StatefulApp<TestState> app = StatefulAppNew(state, Missing);
@@ -231,17 +231,17 @@ int Serve(NativeHandle server)
     {
         case Result.Ok(bound): { }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }
 
-    print(H2OServerPort(server));
+    Console.WriteLine(H2OServerPort(server));
     switch (H2OServeStateful(server, app))
     {
         case Result.Ok(stopped): { return 0; }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }
@@ -258,7 +258,7 @@ int main()
     {
         case Result.Ok(server): { return Serve(server); }
         case Result.Err(error): {
-            eprint(error);
+            Console.Error.WriteLine(error);
             return 1;
         }
     }

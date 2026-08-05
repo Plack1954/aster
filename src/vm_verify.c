@@ -46,6 +46,7 @@ static bool verify_function_stack(const BytecodeFunction *function) {
             case OP_FUNCTION:
             case OP_LOAD_LOCAL: case OP_MOVE_LOCAL:
             case OP_REFERENCE_LOCAL:
+            case OP_REFERENCE_FIELD_LOCAL:
             case OP_GET_FIELD_LOCAL:
             case OP_GET_FIELD_LOCAL_MOVE:
             case OP_HTML_FRAGMENT: case OP_HTML_BEGIN:
@@ -58,6 +59,7 @@ static bool verify_function_stack(const BytecodeFunction *function) {
                 pushed = 1;
                 break;
             case OP_CONSTANT_LOCAL:
+            case OP_INVALIDATE_LOCAL:
             case OP_COPY_LOCAL_TO:
             case OP_MOVE_LOCAL_TO:
             case OP_HTML_FRAGMENT_LOCAL:
@@ -130,16 +132,12 @@ static bool verify_function_stack(const BytecodeFunction *function) {
                 branch = true;
                 break;
             case OP_CALL: {
-                uint32_t encoded = (uint32_t)instruction.b;
-                uint32_t count = instruction.a < 0
-                               ? encoded & UINT32_C(0xff)
-                               : encoded;
-                if (count > INT32_MAX) {
+                if (instruction.b < 0) {
                     valid = false;
                     break;
                 }
-                required = (int32_t)count;
-                popped = (int32_t)count;
+                required = instruction.b;
+                popped = instruction.b;
                 pushed = 1;
                 break;
             }
@@ -165,10 +163,12 @@ static bool verify_function_stack(const BytecodeFunction *function) {
                 pushed = 1;
                 break;
             case OP_CALL_NATIVE: {
-                uint32_t count =
-                    (uint32_t)instruction.b & UINT32_C(0xff);
-                required = (int32_t)count;
-                popped = (int32_t)count;
+                if (instruction.b < 0) {
+                    valid = false;
+                    break;
+                }
+                required = instruction.b;
+                popped = instruction.b;
                 pushed = 1;
                 break;
             }
@@ -285,12 +285,30 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
             &module->functions[f];
         if (function->name == NULL ||
             (function->code_count != 0U &&
-             function->code == NULL))
+             (function->code == NULL || function->call_sites == NULL)) ||
+            (function->arity != 0U &&
+             function->parameter_modes == NULL))
             return false;
+        for (size_t parameter = 0U; parameter < function->arity; ++parameter)
+            if (function->parameter_modes[parameter] <
+                    PARAMETER_MODE_VALUE ||
+                function->parameter_modes[parameter] > PARAMETER_MODE_OUT)
+                return false;
         for (size_t ip = 0U; ip < function->code_count; ++ip) {
             Instruction instruction = function->code[ip];
             if ((unsigned)instruction.op > (unsigned)OP_TRAP)
                 return false;
+            const BytecodeCallSite *call_site = &function->call_sites[ip];
+            if (call_site->argument_count != 0U &&
+                call_site->argument_modes == NULL)
+                return false;
+            for (size_t argument = 0U;
+                 argument < call_site->argument_count; ++argument)
+                if (call_site->argument_modes[argument] <
+                        PARAMETER_MODE_VALUE ||
+                    call_site->argument_modes[argument] >
+                        PARAMETER_MODE_OUT)
+                    return false;
             switch (instruction.op) {
                 case OP_HTML_FRAGMENT_LOCAL:
                 case OP_HTML_BEGIN_LOCAL: {
@@ -327,6 +345,13 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                          (instruction.b > 0 &&
                           (size_t)instruction.b >
                               function->local_count)))
+                        return false;
+                    if (instruction.op == OP_CALL_NATIVE &&
+                        (instruction.b < 0 ||
+                         (size_t)instruction.b !=
+                             function->call_sites[ip].argument_count ||
+                         (instruction.b != 0 &&
+                          function->call_sites[ip].argument_modes == NULL)))
                         return false;
                     break;
                 case OP_HTML_TEXT:
@@ -408,6 +433,19 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                     if (instruction.a < 0 || instruction.b < 0 ||
                         (size_t)instruction.a >= function->local_count ||
                         (size_t)instruction.b >= function->local_count)
+                        return false;
+                    break;
+                case OP_REFERENCE_FIELD_LOCAL:
+                    if (instruction.a < 0 || instruction.b < 0 ||
+                        (size_t)instruction.a >= function->local_count ||
+                        (size_t)instruction.b >= module->constant_count ||
+                        module->constants[(size_t)instruction.b]
+                            .value.tag != LANG_VALUE_STRING_VIEW)
+                        return false;
+                    break;
+                case OP_INVALIDATE_LOCAL:
+                    if (instruction.a < 0 ||
+                        (size_t)instruction.a >= function->local_count)
                         return false;
                     break;
                 case OP_STRING_BUILDER_APPEND_CONSTANT_LOCAL:
@@ -616,6 +654,12 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                             module->function_count)
                         return false;
                     if (instruction.b < 0)
+                        return false;
+                    if (instruction.a < 0 &&
+                        ((size_t)instruction.b !=
+                             function->call_sites[ip].argument_count ||
+                         (instruction.b != 0 &&
+                          function->call_sites[ip].argument_modes == NULL)))
                         return false;
                     break;
                 case OP_CALL_LOCAL: {

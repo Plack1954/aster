@@ -1,4 +1,4 @@
 int main() {
-    print(10 / 0);
+    Console.WriteLine(10 / 0);
     return 0;
 }

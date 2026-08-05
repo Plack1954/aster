@@ -6,7 +6,7 @@ int main() {
     values.Add(second);
 
     foreach (string value in values) {
-        print(value);
+        Console.WriteLine(value);
         break;
     }
     return 0;

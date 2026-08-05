@@ -4,6 +4,6 @@ using Dependency.Message;
 
 int main()
 {
-    print(Message());
+    Console.WriteLine(Message());
     return 0;
 }

@@ -1,5 +1,5 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern long NativeHandleDropLog();
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern long NativeHandleDropLog();
 
 int main() {
     long iteration = 1;
@@ -8,12 +8,12 @@ int main() {
         iteration = iteration + 1;
         continue;
     }
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
 
     while (true) {
         NativeHandle finalHandle = NativeHandleOpenId(3);
         break;
     }
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
     return 0;
 }

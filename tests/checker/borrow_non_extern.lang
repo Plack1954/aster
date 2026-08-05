@@ -1,4 +1,4 @@
-long inspect(NativeHandle handle) {
+private long inspect(NativeHandle handle) {
     return 0;
 }
 

@@ -1,7 +1,7 @@
-void allocate(Arena arena) {
+private void allocate(Arena arena) {
     unsafe {
         byte* pointer = ArenaAlloc(arena, 8);
-        print(pointer);
+        Console.WriteLine(pointer);
     }
 }
 

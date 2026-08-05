@@ -1,9 +1,9 @@
-String record(long index, bool active) {
+private String record(long index, bool active) {
     return $"customer-{index}:active={active}:balance={index * 3}";
 }
 
 int main() {
-    print(record(0, true));
+    Console.WriteLine(record(0, true));
 
     usize total = 0;
     long index = 0;
@@ -14,6 +14,6 @@ int main() {
         active = !active;
         index = index + 1;
     }
-    print(total);
+    Console.WriteLine(total);
     return 0;
 }

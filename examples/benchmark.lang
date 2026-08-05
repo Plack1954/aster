@@ -1,4 +1,4 @@
-long increment(long value) {
+private long increment(long value) {
     return value + 1;
 }
 

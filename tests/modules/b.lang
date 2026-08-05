@@ -1,5 +1,5 @@
 namespace Ambiguity.B;
 
-pub long shared(long value) {
+public long shared(long value) {
     return value + 1;
 }

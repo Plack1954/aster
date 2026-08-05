@@ -2,7 +2,7 @@ namespace Qualified.EnumMain;
 
 using Qualified.EnumDep;
 
-long read(Qualified.Enums.Status status) {
+private long read(Qualified.Enums.Status status) {
     switch (status) {
         case Qualified.Enums.Status.Ready(value): {
             return value;
@@ -18,7 +18,7 @@ int main() {
         Qualified.Enums.Status.Ready(42);
     Qualified.Enums.Status empty =
         Qualified.Enums.Status.Empty;
-    print(read(ready));
-    print(read(empty));
+    Console.WriteLine(read(ready));
+    Console.WriteLine(read(empty));
     return 0;
 }

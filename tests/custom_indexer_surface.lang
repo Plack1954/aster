@@ -3,12 +3,12 @@ struct Catalog
     int Base;
 }
 
-int Catalog.Item(Catalog self, int index)
+private int Catalog.Item(Catalog self, int index)
 {
     return self.Base + index * 2;
 }
 
-Catalog MakeCatalog()
+private Catalog MakeCatalog()
 {
     return new() { Base = 10 };
 }

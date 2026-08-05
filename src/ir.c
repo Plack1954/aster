@@ -114,6 +114,105 @@ static uint8_t type_bit_width(const Type *type) {
     }
 }
 
+static IrCopyPolicy type_copy_policy(const Type *type) {
+    if (type == NULL || (!type->requires_cleanup && !type->managed))
+        return IR_COPY_TRIVIAL;
+    if (type->kind == TYPE_ARENA)
+        return IR_COPY_NONCOPYABLE;
+    switch (type->kind) {
+        case TYPE_STRING:
+        case TYPE_NATIVE_HANDLE:
+        case TYPE_TASK:
+        case TYPE_CANCELLATION_TOKEN:
+        case TYPE_CANCELLATION_TOKEN_SOURCE:
+            return IR_COPY_SHARED_RETAIN;
+        case TYPE_ARRAY:
+        case TYPE_OPTION:
+        case TYPE_RESULT:
+        case TYPE_VEC:
+        case TYPE_DICTIONARY:
+        case TYPE_HASH_SET:
+        case TYPE_QUEUE:
+        case TYPE_STACK:
+        case TYPE_NAMED:
+            return IR_COPY_DEEP;
+        default:
+            return IR_COPY_CUSTOM;
+    }
+}
+
+static IrDropPolicy type_drop_policy(const Type *type) {
+    if (type == NULL || (!type->requires_cleanup && !type->managed))
+        return IR_DROP_TRIVIAL;
+    switch (type->kind) {
+        case TYPE_ARRAY:
+        case TYPE_OPTION:
+        case TYPE_RESULT:
+        case TYPE_NAMED:
+            return IR_DROP_RECURSIVE;
+        default:
+            return IR_DROP_CUSTOM;
+    }
+}
+
+static bool ir_align_up(size_t value, size_t alignment, size_t *result) {
+    if (alignment == 0U) return false;
+    size_t remainder = value % alignment;
+    size_t padding = remainder == 0U ? 0U : alignment - remainder;
+    if (value > SIZE_MAX - padding) return false;
+    *result = value + padding;
+    return true;
+}
+
+static void resolve_struct_member_layout(IrModule *module, IrTypeId id) {
+    IrType *type = &module->types[id];
+    size_t offset = 0U;
+    bool known = true;
+    for (size_t field = 0U; field < type->field_count; ++field) {
+        IrTypeId field_id = type->field_types[field];
+        if (field_id >= module->type_count ||
+            !module->types[field_id].target_layout_known ||
+            !ir_align_up(offset, module->types[field_id].target_alignment,
+                         &offset)) {
+            known = false;
+            break;
+        }
+        type = &module->types[id];
+        type->field_offsets[field] = offset;
+        if (module->types[field_id].target_size > SIZE_MAX - offset) {
+            known = false;
+            break;
+        }
+        offset += module->types[field_id].target_size;
+    }
+    module->types[id].member_layout_known = known;
+}
+
+static void resolve_variant_member_layout(IrModule *module, IrTypeId id) {
+    IrType *type = &module->types[id];
+    size_t payload_alignment = 1U;
+    bool known = true;
+    for (size_t variant = 0U; variant < type->variant_count; ++variant) {
+        IrTypeId payload = type->variant_payload_types[variant];
+        if (payload == IR_INVALID_ID) continue;
+        if (payload >= module->type_count ||
+            !module->types[payload].target_layout_known) {
+            known = false;
+            break;
+        }
+        if (module->types[payload].target_alignment > payload_alignment)
+            payload_alignment = module->types[payload].target_alignment;
+    }
+    size_t payload_offset = 0U;
+    if (known)
+        known = ir_align_up(module->target.enum_tag_size,
+                            payload_alignment, &payload_offset);
+    if (known)
+        for (size_t variant = 0U; variant < type->variant_count; ++variant)
+            type->variant_payload_offsets[variant] = payload_offset;
+    type->member_layout_known = known;
+}
+
 static bool same_ir_type_identity(const Type *left, const Type *right) {
     if (left == right) return true;
     if (left == NULL || right == NULL || left->kind != right->kind)
@@ -134,15 +233,7 @@ static bool same_ir_type_identity(const Type *left, const Type *right) {
     if (left->kind == TYPE_TASK)
         return same_ir_type_identity(left->element, right->element);
     if (left->kind == TYPE_RAW_POINTER &&
-        (strncmp(left->name, "*mut ", 5U) == 0) !=
-        (strncmp(right->name, "*mut ", 5U) == 0))
-        return false;
-    if (left->kind == TYPE_FUNCTION &&
-        (left->borrowed_argument_mask !=
-             right->borrowed_argument_mask ||
-         left->mutable_borrow_argument_mask !=
-             right->mutable_borrow_argument_mask ||
-         left->out_argument_mask != right->out_argument_mask))
+        left->pointer_mutable != right->pointer_mutable)
         return false;
     if (!same_ir_type_identity(left->element, right->element))
         return false;
@@ -151,7 +242,9 @@ static bool same_ir_type_identity(const Type *left, const Type *right) {
     if (left->argument_count != right->argument_count)
         return false;
     for (size_t i = 0U; i < left->argument_count; ++i)
-        if (!same_ir_type_identity(
+        if ((left->kind == TYPE_FUNCTION &&
+             left->parameter_modes[i] != right->parameter_modes[i]) ||
+            !same_ir_type_identity(
                 left->arguments[i], right->arguments[i]))
             return false;
     return true;
@@ -184,14 +277,16 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
     entry->shape = type_shape(type);
     entry->element_type = IR_INVALID_ID;
     entry->error_type = IR_INVALID_ID;
+    entry->copy_function = IR_INVALID_ID;
     entry->destructor_function = IR_INVALID_ID;
+    entry->copy_policy = type_copy_policy(type);
+    entry->drop_policy = type_drop_policy(type);
     entry->array_length =
         type != NULL ? type->array_length : 0U;
     entry->bit_width = type_bit_width(type);
     entry->pointer_mutable =
         type != NULL && type->kind == TYPE_RAW_POINTER &&
-        type->name != NULL &&
-        strncmp(type->name, "*mut ", 5U) == 0;
+        type->pointer_mutable;
     entry->requires_cleanup = type != NULL && type->requires_cleanup;
     entry->managed = type != NULL && type->managed;
     if (type != NULL && module->lowering_module != NULL)
@@ -220,6 +315,15 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
             NULL, type->argument_count,
             sizeof(*module->types[id].argument_types));
         module->types[id].argument_count = type->argument_count;
+        if (type->kind == TYPE_FUNCTION) {
+            module->types[id].parameter_modes = ir_resize(
+                NULL, type->argument_count,
+                sizeof(*module->types[id].parameter_modes));
+            memcpy(module->types[id].parameter_modes,
+                   type->parameter_modes,
+                   type->argument_count *
+                       sizeof(*module->types[id].parameter_modes));
+        }
         for (size_t i = 0U; i < type->argument_count; ++i) {
             IrTypeId argument =
                 ir_intern_type(module, type->arguments[i]);
@@ -235,10 +339,16 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
             NULL, count, sizeof(*module->types[id].field_names));
         module->types[id].field_types = ir_resize(
             NULL, count, sizeof(*module->types[id].field_types));
+        module->types[id].field_spans = ir_resize(
+            NULL, count, sizeof(*module->types[id].field_spans));
+        module->types[id].field_offsets = ir_resize(
+            NULL, count, sizeof(*module->types[id].field_offsets));
         module->types[id].field_count = count;
         for (size_t i = 0U; i < count; ++i) {
             module->types[id].field_names[i] =
                 type->declaration->as.structure.fields[i].name;
+            module->types[id].field_spans[i] =
+                type->declaration->as.structure.fields[i].span;
             Type *field_type = lang_checker_resolve_aggregate_member(
                 module->lowering_module, module->lowering_diagnostics,
                 type, i);
@@ -246,6 +356,7 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
                 field_type != NULL
                 ? ir_intern_type(module, field_type) : IR_INVALID_ID;
         }
+        resolve_struct_member_layout(module, id);
     }
     if (type != NULL && type->kind == TYPE_NAMED &&
         type->declaration != NULL &&
@@ -257,10 +368,20 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
         module->types[id].variant_payload_types = ir_resize(
             NULL, count,
             sizeof(*module->types[id].variant_payload_types));
+        module->types[id].variant_spans = ir_resize(
+            NULL, count, sizeof(*module->types[id].variant_spans));
+        module->types[id].variant_discriminants = ir_resize(
+            NULL, count, sizeof(*module->types[id].variant_discriminants));
+        module->types[id].variant_payload_offsets = ir_resize(
+            NULL, count,
+            sizeof(*module->types[id].variant_payload_offsets));
         module->types[id].variant_count = count;
         for (size_t i = 0U; i < count; ++i) {
             module->types[id].variant_names[i] =
                 type->declaration->as.enumeration.variants[i].name;
+            module->types[id].variant_spans[i] =
+                type->declaration->as.enumeration.variants[i].span;
+            module->types[id].variant_discriminants[i] = (uint32_t)i;
             Type *payload_type = lang_checker_resolve_aggregate_member(
                 module->lowering_module, module->lowering_diagnostics,
                 type, i);
@@ -268,6 +389,7 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
                 payload_type != NULL
                 ? ir_intern_type(module, payload_type) : IR_INVALID_ID;
         }
+        resolve_variant_member_layout(module, id);
     } else if (type != NULL &&
                (type->kind == TYPE_OPTION ||
                 type->kind == TYPE_RESULT)) {
@@ -277,7 +399,18 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
         module->types[id].variant_payload_types = ir_resize(
             NULL, count,
             sizeof(*module->types[id].variant_payload_types));
+        module->types[id].variant_spans = ir_resize(
+            NULL, count, sizeof(*module->types[id].variant_spans));
+        module->types[id].variant_discriminants = ir_resize(
+            NULL, count, sizeof(*module->types[id].variant_discriminants));
+        module->types[id].variant_payload_offsets = ir_resize(
+            NULL, count,
+            sizeof(*module->types[id].variant_payload_offsets));
         module->types[id].variant_count = count;
+        memset(module->types[id].variant_spans, 0,
+               count * sizeof(*module->types[id].variant_spans));
+        module->types[id].variant_discriminants[0] = 0U;
+        module->types[id].variant_discriminants[1] = 1U;
         if (type->kind == TYPE_OPTION) {
             module->types[id].variant_names[0] = "None";
             module->types[id].variant_names[1] = "Some";
@@ -292,6 +425,7 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
             module->types[id].variant_payload_types[1] =
                 module->types[id].error_type;
         }
+        resolve_variant_member_layout(module, id);
     }
     return id;
 }
@@ -323,7 +457,10 @@ IrTypeId ir_intern_iterator_type(IrModule *module,
     type->shape = IR_TYPE_ITERATOR;
     type->element_type = element_type;
     type->error_type = IR_INVALID_ID;
+    type->copy_function = IR_INVALID_ID;
     type->destructor_function = IR_INVALID_ID;
+    type->copy_policy = IR_COPY_DEEP;
+    type->drop_policy = IR_DROP_CUSTOM;
     type->argument_types = ir_resize(
         NULL, 1U, sizeof(*type->argument_types));
     type->argument_types[0] = source_type;
@@ -359,7 +496,10 @@ IrTypeId ir_intern_element_builder_type(IrModule *module,
     type->shape = IR_TYPE_ELEMENT_BUILDER;
     type->element_type = result_type;
     type->error_type = IR_INVALID_ID;
+    type->copy_function = IR_INVALID_ID;
     type->destructor_function = IR_INVALID_ID;
+    type->copy_policy = IR_COPY_NONCOPYABLE;
+    type->drop_policy = IR_DROP_CUSTOM;
     type->requires_cleanup = true;
     /*
      * The builder is an opaque owning runtime handle, just like Html.
@@ -584,12 +724,42 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt);
 IrValueId ir_emit_synthetic_native_call(
     IrBuilder *builder, const char *name,
     const Type *result_type, const IrValueId *operands,
-    size_t operand_count, uint32_t borrowed_mask,
+    size_t operand_count, bool borrow_first,
     LangSpan span);
+
+static void ir_set_native_call_descriptor(
+    IrBuilder *builder, IrInstruction *call, bool compiler_generated
+) {
+    call->native_call = ir_resize(NULL, 1U, sizeof(*call->native_call));
+    memset(call->native_call, 0, sizeof(*call->native_call));
+    call->native_call->name = call->symbol;
+    call->native_call->return_type = call->result_type;
+    call->native_call->parameter_count = call->operand_count;
+    call->native_call->calling_convention = IR_CALLING_CONVENTION_NATIVE;
+    call->native_call->may_propagate_exception = true;
+    call->native_call->compiler_generated = compiler_generated;
+    if (call->operand_count == 0U) return;
+    call->native_call->parameter_types = ir_resize(
+        NULL, call->operand_count,
+        sizeof(*call->native_call->parameter_types));
+    call->native_call->parameter_modes = ir_resize(
+        NULL, call->operand_count,
+        sizeof(*call->native_call->parameter_modes));
+    for (size_t i = 0U; i < call->operand_count; ++i) {
+        IrValueId operand = call->operands[i];
+        call->native_call->parameter_types[i] =
+            operand < builder->function->value_count
+                ? builder->function->value_types[operand]
+                : IR_INVALID_ID;
+        call->native_call->parameter_modes[i] =
+            call->argument_modes[i];
+    }
+}
 
 static bool builtin_borrows_first_place(const char *name) {
     return name != NULL &&
-           (strcmp(name, "ArenaAlloc") == 0 ||
+           (strcmp(name, "Html::ToHtmlString") == 0 ||
+            strcmp(name, "ArenaAlloc") == 0 ||
             strcmp(name, "ArenaReset") == 0 ||
             strcmp(name, "StringBuilder::Append") == 0 ||
             strcmp(name, "StringBuilder::AppendByte") == 0 ||
@@ -661,8 +831,10 @@ static bool builtin_borrows_first_place(const char *name) {
 
 static bool builtin_borrows_named_first(const char *name) {
     return name != NULL &&
-           (strcmp(name, "print") == 0 ||
-            strcmp(name, "eprint") == 0 ||
+           (strcmp(name, "Console::WriteLine") == 0 ||
+            strcmp(name, "Console::Write") == 0 ||
+            strcmp(name, "Console::Error::WriteLine") == 0 ||
+            strcmp(name, "Console::Error::Write") == 0 ||
             strcmp(name, "TextLen") == 0);
 }
 
@@ -924,6 +1096,8 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         NULL, argument_count, sizeof(*borrowed_temporary_locals));
     size_t borrowed_temporary_count = 0U;
     size_t offset = 0U;
+    const Type *indirect_function_type = indirect
+        ? expr->as.call.callee->type : NULL;
     if (indirect)
         operands[offset++] = ir_lower_expr(builder, expr->as.call.callee);
     const Decl *target = expr->resolved_decl;
@@ -934,19 +1108,19 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             (builtin_borrows_first_place(callee_name) ||
              (builtin_borrows_named_first(callee_name) &&
               argument->kind == EXPR_NAME));
-        const Type *function_type = indirect
-            ? expr->as.call.callee->type : NULL;
-        uint32_t bit = i < 32U
-            ? UINT32_C(1) << (unsigned)i : 0U;
-        bool indirect_borrow = function_type != NULL &&
-            (function_type->borrowed_argument_mask & bit) != 0U;
+        bool indirect_borrow = indirect_function_type != NULL &&
+            parameter_mode_is_reference(
+                indirect_function_type->parameter_modes[i]);
         bool declared_borrow =
             target != NULL && target->kind == DECL_FUNCTION &&
             i < target->as.function.param_count &&
             target->as.function.params[i].borrowed;
+        ParameterMode explicit_mode =
+            expr->as.call.argument_modes != NULL
+                ? expr->as.call.argument_modes[i]
+                : PARAMETER_MODE_VALUE;
         bool explicit_borrow =
-            (expr->as.call.ref_argument_mask & bit) != 0U ||
-            (expr->as.call.out_argument_mask & bit) != 0U;
+            parameter_mode_is_reference(explicit_mode);
         bool borrowed =
             indirect_borrow || declared_borrow || builtin_borrow ||
             explicit_borrow;
@@ -1015,7 +1189,27 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         free(borrowed_temporary_locals);
         return IR_INVALID_ID;
     }
-    call->integer = expr->as.call.out_argument_mask;
+    call->argument_mode_count = argument_count;
+    if (argument_count != 0U)
+        call->argument_modes = ir_resize(
+            NULL, argument_count, sizeof(*call->argument_modes));
+    for (size_t i = 0U; i < argument_count; ++i) {
+        ParameterMode mode = expr->as.call.argument_modes != NULL
+            ? expr->as.call.argument_modes[i]
+            : PARAMETER_MODE_VALUE;
+        if (indirect && indirect_function_type != NULL)
+            mode = indirect_function_type->parameter_modes[i];
+        else if (target != NULL && target->kind == DECL_FUNCTION &&
+                 i < target->as.function.param_count)
+            mode = parameter_mode_from_param(
+                &target->as.function.params[i]);
+        else if (mode == PARAMETER_MODE_VALUE && i == 0U &&
+                 (builtin_borrows_first_place(callee_name) ||
+                  (builtin_borrows_named_first(callee_name) &&
+                   expr->as.call.arguments.items[0]->kind == EXPR_NAME)))
+            mode = PARAMETER_MODE_IMMUTABLE_REFERENCE;
+        call->argument_modes[i] = mode;
+    }
     if (target != NULL && target->kind == DECL_FUNCTION) {
         call->symbol = target->as.function.name;
         call->symbol_length = strlen(call->symbol);
@@ -1024,34 +1218,8 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         call->symbol = expr->as.call.callee->as.name;
         call->symbol_length = strlen(call->symbol);
     }
-    if (indirect) {
-        const Type *function_type = expr->as.call.callee->type;
-        call->auxiliary = function_type != NULL
-            ? function_type->borrowed_argument_mask : 0U;
-    } else if (native) {
-        uint32_t borrowed_mask = 0U;
-        if (target != NULL && target->kind == DECL_FUNCTION) {
-            for (size_t i = 0U;
-                 i < target->as.function.param_count && i < 24U; ++i)
-                if (target->as.function.params[i].borrowed)
-                    borrowed_mask |=
-                        UINT32_C(1) << (unsigned)i;
-        } else if (argument_count >= 1U &&
-                   (builtin_borrows_first_place(callee_name) ||
-                    (builtin_borrows_named_first(callee_name) &&
-                     expr->as.call.arguments.items[0]->kind ==
-                         EXPR_NAME))) {
-            borrowed_mask = 1U;
-        }
-        call->auxiliary = borrowed_mask;
-    } else if (target != NULL && target->kind == DECL_FUNCTION) {
-        uint32_t reference_mask = 0U;
-        for (size_t i = 0U;
-             i < target->as.function.param_count && i < 32U; ++i)
-            if (target->as.function.params[i].by_ref)
-                reference_mask |= UINT32_C(1) << (unsigned)i;
-        call->auxiliary = reference_mask;
-    }
+    if (native)
+        ir_set_native_call_descriptor(builder, call, false);
     IrValueId result = call->result;
     for (size_t i = borrowed_temporary_count; i > 0U; --i) {
         IrInstruction *drop = ir_append_instruction(
@@ -1292,7 +1460,7 @@ static IrValueId lower_match_expression(IrBuilder *builder,
 IrValueId ir_emit_synthetic_native_call(
     IrBuilder *builder, const char *name, const Type *result_type,
     const IrValueId *operands, size_t operand_count,
-    uint32_t borrowed_mask, LangSpan span) {
+    bool borrow_first, LangSpan span) {
     IrInstruction *call = ir_append_instruction(
         builder, IR_OP_CALL_NATIVE,
         ir_intern_type(builder->module, result_type),
@@ -1300,7 +1468,16 @@ IrValueId ir_emit_synthetic_native_call(
     if (call == NULL) return IR_INVALID_ID;
     call->symbol = name;
     call->symbol_length = strlen(name);
-    call->auxiliary = borrowed_mask;
+    call->argument_mode_count = operand_count;
+    if (operand_count != 0U) {
+        call->argument_modes = ir_resize(
+            NULL, operand_count, sizeof(*call->argument_modes));
+        for (size_t i = 0U; i < operand_count; ++i)
+            call->argument_modes[i] = i == 0U && borrow_first
+                ? PARAMETER_MODE_IMMUTABLE_REFERENCE
+                : PARAMETER_MODE_VALUE;
+    }
+    ir_set_native_call_descriptor(builder, call, true);
     return call->result;
 }
 
@@ -2261,6 +2438,10 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         function->name = decl->as.function.name;
         function->module_name = decl->module_name;
         function->declaration = decl;
+        function->span = decl->span;
+        function->is_public = decl->is_public;
+        function->abi.calling_convention = IR_CALLING_CONVENTION_ASTER;
+        function->abi.may_propagate_exception = true;
         function->is_destructor =
             decl->as.function.is_drop;
         function->is_web_export =
@@ -2275,17 +2456,27 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         function->return_type =
             ir_intern_type(ir, decl->as.function.checked_return_type);
         function->is_async = decl->as.function.is_async;
+        function->abi.returns_async_task = function->is_async;
         function->async_result_type = function->is_async
             ? ir_intern_type(
                   ir, decl->as.function.checked_return_type->element)
             : function->return_type;
         function->parameter_count = decl->as.function.param_count;
-        function->parameter_types = ir_resize(
+        function->parameters = ir_resize(
             NULL, function->parameter_count,
-            sizeof(*function->parameter_types));
-        for (size_t p = 0U; p < function->parameter_count; ++p)
-            function->parameter_types[p] = ir_intern_type(
+            sizeof(*function->parameters));
+        for (size_t p = 0U; p < function->parameter_count; ++p) {
+            function->parameters[p].name =
+                decl->as.function.params[p].name;
+            function->parameters[p].type = ir_intern_type(
                 ir, decl->as.function.params[p].checked_type);
+            function->parameters[p].mode = parameter_mode_from_param(
+                &decl->as.function.params[p]);
+            function->parameters[p].span =
+                decl->as.function.params[p].span;
+        }
+        function->css_scope_attribute =
+            decl->as.function.css_scope_attribute;
         function->is_entry =
             strcmp(function->name, "main") == 0 &&
             module->entry_module != NULL &&
@@ -2309,11 +2500,12 @@ static void resolve_type_destructors(IrModule *ir) {
                 &ir->functions[function_index];
             if (!function->is_destructor ||
                 function->parameter_count != 1U ||
-                function->parameter_types[0] !=
+                function->parameters[0].type !=
                     (IrTypeId)type_index)
                 continue;
             type->destructor_function =
                 (IrFunctionId)function_index;
+            type->drop_policy = IR_DROP_CUSTOM;
             break;
         }
     }
@@ -2345,17 +2537,22 @@ bool lang_ir_lower_module(Module *module,
                 source->params[p].binding_id,
                 source->params[p].checked_type,
                 source->params[p].mutable_);
+            output->locals[local].borrowed =
+                parameter_mode_is_reference(output->parameters[p].mode);
             IrInstruction *parameter = ir_append_instruction(
                 &builder, IR_OP_PARAMETER,
-                output->parameter_types[p], NULL, 0U,
+                output->parameters[p].type, NULL, 0U,
                 source->params[p].span);
             if (parameter == NULL) continue;
             parameter->index = (uint32_t)p;
-            IrValueId value = parameter->result;
-            IrInstruction *store = ir_append_instruction(
-                &builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
-                &value, 1U, source->params[p].span);
-            if (store != NULL) store->index = local;
+            if (!parameter_mode_is_reference(
+                    output->parameters[p].mode)) {
+                IrValueId value = parameter->result;
+                IrInstruction *store = ir_append_instruction(
+                    &builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+                    &value, 1U, source->params[p].span);
+                if (store != NULL) store->index = local;
+            }
         }
         ir_lower_stmt(&builder, source->body);
         if (!ir_current_terminated(&builder)) {
@@ -2413,8 +2610,22 @@ bool lang_ir_lower_module(Module *module,
             ir->lowering_diagnostics = NULL;
             return false;
         }
+        for (size_t b = 0U; b < output->block_count; ++b)
+            for (size_t instruction = 0U;
+                 instruction < output->blocks[b].instruction_count;
+                 ++instruction)
+                if (output->blocks[b].instructions[instruction].opcode ==
+                    IR_OP_AWAIT)
+                    ++output->async_suspension_count;
     }
     resolve_type_destructors(ir);
+    /* Frontend links are lowering-only. A completed IR module is closed
+     * backend input; keeping these null makes accidental semantic fallback
+     * fail immediately during development. */
+    for (size_t i = 0U; i < ir->function_count; ++i)
+        ir->functions[i].declaration = NULL;
+    for (size_t i = 0U; i < ir->type_count; ++i)
+        ir->types[i].checked_type = NULL;
     ir->lowering_module = NULL;
     ir->lowering_diagnostics = NULL;
     return diagnostics->count == 0U;

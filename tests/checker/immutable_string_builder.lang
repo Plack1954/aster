@@ -1,4 +1,4 @@
-void AppendText(StringBuilder builder) {
+private void AppendText(StringBuilder builder) {
     builder.Append("no");
 }
 

@@ -1,6 +1,6 @@
 using Aster.Html;
 
-Html Card(string accent, int gap) {
+private Html Card(string accent, int gap) {
     return <article class="card" --accent=accent --gap=gap>
         <style scoped>
             .card {
@@ -8,11 +8,11 @@ Html Card(string accent, int gap) {
                 gap: var(--gap);
             }
         </style>
-        "Aster"
+        Aster
     </article>;
 }
 
 int main() {
-    print(HtmlRender(<Card accent="#e45b20" gap=12 />));
+    Console.WriteLine(<Card accent="#e45b20" gap=12 />.ToHtmlString());
     return 0;
 }

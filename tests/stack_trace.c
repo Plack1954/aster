@@ -48,7 +48,7 @@ int main(void) {
         strstr(output,
                "at middle (tests/vm/stack_trace.lang:6:12)") != NULL &&
         strstr(output,
-               "at main (tests/vm/stack_trace.lang:10:11)") != NULL;
+               "at main (tests/vm/stack_trace.lang:10:23)") != NULL;
     return status != 0 && complete ? 0 : 5;
 #endif
 }

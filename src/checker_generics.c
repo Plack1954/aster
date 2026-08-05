@@ -308,7 +308,7 @@ static Expr *clone_generic_expr(Module *module, const Expr *source) {
 
 static Type *resolve_type_with_function_arguments(
     Checker *checker, const Decl *template_decl, Type **arguments,
-    const char *name, LangSpan span) {
+    const TypeSyntax *syntax, const char *name, LangSpan span) {
     const char *previous_module = checker->current_module;
     const Decl *previous_decl = checker->substitution_decl;
     Type **previous_arguments = checker->substitution_arguments;
@@ -317,7 +317,7 @@ static Type *resolve_type_with_function_arguments(
     checker->substitution_decl = template_decl;
     checker->substitution_arguments = arguments;
     checker->substitution_argument_count = template_decl->type_param_count;
-    Type *result = resolve_type(checker, name, span);
+    Type *result = resolve_declared_type(checker, syntax, name, span);
     checker->current_module = previous_module;
     checker->substitution_decl = previous_decl;
     checker->substitution_arguments = previous_arguments;
@@ -402,6 +402,108 @@ static bool infer_generic_pattern(
     for (size_t i = 0U; i < pattern_count; ++i)
         if (!infer_generic_pattern(
                 checker, template_decl, patterns[i],
+                actual_arguments[i], arguments, span))
+            ok = false;
+    return ok;
+}
+
+static bool infer_generic_syntax(
+    Checker *checker, const Decl *template_decl,
+    const TypeSyntax *pattern, const char *fallback_pattern,
+    Type *actual, Type **arguments, LangSpan span) {
+    if (pattern == NULL)
+        return infer_generic_pattern(
+            checker, template_decl, fallback_pattern,
+            actual, arguments, span);
+    if (pattern->kind == TYPE_SYNTAX_NAMED) {
+        size_t parameter = generic_parameter_index(
+            template_decl, pattern->as.name);
+        if (parameter == SIZE_MAX) return true;
+        if (arguments[parameter] == NULL) {
+            arguments[parameter] = actual;
+            return true;
+        }
+        if (!same_type(arguments[parameter], actual)) {
+            lang_diag(checker->diagnostics, span,
+                      "conflicting inferred types for `%s`: `%s` and `%s`",
+                      pattern->as.name, arguments[parameter]->name,
+                      actual->name);
+            return false;
+        }
+        return true;
+    }
+    if (pattern->kind == TYPE_SYNTAX_POINTER &&
+        actual->kind == TYPE_RAW_POINTER)
+        return infer_generic_syntax(
+            checker, template_decl, pattern->as.pointer.element, NULL,
+            actual->element, arguments, span);
+    if (pattern->kind == TYPE_SYNTAX_ARRAY &&
+        actual->kind == TYPE_ARRAY &&
+        pattern->as.array.count == actual->array_length)
+        return infer_generic_syntax(
+            checker, template_decl, pattern->as.array.element, NULL,
+            actual->element, arguments, span);
+    if (pattern->kind == TYPE_SYNTAX_FUNCTION &&
+        actual->kind == TYPE_FUNCTION) {
+        if (pattern->as.function.parameter_count != actual->argument_count)
+            return false;
+        bool ok = infer_generic_syntax(
+            checker, template_decl, pattern->as.function.return_type, NULL,
+            actual->element, arguments, span);
+        for (size_t i = 0U; i < actual->argument_count; ++i) {
+            if (pattern->as.function.parameter_modes[i] !=
+                actual->parameter_modes[i]) {
+                ok = false;
+                continue;
+            }
+            if (!infer_generic_syntax(
+                    checker, template_decl,
+                    pattern->as.function.parameters[i], NULL,
+                    actual->arguments[i], arguments, span))
+                ok = false;
+        }
+        return ok;
+    }
+    if (pattern->kind != TYPE_SYNTAX_GENERIC ||
+        pattern->as.generic.base->kind != TYPE_SYNTAX_NAMED)
+        return true;
+    const char *base = pattern->as.generic.base->as.name;
+    Type *actual_items[2] = {NULL, NULL};
+    Type **actual_arguments = actual_items;
+    size_t actual_count = 0U;
+    if ((strcmp(base, "Option") == 0 && actual->kind == TYPE_OPTION) ||
+        (strcmp(base, "List") == 0 && actual->kind == TYPE_VEC) ||
+        (strcmp(base, "Slice") == 0 && actual->kind == TYPE_SLICE) ||
+        (strcmp(base, "HashSet") == 0 && actual->kind == TYPE_HASH_SET) ||
+        (strcmp(base, "Queue") == 0 && actual->kind == TYPE_QUEUE) ||
+        (strcmp(base, "Stack") == 0 && actual->kind == TYPE_STACK) ||
+        (strcmp(base, "Task") == 0 && actual->kind == TYPE_TASK)) {
+        actual_items[0] = actual->element;
+        actual_count = 1U;
+    } else if ((strcmp(base, "Result") == 0 && actual->kind == TYPE_RESULT) ||
+               (strcmp(base, "Dictionary") == 0 &&
+                actual->kind == TYPE_DICTIONARY)) {
+        actual_items[0] = actual->element;
+        actual_items[1] = actual->error_type;
+        actual_count = 2U;
+    } else if (actual->kind == TYPE_NAMED &&
+               actual->declaration != NULL) {
+        const char *previous_module = checker->current_module;
+        checker->current_module = template_decl->module_name;
+        Decl *pattern_decl = find_type_declaration(checker, base, span);
+        checker->current_module = previous_module;
+        if (pattern_decl != actual->declaration) return true;
+        actual_arguments = actual->arguments;
+        actual_count = actual->argument_count;
+    } else {
+        return true;
+    }
+    if (pattern->as.generic.argument_count != actual_count) return false;
+    bool ok = true;
+    for (size_t i = 0U; i < actual_count; ++i)
+        if (!infer_generic_syntax(
+                checker, template_decl,
+                pattern->as.generic.arguments[i], NULL,
                 actual_arguments[i], arguments, span))
             ok = false;
     return ok;
@@ -517,8 +619,9 @@ Type *check_generic_call(
         &checker->module->arena,
         template_decl->type_param_count * sizeof(*arguments));
     if (checker->expected_type != NULL)
-        (void)infer_generic_pattern(
-            checker, template_decl, function->return_type,
+        (void)infer_generic_syntax(
+            checker, template_decl, function->return_type_syntax,
+            function->return_type,
             checker->expected_type, arguments, expr->span);
     size_t count =
         function->param_count < expr->as.call.arguments.count
@@ -528,12 +631,12 @@ Type *check_generic_call(
         expr->as.call.arguments.count * sizeof(*argument_places));
     for (size_t i = 0U; i < expr->as.call.arguments.count; ++i) {
         Expr *argument = expr->as.call.arguments.items[i];
-        uint32_t bit = i < 32U
-            ? UINT32_C(1) << (unsigned)i : 0U;
+        ParameterMode call_mode = expr->as.call.argument_modes != NULL
+            ? expr->as.call.argument_modes[i]
+            : PARAMETER_MODE_VALUE;
         bool call_ref =
-            (expr->as.call.ref_argument_mask & bit) != 0U;
-        bool call_out =
-            (expr->as.call.out_argument_mask & bit) != 0U;
+            call_mode == PARAMETER_MODE_MUTABLE_REFERENCE;
+        bool call_out = call_mode == PARAMETER_MODE_OUT;
         if (i < function->param_count) {
             bool parameter_ref = function->params[i].by_ref &&
                 !function->params[i].by_out;
@@ -566,8 +669,9 @@ Type *check_generic_call(
             (void)check_expr(checker, argument);
     }
     for (size_t i = 0U; i < count; ++i)
-        (void)infer_generic_pattern(
-            checker, template_decl, function->params[i].type_name,
+        (void)infer_generic_syntax(
+            checker, template_decl, function->params[i].type_syntax,
+            function->params[i].type_name,
             expr->as.call.arguments.items[i]->type,
             arguments, expr->as.call.arguments.items[i]->span);
     bool complete = true;
@@ -609,6 +713,7 @@ Type *check_generic_call(
     for (size_t i = 0U; i < count; ++i) {
         Type *expected = resolve_type_with_function_arguments(
             checker, template_decl, arguments,
+            function->params[i].type_syntax,
             function->params[i].type_name,
             function->params[i].span);
         (void)coerce_literal(
@@ -625,5 +730,6 @@ Type *check_generic_call(
     }
     return resolve_type_with_function_arguments(
         checker, template_decl, arguments,
+        function->return_type_syntax,
         function->return_type, function->span);
 }

@@ -105,7 +105,7 @@ language function. The Aster-written `std.router` module accepts literal
 paths and `:name` segments:
 
 ```text
-Html user(string path) {
+private Html user(string path) {
     string id = HttpPathParam("/users/:id", path, "id");
     return <strong>{id}</strong>;
 }
@@ -156,7 +156,7 @@ bool active = true;
 while (active) {
     string path = HttpRequestPath(request);
     Html document = route(path);
-    string body = HtmlRender(document);
+    string body = document.ToHtmlString();
     active = HttpRespondHtmlReuse(
         request,
         200,

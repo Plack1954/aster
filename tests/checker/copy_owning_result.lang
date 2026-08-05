@@ -3,6 +3,6 @@ int main() {
         Result.Ok("owned");
     Result<string, long> second = first;
     Result<string, long> third = first;
-    print(0);
+    Console.WriteLine(0);
     return 0;
 }

@@ -1,9 +1,9 @@
 using Aster.Html;
 
-Option<Html> MaybeBadge(bool show) {
+private Option<Html> MaybeBadge(bool show) {
     if (show) {
         Option<Html> some =
-            Option.Some(<strong>"Optional"</strong>);
+            Option.Some(<strong>Optional</strong>);
         return some;
     }
     Option<Html> none = Option.None;
@@ -12,14 +12,14 @@ Option<Html> MaybeBadge(bool show) {
 
 int main() {
     List<Html> rows = new();
-    rows.Add(<li>"Ada"</li>);
-    rows.Add(<li>"Lin"</li>);
+    rows.Add(<li>Ada</li>);
+    rows.Add(<li>Lin</li>);
 
     Html document = <section>
         {MaybeBadge(true)}
-        {[<h2>"Array A"</h2>, <h2>"Array B"</h2>]}
+        {[<h2>Array A</h2>, <h2>Array B</h2>]}
         <ul>{rows}</ul>
     </section>;
-    print(HtmlRender(document));
+    Console.WriteLine(document.ToHtmlString());
     return 0;
 }

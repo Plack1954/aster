@@ -87,15 +87,14 @@ static void emit_call_operands(
     CEmitter *emitter,
     const IrFunction *function,
     const IrInstruction *instruction,
-    size_t offset,
-    uint32_t borrowed_mask
+    size_t offset
 ) {
     for (size_t i = offset; i < instruction->operand_count; ++i) {
         if (i != offset) fputs(", ", emitter->output);
         size_t argument = i - offset;
-        bool borrowed = argument < 32U &&
-            (borrowed_mask &
-             (UINT32_C(1) << (unsigned)argument)) != 0U;
+        bool borrowed = argument < instruction->argument_mode_count &&
+            parameter_mode_is_reference(
+                instruction->argument_modes[argument]);
         if (borrowed)
             emit_borrowed_call_operand(
                 emitter, function, instruction->operands[i]);
@@ -103,23 +102,6 @@ static void emit_call_operands(
             emit_value_name(
                 emitter->output, instruction->operands[i]);
     }
-}
-
-static uint32_t direct_call_borrowed_mask(
-    const CEmitter *emitter,
-    const IrInstruction *instruction
-) {
-    if (instruction->index >= emitter->ir->function_count)
-        return 0U;
-    const IrFunction *target =
-        &emitter->ir->functions[instruction->index];
-    if (target->declaration == NULL) return 0U;
-    uint32_t mask = 0U;
-    const Function *function = &target->declaration->as.function;
-    for (size_t i = 0U; i < function->param_count && i < 32U; ++i)
-        if (function->params[i].borrowed)
-            mask |= UINT32_C(1) << (unsigned)i;
-    return mask;
 }
 
 bool c_backend_function_has_render_root(
@@ -533,9 +515,9 @@ static void emit_native_argument_cleanup(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction) {
     for (size_t i = 0U; i < instruction->operand_count; ++i) {
-        if (i < 32U &&
-            (instruction->auxiliary &
-             (UINT32_C(1) << (unsigned)i)) != 0U)
+        if (i < instruction->argument_mode_count &&
+            parameter_mode_is_reference(
+                instruction->argument_modes[i]))
             continue;
         IrTypeId type = function->value_types[
             instruction->operands[i]];
@@ -705,7 +687,7 @@ const IrInstruction *c_backend_find_direct_render_consumer(
     if (uses != 1U || consumer == NULL ||
         consumer->opcode != IR_OP_CALL_NATIVE ||
         consumer->symbol == NULL ||
-        strcmp(consumer->symbol, "HtmlRender") != 0 ||
+        strcmp(consumer->symbol, "Html::ToHtmlString") != 0 ||
         consumer->operand_count != 1U)
         return NULL;
     return consumer;
@@ -717,11 +699,9 @@ void c_backend_emit_instruction(CEmitter *emitter,
     FILE *output = emitter->output;
     switch (instruction->opcode) {
         case IR_OP_PARAMETER:
-            if (function->declaration != NULL &&
-                instruction->index <
-                    function->declaration->as.function.param_count &&
-                function->declaration->as.function
-                    .params[instruction->index].borrowed)
+            if (instruction->index < function->parameter_count &&
+                parameter_mode_is_reference(
+                    function->parameters[instruction->index].mode))
                 fprintf(output,
                         "    v%" PRIu32 " = *p%" PRIu32 ";\n",
                         instruction->result, instruction->index);
@@ -799,6 +779,10 @@ void c_backend_emit_instruction(CEmitter *emitter,
         case IR_OP_LOCAL_STORE: {
             IrTypeId local_type =
                 function->locals[instruction->index].type;
+            bool reference_local =
+                instruction->index < function->parameter_count &&
+                parameter_mode_is_reference(
+                    function->parameters[instruction->index].mode);
             if (emitter->render_direct &&
                 emitter->ir->types[local_type].shape ==
                     IR_TYPE_ELEMENT_BUILDER) {
@@ -816,8 +800,14 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             ? "false" : "true");
                 return;
             }
-            if (c_backend_local_tracks_drop(
-                    emitter, function, instruction->index)) {
+            if (reference_local &&
+                c_backend_type_needs_drop(emitter, local_type)) {
+                fputs("    ", output);
+                c_backend_emit_drop_call(
+                    emitter, local_type, "l", instruction->index);
+                fputs(";\n", output);
+            } else if (c_backend_local_tracks_drop(
+                           emitter, function, instruction->index)) {
                 fprintf(output,
                         "    if (l%" PRIu32 "_live) ",
                         instruction->index);
@@ -880,7 +870,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
             {
             const IrType *result_type =
                 &emitter->ir->types[instruction->result_type];
-            if (result_type->requires_cleanup || result_type->managed)
+            if (result_type->copy_policy != IR_COPY_TRIVIAL)
                 fprintf(output,
                         "    v%" PRIu32 " = aster_clone_%" PRIu32
                         "(v%" PRIu32 ");\n",
@@ -894,7 +884,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
             if (instruction->auxiliary != 0U &&
                 !c_backend_value_is_borrowed_projection(
                     function, instruction->operands[0]) &&
-                (result_type->requires_cleanup || result_type->managed)) {
+                result_type->drop_policy != IR_DROP_TRIVIAL) {
                 fputs("    ", output);
                 c_backend_emit_drop_call(
                     emitter, instruction->result_type, "v",
@@ -1370,17 +1360,32 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     "this interpolated text value type");
             return;
         }
-        case IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT:
+        case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
             if (emitter->render_direct) {
                 c_backend_emit_direct_close_open(emitter, instruction->index);
-                c_backend_emit_direct_builder_literal(
-                    output, instruction->symbol,
-                    instruction->symbol_length);
+                if (c_backend_local_element_is_raw_text(
+                        function, instruction->index)) {
+                    c_backend_emit_direct_builder_literal(
+                        output, instruction->symbol,
+                        instruction->symbol_length);
+                } else {
+                    size_t escaped_length = c_backend_html_escaped_length(
+                        instruction->symbol,
+                        instruction->symbol_length, false);
+                    fputs(
+                        "    aster_builder_append(render_builder, "
+                        "(aster_str){",
+                        output);
+                    c_backend_emit_html_escaped_byte_string(
+                        output, instruction->symbol,
+                        instruction->symbol_length, false);
+                    fprintf(output, ", %zuU});\n", escaped_length);
+                }
                 return;
             }
             fprintf(
                 output,
-                "    aster_html_append_raw_text(l%" PRIu32
+                "    aster_html_append_text(l%" PRIu32
                 ", (aster_str){",
                 instruction->index);
             c_backend_emit_byte_string(
@@ -2123,8 +2128,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->index);
                 if (instruction->operand_count != 0U) fputs(", ", output);
                 emit_call_operands(
-                    emitter, function, instruction, 0U,
-                    direct_call_borrowed_mask(emitter, instruction));
+                    emitter, function, instruction, 0U);
                 fputs(");\n", output);
                 fprintf(output,
                         "    v%" PRIu32 " = (aster_html *)render_builder;\n",
@@ -2158,8 +2162,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 fputc('(', output);
             }
             emit_call_operands(
-                emitter, function, instruction, 0U,
-                direct_call_borrowed_mask(emitter, instruction));
+                emitter, function, instruction, 0U);
             fputs(");\n", output);
             return;
         case IR_OP_FUNCTION_REF:
@@ -2172,8 +2175,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     "    v%" PRIu32 " = v%" PRIu32 "(",
                     instruction->result, instruction->operands[0]);
             emit_call_operands(
-                emitter, function, instruction, 1U,
-                instruction->auxiliary);
+                emitter, function, instruction, 1U);
             fputs(");\n", output);
             return;
         case IR_OP_ITERATOR_BEGIN: {
@@ -2630,39 +2632,50 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->operands[1]);
                 return;
             }
-            if (instruction->symbol != NULL &&
-                strcmp(instruction->symbol, "eprint") == 0 &&
+            bool console_stdout = instruction->symbol != NULL &&
+                (strcmp(instruction->symbol, "Console::WriteLine") == 0 ||
+                 strcmp(instruction->symbol, "Console::Write") == 0);
+            bool console_stderr = instruction->symbol != NULL &&
+                (strcmp(instruction->symbol,
+                        "Console::Error::WriteLine") == 0 ||
+                 strcmp(instruction->symbol,
+                        "Console::Error::Write") == 0);
+            if ((console_stdout || console_stderr) &&
                 instruction->operand_count == 1U) {
                 IrValueId argument_value = instruction->operands[0];
+                IrTypeId argument_type =
+                    function->value_types[argument_value];
                 const IrType *argument = &emitter->ir->types[
-                    function->value_types[argument_value]];
+                    argument_type];
+                const char *stream = console_stdout ? "stdout" : "stderr";
+                bool newline =
+                    strcmp(instruction->symbol, "Console::WriteLine") == 0 ||
+                    strcmp(instruction->symbol,
+                           "Console::Error::WriteLine") == 0;
                 if (argument->shape == IR_TYPE_STRING_VIEW)
                     fprintf(
                         output,
-                        "    if (v%" PRIu32 ".length != 0U)\n"
-                        "        (void)fwrite(v%" PRIu32
-                        ".data, 1U, v%" PRIu32 ".length, stderr);\n"
-                        "    fputc('\\n', stderr);\n"
+                        "    aster_console_write_str(%s, v%" PRIu32
+                        ", %s);\n"
                         "    v%" PRIu32 " = UINT8_C(0);\n",
-                        argument_value, argument_value,
-                        argument_value, instruction->result);
+                        stream, argument_value,
+                        newline ? "true" : "false",
+                        instruction->result);
                 else if (argument->shape == IR_TYPE_BUILTIN_OBJECT &&
                          strcmp(argument->name, "string") == 0) {
                     fprintf(
                         output,
-                        "    if (v%" PRIu32 "->length != 0U)\n"
-                        "        (void)fwrite(v%" PRIu32
-                        "->data, 1U, v%" PRIu32
-                        "->length, stderr);\n"
-                        "    fputc('\\n', stderr);\n",
-                        argument_value, argument_value,
-                        argument_value);
-                    if ((instruction->auxiliary &
-                         UINT32_C(1)) == 0U) {
+                        "    aster_console_write_string(%s, v%" PRIu32
+                        ", %s);\n",
+                        stream, argument_value,
+                        newline ? "true" : "false");
+                    if (instruction->argument_mode_count == 0U ||
+                        !parameter_mode_is_reference(
+                            instruction->argument_modes[0])) {
                         fputs("    ", output);
                         c_backend_emit_drop_call(
                             emitter,
-                            function->value_types[argument_value],
+                            argument_type,
                             "v", argument_value);
                         fputs(";\n", output);
                     }
@@ -2670,87 +2683,66 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             "    v%" PRIu32 " = UINT8_C(0);\n",
                             instruction->result);
                 }
-                else {
-                    c_backend_unsupported(
-                        emitter, instruction->span,
-                        "this native eprint argument");
-                }
-                return;
-            }
-            if (instruction->symbol != NULL &&
-                instruction->symbol_length == 5U &&
-                memcmp(instruction->symbol, "print", 5U) == 0 &&
-                instruction->operand_count == 1U) {
-                IrTypeId argument_type =
-                    function->value_types[
-                        instruction->operands[0]];
-                const IrType *argument =
-                    &emitter->ir->types[argument_type];
-                if (argument->shape == IR_TYPE_STRING_VIEW) {
-                    fprintf(
-                        output,
-                        "    aster_print_str(v%" PRIu32 ");\n"
-                        "    v%" PRIu32 " = UINT8_C(0);\n",
-                        instruction->operands[0],
-                        instruction->result);
-                    return;
-                }
-                if (argument->shape == IR_TYPE_BUILTIN_OBJECT &&
-                    strcmp(argument->name, "string") == 0) {
-                    fprintf(
-                        output,
-                        "    aster_print_string(v%" PRIu32 ");\n",
-                        instruction->operands[0]);
-                    if ((instruction->auxiliary &
-                         UINT32_C(1)) == 0U) {
-                        fputs("    ", output);
-                        c_backend_emit_drop_call(
-                            emitter, argument_type, "v",
-                            instruction->operands[0]);
-                        fputs(";\n", output);
-                    }
-                    fprintf(output,
-                            "    v%" PRIu32 " = UINT8_C(0);\n",
-                            instruction->result);
-                    return;
-                }
-                if (argument->shape == IR_TYPE_BOOL) {
+                else if (argument->shape == IR_TYPE_BOOL) {
                     fprintf(
                         output,
                         "    fputs(v%" PRIu32
-                        " ? \"true\\n\" : \"false\\n\", stdout);\n"
-                        "    (void)fflush(stdout);\n"
+                        " ? \"true\" : \"false\", %s);\n",
+                        argument_value, stream);
+                    if (newline)
+                        fprintf(output, "    fputc('\\n', %s);\n", stream);
+                    fprintf(
+                        output,
+                        "    (void)fflush(%s);\n"
                         "    v%" PRIu32 " = UINT8_C(0);\n",
-                        instruction->operands[0],
+                        stream,
                         instruction->result);
-                    return;
                 }
-                if (argument->shape != IR_TYPE_SIGNED_INT) {
-                    if (argument->shape == IR_TYPE_UNSIGNED_INT ||
-                        argument->shape == IR_TYPE_CHAR) {
-                        fprintf(
-                            output,
-                            "    printf(\"%%\" PRIu64 \"\\n\", "
-                            "(uint64_t)v%" PRIu32 ");\n"
-                            "    (void)fflush(stdout);\n"
+                else if (argument->shape == IR_TYPE_SIGNED_INT) {
+                    fprintf(
+                        output,
+                        "    fprintf(%s, \"%%\" PRId64, "
+                        "v%" PRIu32 ");\n",
+                        stream, argument_value);
+                    if (newline)
+                        fprintf(output, "    fputc('\\n', %s);\n", stream);
+                    fprintf(output,
+                            "    (void)fflush(%s);\n"
                             "    v%" PRIu32 " = UINT8_C(0);\n",
-                            instruction->operands[0],
+                            stream,
                             instruction->result);
-                        return;
-                    }
+                }
+                else if (argument->shape == IR_TYPE_UNSIGNED_INT ||
+                         argument->shape == IR_TYPE_CHAR) {
+                    fprintf(
+                        output,
+                        "    fprintf(%s, \"%%\" PRIu64, "
+                        "(uint64_t)v%" PRIu32 ");\n",
+                        stream, argument_value);
+                    if (newline)
+                        fprintf(output, "    fputc('\\n', %s);\n", stream);
+                    fprintf(output,
+                            "    (void)fflush(%s);\n"
+                            "    v%" PRIu32 " = UINT8_C(0);\n",
+                            stream, instruction->result);
+                }
+                else if (argument->shape == IR_TYPE_FLOAT) {
+                    fprintf(
+                        output,
+                        "    fprintf(%s, \"%%g\", "
+                        "(double)v%" PRIu32 ");\n",
+                        stream, argument_value);
+                    if (newline)
+                        fprintf(output, "    fputc('\\n', %s);\n", stream);
+                    fprintf(output,
+                            "    (void)fflush(%s);\n"
+                            "    v%" PRIu32 " = UINT8_C(0);\n",
+                            stream, instruction->result);
+                }
+                else
                     c_backend_unsupported(
                         emitter, instruction->span,
-                        "non-signed-integer native print");
-                    return;
-                }
-                fprintf(
-                    output,
-                    "    printf(\"%%\" PRId64 \"\\n\", "
-                    "v%" PRIu32 ");\n"
-                    "    (void)fflush(stdout);\n"
-                    "    v%" PRIu32 " = UINT8_C(0);\n",
-                    instruction->operands[0],
-                    instruction->result);
+                        "this Console output argument");
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4561,7 +4553,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 return;
             }
             if (instruction->symbol != NULL &&
-                strcmp(instruction->symbol, "HtmlRender") == 0) {
+                strcmp(instruction->symbol, "Html::ToHtmlString") == 0) {
                 const IrInstruction *producer = c_backend_find_value_producer(
                     function, instruction->operands[0]);
                 if (!emitter->render_direct && producer != NULL &&
@@ -4575,14 +4567,13 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             " = aster_fn_%" PRIu32 "_render(",
                             instruction->result, producer->index);
                     emit_call_operands(
-                        emitter, function, producer, 0U,
-                        direct_call_borrowed_mask(emitter, producer));
+                        emitter, function, producer, 0U);
                     fputs(");\n", output);
                     return;
                 }
                 fprintf(output,
                         "    v%" PRIu32
-                        " = aster_html_render(v%" PRIu32 ");\n",
+                        " = aster_html_to_string(v%" PRIu32 ");\n",
                         instruction->result,
                         instruction->operands[0]);
                 return;
@@ -4697,8 +4688,9 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     function->value_types[instruction->operands[0]];
                 const IrType *argument =
                     &emitter->ir->types[argument_type];
-                bool borrowed =
-                    (instruction->auxiliary & UINT32_C(1)) != 0U;
+                bool borrowed = instruction->argument_mode_count != 0U &&
+                    parameter_mode_is_reference(
+                        instruction->argument_modes[0]);
                 if (argument->shape == IR_TYPE_STRING_VIEW)
                     fprintf(output,
                             "    v%" PRIu32
@@ -4726,8 +4718,9 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 const IrType *argument = &emitter->ir->types[
                     function->value_types[instruction->operands[0]]];
                 bool owned = argument->shape == IR_TYPE_BUILTIN_OBJECT;
-                bool borrowed =
-                    (instruction->auxiliary & UINT32_C(1)) != 0U;
+                bool borrowed = instruction->argument_mode_count != 0U &&
+                    parameter_mode_is_reference(
+                        instruction->argument_modes[0]);
                 fprintf(output,
                         "    if (v%" PRIu32 " >= v%" PRIu32 "%slength)\n"
                         "        aster_trap(\"string_byte_at index is "
@@ -4752,14 +4745,16 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 const IrType *argument = &emitter->ir->types[
                     function->value_types[instruction->operands[0]]];
                 bool owned = argument->shape == IR_TYPE_BUILTIN_OBJECT;
-                bool borrowed =
-                    (instruction->auxiliary & UINT32_C(1)) != 0U;
+                bool borrowed = instruction->argument_mode_count != 0U &&
+                    parameter_mode_is_reference(
+                        instruction->argument_modes[0]);
                 fprintf(output,
                         "    if (v%" PRIu32 " > v%" PRIu32 " || "
                         "v%" PRIu32 " > v%" PRIu32 "%slength)\n"
                         "        aster_trap(\"string_slice requires valid "
                         "start and end byte offsets\");\n"
                         "    v%" PRIu32 " = aster_string_from((aster_str){"
+                        "v%" PRIu32 " == v%" PRIu32 " ? NULL : "
                         "v%" PRIu32 "%sdata + (size_t)v%" PRIu32 ", "
                         "(size_t)(v%" PRIu32 " - v%" PRIu32 ")});\n",
                         instruction->operands[1],
@@ -4768,6 +4763,8 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->operands[0],
                         owned ? "->" : ".",
                         instruction->result,
+                        instruction->operands[1],
+                        instruction->operands[2],
                         instruction->operands[0],
                         owned ? "->" : ".",
                         instruction->operands[1],
@@ -4833,17 +4830,6 @@ void c_backend_emit_terminator(CEmitter *emitter,
         c_backend_emit_async_terminator(
             emitter, function, terminator);
         return;
-    }
-    bool writes_back_ref =
-        terminator->kind == IR_TERM_RETURN ||
-        terminator->kind == IR_TERM_PROPAGATE_EXCEPTION;
-    if (writes_back_ref && function->declaration != NULL) {
-        const Function *source =
-            &function->declaration->as.function;
-        for (size_t i = 0U;
-             i < source->param_count && i < function->local_count; ++i)
-            if (source->params[i].borrowed)
-                fprintf(output, "    *p%zu = l%zu;\n", i, i);
     }
     switch (terminator->kind) {
         case IR_TERM_JUMP:

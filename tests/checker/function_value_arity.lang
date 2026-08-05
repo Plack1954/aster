@@ -1,9 +1,9 @@
-long AddOne(long value) {
+private long AddOne(long value) {
     return value + 1;
 }
 
 int main() {
     long(long) operation = AddOne;
-    print(operation(1, 2));
+    Console.WriteLine(operation(1, 2));
     return 0;
 }

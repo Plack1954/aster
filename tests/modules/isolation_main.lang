@@ -2,11 +2,11 @@ namespace Isolation.Main;
 
 using Isolation.Dep;
 
-long choose(long value) {
+private long choose(long value) {
     return value + 1;
 }
 
 int main() {
-    print(choose(41));
+    Console.WriteLine(choose(41));
     return 0;
 }

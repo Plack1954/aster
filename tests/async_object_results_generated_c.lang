@@ -1,4 +1,4 @@
-extern Task Task.Delay(int milliseconds);
+private extern Task Task.Delay(int milliseconds);
 
 using Aster.Html;
 
@@ -10,13 +10,13 @@ struct PageResponse
     Html Body;
 }
 
-async Task<string> LoadTitleAsync()
+private async Task<string> LoadTitleAsync()
 {
     await Task.Delay(1);
     return "Aster async";
 }
 
-async Task<List<int>> LoadNumbersAsync()
+private async Task<List<int>> LoadNumbersAsync()
 {
     await Task.Delay(1);
     List<int> values = new();
@@ -25,13 +25,13 @@ async Task<List<int>> LoadNumbersAsync()
     return values;
 }
 
-async Task<Html> LoadHtmlAsync(string title)
+private async Task<Html> LoadHtmlAsync(string title)
 {
     await Task.Delay(1);
     return <article><h1>{title}</h1></article>;
 }
 
-async Task<PageResponse> LoadResponseAsync()
+private async Task<PageResponse> LoadResponseAsync()
 {
     string title = await LoadTitleAsync();
     List<string> headers = new();
@@ -51,25 +51,25 @@ async Task<int> main()
     Task<string> titleTask = LoadTitleAsync();
     string titleFirst = await titleTask;
     string titleSecond = await titleTask;
-    print(titleFirst);
-    print(titleSecond);
+    Console.WriteLine(titleFirst);
+    Console.WriteLine(titleSecond);
 
     Task<List<int>> numbersTask = LoadNumbersAsync();
     List<int> firstNumbers = await numbersTask;
     firstNumbers.Add(30);
     List<int> secondNumbers = await numbersTask;
-    print(firstNumbers.Count);
-    print(secondNumbers.Count);
+    Console.WriteLine(firstNumbers.Count);
+    Console.WriteLine(secondNumbers.Count);
 
     Task<PageResponse> responseTask = LoadResponseAsync();
     PageResponse first = await responseTask;
     first.Headers.Add("x-first: yes");
     PageResponse second = await responseTask;
-    print(first.StatusCode);
-    print(first.Headers.Count);
-    print(second.Headers.Count);
-    print(first.ContentType);
-    print(HtmlRender(first.Body));
-    print(HtmlRender(second.Body));
+    Console.WriteLine(first.StatusCode);
+    Console.WriteLine(first.Headers.Count);
+    Console.WriteLine(second.Headers.Count);
+    Console.WriteLine(first.ContentType);
+    Console.WriteLine(first.Body.ToHtmlString());
+    Console.WriteLine(second.Body.ToHtmlString());
     return 0;
 }

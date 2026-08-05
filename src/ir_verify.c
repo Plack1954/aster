@@ -32,7 +32,7 @@ const char *ir_opcode_name(IrOpcode opcode) {
         "local_element_css_value",
         "local_element_property_end",
         "local_element_append",
-        "local_element_append_raw_text",
+        "local_element_append_static_text",
         "local_element_append_formatted",
         "local_element_finish"
     };
@@ -49,6 +49,18 @@ static bool opcode_valid(IrOpcode opcode) {
 
 static bool verify_type(const IrModule *ir, IrTypeId type) {
     return type != IR_INVALID_ID && (size_t)type < ir->type_count;
+}
+
+static bool valid_parameter_mode(ParameterMode mode) {
+    return mode >= PARAMETER_MODE_VALUE && mode <= PARAMETER_MODE_OUT;
+}
+
+static bool valid_copy_policy(IrCopyPolicy policy) {
+    return policy >= IR_COPY_TRIVIAL && policy <= IR_COPY_CUSTOM;
+}
+
+static bool valid_drop_policy(IrDropPolicy policy) {
+    return policy >= IR_DROP_TRIVIAL && policy <= IR_DROP_CUSTOM;
 }
 
 static bool type_shape_valid(IrTypeShape shape) {
@@ -87,7 +99,7 @@ static bool operand_count_valid(const IrInstruction *instruction) {
         case IR_OP_ELEMENT_BEGIN:
         case IR_OP_LOCAL_ELEMENT_PROPERTY_BEGIN:
         case IR_OP_LOCAL_ELEMENT_PROPERTY_END:
-        case IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT:
+        case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
         case IR_OP_LOCAL_ELEMENT_FINISH:
         case IR_OP_EXCEPTION_PENDING:
         case IR_OP_EXCEPTION_MATCH:
@@ -134,6 +146,9 @@ static bool operand_count_valid(const IrInstruction *instruction) {
 static bool result_type_valid(const IrModule *ir,
                               const IrFunction *function,
                               const IrInstruction *instruction) {
+    if (instruction->opcode != IR_OP_CALL_NATIVE &&
+        instruction->native_call != NULL)
+        return false;
     bool produces_result;
     switch (instruction->opcode) {
         case IR_OP_LOCAL_STORE: case IR_OP_LOCAL_DROP:
@@ -146,7 +161,7 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_LOCAL_ELEMENT_CSS_VALUE:
         case IR_OP_LOCAL_ELEMENT_PROPERTY_END:
         case IR_OP_LOCAL_ELEMENT_APPEND:
-        case IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT:
+        case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
         case IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED:
             produces_result = false;
             break;
@@ -225,7 +240,7 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_PARAMETER:
             return instruction->index < function->parameter_count &&
                    instruction->result_type ==
-                       function->parameter_types[instruction->index];
+                       function->parameters[instruction->index].type;
         case IR_OP_AGGREGATE_MAKE:
             return shape == IR_TYPE_ARRAY || shape == IR_TYPE_STRUCT ||
                    shape == IR_TYPE_ENUM ||
@@ -300,7 +315,7 @@ static bool instruction_signature_valid(
         case IR_OP_PARAMETER:
             return instruction->index < function->parameter_count &&
                    instruction->result_type ==
-                       function->parameter_types[instruction->index];
+                       function->parameters[instruction->index].type;
         case IR_OP_UNIT:
         case IR_OP_CONST_BOOL:
         case IR_OP_CONST_INT:
@@ -398,11 +413,13 @@ static bool instruction_signature_valid(
             if (type->shape != IR_TYPE_FUNCTION ||
                 type->argument_count != target->parameter_count ||
                 (type->argument_count != 0U &&
-                 type->argument_types == NULL) ||
+                 (type->argument_types == NULL ||
+                  type->parameter_modes == NULL)) ||
                 type->element_type != target->return_type)
                 return false;
             for (size_t i = 0U; i < type->argument_count; ++i)
-                if (type->argument_types[i] != target->parameter_types[i])
+                if (type->argument_types[i] != target->parameters[i].type ||
+                    type->parameter_modes[i] != target->parameters[i].mode)
                     return false;
             return true;
         }
@@ -415,22 +432,49 @@ static bool instruction_signature_valid(
             const IrType *callee = &ir->types[callee_type];
             if (callee->shape != IR_TYPE_FUNCTION ||
                 (callee->argument_count != 0U &&
-                 callee->argument_types == NULL) ||
+                 (callee->argument_types == NULL ||
+                  callee->parameter_modes == NULL)) ||
                 instruction->operand_count != callee->argument_count + 1U ||
+                instruction->argument_mode_count != callee->argument_count ||
+                (instruction->argument_mode_count != 0U &&
+                 instruction->argument_modes == NULL) ||
                 instruction->result_type != callee->element_type)
                 return false;
             for (size_t i = 0U; i < callee->argument_count; ++i)
                 if (!value_is_type(function, instruction->operands[i + 1U],
-                                   callee->argument_types[i]))
+                                   callee->argument_types[i]) ||
+                    instruction->argument_modes[i] !=
+                        callee->parameter_modes[i])
                     return false;
             return true;
         }
         case IR_OP_CALL_NATIVE:
             if (instruction->symbol == NULL ||
-                !verify_type(ir, instruction->result_type))
+                !verify_type(ir, instruction->result_type) ||
+                instruction->native_call == NULL ||
+                instruction->argument_mode_count !=
+                    instruction->operand_count ||
+                (instruction->argument_mode_count != 0U &&
+                 instruction->argument_modes == NULL))
+                return false;
+            if (instruction->native_call->name != instruction->symbol ||
+                instruction->native_call->return_type !=
+                    instruction->result_type ||
+                instruction->native_call->parameter_count !=
+                    instruction->operand_count ||
+                instruction->native_call->calling_convention !=
+                    IR_CALLING_CONVENTION_NATIVE ||
+                (instruction->operand_count != 0U &&
+                 (instruction->native_call->parameter_types == NULL ||
+                  instruction->native_call->parameter_modes == NULL)))
                 return false;
             for (size_t i = 0U; i < instruction->operand_count; ++i)
-                if (!value_type(ir, function, instruction->operands[i], NULL))
+                if (!value_is_type(
+                        function, instruction->operands[i],
+                        instruction->native_call->parameter_types[i]) ||
+                    !valid_parameter_mode(instruction->argument_modes[i]) ||
+                    instruction->native_call->parameter_modes[i] !=
+                        instruction->argument_modes[i])
                     return false;
             return true;
         case IR_OP_EXCEPTION_SET: {
@@ -524,6 +568,8 @@ static bool instruction_signature_valid(
         case IR_OP_VALUE_CLONE:
             return instruction->auxiliary <= 1U &&
                    instruction->operand_count == 1U &&
+                   ir->types[instruction->result_type].copy_policy !=
+                       IR_COPY_NONCOPYABLE &&
                    value_is_type(
                        function, instruction->operands[0],
                        instruction->result_type);
@@ -545,7 +591,7 @@ static bool instruction_signature_valid(
         case IR_OP_LOCAL_ELEMENT_CSS_VALUE:
         case IR_OP_LOCAL_ELEMENT_PROPERTY_END:
         case IR_OP_LOCAL_ELEMENT_APPEND:
-        case IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT:
+        case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
         case IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED:
         case IR_OP_LOCAL_ELEMENT_FINISH: {
             if (local == NULL || !verify_type(ir, local->type))
@@ -567,7 +613,7 @@ static bool instruction_signature_valid(
                     IR_OP_LOCAL_ELEMENT_PROPERTY_END)
                 return instruction->operand_count == 0U;
             if (instruction->opcode ==
-                    IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT)
+                    IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT)
                 return instruction->operand_count == 0U &&
                        instruction->symbol != NULL;
             if (instruction->operand_count != 1U ||
@@ -818,12 +864,17 @@ static bool instruction_signature_valid(
                     return false;
             }
             if (instruction->operand_count != target->parameter_count ||
+                instruction->argument_mode_count != target->parameter_count ||
+                (instruction->argument_mode_count != 0U &&
+                 instruction->argument_modes == NULL) ||
                 instruction->result_type != target->return_type)
                 return false;
             for (size_t i = 0U; i < instruction->operand_count; ++i)
                 if (!value_is_type(
                         function, instruction->operands[i],
-                        target->parameter_types[i]))
+                        target->parameters[i].type) ||
+                    instruction->argument_modes[i] !=
+                        target->parameters[i].mode)
                     return false;
             return true;
         }
@@ -970,9 +1021,26 @@ bool lang_ir_verify_module(const IrModule *ir,
     bool ok = true;
     for (size_t t = 0U; t < ir->type_count; ++t) {
         const IrType *type = &ir->types[t];
-        if (type->name == NULL || !type_shape_valid(type->shape)) {
+        if (type->checked_type != NULL || type->name == NULL ||
+            !type_shape_valid(type->shape) ||
+            !valid_copy_policy(type->copy_policy) ||
+            !valid_drop_policy(type->drop_policy) ||
+            (type->copy_policy == IR_COPY_TRIVIAL &&
+             (type->requires_cleanup || type->managed)) ||
+            (type->drop_policy == IR_DROP_TRIVIAL &&
+             (type->requires_cleanup || type->managed)) ||
+            (type->copy_function != IR_INVALID_ID &&
+             type->copy_policy != IR_COPY_CUSTOM) ||
+            (type->destructor_function != IR_INVALID_ID &&
+             type->drop_policy != IR_DROP_CUSTOM)) {
             lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
-                      "IR type t%zu has an invalid name or shape", t);
+                      "IR type t%zu has invalid identity or copy/drop policy", t);
+            ok = false;
+        }
+        if (type->copy_function != IR_INVALID_ID &&
+            type->copy_function >= ir->function_count) {
+            lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                      "IR type t%zu has an invalid copy function", t);
             ok = false;
         }
         if (type->target_layout_known &&
@@ -1009,8 +1077,8 @@ bool lang_ir_verify_module(const IrModule *ir,
                         type->destructor_function];
                 if (!destructor->is_destructor ||
                     destructor->parameter_count != 1U ||
-                    destructor->parameter_types == NULL ||
-                    destructor->parameter_types[0] !=
+                    destructor->parameters == NULL ||
+                    destructor->parameters[0].type !=
                         (IrTypeId)t) {
                     lang_diag(
                         diagnostics,
@@ -1035,6 +1103,16 @@ bool lang_ir_verify_module(const IrModule *ir,
                           "IR type t%zu has an invalid argument type", t);
                 ok = false;
             }
+        if (type->shape == IR_TYPE_FUNCTION)
+            for (size_t a = 0U; a < type->argument_count; ++a)
+                if (type->parameter_modes == NULL ||
+                    !valid_parameter_mode(type->parameter_modes[a])) {
+                    lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                              "IR function type t%zu has invalid parameter metadata",
+                              t);
+                    ok = false;
+                    break;
+                }
         if ((type->shape == IR_TYPE_ARRAY ||
             type->shape == IR_TYPE_RAW_POINTER ||
              type->shape == IR_TYPE_SLICE ||
@@ -1056,7 +1134,9 @@ bool lang_ir_verify_module(const IrModule *ir,
             ok = false;
         }
         if (type->shape == IR_TYPE_FUNCTION &&
-            !verify_type(ir, type->element_type)) {
+            (!verify_type(ir, type->element_type) ||
+             (type->argument_count != 0U &&
+              type->parameter_modes == NULL))) {
             lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
                       "IR function type t%zu has invalid result metadata",
                       t);
@@ -1074,7 +1154,9 @@ bool lang_ir_verify_module(const IrModule *ir,
         if (type->shape == IR_TYPE_STRUCT) {
             if (type->field_count != 0U &&
                 (type->field_names == NULL ||
-                 type->field_types == NULL)) {
+                 type->field_types == NULL ||
+                 type->field_spans == NULL ||
+                 type->field_offsets == NULL)) {
                 lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
                           "IR struct type t%zu has incomplete field metadata",
                           t);
@@ -1095,15 +1177,35 @@ bool lang_ir_verify_module(const IrModule *ir,
                             "IR struct type t%zu has an invalid field type",
                             t);
                         ok = false;
+                    } else if (type->member_layout_known &&
+                        (type->field_offsets[field] %
+                             ir->types[type->field_types[field]].target_alignment !=
+                             0U ||
+                         type->field_offsets[field] > type->target_size ||
+                         ir->types[type->field_types[field]].target_size >
+                             type->target_size - type->field_offsets[field])) {
+                        lang_diag(
+                            diagnostics, (LangSpan){NULL, 0U, 0U},
+                            "IR struct type t%zu has an invalid field offset",
+                            t);
+                        ok = false;
                     }
                 }
+            }
+            if (type->target_layout_known && !type->member_layout_known) {
+                lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                          "IR struct type t%zu is missing member layout", t);
+                ok = false;
             }
         }
         if (type->shape == IR_TYPE_ENUM ||
             type->shape == IR_TYPE_UNION) {
             if (type->variant_count == 0U ||
                 type->variant_names == NULL ||
-                type->variant_payload_types == NULL) {
+                type->variant_payload_types == NULL ||
+                type->variant_spans == NULL ||
+                type->variant_discriminants == NULL ||
+                type->variant_payload_offsets == NULL) {
                 lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
                           "IR %s type t%zu has incomplete variant metadata",
                           type->shape == IR_TYPE_UNION ? "union" : "enum",
@@ -1119,6 +1221,14 @@ bool lang_ir_verify_module(const IrModule *ir,
                             t);
                         ok = false;
                     }
+                    if (type->variant_discriminants[variant] !=
+                        (uint32_t)variant) {
+                        lang_diag(
+                            diagnostics, (LangSpan){NULL, 0U, 0U},
+                            "IR enum type t%zu has an invalid discriminant",
+                            t);
+                        ok = false;
+                    }
                     if (type->variant_payload_types[variant] !=
                             IR_INVALID_ID &&
                         !verify_type(
@@ -1130,21 +1240,45 @@ bool lang_ir_verify_module(const IrModule *ir,
                             t);
                         ok = false;
                     }
+                    if (type->member_layout_known &&
+                        type->variant_payload_types[variant] !=
+                            IR_INVALID_ID &&
+                        verify_type(
+                            ir, type->variant_payload_types[variant])) {
+                        const IrType *payload = &ir->types[
+                            type->variant_payload_types[variant]];
+                        if (type->variant_payload_offsets[variant] <
+                                ir->target.enum_tag_size ||
+                            type->variant_payload_offsets[variant] %
+                                payload->target_alignment != 0U) {
+                            lang_diag(
+                                diagnostics, (LangSpan){NULL, 0U, 0U},
+                                "IR union type t%zu has an invalid payload offset",
+                                t);
+                            ok = false;
+                        }
+                    }
                 }
+            }
+            if (type->target_layout_known && !type->member_layout_known) {
+                lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                          "IR enum type t%zu is missing member layout", t);
+                ok = false;
             }
         }
     }
     for (size_t f = 0U; f < ir->function_count; ++f) {
         const IrFunction *function = &ir->functions[f];
-        LangSpan function_span = function->declaration != NULL
-                               ? function->declaration->span
-                               : (LangSpan){NULL, 0U, 0U};
-        if (function->name == NULL ||
+        LangSpan function_span = function->span;
+        if (function->declaration != NULL || function->name == NULL ||
             !verify_type(ir, function->return_type) ||
             !verify_type(ir, function->async_result_type) ||
             function->blocks == NULL ||
+            function->abi.calling_convention !=
+                IR_CALLING_CONVENTION_ASTER ||
+            function->abi.returns_async_task != function->is_async ||
             (function->parameter_count != 0U &&
-             function->parameter_types == NULL) ||
+             function->parameters == NULL) ||
             (function->local_count != 0U &&
              function->locals == NULL) ||
             (function->value_count != 0U &&
@@ -1166,8 +1300,42 @@ bool lang_ir_verify_module(const IrModule *ir,
             ok = false;
             continue;
         }
+        if ((function->static_css_count != 0U &&
+             function->static_css == NULL) ||
+            function->static_css_count > function->static_css_capacity) {
+            lang_diag(diagnostics, function_span,
+                      "IR function `%s` has invalid static CSS metadata",
+                      function->name);
+            ok = false;
+        }
+        for (size_t css = 0U;
+             function->static_css != NULL &&
+             css < function->static_css_count; ++css)
+            if (function->static_css[css].scope_attribute == NULL ||
+                (function->static_css[css].text == NULL &&
+                 function->static_css[css].text_length != 0U)) {
+                lang_diag(diagnostics, function_span,
+                          "IR function `%s` has invalid static CSS entry",
+                          function->name);
+                ok = false;
+            }
+        size_t suspension_count = 0U;
+        for (size_t b = 0U; b < function->block_count; ++b)
+            for (size_t i = 0U;
+                 i < function->blocks[b].instruction_count; ++i)
+                if (function->blocks[b].instructions[i].opcode == IR_OP_AWAIT)
+                    ++suspension_count;
+        if (suspension_count != function->async_suspension_count ||
+            (!function->is_async && suspension_count != 0U)) {
+            lang_diag(diagnostics, function_span,
+                      "IR function `%s` has invalid async metadata",
+                      function->name);
+            ok = false;
+        }
         for (size_t p = 0U; p < function->parameter_count; ++p)
-            if (!verify_type(ir, function->parameter_types[p])) {
+            if (function->parameters[p].name == NULL ||
+                !verify_type(ir, function->parameters[p].type) ||
+                !valid_parameter_mode(function->parameters[p].mode)) {
                 lang_diag(diagnostics, function_span,
                           "IR function `%s` has an invalid parameter type",
                           function->name);
@@ -1328,7 +1496,7 @@ bool lang_ir_verify_module(const IrModule *ir,
                      instruction->opcode ==
                          IR_OP_LOCAL_ELEMENT_APPEND ||
                      instruction->opcode ==
-                         IR_OP_LOCAL_ELEMENT_APPEND_RAW_TEXT ||
+                         IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT ||
                      instruction->opcode ==
                          IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED ||
                      instruction->opcode ==

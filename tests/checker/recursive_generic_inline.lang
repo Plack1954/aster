@@ -2,7 +2,7 @@ struct Loop<T> {
     next: Loop<T>,
 }
 
-void invalid(Loop<long> value) {
+private void invalid(Loop<long> value) {
 }
 
 int main() {

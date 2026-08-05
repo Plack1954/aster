@@ -7,6 +7,6 @@ int main() {
             src=Url.relative("second.jpg")
             alt="image"
         />;
-    print(HtmlRender(document));
+    Console.WriteLine(document.ToHtmlString());
     return 0;
 }

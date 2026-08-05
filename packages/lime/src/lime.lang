@@ -97,7 +97,7 @@ public struct CookieOptions
     CookieSameSite sameSite;
 }
 
-Response HtmlResponse(int status, Html page)
+private Response HtmlResponse(int status, Html page)
 {
     List<ResponseHeader> headers = new();
     return new()
@@ -409,13 +409,13 @@ public struct StatefulApp<State>
     Option<ForwardedHeadersOptions> forwardedHeaders;
 }
 
-Response DefaultExceptionResponse(Exception error)
+private Response DefaultExceptionResponse(Exception error)
 {
-    eprint(error.Message);
+    Console.Error.WriteLine(error.Message);
     return Response.InternalError(<h1>Internal server error</h1>);
 }
 
-T LimeResultOrThrow<T>(Result<T, string> result)
+private T LimeResultOrThrow<T>(Result<T, string> result)
 {
     switch (result)
     {
@@ -424,7 +424,7 @@ T LimeResultOrThrow<T>(Result<T, string> result)
     }
 }
 
-bool RouteHasParameter(string path)
+private bool RouteHasParameter(string path)
 {
     for (usize index = 0; index < path.Length; index++)
     {
@@ -437,7 +437,7 @@ bool RouteHasParameter(string path)
     return false;
 }
 
-bool BuildPagePathValid(string path)
+private bool BuildPagePathValid(string path)
 {
     usize length = path.Length;
     if (length == 0 || StringByteAt(path, 0) != 47)
@@ -477,7 +477,7 @@ bool BuildPagePathValid(string path)
     return true;
 }
 
-bool BuildPagesContains(List<BuildPage> pages, string path)
+private bool BuildPagesContains(List<BuildPage> pages, string path)
 {
     foreach (BuildPage page in pages)
     {
@@ -486,13 +486,13 @@ bool BuildPagesContains(List<BuildPage> pages, string path)
     return false;
 }
 
-void BuildPagesAdd(ref List<BuildPage> pages, string path)
+private void BuildPagesAdd(ref List<BuildPage> pages, string path)
 {
     BuildPage page = new() { path = path };
     pages.Add(page);
 }
 
-bool BuildPageMatchesRoutes(
+private bool BuildPageMatchesRoutes(
     List<Route> routes,
     string path
 )
@@ -510,7 +510,7 @@ bool BuildPageMatchesRoutes(
     return false;
 }
 
-bool BuildPageMatchesStatefulRoutes<State>(
+private bool BuildPageMatchesStatefulRoutes<State>(
     List<StatefulRoute<State>> routes,
     string path
 )
@@ -528,7 +528,7 @@ bool BuildPageMatchesStatefulRoutes<State>(
     return false;
 }
 
-bool RouteMatches(string pattern, string path)
+private bool RouteMatches(string pattern, string path)
 {
     usize patternLength = pattern.Length;
     usize pathLength = path.Length;
@@ -716,7 +716,7 @@ public Option<string> Request.header(Request self, string name)
     return Option.None;
 }
 
-Request ApplyConfiguredForwardedHeaders(
+private Request ApplyConfiguredForwardedHeaders(
     Option<ForwardedHeadersOptions> configured,
     Request request
 )
@@ -916,7 +916,7 @@ public Option<string> Request.cookie(Request self, string name)
     return Option.None;
 }
 
-int HexValue(byte value)
+private int HexValue(byte value)
 {
     if (value >= 48 && value <= 57)
     {
@@ -1094,7 +1094,7 @@ public Result<UrlValues, string> UrlValuesParse(string encoded)
     });
 }
 
-Option<string> UrlValuesGet(
+private Option<string> UrlValuesGet(
     List<UrlValue> values,
     string name
 )
@@ -1119,7 +1119,7 @@ public usize UrlValues.Count(UrlValues self)
     return self.values.Count;
 }
 
-byte AsciiLower(byte value)
+private byte AsciiLower(byte value)
 {
     if (value >= 65 && value <= 90)
     {
@@ -1128,7 +1128,7 @@ byte AsciiLower(byte value)
     return value;
 }
 
-bool AsciiEqualIgnoringCase(string left, string right)
+private bool AsciiEqualIgnoringCase(string left, string right)
 {
     if (left.Length != right.Length)
     {
@@ -1145,7 +1145,7 @@ bool AsciiEqualIgnoringCase(string left, string right)
     return true;
 }
 
-bool HeaderNameByte(byte value)
+private bool HeaderNameByte(byte value)
 {
     return (value >= 65 && value <= 90) ||
         (value >= 97 && value <= 122) ||
@@ -1156,7 +1156,7 @@ bool HeaderNameByte(byte value)
         value == 96 || value == 124 || value == 126;
 }
 
-bool ResponseHeaderNameValid(string name)
+private bool ResponseHeaderNameValid(string name)
 {
     if (name.Length == 0)
     {
@@ -1176,7 +1176,7 @@ bool ResponseHeaderNameValid(string name)
         !AsciiEqualIgnoringCase(name, "X-Content-Type-Options");
 }
 
-bool ResponseHeaderValueValid(string value)
+private bool ResponseHeaderValueValid(string value)
 {
     for (usize index = 0; index < value.Length; index++)
     {
@@ -1209,7 +1209,7 @@ public Result<ResponseHeader, string> ResponseHeader(
     });
 }
 
-bool CookieValueValid(string value)
+private bool CookieValueValid(string value)
 {
     for (usize index = 0; index < value.Length; index++)
     {
@@ -1244,7 +1244,7 @@ public CookieOptions CookieOptions()
     };
 }
 
-bool CookieScopeValid(string value)
+private bool CookieScopeValid(string value)
 {
     if (value.Length == 0)
     {
@@ -1359,7 +1359,7 @@ public void Response.AddHeader(ref Response self, ResponseHeader header)
     self.headers.Add(header);
 }
 
-bool MediaTypeIs(string value, string expected)
+private bool MediaTypeIs(string value, string expected)
 {
     usize length = value.Length;
     usize expectedLength = expected.Length;
@@ -1396,7 +1396,7 @@ bool MediaTypeIs(string value, string expected)
     return index == length || StringByteAt(value, index) == 59;
 }
 
-bool IsUrlencodedForm(string contentType)
+private bool IsUrlencodedForm(string contentType)
 {
     return MediaTypeIs(
         contentType,
@@ -1644,7 +1644,7 @@ public void App.head(ref App self, string path, Handler handler)
     self.route("HEAD", path, handler);
 }
 
-Html ApplyHtml(
+private Html ApplyHtml(
     List<HtmlMiddleware> middleware,
     Request request,
     Html page
@@ -1657,7 +1657,7 @@ Html ApplyHtml(
     return page;
 }
 
-Response ApplyHtmlMiddleware(
+private Response ApplyHtmlMiddleware(
     List<HtmlMiddleware> middleware,
     Request request,
     Response response
@@ -1719,7 +1719,7 @@ Response ApplyHtmlMiddleware(
     }
 }
 
-FilterResult ApplyRequestFilters(
+private FilterResult ApplyRequestFilters(
     List<RequestFilter> filters,
     Request request
 )
@@ -1738,7 +1738,7 @@ FilterResult ApplyRequestFilters(
     return FilterResult.Continue;
 }
 
-Response DispatchAppUnchecked(App self, Request request)
+private Response DispatchAppUnchecked(App self, Request request)
 {
     request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
     switch (ApplyRequestFilters(self.filters, request))
@@ -1776,7 +1776,7 @@ public Response App.dispatch(App self, Request request)
     }
 }
 
-Response DispatchAppFallbackUnchecked(App self, Request request)
+private Response DispatchAppFallbackUnchecked(App self, Request request)
 {
     request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
     switch (ApplyRequestFilters(self.filters, request))
@@ -1812,7 +1812,7 @@ public Response App.dispatchFallback(App self, Request request)
     }
 }
 
-Response DispatchRoutes(
+private Response DispatchRoutes(
     List<Route> routes,
     List<StaticDirectory> staticDirectories,
     List<HtmlMiddleware> middleware,
@@ -2136,7 +2136,7 @@ public void StatefulApp.head<State>(
     self.route("HEAD", path, handler);
 }
 
-Response DispatchStatefulAppUnchecked<State>(
+private Response DispatchStatefulAppUnchecked<State>(
     StatefulApp<State> self,
     Request request
 )
@@ -2186,7 +2186,7 @@ public Response StatefulApp.dispatch<State>(
     }
 }
 
-Response DispatchStatefulAppFallbackUnchecked<State>(
+private Response DispatchStatefulAppFallbackUnchecked<State>(
     StatefulApp<State> self,
     Request request
 )
@@ -2232,7 +2232,7 @@ public Response StatefulApp.dispatchFallback<State>(
     }
 }
 
-Response DispatchStatefulRoutes<State>(
+private Response DispatchStatefulRoutes<State>(
     State state,
     List<StatefulRoute<State>> routes,
     List<StaticDirectory> staticDirectories,
@@ -2328,7 +2328,7 @@ Response DispatchStatefulRoutes<State>(
     );
 }
 
-Html ApplyStatefulHtml<State>(
+private Html ApplyStatefulHtml<State>(
     State state,
     List<Html(State, Request, Html)> middleware,
     Request request,
@@ -2342,7 +2342,7 @@ Html ApplyStatefulHtml<State>(
     return page;
 }
 
-Response ApplyStatefulHtmlMiddleware<State>(
+private Response ApplyStatefulHtmlMiddleware<State>(
     State state,
     List<Html(State, Request, Html)> middleware,
     Request request,
@@ -2405,7 +2405,7 @@ Response ApplyStatefulHtmlMiddleware<State>(
     }
 }
 
-FilterResult ApplyStatefulRequestFilters<State>(
+private FilterResult ApplyStatefulRequestFilters<State>(
     State state,
     List<FilterResult(State, Request)> filters,
     Request request

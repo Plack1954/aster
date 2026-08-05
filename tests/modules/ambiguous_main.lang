@@ -4,6 +4,6 @@ using Ambiguity.A;
 using Ambiguity.B;
 
 int main() {
-    print(shared(1));
+    Console.WriteLine(shared(1));
     return 0;
 }

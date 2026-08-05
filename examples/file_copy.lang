@@ -2,7 +2,7 @@ using System.IO;
 using Aster.Interop;
 using System.Text;
 
-Result<usize, string> run() {
+private Result<usize, string> run() {
     string source = try NativeProcessArg(0);
     string destination = try NativeProcessArg(1);
     return CopyFileBuffered(
@@ -16,11 +16,11 @@ int main() {
     Result<usize, string> result = run();
     switch (result) {
         case Result.Ok(bytes): {
-            print(bytes);
+            Console.WriteLine(bytes);
             return 0;
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }

@@ -3,6 +3,14 @@
 
 #include "internal.h"
 
+typedef struct ParserArrayBuilder {
+    /* Temporary heap storage; freeze exactly once into the module arena. */
+    void *items;
+    size_t count;
+    size_t capacity;
+    size_t item_size;
+} ParserArrayBuilder;
+
 typedef struct Parser {
     Lexer lexer;
     Token current;
@@ -23,8 +31,9 @@ Token parser_expect(Parser *parser, TokenKind kind,
                     const char *message);
 Token parser_take_without_lookahead(
     Parser *parser, TokenKind kind, const char *message);
-void *parser_grow_array(LangArena *arena, const void *old,
-                        size_t count, size_t item_size);
+ParserArrayBuilder parser_array_builder(size_t item_size);
+void parser_array_push(ParserArrayBuilder *builder, const void *item);
+void *parser_array_freeze(Parser *parser, ParserArrayBuilder *builder);
 const char *parser_copy_token(Parser *parser, Token token);
 Expr *parser_new_expr(Parser *parser, ExprKind kind, LangSpan span);
 bool parser_looks_like_c_local(const Parser *parser);

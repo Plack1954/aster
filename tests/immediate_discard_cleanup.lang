@@ -3,11 +3,11 @@ struct Resource {
 }
 
 ~Resource() {
-    print(self.id);
+    Console.WriteLine(self.id);
 }
 
 int main() {
     var _ = Resource { id: 7 };
-    print(8);
+    Console.WriteLine(8);
     return 0;
 }

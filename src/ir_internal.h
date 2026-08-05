@@ -89,7 +89,7 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt);
 IrValueId ir_emit_synthetic_native_call(
     IrBuilder *builder, const char *name, const Type *result_type,
     const IrValueId *operands, size_t operand_count,
-    uint32_t borrowed_mask, LangSpan span);
+    bool borrow_first, LangSpan span);
 bool ir_type_produces_element_child(const Type *type);
 IrValueId ir_lower_element(IrBuilder *builder, const Expr *expr);
 void ir_append_element_child(IrBuilder *builder, IrValueId child,

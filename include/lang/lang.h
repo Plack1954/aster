@@ -85,12 +85,16 @@ typedef enum LangValueTag {
 } LangValueTag;
 
 typedef struct LangStringView {
-    const char *data; /* Borrowed for the duration of a native call. */
+    /* Borrowed for the duration of a native call.  data may be NULL only
+     * when length is zero. */
+    const char *data;
     size_t length;
 } LangStringView;
 
 typedef struct LangByteSlice {
-    uint8_t *data; /* Borrowed; valid only for the native call. */
+    /* Borrowed for the native call.  data may be NULL only when length is
+     * zero. */
+    uint8_t *data;
     size_t length;
 } LangByteSlice;
 

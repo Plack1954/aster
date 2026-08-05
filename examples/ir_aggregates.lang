@@ -3,7 +3,7 @@ struct Pair {
     long second;
 }
 
-long total(Pair pair) {
+private long total(Pair pair) {
     return pair.first + pair.second;
 }
 
@@ -14,13 +14,13 @@ int main() {
     };
     Pair copy = pair;
     copy.first = 9;
-    print(pair.first);
-    print(total(copy));
+    Console.WriteLine(pair.first);
+    Console.WriteLine(total(copy));
 
     long values[3] = [3, 4, 5];
     long copiedValues[3] = values;
     copiedValues[1] = 8;
-    print(values[1]);
-    print(copiedValues[1]);
+    Console.WriteLine(values[1]);
+    Console.WriteLine(copiedValues[1]);
     return 0;
 }

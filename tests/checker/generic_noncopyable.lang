@@ -2,7 +2,7 @@ struct Box<T> {
     value: T,
 }
 
-void invalid(Box<Arena> arenaBox) {
+private void invalid(Box<Arena> arenaBox) {
     Box<Arena> copy = arenaBox;
 }
 

@@ -6,8 +6,8 @@ int main() {
             src=Url.relative("image.jpg")
             alt="image"
         >
-            "not allowed"
+            not allowed
         </img>;
-    print(HtmlRender(document));
+    Console.WriteLine(document.ToHtmlString());
     return 0;
 }

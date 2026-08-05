@@ -4,14 +4,14 @@ int main()
     string? present = "present";
     if (missing == null)
     {
-        print("nullable-null");
+        Console.WriteLine("nullable-null");
     }
     if (present != null)
     {
-        print("nullable-present");
+        Console.WriteLine("nullable-present");
     }
 
     string value = present.Value;
-    print(value);
+    Console.WriteLine(value);
     return 0;
 }

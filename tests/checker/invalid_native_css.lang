@@ -5,6 +5,6 @@ int main() {
         .card {
             color: aster;
     </style>;
-    print(HtmlRender(stylesheet));
+    Console.WriteLine(stylesheet.ToHtmlString());
     return 0;
 }

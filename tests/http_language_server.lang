@@ -1,32 +1,32 @@
-extern NativeHandle HttpServerOpen(string address, long port);
-extern long HttpServerPort(NativeHandle server);
-extern NativeHandle HttpAccept(NativeHandle server);
-extern string HttpRequestPath(NativeHandle request);
-extern long HttpRespondHtml(
+private extern NativeHandle HttpServerOpen(string address, long port);
+private extern long HttpServerPort(NativeHandle server);
+private extern NativeHandle HttpAccept(NativeHandle server);
+private extern string HttpRequestPath(NativeHandle request);
+private extern long HttpRespondHtml(
     NativeHandle request,
     long status,
     string body
 );
-extern Result<bool, string> HttpTryRespondRedirectReuse(
+private extern Result<bool, string> HttpTryRespondRedirectReuse(
     NativeHandle request,
     string location
 );
 
-long RouteStatus(string path) {
+private long RouteStatus(string path) {
     if (path == "/health") {
         return 200;
     }
     return 404;
 }
 
-Html route(string path) {
+private Html route(string path) {
     if (path == "/health") {
         return Html.UnsafeRaw("<strong>healthy</strong>");
     }
     return Html.UnsafeRaw("<h2>Not found</h2>");
 }
 
-void HandleRequest(NativeHandle request) {
+private void HandleRequest(NativeHandle request) {
     string path = HttpRequestPath(request);
     if (path == "/redirect") {
         var sent = HttpTryRespondRedirectReuse(
@@ -37,20 +37,20 @@ void HandleRequest(NativeHandle request) {
                 return;
             }
             case Result.Err(error): {
-                eprint(error);
+                Console.Error.WriteLine(error);
                 return;
             }
         }
     }
     long status = RouteStatus(path);
     Html document = route(path);
-    string body = HtmlRender(document);
+    string body = document.ToHtmlString();
     HttpRespondHtml(request, status, body);
 }
 
 int main() {
     NativeHandle server = HttpServerOpen("127.0.0.1", 0);
-    print(HttpServerPort(server));
+    Console.WriteLine(HttpServerPort(server));
 
     long count = 0;
     while (count < 3) {

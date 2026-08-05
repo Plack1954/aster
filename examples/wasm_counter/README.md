@@ -12,11 +12,11 @@ public int Increment(int count) {
     return count + 1;
 }
 
-Html Counter(CounterState state) {
+private Html Counter(CounterState state) {
     return <section id="counter-island">
-        <output name="count">$"{state.Count}"</output>
-        <button onclick=Increment>"Increment"</button>
-        <button onclick=ResetCount>"Reset"</button>
+        <output name="count">{state.Count}</output>
+        <button onclick=Increment>Increment</button>
+        <button onclick=ResetCount>Reset</button>
     </section>;
 }
 ```

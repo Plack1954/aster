@@ -1,5 +1,5 @@
-extern NativeHandle NativeHandleOpenId(long id);
-extern long NativeHandleDropLog();
+private extern NativeHandle NativeHandleOpenId(long id);
+private extern long NativeHandleDropLog();
 
 struct Wrapper {
     NativeHandle handle;
@@ -12,9 +12,9 @@ int main() {
             handle = NativeHandleOpenId(7),
             label = 42,
         };
-        print(wrapper.label);
-        print(NativeHandleDropLog());
+        Console.WriteLine(wrapper.label);
+        Console.WriteLine(NativeHandleDropLog());
     }
-    print(NativeHandleDropLog());
+    Console.WriteLine(NativeHandleDropLog());
     return 0;
 }

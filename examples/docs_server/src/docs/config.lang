@@ -27,7 +27,7 @@ public Result<string, IoError> LoadText(string path) {
     return Result.Ok(contents);
 }
 
-bool IsSpace(byte value) {
+private bool IsSpace(byte value) {
     if (value == 32) {
         return true;
     }
@@ -37,7 +37,7 @@ bool IsSpace(byte value) {
     return value == 13;
 }
 
-string trim(string value) {
+private string trim(string value) {
     usize start = 0;
     usize end = value.Length;
     bool scanningStart = true;
@@ -63,7 +63,7 @@ string trim(string value) {
     return StringSlice(value, start, end);
 }
 
-Result<long, string> ParseNumber(string value) {
+private Result<long, string> ParseNumber(string value) {
     string text = trim(value);
     usize length = text.Length;
     if (length == 0) {

@@ -4,10 +4,10 @@ int main() {
     string second = "Lin";
     values.Add(first);
     values.Add(second);
-    print(values.Count);
+    Console.WriteLine(values.Count);
 
     foreach (string value in values) {
-        print(value);
+        Console.WriteLine(value);
     }
     return 0;
 }

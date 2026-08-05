@@ -5,10 +5,14 @@
 
 static int rejected(LangVM *vm, Instruction *code, size_t code_count,
                     Constant *constants, size_t constant_count) {
+    BytecodeCallSite *call_sites = calloc(
+        code_count, sizeof(*call_sites));
+    if (call_sites == NULL && code_count != 0U) return 1;
     BytecodeFunction function = {
         .name="main",
         .code=code,
         .code_count=code_count,
+        .call_sites=call_sites,
         .arity=0U,
         .local_count=0U
     };
@@ -22,6 +26,34 @@ static int rejected(LangVM *vm, Instruction *code, size_t code_count,
         .text="",
         .length=0U,
         .path="<malformed>"
+    };
+    int result = lang_vm_run_module(vm, &module, &source) == 2 ? 0 : 1;
+    free(call_sites);
+    return result;
+}
+
+static int rejects_invalid_parameter_mode(LangVM *vm) {
+    Instruction code[] = {
+        {.op=OP_UNIT, .a=0, .b=0},
+        {.op=OP_RETURN, .a=0, .b=0}
+    };
+    BytecodeCallSite call_sites[2] = {{0}};
+    ParameterMode mode = (ParameterMode)99;
+    BytecodeFunction function = {
+        .name="invalid_mode",
+        .code=code,
+        .code_count=2U,
+        .call_sites=call_sites,
+        .arity=1U,
+        .parameter_modes=&mode,
+        .local_count=1U
+    };
+    BytecodeModule module = {
+        .functions=&function,
+        .function_count=1U
+    };
+    LangSource source = {
+        .text="", .length=0U, .path="<invalid-mode>"
     };
     return lang_vm_run_module(vm, &module, &source) == 2 ? 0 : 1;
 }
@@ -64,6 +96,7 @@ int main(void) {
         {.op=OP_RETURN, .a=0, .b=0}
     };
     int failures = 0;
+    failures += rejects_invalid_parameter_mode(vm);
     failures += rejected(vm, invalid_constant,
                          sizeof(invalid_constant) /
                              sizeof(invalid_constant[0]),

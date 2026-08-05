@@ -3,8 +3,8 @@ using Aster.Html;
 int main() {
     Html document =
         <section class="a\"&<b>">
-            "\"quoted\" & <tag>"
+            "quoted" & 2 < 3 > 1
         </section>;
-    print(HtmlRender(document));
+    Console.WriteLine(document.ToHtmlString());
     return 0;
 }

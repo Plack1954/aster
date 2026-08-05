@@ -1,6 +1,6 @@
 using Aster.Html;
 
-Html document(string javascript) {
+private Html document(string javascript) {
     return <>
         <doctype />
         <html lang="en">
@@ -33,13 +33,13 @@ Html document(string javascript) {
                             />
                         </picture>
                         <figcaption>
-                            "Measured with "<var>"Aster"</var>
+                            Measured with <var>Aster</var>
                         </figcaption>
                     </figure>
                     <form method="post" novalidate=true>
                         <fieldset>
-                            <legend>"Settings"</legend>
-                            <label for="amount">"Amount"</label>
+                            <legend>Settings</legend>
+                            <label for="amount">Amount</label>
                             <input
                                 id="amount"
                                 name="amount"
@@ -50,19 +50,19 @@ Html document(string javascript) {
                                 autofocus=true
                             />
                             <meter value=0.5 min=0.0 max=1.0>
-                                "50%"
+                                50%
                             </meter>
                         </fieldset>
                     </form>
                     <table>
-                        <caption>"Results"</caption>
-                        <thead><tr><th scope="col">"Name"</th></tr></thead>
-                        <tbody><tr><td colspan=2>"Aster"</td></tr></tbody>
-                        <tfoot><tr><td>"Done"</td></tr></tfoot>
+                        <caption>Results</caption>
+                        <thead><tr><th scope="col">Name</th></tr></thead>
+                        <tbody><tr><td colspan=2>Aster</td></tr></tbody>
+                        <tfoot><tr><td>Done</td></tr></tfoot>
                     </table>
                     <details name="notes" open=true>
-                        <summary>"Notes"</summary>
-                        <p>"Native typed HTML"</p>
+                        <summary>Notes</summary>
+                        <p>Native typed HTML</p>
                     </details>
                 </main>
             </body>
@@ -72,6 +72,6 @@ Html document(string javascript) {
 
 int main() {
     string javascript = "if (1 < 2 && 3 > 2) console.log('aster');";
-    print(HtmlRender(document(javascript)));
+    Console.WriteLine(document(javascript).ToHtmlString());
     return 0;
 }

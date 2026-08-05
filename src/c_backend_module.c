@@ -9,9 +9,7 @@
 
 static bool function_supported(CEmitter *emitter,
                                const IrFunction *function) {
-    LangSpan span = function->declaration != NULL
-                  ? function->declaration->span
-                  : (LangSpan){NULL, 0U, 0U};
+    LangSpan span = function->span;
     if (!c_backend_async_function_supported(emitter, function))
         return false;
     if (!c_backend_type_is_supported(
@@ -21,7 +19,7 @@ static bool function_supported(CEmitter *emitter,
     }
     for (size_t p = 0U; p < function->parameter_count; ++p)
         if (!c_backend_type_is_supported(
-                emitter->ir, function->parameter_types[p])) {
+                emitter->ir, function->parameters[p].type)) {
             c_backend_unsupported(emitter, span, "this function parameter type");
             return false;
         }
@@ -44,10 +42,9 @@ static bool function_supported(CEmitter *emitter,
             const IrInstruction *instruction =
                 &block->instructions[i];
             if (instruction->opcode == IR_OP_VALUE_CLONE &&
-                (emitter->ir->types[
-                    instruction->result_type].requires_cleanup ||
-                 emitter->ir->types[
-                    instruction->result_type].managed) &&
+                emitter->ir->types[
+                    instruction->result_type].copy_policy !=
+                    IR_COPY_TRIVIAL &&
                 !c_backend_type_clone_supported(
                     emitter->ir,
                     instruction->result_type)) {
@@ -104,30 +101,12 @@ static bool instruction_result_owns_value(
         case IR_OP_LOCAL_ITERATOR_NEXT:
             return false;
         case IR_OP_PARAMETER:
-            return function->declaration == NULL ||
-                   instruction->index >= function->declaration
-                       ->as.function.param_count ||
-                   !function->declaration->as.function
-                       .params[instruction->index].borrowed;
+            return instruction->index >= function->parameter_count ||
+                   !parameter_mode_is_reference(
+                       function->parameters[instruction->index].mode);
         default:
             return true;
     }
-}
-
-static uint32_t direct_call_borrowed_values(
-    const CEmitter *emitter, const IrInstruction *instruction
-) {
-    if (instruction->index >= emitter->ir->function_count)
-        return 0U;
-    const IrFunction *target =
-        &emitter->ir->functions[instruction->index];
-    if (target->declaration == NULL) return 0U;
-    uint32_t mask = 0U;
-    const Function *source = &target->declaration->as.function;
-    for (size_t i = 0U; i < source->param_count && i < 32U; ++i)
-        if (source->params[i].borrowed)
-            mask |= UINT32_C(1) << (unsigned)i;
-    return mask;
 }
 
 static bool instruction_consumes_operand(
@@ -162,21 +141,19 @@ static bool instruction_consumes_operand(
                 emitter,
                 function->value_types[
                     instruction->operands[operand]]);
-        case IR_OP_CALL_DIRECT: {
-            uint32_t mask = direct_call_borrowed_values(
-                emitter, instruction);
-            return operand >= 32U ||
-                   (mask & (UINT32_C(1) << (unsigned)operand)) == 0U;
-        }
+        case IR_OP_CALL_DIRECT:
+            return operand >= instruction->argument_mode_count ||
+                !parameter_mode_is_reference(
+                    instruction->argument_modes[operand]);
         case IR_OP_CALL_INDIRECT:
             if (operand == 0U) return false;
-            return operand - 1U >= 32U ||
-                   (instruction->auxiliary &
-                    (UINT32_C(1) << (unsigned)(operand - 1U))) == 0U;
+            return operand - 1U >= instruction->argument_mode_count ||
+                !parameter_mode_is_reference(
+                    instruction->argument_modes[operand - 1U]);
         case IR_OP_CALL_NATIVE:
-            return operand >= 32U ||
-                   (instruction->auxiliary &
-                    (UINT32_C(1) << (unsigned)operand)) == 0U;
+            return operand >= instruction->argument_mode_count ||
+                !parameter_mode_is_reference(
+                    instruction->argument_modes[operand]);
         case IR_OP_LOCAL_ELEMENT_PROPERTY:
         case IR_OP_LOCAL_ELEMENT_PROPERTY_APPEND:
         case IR_OP_LOCAL_ELEMENT_CSS_VALUE:
@@ -232,10 +209,8 @@ static void emit_function_signature(CEmitter *emitter, size_t index,
     } else {
         for (size_t p = 0U; p < function->parameter_count; ++p) {
             if (p != 0U) fputs(", ", emitter->output);
-            c_backend_emit_type(emitter, function->parameter_types[p]);
-            if (function->declaration != NULL &&
-                p < function->declaration->as.function.param_count &&
-                function->declaration->as.function.params[p].borrowed)
+            c_backend_emit_type(emitter, function->parameters[p].type);
+            if (parameter_mode_is_reference(function->parameters[p].mode))
                 fputs(" *", emitter->output);
             fprintf(emitter->output, " p%zu", p);
         }
@@ -254,10 +229,8 @@ static void emit_render_function_signature(
         index);
     for (size_t p = 0U; p < function->parameter_count; ++p) {
         fputs(", ", emitter->output);
-        c_backend_emit_type(emitter, function->parameter_types[p]);
-        if (function->declaration != NULL &&
-            p < function->declaration->as.function.param_count &&
-            function->declaration->as.function.params[p].borrowed)
+        c_backend_emit_type(emitter, function->parameters[p].type);
+        if (parameter_mode_is_reference(function->parameters[p].mode))
             fputs(" *", emitter->output);
         fprintf(emitter->output, " p%zu", p);
     }
@@ -274,10 +247,8 @@ static void emit_direct_append_signature(
         index);
     for (size_t p = 0U; p < function->parameter_count; ++p) {
         fputs(", ", emitter->output);
-        c_backend_emit_type(emitter, function->parameter_types[p]);
-        if (function->declaration != NULL &&
-            p < function->declaration->as.function.param_count &&
-            function->declaration->as.function.params[p].borrowed)
+        c_backend_emit_type(emitter, function->parameters[p].type);
+        if (parameter_mode_is_reference(function->parameters[p].mode))
             fputs(" *", emitter->output);
         fprintf(emitter->output, " p%zu", p);
     }
@@ -294,10 +265,8 @@ static void emit_direct_render_signature(
     } else {
         for (size_t p = 0U; p < function->parameter_count; ++p) {
             if (p != 0U) fputs(", ", emitter->output);
-            c_backend_emit_type(emitter, function->parameter_types[p]);
-            if (function->declaration != NULL &&
-                p < function->declaration->as.function.param_count &&
-                function->declaration->as.function.params[p].borrowed)
+            c_backend_emit_type(emitter, function->parameters[p].type);
+            if (parameter_mode_is_reference(function->parameters[p].mode))
                 fputs(" *", emitter->output);
             fprintf(emitter->output, " p%zu", p);
         }
@@ -367,6 +336,19 @@ static void emit_function_variant(
     else
         emit_function_signature(emitter, index, false);
     for (size_t l = 0U; l < function->local_count; ++l) {
+        bool referenced_parameter =
+            l < function->parameter_count &&
+            parameter_mode_is_reference(function->parameters[l].mode);
+        if (referenced_parameter) {
+            fprintf(emitter->output,
+                    "#define l%zu (*p%zu)\n"
+                    "    (void)l%zu;\n", l, l, l);
+            if (c_backend_local_tracks_drop(
+                    emitter, function, (uint32_t)l))
+                fprintf(emitter->output,
+                        "    bool l%zu_live = false;\n", l);
+            continue;
+        }
         fputs("    ", emitter->output);
         c_backend_emit_type(emitter, function->locals[l].type);
         fprintf(emitter->output, " l%zu = {0};\n", l);
@@ -452,6 +434,9 @@ static void emit_function_variant(
             return;
         }
     }
+    for (size_t l = 0U; l < function->parameter_count; ++l)
+        if (parameter_mode_is_reference(function->parameters[l].mode))
+            fprintf(emitter->output, "#undef l%zu\n", l);
     fputs("}\n\n", emitter->output);
     free(direct_local_tags);
     free(direct_local_tag_lengths);
@@ -558,7 +543,8 @@ static void emit_clone_helper(
             "    if (value == NULL) return NULL;\n"
             "    aster_buffer *result = aster_allocate(sizeof(*result));\n"
             "    result->length = value->length;\n"
-            "    result->data = aster_allocate(value->length);\n"
+            "    result->data = value->length == 0U\n"
+            "        ? NULL : aster_allocate(value->length);\n"
             "    if (value->length != 0U)\n"
             "        memcpy(result->data, value->data, value->length);\n"
             "    return result;\n",
@@ -967,10 +953,7 @@ static bool c_emit_module(const IrModule *ir,
         return false;
     }
     if (ir->functions[entry].parameter_count != 0U) {
-        LangSpan span = ir->functions[entry].declaration != NULL
-                      ? ir->functions[entry].declaration->span
-                      : (LangSpan){NULL, 0U, 0U};
-        lang_diag(diagnostics, span,
+        lang_diag(diagnostics, ir->functions[entry].span,
                   "C backend entry function cannot have parameters");
         free(emitter.reachable_functions);
         free(emitter.used_types);
@@ -1132,7 +1115,8 @@ static bool c_emit_module(const IrModule *ir,
                 "    aster_task_drop(entry_task);\n"
                 "    if (aster_exception_pending) {\n"
                 "        fputs(\"unhandled Aster Exception: \", stderr);\n"
-                "        if (aster_exception_message != NULL)\n"
+                "        if (aster_exception_message != NULL &&\n"
+                "            aster_exception_message->length != 0U)\n"
                 "            (void)fwrite(aster_exception_message->data, 1U, "
                 "aster_exception_message->length, stderr);\n"
                 "        fputc('\\n', stderr);\n"
@@ -1154,7 +1138,8 @@ static bool c_emit_module(const IrModule *ir,
                 "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"
                 "    if (aster_exception_pending) {\n"
                 "        fputs(\"unhandled Aster Exception: \", stderr);\n"
-                "        if (aster_exception_message != NULL)\n"
+                "        if (aster_exception_message != NULL &&\n"
+                "            aster_exception_message->length != 0U)\n"
                 "            (void)fwrite(aster_exception_message->data, 1U, "
                 "aster_exception_message->length, stderr);\n"
                 "        fputc('\\n', stderr);\n"
@@ -1173,7 +1158,8 @@ static bool c_emit_module(const IrModule *ir,
                 "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"
                 "    if (aster_exception_pending) {\n"
                 "        fputs(\"unhandled Aster Exception: \", stderr);\n"
-                "        if (aster_exception_message != NULL)\n"
+                "        if (aster_exception_message != NULL &&\n"
+                "            aster_exception_message->length != 0U)\n"
                 "            (void)fwrite(aster_exception_message->data, 1U, "
                 "aster_exception_message->length, stderr);\n"
                 "        fputc('\\n', stderr);\n"

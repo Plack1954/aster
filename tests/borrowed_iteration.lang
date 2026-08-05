@@ -6,14 +6,14 @@ int main() {
     foreach (long value in values) {
         total += value;
     }
-    print(total);
-    print(values.Count);
+    Console.WriteLine(total);
+    Console.WriteLine(values.Count);
     long fixed[3] = [2, 4, 6];
     long fixedTotal = 0;
     foreach (long item in fixed) {
         fixedTotal += item;
     }
-    print(fixedTotal);
-    print(fixed[1]);
+    Console.WriteLine(fixedTotal);
+    Console.WriteLine(fixed[1]);
     return 0;
 }

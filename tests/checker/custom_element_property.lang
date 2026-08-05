@@ -4,6 +4,6 @@ element meter -> Html {
 
 int main() {
     Html node = <meter value="wrong" />;
-    print(node);
+    Console.WriteLine(node);
     return 0;
 }

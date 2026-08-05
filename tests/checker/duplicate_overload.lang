@@ -1,9 +1,9 @@
-int Parse(string value)
+private int Parse(string value)
 {
     return 1;
 }
 
-int Parse(string other)
+private int Parse(string other)
 {
     return 2;
 }

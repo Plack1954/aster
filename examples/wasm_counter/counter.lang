@@ -49,7 +49,7 @@ public string SubmitContact(string name, string email) {
     return message.ToString();
 }
 
-Html TodoItem(int itemId, string title) {
+private Html TodoItem(int itemId, string title) {
     return <li id=$"todo-{itemId}">
         <span>{title}</span>
         <button
@@ -58,7 +58,7 @@ Html TodoItem(int itemId, string title) {
             value=$"todo-{itemId}"
             aria-controls="todo-list"
             onclick=RemoveTodo
-        >"Remove"</button>
+        >Remove</button>
     </li>;
 }
 
@@ -73,7 +73,7 @@ public Html ReplaceNotice(string notice) {
     return <p id="notice-current">{notice}</p>;
 }
 
-Html NoticeForm() {
+private Html NoticeForm() {
     return <form
         id="notice-island"
         action=Url.relative("/notice")
@@ -89,7 +89,7 @@ Html NoticeForm() {
     </form>;
 }
 
-Html TodoList() {
+private Html TodoList() {
     return <form
         id="todo-island"
         action=Url.relative("/todos")
@@ -97,10 +97,10 @@ Html TodoList() {
         aria-controls="todo-list"
         onsubmit=AddTodo
     >
-        <label for="todo-title">"New item"</label>
+        <label for="todo-title">New item</label>
         <input id="todo-title" name="title" type="text" required=true />
-        <output name="nextId" hidden=true>"2"</output>
-        <button type="submit">"Add item"</button>
+        <output name="nextId" hidden=true>2</output>
+        <button type="submit">Add item</button>
         <ul id="todo-list">
             <TodoItem itemId=0 title="Initial item" />
             <TodoItem itemId=1 title="Second item" />
@@ -108,37 +108,35 @@ Html TodoList() {
     </form>;
 }
 
-Html Counter(CounterState state) {
+private Html Counter(CounterState state) {
     return <section id="counter-island">
         <p>
-            "Clicked "
-            <output name="count">$"{state.Count}"</output>
-            " times"
+            Clicked <output name="count">{state.Count}</output> times
         </p>
         <button
             type="button"
             onclick=Increment
             aria-label="Increment counter"
-        >"Increment"</button>
-        <button type="button" onclick=ResetCount>"Reset"</button>
+        >Increment</button>
+        <button type="button" onclick=ResetCount>Reset</button>
     </section>;
 }
 
-Html Disclosure(string islandId, string panelId) {
+private Html Disclosure(string islandId, string panelId) {
     return <section id=islandId>
         <button
             type="button"
             onclick=ToggleDetails
             aria-expanded="false"
             aria-controls=panelId
-        >"Project details"</button>
+        >Project details</button>
         <div id=panelId hidden=true>
-            "Persistent Aster state controls this native HTML."
+            Persistent Aster state controls this native HTML.
         </div>
     </section>;
 }
 
-Html ContactForm(string formId) {
+private Html ContactForm(string formId) {
     return <form
         id=formId
         action=Url.relative("/contact")
@@ -146,7 +144,7 @@ Html ContactForm(string formId) {
         onsubmit=SubmitContact
     >
         <p>
-            <label for=$"{formId}-name">"Name"</label>
+            <label for=$"{formId}-name">Name</label>
             <input
                 id=$"{formId}-name"
                 type="text"
@@ -157,10 +155,10 @@ Html ContactForm(string formId) {
             />
         </p>
         <p id=$"{formId}-name-error" hidden=true>
-            "Enter at least two characters."
+            Enter at least two characters.
         </p>
         <p>
-            <label for=$"{formId}-email">"Email"</label>
+            <label for=$"{formId}-email">Email</label>
             <input
                 id=$"{formId}-email"
                 type="email"
@@ -171,12 +169,12 @@ Html ContactForm(string formId) {
             />
         </p>
         <p id=$"{formId}-email-error" hidden=true>
-            "Enter at least five characters."
+            Enter at least five characters.
         </p>
-        <button type="submit">"Send enquiry"</button>
-        <p id=$"{formId}-success" hidden=true>"Enquiry accepted."</p>
+        <button type="submit">Send enquiry</button>
+        <p id=$"{formId}-success" hidden=true>Enquiry accepted.</p>
         <p id=$"{formId}-error" hidden=true>
-            "Please correct the highlighted fields."
+            Please correct the highlighted fields.
         </p>
     </form>;
 }
@@ -187,7 +185,7 @@ int main() {
     };
     Html counter = Counter(state);
     Html page = <main>
-        <h1>"Aster browser islands"</h1>
+        <h1>Aster browser islands</h1>
         {counter}
         <Disclosure
             islandId="details-primary"
@@ -202,6 +200,6 @@ int main() {
         <ContactForm formId="contact-primary" />
         <ContactForm formId="contact-secondary" />
     </main>;
-    print(HtmlRender(page));
+    Console.WriteLine(page.ToHtmlString());
     return 0;
 }

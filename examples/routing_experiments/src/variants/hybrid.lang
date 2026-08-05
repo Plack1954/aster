@@ -4,7 +4,7 @@ using Aster.Web.HttpApp;
 using Pages.Generated;
 using Site.View;
 
-Router DynamicRouter() {
+private Router DynamicRouter() {
     Router router = RouterNew(missing);
     AddPages(router);
     RouterGetMut(router, "/article/:slug/", article);

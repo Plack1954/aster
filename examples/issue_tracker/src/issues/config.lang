@@ -8,11 +8,11 @@ public struct AppConfig {
     usize maxTitleBytes;
 }
 
-bool IsSpace(byte value) {
+private bool IsSpace(byte value) {
     return value == 32 || value == 9 || value == 13;
 }
 
-string trim(string value) {
+private string trim(string value) {
     usize start = 0;
     usize end = value.Length;
     while (start < end && IsSpace(StringByteAt(value, start))) {
@@ -24,7 +24,7 @@ string trim(string value) {
     return StringSlice(value, start, end);
 }
 
-Result<usize, string> ParseLimit(string value) {
+private Result<usize, string> ParseLimit(string value) {
     string text = trim(value);
     usize length = text.Length;
     if (length == 0) {

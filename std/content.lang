@@ -3,7 +3,7 @@ namespace Aster.Content;
 using System.IO;
 using System.Text;
 
-string ContentJoin(string root, string name)
+private string ContentJoin(string root, string name)
 {
     if (StringByteAt(root, root.Length - 1) == 47)
     {
@@ -12,7 +12,7 @@ string ContentJoin(string root, string name)
     return string.Concat(root, "/", name);
 }
 
-int ContentStringCompare(string left, string right)
+private int ContentStringCompare(string left, string right)
 {
     usize shared = if (left.Length < right.Length)
     {
@@ -34,7 +34,7 @@ int ContentStringCompare(string left, string right)
     return 0;
 }
 
-bool ContentStringsContain(List<string> values, string wanted)
+private bool ContentStringsContain(List<string> values, string wanted)
 {
     foreach (string value in values)
     {

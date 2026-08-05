@@ -4,12 +4,12 @@ int main() {
     Buffer buffer = Buffer.allocate(17);
     unsafe {
         Slice<byte> bytes = BufferAsMutSlice(buffer);
-        print(ByteSliceLen(bytes));
+        Console.WriteLine(ByteSliceLen(bytes));
         long total = 0;
         foreach (byte value in bytes) {
             total += (long)value;
         }
-        print(total);
+        Console.WriteLine(total);
     }
     return 0;
 }

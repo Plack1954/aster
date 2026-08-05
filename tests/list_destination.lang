@@ -36,14 +36,14 @@ int main()
     };
     articles.Add(reusable);
 
-    print(reusable.title);
-    print(reusable.tags.Count);
-    print(articles.Count);
+    Console.WriteLine(reusable.title);
+    Console.WriteLine(reusable.tags.Count);
+    Console.WriteLine(articles.Count);
     foreach (Article article in articles)
     {
-        print(article.title);
-        print(article.tags.Count);
-        print(article.views);
+        Console.WriteLine(article.title);
+        Console.WriteLine(article.tags.Count);
+        Console.WriteLine(article.views);
     }
     return 0;
 }

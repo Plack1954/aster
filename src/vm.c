@@ -153,41 +153,38 @@ static void drop_runtime_value(LangVM *vm,
         vm_value_drop_owned(vm, value);
 }
 
+#define LOCAL(slot_) \
+    (*((references[(slot_)] != NULL) \
+        ? references[(slot_)] : &locals[(slot_)]))
+
 static LangValue finish_frame(LangVM *vm, const BytecodeFunction *function,
                               LangValue *locals, bool *initialized,
                               LangValue **references,
                               LangValue result,
                               uint64_t frame_instruction_count) {
-    for (size_t i = 0U; i < function->arity; ++i)
-        if (references[i] != NULL)
-            *references[i] = locals[i];
     if (function->may_have_object_locals &&
         function->object_local_mask_valid) {
         uint64_t mask = function->object_local_mask;
         while (mask != 0U) {
             size_t slot = (size_t)__builtin_ctzll(mask);
             if (initialized[slot] &&
-                !(slot < function->arity && slot < 32U &&
-                  (function->borrowed_parameter_mask &
-                   (UINT32_C(1) << (unsigned)slot)) != 0U) &&
-                locals[slot].tag == LANG_VALUE_OBJECT &&
+                references[slot] == NULL &&
+                LOCAL(slot).tag == LANG_VALUE_OBJECT &&
                 !(result.tag == LANG_VALUE_OBJECT &&
-                  locals[slot].as.object == result.as.object))
+                  LOCAL(slot).as.object == result.as.object))
                 drop_runtime_value(
-                    vm, function, slot, locals[slot]);
+                    vm, function, slot, LOCAL(slot));
             mask &= mask - UINT64_C(1);
         }
     } else if (function->may_have_object_locals)
         for (size_t i = function->local_count; i > 0U; --i)
             if (initialized[i - 1U] &&
-                !((i - 1U) < function->arity && (i - 1U) < 32U &&
-                  (function->borrowed_parameter_mask &
-                   (UINT32_C(1) << (unsigned)(i - 1U))) != 0U) &&
-                locals[i - 1U].tag == LANG_VALUE_OBJECT &&
+                references[i - 1U] == NULL &&
+                LOCAL(i - 1U).tag == LANG_VALUE_OBJECT &&
                 !(result.tag == LANG_VALUE_OBJECT &&
-                  locals[i - 1U].as.object == result.as.object))
+                  LOCAL(i - 1U).as.object == result.as.object))
                 drop_runtime_value(
-                    vm, function, i - 1U, locals[i - 1U]);
+                    vm, function, i - 1U, LOCAL(i - 1U));
     if (UINT64_MAX - vm->instruction_count < frame_instruction_count)
         vm->instruction_count = UINT64_MAX;
     else
@@ -241,12 +238,10 @@ static LangValue vm_execute_function_core(
     for (size_t i = 0U; async_frame == NULL &&
          i < argument_count && i < function->local_count; ++i) {
         if (arguments[i].tag == LANG_VALUE_RAW_POINTER &&
-            (function->borrowed_parameter_mask &
-             (UINT32_C(1) << (unsigned)i)) != 0U) {
+            parameter_mode_is_reference(function->parameter_modes[i])) {
             references[i] = (LangValue *)arguments[i].as.pointer;
-            locals[i] = *references[i];
         } else {
-            locals[i] = arguments[i];
+            LOCAL(i) = arguments[i];
         }
         initialized[i] = true;
     }
@@ -297,6 +292,8 @@ static LangValue vm_execute_function_core(
         [OP_STORE_LOCAL]=&&vm_dispatch_store_local,
         [OP_MOVE_LOCAL]=&&vm_dispatch_move_local,
         [OP_REFERENCE_LOCAL]=&&vm_dispatch_reference_local,
+        [OP_REFERENCE_FIELD_LOCAL]=&&vm_dispatch_reference_field_local,
+        [OP_INVALIDATE_LOCAL]=&&vm_dispatch_invalidate_local,
         [OP_ADD_I64]=&&vm_dispatch_integer_binary,
         [OP_SUB_I64]=&&vm_dispatch_integer_binary,
         [OP_MUL_I64]=&&vm_dispatch_integer_binary,
@@ -439,7 +436,7 @@ static LangValue vm_execute_function_core(
     if (scalar_destination == SIZE_MAX) { \
         PUSH(scalar_result_); \
     } else { \
-        locals[scalar_destination] = scalar_result_; \
+        LOCAL(scalar_destination) = scalar_result_; \
         initialized[scalar_destination] = true; \
     } \
 } while (0)
@@ -451,7 +448,7 @@ static LangValue vm_execute_function_core(
             case OP_CONSTANT: PUSH(vm->module->constants[(size_t)instruction.a].value); break;
             VM_LABEL(constant_local)
             case OP_CONSTANT_LOCAL:
-                locals[(size_t)instruction.b] =
+                LOCAL((size_t)instruction.b) =
                     vm->module->constants[(size_t)instruction.a].value;
                 initialized[(size_t)instruction.b] = true;
                 break;
@@ -475,17 +472,17 @@ static LangValue vm_execute_function_core(
                 if (instruction.a < 0 || !initialized[(size_t)instruction.a]) {
                     runtime_error(vm, instruction, "load of unavailable local"); goto fail;
                 }
-                PUSH(locals[(size_t)instruction.a]); break;
+                PUSH(LOCAL((size_t)instruction.a)); break;
             VM_LABEL(store_local)
             case OP_STORE_LOCAL:
-                locals[(size_t)instruction.a] = POP();
+                LOCAL((size_t)instruction.a) = POP();
                 initialized[(size_t)instruction.a] = true; break;
             VM_LABEL(move_local)
             case OP_MOVE_LOCAL:
                 if (!initialized[(size_t)instruction.a]) {
                     runtime_error(vm, instruction, "move of unavailable local"); goto fail;
                 }
-                PUSH(locals[(size_t)instruction.a]);
+                PUSH(LOCAL((size_t)instruction.a));
                 initialized[(size_t)instruction.a] = false; break;
             VM_LABEL(reference_local)
             case OP_REFERENCE_LOCAL:
@@ -497,11 +494,59 @@ static LangValue vm_execute_function_core(
                 }
                 PUSH(((LangValue){
                     .tag=LANG_VALUE_RAW_POINTER,
-                    .as.pointer=&locals[(size_t)instruction.a]
+                    .as.pointer=&LOCAL((size_t)instruction.a)
                 }));
                 if (instruction.b >= 0 &&
                     instruction.b != instruction.a)
                     initialized[(size_t)instruction.b] = false;
+                break;
+            VM_LABEL(reference_field_local)
+            case OP_REFERENCE_FIELD_LOCAL: {
+                size_t slot = (size_t)instruction.a;
+                Object *object = initialized[slot] &&
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
+                LangStringView field =
+                    vm->module->constants[(size_t)instruction.b]
+                        .value.as.string;
+                if (object == NULL || object->kind != OBJECT_STRUCT) {
+                    runtime_error(vm, instruction,
+                                  "field reference requires a struct");
+                    goto fail;
+                }
+                char *cursor = strchr(
+                    object->as.structure.metadata, '|');
+                bool found = false;
+                size_t field_index = 0U;
+                while (cursor != NULL &&
+                       field_index < object->as.structure.count) {
+                    ++cursor;
+                    char *end = strchr(cursor, '|');
+                    size_t length = end != NULL
+                        ? (size_t)(end - cursor) : strlen(cursor);
+                    if (length == field.length &&
+                        memcmp(cursor, field.data, length) == 0) {
+                        PUSH(((LangValue){
+                            .tag=LANG_VALUE_RAW_POINTER,
+                            .as.pointer=&object->as.structure
+                                .fields[field_index]
+                        }));
+                        found = true;
+                        break;
+                    }
+                    cursor = end;
+                    ++field_index;
+                }
+                if (!found) {
+                    runtime_error(vm, instruction,
+                                  "unknown struct field reference");
+                    goto fail;
+                }
+                break;
+            }
+            VM_LABEL(invalidate_local)
+            case OP_INVALIDATE_LOCAL:
+                initialized[(size_t)instruction.a] = false;
                 break;
             VM_LABEL(copy_local_to)
             case OP_COPY_LOCAL_TO:
@@ -511,8 +556,8 @@ static LangValue vm_execute_function_core(
                         "copy of unavailable local");
                     goto fail;
                 }
-                locals[(size_t)instruction.b] =
-                    locals[(size_t)instruction.a];
+                LOCAL((size_t)instruction.b) =
+                    LOCAL((size_t)instruction.a);
                 initialized[(size_t)instruction.b] = true;
                 break;
             VM_LABEL(move_local_to)
@@ -529,10 +574,10 @@ static LangValue vm_execute_function_core(
                     vm->active_span = instruction_span;
                     drop_runtime_value(
                         vm, function, (size_t)instruction.b,
-                        locals[(size_t)instruction.b]);
+                        LOCAL((size_t)instruction.b));
                 }
-                locals[(size_t)instruction.b] =
-                    locals[(size_t)instruction.a];
+                LOCAL((size_t)instruction.b) =
+                    LOCAL((size_t)instruction.a);
                 initialized[(size_t)instruction.b] = true;
                 initialized[(size_t)instruction.a] = false;
                 break;
@@ -542,8 +587,8 @@ static LangValue vm_execute_function_core(
                 if (initialized[(size_t)instruction.a])
                     drop_runtime_value(vm, function,
                                        (size_t)instruction.a,
-                                       locals[(size_t)instruction.a]);
-                locals[(size_t)instruction.a] = POP();
+                                       LOCAL((size_t)instruction.a));
+                LOCAL((size_t)instruction.a) = POP();
                 initialized[(size_t)instruction.a] = true;
                 PUSH(((LangValue){.tag=LANG_VALUE_UNIT}));
                 break;
@@ -558,7 +603,7 @@ static LangValue vm_execute_function_core(
                 int64_t immediate =
                     (int64_t)((int32_t)packed >> 20U);
                 if (!initialized[source] ||
-                    locals[source].tag != LANG_VALUE_I64) {
+                    LOCAL(source).tag != LANG_VALUE_I64) {
                     runtime_error(
                         vm, instruction,
                         "immediate binary operation used an "
@@ -572,7 +617,7 @@ static LangValue vm_execute_function_core(
                              UINT32_C(0xff));
                 scalar_type =
                     (int32_t)(packed_operation >> 8U);
-                int64_t left = locals[source].as.i64;
+                int64_t left = LOCAL(source).as.i64;
                 int64_t result = 0;
                 bool ok = true;
                 if (scalar_operation == OP_ADD_I64)
@@ -615,9 +660,9 @@ static LangValue vm_execute_function_core(
                         "integer overflow or invalid operands");
                     goto fail;
                 }
-                locals[scalar_destination].tag =
+                LOCAL(scalar_destination).tag =
                     LANG_VALUE_I64;
-                locals[scalar_destination].as.i64 = result;
+                LOCAL(scalar_destination).as.i64 = result;
                 initialized[scalar_destination] = true;
                 break;
             }
@@ -643,26 +688,26 @@ static LangValue vm_execute_function_core(
                     (OpCode)(packed_operation & UINT32_C(0xff));
                 scalar_type =
                     (int32_t)(packed_operation >> 8U);
-                if (locals[left_slot].tag == LANG_VALUE_I64 &&
-                    locals[right_slot].tag == LANG_VALUE_I64 &&
+                if (LOCAL(left_slot).tag == LANG_VALUE_I64 &&
+                    LOCAL(right_slot).tag == LANG_VALUE_I64 &&
                     scalar_operation >= OP_ADD_I64 &&
                     scalar_operation <= OP_MUL_I64) {
                     int64_t result;
                     bool ok;
                     if (scalar_operation == OP_ADD_I64)
                         ok = vm_checked_add(
-                            locals[left_slot].as.i64,
-                            locals[right_slot].as.i64,
+                            LOCAL(left_slot).as.i64,
+                            LOCAL(right_slot).as.i64,
                             &result);
                     else if (scalar_operation == OP_SUB_I64)
                         ok = vm_checked_sub(
-                            locals[left_slot].as.i64,
-                            locals[right_slot].as.i64,
+                            LOCAL(left_slot).as.i64,
+                            LOCAL(right_slot).as.i64,
                             &result);
                     else
                         ok = vm_checked_mul(
-                            locals[left_slot].as.i64,
-                            locals[right_slot].as.i64,
+                            LOCAL(left_slot).as.i64,
+                            LOCAL(right_slot).as.i64,
                             &result);
                     if (!ok || !vm_signed_value_fits_type(
                             result, (TypeKind)scalar_type)) {
@@ -671,15 +716,15 @@ static LangValue vm_execute_function_core(
                             "integer overflow or invalid operands");
                         goto fail;
                     }
-                    locals[scalar_destination].tag =
+                    LOCAL(scalar_destination).tag =
                         LANG_VALUE_I64;
-                    locals[scalar_destination].as.i64 =
+                    LOCAL(scalar_destination).as.i64 =
                         result;
                     initialized[scalar_destination] = true;
                     break;
                 }
-                PUSH(locals[left_slot]);
-                PUSH(locals[right_slot]);
+                PUSH(LOCAL(left_slot));
+                PUSH(LOCAL(right_slot));
                 /* Continue through the ordinary checked implementation. */
             }
 #if defined(LANG_VM_COMPUTED_GOTO)
@@ -706,8 +751,8 @@ static LangValue vm_execute_function_core(
                 int64_t immediate =
                     (int64_t)(int8_t)(packed >> 24U);
                 if (!initialized[left] || !initialized[right] ||
-                    locals[left].tag != LANG_VALUE_I64 ||
-                    locals[right].tag != LANG_VALUE_I64) {
+                    LOCAL(left).tag != LANG_VALUE_I64 ||
+                    LOCAL(right).tag != LANG_VALUE_I64) {
                     runtime_error(
                         vm, instruction,
                         "fused binary operation used invalid locals");
@@ -718,16 +763,16 @@ static LangValue vm_execute_function_core(
                 bool ok;
                 if (first == OP_ADD_I64)
                     ok = vm_checked_add(
-                        locals[left].as.i64,
-                        locals[right].as.i64, &intermediate);
+                        LOCAL(left).as.i64,
+                        LOCAL(right).as.i64, &intermediate);
                 else if (first == OP_SUB_I64)
                     ok = vm_checked_sub(
-                        locals[left].as.i64,
-                        locals[right].as.i64, &intermediate);
+                        LOCAL(left).as.i64,
+                        LOCAL(right).as.i64, &intermediate);
                 else
                     ok = vm_checked_mul(
-                        locals[left].as.i64,
-                        locals[right].as.i64, &intermediate);
+                        LOCAL(left).as.i64,
+                        LOCAL(right).as.i64, &intermediate);
                 if (ok && second == OP_ADD_I64)
                     ok = vm_checked_add(intermediate, immediate, &result);
                 else if (ok && second == OP_SUB_I64)
@@ -740,7 +785,7 @@ static LangValue vm_execute_function_core(
                         "integer overflow in fused binary operation");
                     goto fail;
                 }
-                locals[destination] = (LangValue){
+                LOCAL(destination) = (LangValue){
                     .tag=LANG_VALUE_I64, .as.i64=result
                 };
                 initialized[destination] = true;
@@ -1137,8 +1182,8 @@ vm_switch_integer_binary:
                         "comparison used an unavailable local");
                     goto fail;
                 }
-                LangValue left = locals[left_slot];
-                LangValue right = locals[right_slot];
+                LangValue left = LOCAL(left_slot);
+                LangValue right = LOCAL(right_slot);
                 initialized[left_slot] = false;
                 initialized[right_slot] = false;
                 bool result;
@@ -1194,7 +1239,7 @@ vm_switch_integer_binary:
                         "comparison used an unavailable local");
                     goto fail;
                 }
-                LangValue left = locals[local_slot];
+                LangValue left = LOCAL(local_slot);
                 LangValue right =
                     vm->module->constants[constant_index].value;
                 bool result;
@@ -1246,12 +1291,9 @@ vm_switch_integer_binary:
             VM_LABEL(call)
             case OP_CALL: {
                 vm->active_span = instruction_span;
-                uint32_t encoded = (uint32_t)instruction.b;
-                size_t count = instruction.a < 0
-                             ? (size_t)(encoded & UINT32_C(0xff))
-                             : (size_t)encoded;
-                uint32_t borrowed_mask =
-                    instruction.a < 0 ? encoded >> 8U : 0U;
+                size_t count = (size_t)instruction.b;
+                const BytecodeCallSite *call_site =
+                    &function->call_sites[instruction_index];
                 LangValue *args = &stack[sp - count];
                 LangValue result;
                 if (instruction.a < 0) {
@@ -1259,8 +1301,9 @@ vm_switch_integer_binary:
                                       instruction_span))
                         goto fail;
                     for (size_t i = 0U; i < count; ++i)
-                        if ((borrowed_mask &
-                             (UINT32_C(1) << (unsigned)i)) == 0U)
+                        if (i >= call_site->argument_count ||
+                            !parameter_mode_is_reference(
+                                call_site->argument_modes[i]))
                             vm_value_drop_owned(vm, args[i]);
                 } else {
                     if (vm->frame_count >= 128U) {
@@ -1324,8 +1367,8 @@ vm_switch_integer_binary:
                 if (initialized[destination])
                     drop_runtime_value(
                         vm, function, destination,
-                        locals[destination]);
-                locals[destination] = result;
+                        LOCAL(destination));
+                LOCAL(destination) = result;
                 initialized[destination] = true;
                 break;
             }
@@ -1353,7 +1396,7 @@ vm_switch_integer_binary:
                     goto fail;
                 }
                 LangValue call_arguments[2] = {
-                    locals[first_slot], locals[second_slot]
+                    LOCAL(first_slot), LOCAL(second_slot)
                 };
                 LangValue result;
                 const BytecodeFunction *callee =
@@ -1377,8 +1420,8 @@ vm_switch_integer_binary:
                 if (initialized[destination])
                     drop_runtime_value(
                         vm, function, destination,
-                        locals[destination]);
-                locals[destination] = result;
+                        LOCAL(destination));
+                LOCAL(destination) = result;
                 initialized[destination] = true;
                 break;
             }
@@ -1413,9 +1456,9 @@ vm_switch_integer_binary:
             VM_LABEL(call_native)
             case OP_CALL_NATIVE: {
                 vm->active_span = instruction_span;
-                uint32_t encoded = (uint32_t)instruction.b;
-                size_t count = (size_t)(encoded & UINT32_C(0xff));
-                uint32_t borrowed_mask = encoded >> 8U;
+                size_t count = (size_t)instruction.b;
+                const BytecodeCallSite *call_site =
+                    &function->call_sites[instruction_index];
                 LangStringView name =
                     vm->module->constants[(size_t)instruction.a].value.as.string;
                 char native_name[256];
@@ -1423,13 +1466,16 @@ vm_switch_integer_binary:
                     runtime_error(vm, instruction, "native function name is too long");
                     goto fail;
                 }
-                memcpy(native_name, name.data, name.length);
+                if (name.length != 0U)
+                    memcpy(native_name, name.data, name.length);
                 native_name[name.length] = '\0';
                 LangNativeResult native_result;
                 if (!lang_vm_call_native(vm, native_name, &stack[sp - count],
                                          count, &native_result)) {
                     for (size_t i = 0U; i < count; ++i)
-                        if ((borrowed_mask & (UINT32_C(1) << (unsigned)i)) == 0U)
+                        if (i >= call_site->argument_count ||
+                            !parameter_mode_is_reference(
+                                call_site->argument_modes[i]))
                             vm_value_drop_owned(vm, stack[sp - count + i]);
                     sp -= count;
                     runtime_error(vm, instruction, "unregistered native function");
@@ -1437,7 +1483,9 @@ vm_switch_integer_binary:
                 }
                 if (!native_result.ok) {
                     for (size_t i = 0U; i < count; ++i)
-                        if ((borrowed_mask & (UINT32_C(1) << (unsigned)i)) == 0U)
+                        if (i >= call_site->argument_count ||
+                            !parameter_mode_is_reference(
+                                call_site->argument_modes[i]))
                             vm_value_drop_owned(vm, stack[sp - count + i]);
                     sp -= count;
                     const char *message =
@@ -1450,7 +1498,9 @@ vm_switch_integer_binary:
                     break;
                 }
                 for (size_t i = 0U; i < count; ++i)
-                    if ((borrowed_mask & (UINT32_C(1) << (unsigned)i)) == 0U)
+                    if (i >= call_site->argument_count ||
+                        !parameter_mode_is_reference(
+                            call_site->argument_modes[i]))
                         vm_value_drop_owned(vm, stack[sp - count + i]);
                 sp -= count;
                 PUSH(native_result.value);
@@ -1683,7 +1733,7 @@ vm_switch_integer_binary:
                         "return used an unavailable local");
                     goto fail;
                 }
-                LangValue result = locals[slot];
+                LangValue result = LOCAL(slot);
                 if (instruction.b != 0)
                     initialized[slot] = false;
                 result = finish_frame(
@@ -1737,8 +1787,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *array =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 bool valid_index =
                     array != NULL && array->kind == OBJECT_ARRAY &&
                     ((index.tag == LANG_VALUE_I64 && index.as.i64 >= 0 &&
@@ -1763,8 +1813,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *array =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 bool valid_index =
                     array != NULL && array->kind == OBJECT_ARRAY &&
                     ((index.tag == LANG_VALUE_I64 && index.as.i64 >= 0 &&
@@ -1853,8 +1903,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *object =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 LangStringView field =
                     vm->module->constants[(size_t)instruction.b]
                         .value.as.string;
@@ -1909,8 +1959,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *object =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 LangStringView field =
                     vm->module->constants[(size_t)instruction.b]
                         .value.as.string;
@@ -1996,8 +2046,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *object =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 LangStringView field =
                     vm->module->constants[(size_t)instruction.b]
                         .value.as.string;
@@ -2090,9 +2140,9 @@ vm_switch_integer_binary:
                         (size_t)instruction.b - 1U;
                     Object *parent =
                         initialized[parent_slot] &&
-                        locals[parent_slot].tag ==
+                        LOCAL(parent_slot).tag ==
                             LANG_VALUE_OBJECT
-                        ? locals[parent_slot].as.object : NULL;
+                        ? LOCAL(parent_slot).as.object : NULL;
                     if (parent == NULL ||
                         parent->kind != OBJECT_HTML) {
                         runtime_error(
@@ -2130,8 +2180,8 @@ vm_switch_integer_binary:
                     size_t parent_slot = (size_t)instruction.b - 1U;
                     Object *parent =
                         initialized[parent_slot] &&
-                        locals[parent_slot].tag == LANG_VALUE_OBJECT
-                        ? locals[parent_slot].as.object : NULL;
+                        LOCAL(parent_slot).tag == LANG_VALUE_OBJECT
+                        ? LOCAL(parent_slot).as.object : NULL;
                     if (parent == NULL || parent->kind != OBJECT_HTML) {
                         runtime_error(
                             vm, instruction,
@@ -2183,8 +2233,8 @@ vm_switch_integer_binary:
                     size_t parent_slot = parent_encoded - 1U;
                     Object *parent =
                         initialized[parent_slot] &&
-                        locals[parent_slot].tag == LANG_VALUE_OBJECT
-                        ? locals[parent_slot].as.object : NULL;
+                        LOCAL(parent_slot).tag == LANG_VALUE_OBJECT
+                        ? LOCAL(parent_slot).as.object : NULL;
                     if (parent == NULL || parent->kind != OBJECT_HTML) {
                         runtime_error(
                             vm, instruction,
@@ -2219,8 +2269,8 @@ vm_switch_integer_binary:
                     html->as.html.tag = "";
                     html->as.html.tag_length = 0U;
                 }
-                if (initialized[slot]) vm_value_drop_owned(vm, locals[slot]);
-                locals[slot] = (LangValue){
+                if (initialized[slot]) vm_value_drop_owned(vm, LOCAL(slot));
+                LOCAL(slot) = (LangValue){
                     .tag=LANG_VALUE_OBJECT, .as.object=html
                 };
                 initialized[slot] = true;
@@ -2246,7 +2296,7 @@ vm_switch_integer_binary:
                 vm_html_ensure_open_closed(html);
                 LangStringView text = vm->module->constants[
                     (size_t)instruction.b].value.as.string;
-                vm_html_bytes(html, text.data, text.length);
+                vm_html_append_text(html, text);
                 break;
             }
             VM_LABEL(html_append)
@@ -2281,8 +2331,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML) {
                     vm_value_drop_owned(vm, value);
                     runtime_error(
@@ -2301,8 +2351,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL ||
                     html->kind != OBJECT_HTML ||
                     !html->as.html.open) {
@@ -2325,8 +2375,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL ||
                     html->kind != OBJECT_HTML) {
                     vm_value_drop_owned(vm, value);
@@ -2345,8 +2395,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 LangStringView string;
                 bool is_string = lang_value_string_view(&value, &string);
                 if (html == NULL || html->kind != OBJECT_HTML) {
@@ -2371,8 +2421,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL ||
                     html->kind != OBJECT_HTML) {
                     runtime_error(
@@ -2389,8 +2439,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML) {
                     vm_value_drop_owned(vm, child);
                     runtime_error(
@@ -2408,8 +2458,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL ||
                     html->kind != OBJECT_HTML) {
                     vm_value_drop_owned(vm, value);
@@ -2428,8 +2478,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML) {
                     runtime_error(
                         vm, instruction,
@@ -2447,8 +2497,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML) {
                     runtime_error(
                         vm, instruction,
@@ -2458,7 +2508,7 @@ vm_switch_integer_binary:
                 vm_html_ensure_open_closed(html);
                 LangStringView value = vm->module->constants[
                     (size_t)instruction.b].value.as.string;
-                vm_html_bytes(html, value.data, value.length);
+                vm_html_append_text(html, value);
                 break;
             }
             VM_LABEL(html_attr_constant_local)
@@ -2466,8 +2516,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML) {
                     runtime_error(
                         vm, instruction,
@@ -2491,8 +2541,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML) {
                     runtime_error(
                         vm, instruction,
@@ -2512,8 +2562,8 @@ vm_switch_integer_binary:
                 size_t value_slot = (size_t)instruction.b;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML ||
                     !initialized[value_slot]) {
                     runtime_error(
@@ -2525,7 +2575,7 @@ vm_switch_integer_binary:
                     instruction.op == OP_HTML_ATTR_APPEND_VALUE_LOCAL;
                 if (!attribute) vm_html_ensure_open_closed(html);
                 vm_html_append_formatted_value(
-                    vm, html, locals[value_slot], attribute);
+                    vm, html, LOCAL(value_slot), attribute);
                 break;
             }
             VM_LABEL(html_finish_local)
@@ -2533,8 +2583,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *html =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (html == NULL || html->kind != OBJECT_HTML) {
                     runtime_error(
                         vm, instruction,
@@ -2542,7 +2592,7 @@ vm_switch_integer_binary:
                     goto fail;
                 }
                 vm_html_finish(html);
-                LangValue result = locals[slot];
+                LangValue result = LOCAL(slot);
                 initialized[slot] = false;
                 PUSH(result);
                 break;
@@ -2571,8 +2621,8 @@ vm_switch_integer_binary:
                 html->as.string.data = data;
                 html->as.string.length = length;
                 html->as.string.embedded_data = false;
-                if (initialized[slot]) vm_value_drop_owned(vm, locals[slot]);
-                locals[slot] = value;
+                if (initialized[slot]) vm_value_drop_owned(vm, LOCAL(slot));
+                LOCAL(slot) = value;
                 initialized[slot] = true;
                 break;
             }
@@ -2588,8 +2638,8 @@ vm_switch_integer_binary:
                 builder->as.string_builder.data =
                     (char *)(builder + 1U);
                 builder->as.string_builder.embedded_data = true;
-                if (initialized[slot]) vm_value_drop_owned(vm, locals[slot]);
-                locals[slot] = (LangValue){
+                if (initialized[slot]) vm_value_drop_owned(vm, LOCAL(slot));
+                LOCAL(slot) = (LangValue){
                     .tag=LANG_VALUE_OBJECT, .as.object=builder
                 };
                 initialized[slot] = true;
@@ -2602,8 +2652,8 @@ vm_switch_integer_binary:
                 size_t builder_slot = (size_t)instruction.a;
                 Object *builder =
                     initialized[builder_slot] &&
-                    locals[builder_slot].tag == LANG_VALUE_OBJECT
-                    ? locals[builder_slot].as.object : NULL;
+                    LOCAL(builder_slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(builder_slot).as.object : NULL;
                 bool appended = false;
                 if (builder != NULL &&
                     builder->kind == OBJECT_STRING_BUILDER) {
@@ -2617,7 +2667,7 @@ vm_switch_integer_binary:
                         size_t value_slot = (size_t)instruction.b;
                         appended = initialized[value_slot] &&
                             vm_string_builder_append_value(
-                                builder, locals[value_slot]);
+                                builder, LOCAL(value_slot));
                     }
                 }
                 if (!appended) {
@@ -2634,8 +2684,8 @@ vm_switch_integer_binary:
                 size_t destination = (size_t)instruction.b;
                 Object *builder =
                     initialized[builder_slot] &&
-                    locals[builder_slot].tag == LANG_VALUE_OBJECT
-                    ? locals[builder_slot].as.object : NULL;
+                    LOCAL(builder_slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(builder_slot).as.object : NULL;
                 if (builder == NULL ||
                     builder->kind != OBJECT_STRING_BUILDER) {
                     runtime_error(
@@ -2654,8 +2704,8 @@ vm_switch_integer_binary:
                 builder->as.string.embedded_data = embedded_data;
                 if (builder_slot != destination) {
                     if (initialized[destination])
-                        vm_value_drop_owned(vm, locals[destination]);
-                    locals[destination] = locals[builder_slot];
+                        vm_value_drop_owned(vm, LOCAL(destination));
+                    LOCAL(destination) = LOCAL(builder_slot);
                     initialized[destination] = true;
                     initialized[builder_slot] = false;
                 }
@@ -2706,10 +2756,10 @@ vm_switch_integer_binary:
             case OP_ITER_BORROW_LOCAL: {
                 size_t slot = (size_t)instruction.a;
                 if (initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_BYTE_SLICE) {
+                    LOCAL(slot).tag == LANG_VALUE_BYTE_SLICE) {
                     Object *iterator = vm_allocate(1U, sizeof(*iterator));
                     iterator->kind = OBJECT_ITER;
-                    iterator->as.iterator.bytes = locals[slot].as.bytes;
+                    iterator->as.iterator.bytes = LOCAL(slot).as.bytes;
                     iterator->as.iterator.index = 0U;
                     iterator->as.iterator.borrowed = true;
                     iterator->as.iterator.is_slice = true;
@@ -2720,8 +2770,8 @@ vm_switch_integer_binary:
                 }
                 Object *iterable =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (iterable == NULL ||
                     (iterable->kind != OBJECT_ARRAY &&
                      iterable->kind != OBJECT_VEC &&
@@ -2772,24 +2822,24 @@ vm_switch_integer_binary:
                                           "invalid UTF-8 string iteration");
                             goto fail;
                         }
-                        locals[slot] = (LangValue){
+                        LOCAL(slot) = (LangValue){
                             .tag=LANG_VALUE_U64, .as.u64=scalar
                         };
                     } else if (iterator->as.iterator.is_slice) {
-                        locals[slot] = (LangValue){
+                        LOCAL(slot) = (LangValue){
                             .tag=LANG_VALUE_U64,
                             .as.u64=(uint64_t)
                                 iterator->as.iterator.bytes.data[index]
                         };
                     } else if (array->kind == OBJECT_VEC) {
-                        locals[slot] = iterator->as.iterator.borrowed
+                        LOCAL(slot) = iterator->as.iterator.borrowed
                             ? vm_value_clone(array->as.vector.items[index])
                             : array->as.vector.items[index];
                         if (!iterator->as.iterator.borrowed)
                             array->as.vector.items[index] =
                                 (LangValue){.tag=LANG_VALUE_UNIT};
                     } else {
-                        locals[slot] = iterator->as.iterator.borrowed
+                        LOCAL(slot) = iterator->as.iterator.borrowed
                             ? vm_value_clone(array->as.array.items[index])
                             : array->as.array.items[index];
                     }
@@ -2802,8 +2852,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *iterator =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (iterator == NULL ||
                     iterator->kind != OBJECT_ITER ||
                     (!iterator->as.iterator.is_slice &&
@@ -2832,8 +2882,8 @@ vm_switch_integer_binary:
                 size_t slot = (size_t)instruction.a;
                 Object *iterator =
                     initialized[slot] &&
-                    locals[slot].tag == LANG_VALUE_OBJECT
-                    ? locals[slot].as.object : NULL;
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
                 if (iterator == NULL ||
                     iterator->kind != OBJECT_ITER ||
                     (!iterator->as.iterator.is_slice &&
@@ -2898,7 +2948,7 @@ vm_switch_integer_binary:
                 vm->active_span = instruction_span;
                 size_t slot = (size_t)instruction.a;
                 if (initialized[slot]) {
-                    LangValue value = locals[slot];
+                    LangValue value = LOCAL(slot);
                     initialized[slot] = false;
                     drop_runtime_value(vm, function, slot, value);
                 }
@@ -2957,15 +3007,15 @@ vm_switch_integer_binary:
                 LangStringView string;
                 if (!initialized[source] ||
                     !lang_value_string_view(
-                        &locals[source], &string)) {
+                        &LOCAL(source), &string)) {
                     runtime_error(
                         vm, instruction,
                         "text_len expects a string value");
                     goto fail;
                 }
                 if (initialized[destination])
-                    vm_value_drop_owned(vm, locals[destination]);
-                locals[destination] = (LangValue){
+                    vm_value_drop_owned(vm, LOCAL(destination));
+                LOCAL(destination) = (LangValue){
                     .tag=LANG_VALUE_U64,
                     .as.u64=(uint64_t)string.length
                 };
@@ -3045,16 +3095,11 @@ vm_switch_integer_binary:
         }
     }
 fail:
-    for (size_t i = 0U; i < function->arity; ++i)
-        if (references[i] != NULL && initialized[i])
-            *references[i] = locals[i];
     for (size_t i = function->local_count; i > 0U; --i)
         if (initialized[i - 1U] &&
-            !((i - 1U) < function->arity && (i - 1U) < 32U &&
-              (function->borrowed_parameter_mask &
-               (UINT32_C(1) << (unsigned)(i - 1U))) != 0U) &&
-            locals[i - 1U].tag == LANG_VALUE_OBJECT)
-            drop_runtime_value(vm, function, i - 1U, locals[i - 1U]);
+            references[i - 1U] == NULL &&
+            LOCAL(i - 1U).tag == LANG_VALUE_OBJECT)
+            drop_runtime_value(vm, function, i - 1U, LOCAL(i - 1U));
     if (UINT64_MAX - vm->instruction_count < frame_instruction_count)
         vm->instruction_count = UINT64_MAX;
     else

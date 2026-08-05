@@ -1,9 +1,9 @@
-void Fail(string message)
+private void Fail(string message)
 {
     throw new Exception(message);
 }
 
-void PropagateThroughFinally()
+private void PropagateThroughFinally()
 {
     try
     {
@@ -11,11 +11,11 @@ void PropagateThroughFinally()
     }
     finally
     {
-        print("finally-propagate");
+        Console.WriteLine("finally-propagate");
     }
 }
 
-int ReturnThroughFinally()
+private int ReturnThroughFinally()
 {
     try
     {
@@ -23,11 +23,11 @@ int ReturnThroughFinally()
     }
     finally
     {
-        print("finally-return");
+        Console.WriteLine("finally-return");
     }
 }
 
-void ReplaceExceptionInFinally()
+private void ReplaceExceptionInFinally()
 {
     try
     {
@@ -39,7 +39,7 @@ void ReplaceExceptionInFinally()
     }
 }
 
-void RethrowCurrentException()
+private void RethrowCurrentException()
 {
     try
     {
@@ -55,11 +55,11 @@ int main()
 {
     try
     {
-        print("normal");
+        Console.WriteLine("normal");
     }
     finally
     {
-        print("finally-normal");
+        Console.WriteLine("finally-normal");
     }
 
     try
@@ -68,11 +68,11 @@ int main()
     }
     catch (Exception error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
     finally
     {
-        print("finally-caught");
+        Console.WriteLine("finally-caught");
     }
 
     try
@@ -81,7 +81,7 @@ int main()
     }
     catch (Exception error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
 
     try
@@ -90,7 +90,7 @@ int main()
     }
     catch (Exception error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
 
     try
@@ -99,11 +99,11 @@ int main()
     }
     catch (Exception error)
     {
-        print(error.Message);
+        Console.WriteLine(error.Message);
     }
 
     int value = ReturnThroughFinally();
-    print(value);
+    Console.WriteLine(value);
 
     while (true)
     {
@@ -113,7 +113,7 @@ int main()
         }
         finally
         {
-            print("finally-break");
+            Console.WriteLine("finally-break");
         }
     }
 

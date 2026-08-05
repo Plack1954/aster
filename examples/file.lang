@@ -1,6 +1,6 @@
 using System.IO;
 
-Result<string, IoError> load(string path) {
+private Result<string, IoError> load(string path) {
     NativeHandle file = try NativeFileOpen(path, "rb");
     string contents = try NativeFileReadAll(file);
     return Result.Ok(contents);
@@ -11,10 +11,10 @@ int main() {
         load("examples/hello.lang");
     switch (contents) {
         case Result.Ok(text): {
-            print(text);
+            Console.WriteLine(text);
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
         }
     }
     return 0;

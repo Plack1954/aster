@@ -5,26 +5,26 @@ struct PageData
     List<int> Values;
 }
 
-Buffer MakeBuffer()
+private Buffer MakeBuffer()
 {
     Buffer result = Buffer.allocate(64);
     return result;
 }
 
-List<int> MakeList()
+private List<int> MakeList()
 {
     List<int> result = new();
     result.Add(7);
     return result;
 }
 
-Html MakeHtml()
+private Html MakeHtml()
 {
-    Html result = <strong>"Aster"</strong>;
+    Html result = <strong>Aster</strong>;
     return result;
 }
 
-PageData MakeStruct()
+private PageData MakeStruct()
 {
     PageData result = new() { Values = MakeList() };
     return result;
@@ -36,8 +36,8 @@ int main()
     List<int> values = MakeList();
     Html html = MakeHtml();
     PageData data = MakeStruct();
-    print(values.Count);
-    print(HtmlRender(html));
-    print(data.Values.Count);
+    Console.WriteLine(values.Count);
+    Console.WriteLine(html.ToHtmlString());
+    Console.WriteLine(data.Values.Count);
     return 0;
 }

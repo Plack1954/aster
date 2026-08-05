@@ -2,7 +2,7 @@ using System.IO;
 using Aster.Interop;
 using System.Text;
 
-Result<bool, string> RejectBadLine(string line) {
+private Result<bool, string> RejectBadLine(string line) {
     if (line == "bad") {
         return Result.Err("line callback rejected input");
     }
@@ -21,17 +21,17 @@ int main() {
                 );
             switch (result) {
                 case Result.Ok(count): {
-                    print(count);
+                    Console.WriteLine(count);
                     return 1;
                 }
                 case Result.Err(error): {
-                    print(error);
+                    Console.WriteLine(error);
                     return 0;
                 }
             }
         }
         case Result.Err(error): {
-            print(error);
+            Console.WriteLine(error);
             return 1;
         }
     }

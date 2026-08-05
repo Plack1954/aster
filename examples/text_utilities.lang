@@ -1,12 +1,12 @@
 using System.Text;
 
 int main() {
-    print("aster.lang".StartsWith("aster"));
-    print("aster.lang".EndsWith(".lang"));
-    print("typed Aster programs".Contains("Aster"));
+    Console.WriteLine("aster.lang".StartsWith("aster"));
+    Console.WriteLine("aster.lang".EndsWith(".lang"));
+    Console.WriteLine("typed Aster programs".Contains("Aster"));
     long minimum = -9223372036854775807 - 1;
     ulong maximum = 18446744073709551615;
-    print(minimum.ToString());
-    print(maximum.ToString());
+    Console.WriteLine(minimum.ToString());
+    Console.WriteLine(maximum.ToString());
     return 0;
 }
