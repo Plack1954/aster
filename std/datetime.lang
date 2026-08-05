@@ -2,7 +2,45 @@ namespace System;
 
 using System.Text;
 
-public struct TimeSpan { long ticks; }
+public struct TimeSpan {
+    long ticks;
+
+    public static TimeSpan FromTicks(long value) {
+        return new() { ticks = value };
+    }
+    public static TimeSpan FromMilliseconds(double value) {
+        return TimeSpan.FromTicks(Convert.ToInt64(value * 10000.0));
+    }
+    public static TimeSpan FromSeconds(double value) {
+        return TimeSpan.FromMilliseconds(value * 1000.0);
+    }
+    public static TimeSpan FromMinutes(double value) {
+        return TimeSpan.FromSeconds(value * 60.0);
+    }
+    public static TimeSpan FromHours(double value) {
+        return TimeSpan.FromMinutes(value * 60.0);
+    }
+    public static TimeSpan FromDays(double value) {
+        return TimeSpan.FromHours(value * 24.0);
+    }
+
+    public long Ticks => ticks;
+    public double TotalMilliseconds => (double)ticks / 10000.0;
+    public double TotalSeconds => (double)ticks / 10000000.0;
+    public double TotalMinutes => (double)ticks / 600000000.0;
+    public double TotalHours => (double)ticks / 36000000000.0;
+    public double TotalDays => (double)ticks / 864000000000.0;
+
+    public readonly TimeSpan Add(TimeSpan value) {
+        return TimeSpan.FromTicks(ticks + value.ticks);
+    }
+    public readonly TimeSpan Subtract(TimeSpan value) {
+        return TimeSpan.FromTicks(ticks - value.ticks);
+    }
+    public readonly TimeSpan Negate() {
+        return TimeSpan.FromTicks(-ticks);
+    }
+}
 public struct DateTime {
     long unixTicks;
 
@@ -411,73 +449,6 @@ private TimeOnly ParseTimeOnly(string value)
             (long)second * 10000000 +
             (long)millisecond * 10000
     };
-}
-
-public TimeSpan TimeSpan.FromTicks(long value)
-{
-    return new() { ticks = value };
-}
-
-public TimeSpan TimeSpan.FromMilliseconds(double value)
-{
-    return TimeSpan.FromTicks(Convert.ToInt64(value * 10000.0));
-}
-
-public TimeSpan TimeSpan.FromSeconds(double value)
-{
-    return TimeSpan.FromMilliseconds(value * 1000.0);
-}
-
-public TimeSpan TimeSpan.FromMinutes(double value)
-{
-    return TimeSpan.FromSeconds(value * 60.0);
-}
-
-public TimeSpan TimeSpan.FromHours(double value)
-{
-    return TimeSpan.FromMinutes(value * 60.0);
-}
-
-public TimeSpan TimeSpan.FromDays(double value)
-{
-    return TimeSpan.FromHours(value * 24.0);
-}
-
-public long TimeSpan.Ticks(TimeSpan self) { return self.ticks; }
-public double TimeSpan.TotalMilliseconds(TimeSpan self)
-{
-    return (double)self.ticks / 10000.0;
-}
-public double TimeSpan.TotalSeconds(TimeSpan self)
-{
-    return (double)self.ticks / 10000000.0;
-}
-public double TimeSpan.TotalMinutes(TimeSpan self)
-{
-    return (double)self.ticks / 600000000.0;
-}
-public double TimeSpan.TotalHours(TimeSpan self)
-{
-    return (double)self.ticks / 36000000000.0;
-}
-public double TimeSpan.TotalDays(TimeSpan self)
-{
-    return (double)self.ticks / 864000000000.0;
-}
-
-public TimeSpan TimeSpan.Add(TimeSpan self, TimeSpan value)
-{
-    return TimeSpan.FromTicks(self.ticks + value.ticks);
-}
-
-public TimeSpan TimeSpan.Subtract(TimeSpan self, TimeSpan value)
-{
-    return TimeSpan.FromTicks(self.ticks - value.ticks);
-}
-
-public TimeSpan TimeSpan.Negate(TimeSpan self)
-{
-    return TimeSpan.FromTicks(-self.ticks);
 }
 
 private DateParts DateOnlyParts(DateOnly self)

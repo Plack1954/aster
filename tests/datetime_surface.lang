@@ -5,16 +5,16 @@ int main()
     TimeSpan hour = TimeSpan.FromHours(1.0);
     TimeSpan half = TimeSpan.FromMinutes(30.0);
     TimeSpan combined = hour.Add(half);
-    if (combined.Ticks() != 54000000000 ||
-        combined.TotalMinutes() != 90.0 ||
-        combined.Subtract(hour).TotalMinutes() != 30.0)
+    if (combined.Ticks != 54000000000 ||
+        combined.TotalMinutes != 90.0 ||
+        combined.Subtract(hour).TotalMinutes != 30.0)
         { return 1; }
 
     DateTimeOffset epoch = DateTimeOffset.FromUnixTimeSeconds(0);
     DateTimeOffset later = epoch.Add(TimeSpan.FromMilliseconds(1500.0));
     if (later.ToUnixTimeMilliseconds() != 1500 ||
         later.ToUnixTimeSeconds() != 1 ||
-        later.Subtract(epoch).TotalMilliseconds() != 1500.0)
+        later.Subtract(epoch).TotalMilliseconds != 1500.0)
         { return 2; }
     if (epoch.ToString() != "1970-01-01T00:00:00.000Z") { return 5; }
 
@@ -34,7 +34,7 @@ int main()
     DateTimeOffset melbourne =
         DateTimeOffset.Parse("2024-01-02T03:04:05.006+11:00");
     if (melbourne.ToString() != "2024-01-02T03:04:05.006+11:00" ||
-        melbourne.Offset.TotalHours() != 11.0 ||
+        melbourne.Offset.TotalHours != 11.0 ||
         melbourne.ToUnixTimeMilliseconds() != 1704125045006)
         { return 11; }
     DateTimeOffset utcView = melbourne.ToOffset(TimeSpan.FromHours(0.0));
@@ -49,7 +49,7 @@ int main()
 
     DateTime utc = later.UtcDateTime;
     DateTime advanced = utc.Add(TimeSpan.FromSeconds(2.0));
-    if (advanced.Subtract(utc).TotalSeconds() != 2.0) { return 3; }
+    if (advanced.Subtract(utc).TotalSeconds != 2.0) { return 3; }
     DateTime parsedDateTime = DateTime.Parse("1969-12-31T23:59:59.999Z");
     if (parsedDateTime.Year != 1969 || parsedDateTime.Month != 12 ||
         parsedDateTime.Day != 31 ||
@@ -88,7 +88,7 @@ int main()
             "23:59:59.125" ||
         combinedDateTime.Date.ToString() !=
             "2024-02-29T00:00:00.000Z" ||
-        combinedDateTime.TimeOfDay.Ticks() != time.Ticks()) { return 21; }
+        combinedDateTime.TimeOfDay.Ticks != time.Ticks()) { return 21; }
     if (TimeOnly.FromTimeSpan(time.ToTimeSpan()).ToString() !=
         time.ToString()) { return 22; }
 
