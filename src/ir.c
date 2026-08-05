@@ -2558,6 +2558,17 @@ bool lang_ir_lower_module(Module *module,
                 if (store != NULL) store->index = local;
             }
         }
+        if (source->is_constructor) {
+            const Decl *structure =
+                source->checked_return_type->declaration;
+            for (size_t field = 0U;
+                 field < source->constructor_field_count; ++field)
+                (void)ir_add_local(
+                    &builder,
+                    structure->as.structure.fields[field].name,
+                    source->constructor_field_binding_ids[field],
+                    source->constructor_field_types[field], true);
+        }
         ir_lower_stmt(&builder, source->body);
         if (!ir_current_terminated(&builder)) {
             /*
@@ -2589,7 +2600,40 @@ bool lang_ir_lower_module(Module *module,
                 source->checked_return_type->kind == TYPE_TASK
                     ? source->checked_return_type->element
                     : source->checked_return_type;
-            if (logical_return != NULL &&
+            if (source->is_constructor) {
+                size_t count = source->constructor_field_count;
+                IrValueId *fields = ir_resize(
+                    NULL, count, sizeof(*fields));
+                uint32_t *labels = ir_resize(
+                    NULL, count, sizeof(*labels));
+                for (size_t field = 0U; field < count; ++field) {
+                    uint32_t local = ir_find_local(
+                        &builder,
+                        source->constructor_field_binding_ids[field],
+                        source->span);
+                    IrInstruction *load = ir_append_instruction(
+                        &builder, IR_OP_LOCAL_MOVE,
+                        ir_intern_type(
+                            ir, source->constructor_field_types[field]),
+                        NULL, 0U, source->span);
+                    if (load != NULL) load->index = local;
+                    fields[field] = load != NULL
+                        ? load->result : IR_INVALID_ID;
+                    labels[field] = (uint32_t)field;
+                }
+                IrInstruction *value = ir_append_instruction(
+                    &builder, IR_OP_AGGREGATE_MAKE,
+                    ir_intern_type(ir, source->checked_return_type),
+                    fields, count, source->span);
+                free(fields);
+                if (value != NULL) {
+                    value->labels = labels;
+                    value->label_count = count;
+                    ir_set_terminator(
+                        &builder, IR_TERM_RETURN, value->result,
+                        IR_INVALID_ID, IR_INVALID_ID, source->span);
+                } else free(labels);
+            } else if (logical_return != NULL &&
                 logical_return->kind == TYPE_UNIT) {
                 IrValueId unit = ir_emit_unit(
                     &builder, source->span,

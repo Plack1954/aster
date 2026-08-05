@@ -892,6 +892,30 @@ Expr *parser_parse_primary(Parser *parser) {
     if (parser_accept(parser, TOK_NEW)) {
         Expr *expr = parser_new_expr(parser, EXPR_STRUCT, token.span);
         if (parser_accept(parser, TOK_LPAREN)) {
+            if (parser->current.kind != TOK_RPAREN) {
+                ParserArrayBuilder arguments = parser_array_builder(
+                    sizeof(Expr *));
+                while (parser->current.kind != TOK_RPAREN &&
+                       parser->current.kind != TOK_EOF) {
+                    Expr *argument = parser_parse_expression(parser);
+                    parser_array_push(&arguments, &argument);
+                    if (!parser_accept(parser, TOK_COMMA)) break;
+                }
+                Token close = parser_expect(
+                    parser, TOK_RPAREN,
+                    "expected `)` after constructor arguments");
+                Expr *callee = parser_new_expr(
+                    parser, EXPR_NAME, token.span);
+                callee->as.name = "$target::new";
+                Expr *call = parser_new_expr(
+                    parser, EXPR_CALL, token.span);
+                call->as.call.callee = callee;
+                call->as.call.arguments.count = arguments.count;
+                call->as.call.arguments.items =
+                    parser_array_freeze(parser, &arguments);
+                call->span.end = close.span.end;
+                return call;
+            }
             parser_expect(parser, TOK_RPAREN,
                    "target-typed `new()` does not take constructor arguments");
             if (parser->current.kind != TOK_LBRACE) {
@@ -937,8 +961,29 @@ Expr *parser_parse_primary(Parser *parser) {
                     strcmp(name, "OperationCanceledException") == 0 ||
                     strcmp(name, "TaskCanceledException") == 0;
                 if (!exception_constructor) {
-                    lang_diag(parser->diagnostics, expr->span,
-                              "constructor-call syntax is currently supported for exception types");
+                    ParserArrayBuilder arguments = parser_array_builder(
+                        sizeof(Expr *));
+                    while (parser->current.kind != TOK_RPAREN &&
+                           parser->current.kind != TOK_EOF) {
+                        Expr *argument = parser_parse_expression(parser);
+                        parser_array_push(&arguments, &argument);
+                        if (!parser_accept(parser, TOK_COMMA)) break;
+                    }
+                    Token close = parser_expect(
+                        parser, TOK_RPAREN,
+                        "expected `)` after constructor arguments");
+                    Expr *callee = parser_new_expr(
+                        parser, EXPR_NAME, token.span);
+                    callee->as.name = join_text(
+                        parser, name, "::", "new");
+                    Expr *call = parser_new_expr(
+                        parser, EXPR_CALL, token.span);
+                    call->as.call.callee = callee;
+                    call->as.call.arguments.count = arguments.count;
+                    call->as.call.arguments.items =
+                        parser_array_freeze(parser, &arguments);
+                    call->span.end = close.span.end;
+                    return call;
                 }
                 Expr *message = parser_parse_expression(parser);
                 Token close = parser_expect(
@@ -1627,7 +1672,8 @@ static void configure_struct_member(
         (function->param_count + 1U) * sizeof(*parameters));
     parameters[0] = (Param){
         .name="this", .type_name=owner, .borrowed=true,
-        .mutable_=false, .by_ref=false, .span=member->span,
+        .mutable_=!function->is_property_getter,
+        .by_ref=!function->is_property_getter, .span=member->span,
         .type_syntax=new_type_syntax(parser, TYPE_SYNTAX_NAMED, member->span)
     };
     parameters[0].type_syntax->as.name = owner;
@@ -1671,7 +1717,25 @@ static Decl *parse_struct_decl(
         if (enumeration) {
             field = parser_expect(parser, TOK_IDENT, "expected variant name");
         } else {
+            Token member_start = parser->current;
             type_name = parse_type(parser, &type_syntax);
+            if (parser->current.kind == TOK_LPAREN &&
+                strcmp(type_name, *decl_name) == 0) {
+                Decl *member = parse_function(
+                    parser, member_start, false,
+                    type_name, type_syntax, member_start);
+                member->as.function.is_constructor = true;
+                member->as.function.owner_type = *decl_name;
+                member->as.function.name = join_text(
+                    parser, *decl_name, "::", "new");
+                member->is_public = member_public;
+                member->has_explicit_visibility = member_visibility;
+                if (member_static)
+                    lang_diag(parser->diagnostics, member_start.span,
+                              "constructors cannot be static");
+                parser_array_push(&members, &member);
+                continue;
+            }
             field = parser_expect(parser, TOK_IDENT,
                            "expected field name after type");
             parse_declarator_suffix(parser, &type_syntax, &type_name);

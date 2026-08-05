@@ -145,16 +145,61 @@ static void require_assigned_out_parameters(Checker *checker,
                                             LangSpan span) {
     for (size_t i = 0U; i < checker->local_count; ++i) {
         const Local *local = &checker->locals[i];
-        if (local->is_out_parameter && !local->definitely_assigned)
-            lang_diag(checker->diagnostics, span,
-                      "`out` parameter `%s` must be assigned before returning",
-                      local->name);
+        if (local->is_out_parameter && !local->definitely_assigned) {
+            bool constructor_field = false;
+            if (checker->function != NULL &&
+                checker->function->is_constructor)
+                for (size_t field = 0U;
+                     field < checker->function->constructor_field_count;
+                     ++field)
+                    if (checker->function
+                            ->constructor_field_binding_ids[field] ==
+                        local->id)
+                        constructor_field = true;
+            if (constructor_field)
+                lang_diag(checker->diagnostics, span,
+                          "constructor field `%s` must be assigned before returning",
+                          local->name);
+            else
+                lang_diag(checker->diagnostics, span,
+                          "`out` parameter `%s` must be assigned before returning",
+                          local->name);
+        }
     }
 }
 
 Type *check_place(Checker *checker, Expr *expr) {
     if (expr->kind == EXPR_NAME) {
-        Local *local = find_local(checker, expr->as.name);
+        Local *local = NULL;
+        if (expr->resolved_local_id != 0U)
+            for (size_t i = 0U; i < checker->local_count; ++i)
+                if (checker->locals[i].id == expr->resolved_local_id)
+                    local = &checker->locals[i];
+        if (local == NULL) local = find_local(checker, expr->as.name);
+        Local *this_local = find_local(checker, "this");
+        if (local == NULL && this_local != NULL &&
+            this_local->type->kind == TYPE_NAMED &&
+            this_local->type->declaration != NULL &&
+            this_local->type->declaration->kind == DECL_STRUCT) {
+            const Decl *owner = this_local->type->declaration;
+            for (size_t field = 0U;
+                 field < owner->as.structure.field_count; ++field) {
+                if (strcmp(owner->as.structure.fields[field].name,
+                           expr->as.name) != 0)
+                    continue;
+                Expr *object = lang_arena_alloc(
+                    &checker->module->arena, sizeof(*object));
+                memset(object, 0, sizeof(*object));
+                object->kind = EXPR_NAME;
+                object->span = expr->span;
+                object->as.name = "this";
+                const char *field_name = expr->as.name;
+                expr->kind = EXPR_FIELD;
+                expr->as.field.object = object;
+                expr->as.field.field = field_name;
+                return check_place(checker, expr);
+            }
+        }
         if (local == NULL) {
             lang_diag(checker->diagnostics, expr->span,
                       "unknown name `%s`", expr->as.name);
@@ -172,6 +217,31 @@ Type *check_place(Checker *checker, Expr *expr) {
         return local->type;
     }
     if (expr->kind == EXPR_FIELD) {
+        if (expr->as.field.object->kind == EXPR_NAME &&
+            strcmp(expr->as.field.object->as.name, "this") == 0 &&
+            find_local(checker, "this") == NULL &&
+            checker->function != NULL &&
+            checker->function->is_constructor) {
+            for (size_t field = 0U;
+                 field < checker->function->constructor_field_count;
+                 ++field) {
+                Local *candidate = NULL;
+                for (size_t local = 0U;
+                     local < checker->local_count; ++local)
+                    if (checker->locals[local].id ==
+                        checker->function
+                            ->constructor_field_binding_ids[field])
+                        candidate = &checker->locals[local];
+                if (candidate == NULL ||
+                    strcmp(candidate->name,
+                           expr->as.field.field) != 0)
+                    continue;
+                expr->kind = EXPR_NAME;
+                expr->as.name = candidate->name;
+                expr->resolved_local_id = candidate->id;
+                return check_place(checker, expr);
+            }
+        }
         Type *object = check_place(checker, expr->as.field.object);
         Type *result = &type_error;
         if (object->kind == TYPE_BUFFER &&
@@ -628,6 +698,61 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 }
             }
             Type *assignment_expected = NULL;
+            if (expr->as.assign.target->kind == EXPR_FIELD &&
+                expr->as.assign.target->as.field.object->kind == EXPR_NAME &&
+                strcmp(expr->as.assign.target->as.field.object->as.name,
+                       "this") == 0 &&
+                checker->function != NULL &&
+                checker->function->is_constructor) {
+                for (size_t field = 0U;
+                     field < checker->function->constructor_field_count;
+                     ++field) {
+                    size_t binding = checker->function
+                        ->constructor_field_binding_ids[field];
+                    for (size_t local = 0U;
+                         local < checker->local_count; ++local) {
+                        Local *candidate = &checker->locals[local];
+                        if (candidate->id != binding ||
+                            strcmp(candidate->name,
+                                   expr->as.assign.target
+                                       ->as.field.field) != 0)
+                            continue;
+                        expr->as.assign.target->kind = EXPR_NAME;
+                        expr->as.assign.target->as.name = candidate->name;
+                        expr->as.assign.target->resolved_local_id =
+                            candidate->id;
+                    }
+                }
+            }
+            if (expr->as.assign.target->kind == EXPR_NAME &&
+                find_local(checker,
+                           expr->as.assign.target->as.name) == NULL) {
+                Local *this_local = find_local(checker, "this");
+                if (this_local != NULL &&
+                    this_local->type->kind == TYPE_NAMED &&
+                    this_local->type->declaration != NULL &&
+                    this_local->type->declaration->kind == DECL_STRUCT) {
+                    const Decl *owner = this_local->type->declaration;
+                    for (size_t field = 0U;
+                         field < owner->as.structure.field_count; ++field) {
+                        if (strcmp(owner->as.structure.fields[field].name,
+                                   expr->as.assign.target->as.name) != 0)
+                            continue;
+                        Expr *object = lang_arena_alloc(
+                            &checker->module->arena, sizeof(*object));
+                        memset(object, 0, sizeof(*object));
+                        object->kind = EXPR_NAME;
+                        object->span = expr->as.assign.target->span;
+                        object->as.name = "this";
+                        const char *field_name =
+                            expr->as.assign.target->as.name;
+                        expr->as.assign.target->kind = EXPR_FIELD;
+                        expr->as.assign.target->as.field.object = object;
+                        expr->as.assign.target->as.field.field = field_name;
+                        break;
+                    }
+                }
+            }
             if (expr->as.assign.target->kind == EXPR_NAME) {
                 Local *assignment_local = find_local(
                     checker, expr->as.assign.target->as.name);
@@ -675,7 +800,14 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 break;
             }
             if (target->kind == EXPR_NAME) {
-                Local *local = find_local(checker, target->as.name);
+                Local *local = NULL;
+                if (target->resolved_local_id != 0U)
+                    for (size_t i = 0U; i < checker->local_count; ++i)
+                        if (checker->locals[i].id ==
+                            target->resolved_local_id)
+                            local = &checker->locals[i];
+                if (local == NULL)
+                    local = find_local(checker, target->as.name);
                 if (local == NULL) {
                     lang_diag(checker->diagnostics, expr->span,
                               "unknown assignment target");
@@ -2245,6 +2377,34 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
         function->checked_return_type = resolve_declared_type(
             &checker, function->return_type_syntax,
             function->return_type, function->span);
+        if (function->is_constructor) {
+            const Decl *structure =
+                function->checked_return_type->declaration;
+            size_t field_count = structure != NULL &&
+                structure->kind == DECL_STRUCT
+                ? structure->as.structure.field_count : 0U;
+            function->constructor_field_count = field_count;
+            function->constructor_field_binding_ids = lang_arena_alloc(
+                &module->arena, field_count * sizeof(size_t));
+            function->constructor_field_types = lang_arena_alloc(
+                &module->arena, field_count * sizeof(Type *));
+            for (size_t field = 0U; field < field_count; ++field) {
+                FieldDecl *declaration =
+                    &structure->as.structure.fields[field];
+                Type *field_type = resolve_type_syntax_in_applied_declaration(
+                    &checker, function->checked_return_type,
+                    declaration->type_syntax, declaration->type_name,
+                    declaration->span);
+                size_t binding = ++checker.next_local_id;
+                function->constructor_field_binding_ids[field] = binding;
+                function->constructor_field_types[field] = field_type;
+                checker.locals[checker.local_count++] = (Local){
+                    declaration->name, field_type,
+                    true, false, 0U, declaration->span,
+                    binding, true, false
+                };
+            }
+        }
         if (function->is_async && function->is_extern)
             lang_diag(diagnostics, function->span,
                       "extern functions cannot be declared async");
@@ -2297,7 +2457,8 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
             function->checked_return_type->kind == TYPE_TASK
                 ? function->checked_return_type->element
                 : function->checked_return_type;
-        if (logical_return->kind != TYPE_UNIT && falls_through)
+        if (logical_return->kind != TYPE_UNIT && falls_through &&
+            !function->is_constructor)
             lang_diag(diagnostics, function->span,
                       "function `%s` may exit without returning `%s`",
                       function->name, logical_return->name);

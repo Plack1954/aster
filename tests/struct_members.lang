@@ -1,8 +1,16 @@
 struct Example {
     int value;
 
+    public Example(int value) {
+        this.value = value;
+    }
+
     public int Double() {
         return value * 2;
+    }
+
+    public void Increment() {
+        value += 1;
     }
 
     public int Doubled => value * 2;
@@ -25,5 +33,9 @@ int main() {
     Console.WriteLine(example.Tripled);
     Console.WriteLine(Example.Answer);
     Console.WriteLine(Example.Square(6));
+    example.Increment();
+    Console.WriteLine(example.Doubled);
+    Example constructed = new(7);
+    Console.WriteLine(constructed.Doubled);
     return 0;
 }

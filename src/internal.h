@@ -437,7 +437,11 @@ typedef struct Function {
     bool is_async;
     bool is_static_member;
     bool is_property_getter;
+    bool is_constructor;
     const char *owner_type;
+    size_t *constructor_field_binding_ids;
+    Type **constructor_field_types;
+    size_t constructor_field_count;
     bool is_web_handler;
     const char *css_scope_attribute;
 } Function;

@@ -737,6 +737,24 @@ static_call:
         return &type_error;
     }
     const char *name = expr->as.call.callee->as.name;
+    if (strcmp(name, "$target::new") == 0) {
+        if (checker->expected_type == NULL ||
+            checker->expected_type->kind != TYPE_NAMED ||
+            checker->expected_type->declaration == NULL) {
+            lang_diag(checker->diagnostics, expr->span,
+                      "target-typed `new(...)` requires an expected struct type");
+            return &type_error;
+        }
+        const char *owner = type_declaration_name(
+            checker->expected_type->declaration);
+        size_t owner_length = strlen(owner);
+        char *constructor = lang_arena_alloc(
+            &checker->module->arena, owner_length + sizeof("::new"));
+        memcpy(constructor, owner, owner_length);
+        memcpy(constructor + owner_length, "::new", sizeof("::new"));
+        expr->as.call.callee->as.name = constructor;
+        name = expr->as.call.callee->as.name;
+    }
     Local *callee_local = find_local(checker, name);
     if (callee_local != NULL &&
         callee_local->type->kind == TYPE_FUNCTION) {
