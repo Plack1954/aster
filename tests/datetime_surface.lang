@@ -58,19 +58,19 @@ int main()
     if (parsedDateTime.AddDays(1.0).Day != 1) { return 10; }
 
     DateOnly date = DateOnly.Parse("2024-02-29");
-    if (date.Year() != 2024 || date.Month() != 2 || date.Day() != 29 ||
+    if (date.Year != 2024 || date.Month != 2 || date.Day != 29 ||
         date.ToString() != "2024-02-29" ||
         date.AddDays(1).ToString() != "2024-03-01") { return 15; }
     DateOnly parsedDate = DateOnly.Parse("0001-01-01");
     if (!DateOnly.TryParse("2000-02-29", out parsedDate) ||
         parsedDate.ToString() != "2000-02-29" ||
-        parsedDate.DayNumber() !=
-            DateOnly.Parse("2000-02-28").DayNumber() + 1) { return 16; }
+        parsedDate.DayNumber !=
+            DateOnly.Parse("2000-02-28").DayNumber + 1) { return 16; }
     if (DateOnly.TryParse("2023-02-29", out parsedDate)) { return 17; }
 
     TimeOnly time = TimeOnly.Parse("23:59:59.125");
-    if (time.Hour() != 23 || time.Minute() != 59 || time.Second() != 59 ||
-        time.Millisecond() != 125 ||
+    if (time.Hour != 23 || time.Minute != 59 || time.Second != 59 ||
+        time.Millisecond != 125 ||
         time.ToString() != "23:59:59.125") { return 18; }
     TimeOnly parsedTime = TimeOnly.Parse("00:00");
     if (!TimeOnly.TryParse("03:04:05", out parsedTime) ||
@@ -88,7 +88,7 @@ int main()
             "23:59:59.125" ||
         combinedDateTime.Date.ToString() !=
             "2024-02-29T00:00:00.000Z" ||
-        combinedDateTime.TimeOfDay.Ticks != time.Ticks()) { return 21; }
+        combinedDateTime.TimeOfDay.Ticks != time.Ticks) { return 21; }
     if (TimeOnly.FromTimeSpan(time.ToTimeSpan()).ToString() !=
         time.ToString()) { return 22; }
 
