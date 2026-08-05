@@ -30,7 +30,7 @@ public struct DateTime {
     }
 
     public static DateTime Parse(string value) {
-        return ParseDateTimeOffset(value).UtcDateTime();
+        return ParseDateTimeOffset(value).UtcDateTime;
     }
 
     public static bool TryParse(string value, out DateTime result) {
@@ -62,7 +62,99 @@ public struct DateTime {
     public TimeSpan TimeOfDay =>
         TimeSpan.FromTicks(unixTicks - this.Date.unixTicks);
 }
-public struct DateTimeOffset { long unixTicks; short offsetMinutes; }
+public struct DateTimeOffset {
+    long unixTicks;
+    short offsetMinutes;
+
+    public static DateTimeOffset UtcNow => new() {
+        unixTicks = NativeUtcNowUnixMilliseconds() * 10000,
+        offsetMinutes = 0
+    };
+
+    public static DateTimeOffset FromUnixTimeMilliseconds(long milliseconds) {
+        return new() { unixTicks = milliseconds * 10000, offsetMinutes = 0 };
+    }
+
+    public static DateTimeOffset FromUnixTimeSeconds(long seconds) {
+        return DateTimeOffset.FromUnixTimeMilliseconds(seconds * 1000);
+    }
+
+    public readonly long ToUnixTimeMilliseconds() {
+        return unixTicks / 10000;
+    }
+
+    public readonly long ToUnixTimeSeconds() {
+        return unixTicks / 10000000;
+    }
+
+    public DateTime UtcDateTime => new() { unixTicks = unixTicks };
+    public TimeSpan Offset => TimeSpan.FromMinutes((double)offsetMinutes);
+
+    public readonly DateTimeOffset ToOffset(TimeSpan offset) {
+        if (offset.ticks % 600000000 != 0) {
+            throw new ArgumentException(
+                "Offset must be specified in whole minutes."
+            );
+        }
+        long minutes = offset.ticks / 600000000;
+        if (minutes < -840 || minutes > 840) {
+            throw new ArgumentException(
+                "Offset must be within plus or minus 14 hours."
+            );
+        }
+        return new() { unixTicks = unixTicks, offsetMinutes = (short)minutes };
+    }
+
+    public readonly DateTimeOffset Add(TimeSpan value) {
+        return new() {
+            unixTicks = unixTicks + value.ticks,
+            offsetMinutes = offsetMinutes
+        };
+    }
+
+    public readonly DateTimeOffset AddDays(double value) {
+        return this.Add(TimeSpan.FromDays(value));
+    }
+
+    private readonly DateParts LocalParts() {
+        return DatePartsFromUnixTicks(
+            unixTicks + (long)offsetMinutes * 600000000
+        );
+    }
+
+    public int Year => this.LocalParts().year;
+    public int Month => this.LocalParts().month;
+    public int Day => this.LocalParts().day;
+    public int Hour => this.LocalParts().hour;
+    public int Minute => this.LocalParts().minute;
+    public int Second => this.LocalParts().second;
+    public int Millisecond => this.LocalParts().millisecond;
+
+    public readonly string ToString() {
+        return FormatDateTime(unixTicks, offsetMinutes);
+    }
+
+    public static DateTimeOffset Parse(string value) {
+        return ParseDateTimeOffset(value);
+    }
+
+    public static bool TryParse(string value, out DateTimeOffset result) {
+        result = DateTimeOffset.FromUnixTimeMilliseconds(0);
+        try { result = DateTimeOffset.Parse(value); return true; }
+        catch (Exception error) { return false; }
+    }
+
+    public readonly DateTimeOffset Subtract(TimeSpan value) {
+        return new() {
+            unixTicks = unixTicks - value.ticks,
+            offsetMinutes = offsetMinutes
+        };
+    }
+
+    public readonly TimeSpan Subtract(DateTimeOffset value) {
+        return TimeSpan.FromTicks(unixTicks - value.unixTicks);
+    }
+}
 public struct DateOnly { int dayNumber; }
 public struct TimeOnly { long ticks; }
 
@@ -386,164 +478,6 @@ public TimeSpan TimeSpan.Subtract(TimeSpan self, TimeSpan value)
 public TimeSpan TimeSpan.Negate(TimeSpan self)
 {
     return TimeSpan.FromTicks(-self.ticks);
-}
-
-public DateTimeOffset DateTimeOffset.UtcNow()
-{
-    return new()
-    {
-        unixTicks = NativeUtcNowUnixMilliseconds() * 10000,
-        offsetMinutes = 0
-    };
-}
-
-public DateTimeOffset DateTimeOffset.FromUnixTimeMilliseconds(long milliseconds)
-{
-    return new()
-    {
-        unixTicks = milliseconds * 10000,
-        offsetMinutes = 0
-    };
-}
-
-public DateTimeOffset DateTimeOffset.FromUnixTimeSeconds(long seconds)
-{
-    return DateTimeOffset.FromUnixTimeMilliseconds(seconds * 1000);
-}
-
-public long DateTimeOffset.ToUnixTimeMilliseconds(DateTimeOffset self)
-{
-    return self.unixTicks / 10000;
-}
-
-public long DateTimeOffset.ToUnixTimeSeconds(DateTimeOffset self)
-{
-    return self.unixTicks / 10000000;
-}
-
-public DateTime DateTimeOffset.UtcDateTime(DateTimeOffset self)
-{
-    return new() { unixTicks = self.unixTicks };
-}
-
-public TimeSpan DateTimeOffset.Offset(DateTimeOffset self)
-{
-    return TimeSpan.FromMinutes((double)self.offsetMinutes);
-}
-
-public DateTimeOffset DateTimeOffset.ToOffset(
-    DateTimeOffset self,
-    TimeSpan offset
-)
-{
-    if (offset.ticks % 600000000 != 0)
-    {
-        throw new ArgumentException("Offset must be specified in whole minutes.");
-    }
-    long minutes = offset.ticks / 600000000;
-    if (minutes < -840 || minutes > 840)
-    {
-        throw new ArgumentException("Offset must be within plus or minus 14 hours.");
-    }
-    return new()
-    {
-        unixTicks = self.unixTicks,
-        offsetMinutes = (short)minutes
-    };
-}
-
-public DateTimeOffset DateTimeOffset.Add(DateTimeOffset self, TimeSpan value)
-{
-    return new()
-    {
-        unixTicks = self.unixTicks + value.ticks,
-        offsetMinutes = self.offsetMinutes
-    };
-}
-
-public DateTimeOffset DateTimeOffset.AddDays(
-    DateTimeOffset self,
-    double value
-)
-{
-    return self.Add(TimeSpan.FromDays(value));
-}
-
-public int DateTimeOffset.Year(DateTimeOffset self)
-{
-    return DatePartsFromUnixTicks(
-        self.unixTicks + (long)self.offsetMinutes * 600000000
-    ).year;
-}
-public int DateTimeOffset.Month(DateTimeOffset self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks +
-        (long)self.offsetMinutes * 600000000).month;
-}
-public int DateTimeOffset.Day(DateTimeOffset self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks +
-        (long)self.offsetMinutes * 600000000).day;
-}
-public int DateTimeOffset.Hour(DateTimeOffset self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks +
-        (long)self.offsetMinutes * 600000000).hour;
-}
-public int DateTimeOffset.Minute(DateTimeOffset self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks +
-        (long)self.offsetMinutes * 600000000).minute;
-}
-public int DateTimeOffset.Second(DateTimeOffset self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks +
-        (long)self.offsetMinutes * 600000000).second;
-}
-public int DateTimeOffset.Millisecond(DateTimeOffset self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks +
-        (long)self.offsetMinutes * 600000000).millisecond;
-}
-
-public string DateTimeOffset.ToString(DateTimeOffset self)
-{
-    return FormatDateTime(self.unixTicks, self.offsetMinutes);
-}
-
-public DateTimeOffset DateTimeOffset.Parse(string value)
-{
-    return ParseDateTimeOffset(value);
-}
-
-public bool DateTimeOffset.TryParse(
-    string value,
-    out DateTimeOffset result
-)
-{
-    result = DateTimeOffset.FromUnixTimeMilliseconds(0);
-    try { result = DateTimeOffset.Parse(value); return true; }
-    catch (Exception error) { return false; }
-}
-
-public DateTimeOffset DateTimeOffset.Subtract(
-    DateTimeOffset self,
-    TimeSpan value
-)
-{
-    return new()
-    {
-        unixTicks = self.unixTicks - value.ticks,
-        offsetMinutes = self.offsetMinutes
-    };
-}
-
-public TimeSpan DateTimeOffset.Subtract(
-    DateTimeOffset self,
-    DateTimeOffset value
-)
-{
-    return TimeSpan.FromTicks(self.unixTicks - value.unixTicks);
 }
 
 private DateParts DateOnlyParts(DateOnly self)

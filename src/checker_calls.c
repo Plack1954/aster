@@ -504,6 +504,17 @@ Type *checker_check_call(Checker *checker, Expr *expr) {
     if (expr->as.call.callee->kind == EXPR_FIELD) {
         Expr *field = expr->as.call.callee;
         const char *static_name = checker_static_call_path(checker, field);
+        if (field->as.field.object->kind == EXPR_FIELD) {
+            const char *receiver_static = checker_static_call_path(
+                checker, field->as.field.object);
+            Function *receiver_member = receiver_static != NULL
+                ? find_function(checker, receiver_static, field->span)
+                : NULL;
+            if (receiver_member != NULL &&
+                receiver_member->is_property_getter &&
+                receiver_member->is_static_member)
+                static_name = NULL;
+        }
         if (static_name != NULL) {
             field->kind = EXPR_NAME;
             field->as.name = static_name;

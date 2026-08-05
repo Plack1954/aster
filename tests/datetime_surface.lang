@@ -20,21 +20,21 @@ int main()
 
     DateTimeOffset leap =
         DateTimeOffset.Parse("2024-02-29T23:07:08.009Z");
-    if (leap.Year() != 2024 || leap.Month() != 2 || leap.Day() != 29 ||
-        leap.Hour() != 23 || leap.Minute() != 7 || leap.Second() != 8 ||
-        leap.Millisecond() != 9 ||
+    if (leap.Year != 2024 || leap.Month != 2 || leap.Day != 29 ||
+        leap.Hour != 23 || leap.Minute != 7 || leap.Second != 8 ||
+        leap.Millisecond != 9 ||
         leap.ToString() != "2024-02-29T23:07:08.009Z") { return 6; }
     DateTimeOffset parsed = DateTimeOffset.FromUnixTimeMilliseconds(0);
     if (!DateTimeOffset.TryParse(
             "2000-01-01T00:00:00.000Z",
             out parsed
-        ) || parsed.Year() != 2000) { return 7; }
+        ) || parsed.Year != 2000) { return 7; }
     if (DateTimeOffset.TryParse("2023-02-29T00:00:00.000Z", out parsed))
         { return 8; }
     DateTimeOffset melbourne =
         DateTimeOffset.Parse("2024-01-02T03:04:05.006+11:00");
     if (melbourne.ToString() != "2024-01-02T03:04:05.006+11:00" ||
-        melbourne.Offset().TotalHours() != 11.0 ||
+        melbourne.Offset.TotalHours() != 11.0 ||
         melbourne.ToUnixTimeMilliseconds() != 1704125045006)
         { return 11; }
     DateTimeOffset utcView = melbourne.ToOffset(TimeSpan.FromHours(0.0));
@@ -47,7 +47,7 @@ int main()
     if (DateTimeOffset.TryParse("2024-01-01T00:00:00.000+14:01", out parsed))
         { return 14; }
 
-    DateTime utc = later.UtcDateTime();
+    DateTime utc = later.UtcDateTime;
     DateTime advanced = utc.Add(TimeSpan.FromSeconds(2.0));
     if (advanced.Subtract(utc).TotalSeconds() != 2.0) { return 3; }
     DateTime parsedDateTime = DateTime.Parse("1969-12-31T23:59:59.999Z");
@@ -92,7 +92,7 @@ int main()
     if (TimeOnly.FromTimeSpan(time.ToTimeSpan()).ToString() !=
         time.ToString()) { return 22; }
 
-    long now = DateTimeOffset.UtcNow().ToUnixTimeMilliseconds();
+    long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     if (now < 1577836800000) { return 4; }
     DateTime.UtcNow;
     return 0;
