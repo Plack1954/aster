@@ -294,6 +294,8 @@ static LangValue vm_execute_function_core(
         [OP_REFERENCE_LOCAL]=&&vm_dispatch_reference_local,
         [OP_REFERENCE_FIELD_LOCAL]=&&vm_dispatch_reference_field_local,
         [OP_INVALIDATE_LOCAL]=&&vm_dispatch_invalidate_local,
+        [OP_LOAD_STATIC]=&&vm_dispatch_load_static,
+        [OP_STORE_STATIC]=&&vm_dispatch_store_static,
         [OP_ADD_I64]=&&vm_dispatch_integer_binary,
         [OP_SUB_I64]=&&vm_dispatch_integer_binary,
         [OP_MUL_I64]=&&vm_dispatch_integer_binary,
@@ -322,7 +324,9 @@ static LangValue vm_execute_function_core(
         [OP_JUMP]=&&vm_dispatch_jump,
         [OP_JUMP_IF_FALSE]=&&vm_dispatch_jump_if_false,
         [OP_FUNCTION]=&&vm_dispatch_function,
+        [OP_BOUND_FUNCTION]=&&vm_dispatch_bound_function,
         [OP_CALL]=&&vm_dispatch_call,
+        [OP_CALL_VIRTUAL]=&&vm_dispatch_call_virtual,
         [OP_CALL_INDIRECT]=&&vm_dispatch_call_indirect,
         [OP_CALL_NATIVE]=&&vm_dispatch_call_native,
         [OP_AWAIT]=&&vm_dispatch_await,
@@ -552,6 +556,14 @@ static LangValue vm_execute_function_core(
             VM_LABEL(invalidate_local)
             case OP_INVALIDATE_LOCAL:
                 initialized[(size_t)instruction.a] = false;
+                break;
+            VM_LABEL(load_static)
+            case OP_LOAD_STATIC:
+                PUSH(vm->static_fields[(size_t)instruction.a]);
+                break;
+            VM_LABEL(store_static)
+            case OP_STORE_STATIC:
+                vm->static_fields[(size_t)instruction.a] = POP();
                 break;
             VM_LABEL(copy_local_to)
             case OP_COPY_LOCAL_TO:
@@ -1293,6 +1305,55 @@ vm_switch_integer_binary:
                     .as.function=(size_t)instruction.a
                 }));
                 break;
+            VM_LABEL(bound_function)
+            case OP_BOUND_FUNCTION: {
+                LangValue receiver = POP();
+                if (receiver.tag != LANG_VALUE_RAW_POINTER ||
+                    receiver.as.pointer == NULL) {
+                    runtime_error(
+                        vm, instruction,
+                        "cannot bind an instance method to a null class reference");
+                    goto fail;
+                }
+                size_t target = (size_t)instruction.a;
+                if (instruction.b != 0) {
+                    Object *object = receiver.as.pointer;
+                    const char *metadata = object->as.structure.metadata;
+                    size_t metadata_length = strcspn(metadata, "|");
+                    const char *runtime_type = metadata;
+                    const char *separator = memchr(
+                        metadata, '#', metadata_length);
+                    size_t module_length = separator != NULL
+                        ? (size_t)(separator - metadata) : 0U;
+                    if (separator != NULL) runtime_type = separator + 1U;
+                    size_t type_length = metadata_length -
+                        (size_t)(runtime_type - metadata);
+                    for (size_t entry = 0U;
+                         entry < vm->module->virtual_entry_count; ++entry) {
+                        const BytecodeVirtualEntry *candidate =
+                            &vm->module->virtual_entries[entry];
+                        if (candidate->root_function == target &&
+                            candidate->runtime_module_length == module_length &&
+                            candidate->runtime_type_length == type_length &&
+                            (module_length == 0U ||
+                             strncmp(candidate->runtime_module, metadata,
+                                     module_length) == 0) &&
+                            strncmp(candidate->runtime_type, runtime_type,
+                                    type_length) == 0) {
+                            target = candidate->target_function;
+                            break;
+                        }
+                    }
+                }
+                PUSH(((LangValue){
+                    .tag=LANG_VALUE_BOUND_FUNCTION,
+                    .as.bound_function={
+                        .function=target,
+                        .receiver=receiver.as.pointer
+                    }
+                }));
+                break;
+            }
             VM_LABEL(call)
             case OP_CALL: {
                 vm->active_span = instruction_span;
@@ -1333,6 +1394,65 @@ vm_switch_integer_binary:
                     if (vm->trapped) goto fail;
                 }
                 sp -= count; PUSH(result); break;
+            }
+            VM_LABEL(call_virtual)
+            case OP_CALL_VIRTUAL: {
+                vm->active_span = instruction_span;
+                size_t count = (size_t)instruction.b;
+                if (count == 0U || sp < count) {
+                    runtime_error(vm, instruction,
+                                  "virtual call requires a receiver");
+                    goto fail;
+                }
+                LangValue *args = &stack[sp - count];
+                Object *receiver = args[0].tag == LANG_VALUE_RAW_POINTER
+                    ? args[0].as.pointer : NULL;
+                if (receiver == NULL || receiver->kind != OBJECT_STRUCT) {
+                    runtime_error(vm, instruction,
+                                  "virtual call requires a class receiver");
+                    goto fail;
+                }
+                const char *metadata = receiver->as.structure.metadata;
+                size_t metadata_length = strcspn(metadata, "|");
+                const char *runtime_type = metadata;
+                const char *module_separator = memchr(
+                    metadata, '#', metadata_length);
+                size_t runtime_module_length = module_separator != NULL
+                    ? (size_t)(module_separator - metadata) : 0U;
+                if (module_separator != NULL)
+                    runtime_type = module_separator + 1U;
+                size_t runtime_length = metadata_length -
+                    (size_t)(runtime_type - metadata);
+                size_t target = (size_t)instruction.a;
+                for (size_t entry = 0U;
+                     entry < vm->module->virtual_entry_count; ++entry) {
+                    const BytecodeVirtualEntry *candidate =
+                        &vm->module->virtual_entries[entry];
+                    if (candidate->root_function != target ||
+                        candidate->runtime_module_length !=
+                            runtime_module_length ||
+                        (runtime_module_length != 0U &&
+                         strncmp(candidate->runtime_module, metadata,
+                                 runtime_module_length) != 0) ||
+                        candidate->runtime_type_length != runtime_length ||
+                        strncmp(candidate->runtime_type, runtime_type,
+                                runtime_length) != 0)
+                        continue;
+                    target = candidate->target_function;
+                    break;
+                }
+                if (vm->frame_count >= 128U) {
+                    runtime_error(vm, instruction,
+                                  "maximum call depth exceeded");
+                    goto fail;
+                }
+                LangValue result = vm_execute_function(
+                    vm, target, args, count, instruction_span);
+                vm->active_span = instruction_span;
+                if (vm->trapped) goto fail;
+                sp -= count;
+                PUSH(result);
+                break;
             }
             VM_LABEL(call_local)
             case OP_CALL_LOCAL: {
@@ -1435,8 +1555,13 @@ vm_switch_integer_binary:
                 vm->active_span = instruction_span;
                 size_t count = (size_t)instruction.a;
                 LangValue callee = POP();
-                if (callee.tag != LANG_VALUE_FUNCTION ||
-                    callee.as.function >= vm->module->function_count) {
+                size_t callee_function =
+                    callee.tag == LANG_VALUE_FUNCTION
+                        ? callee.as.function
+                    : callee.tag == LANG_VALUE_BOUND_FUNCTION
+                        ? callee.as.bound_function.function
+                        : SIZE_MAX;
+                if (callee_function >= vm->module->function_count) {
                     runtime_error(
                         vm, instruction,
                         "indirect call requires a valid function value");
@@ -1449,9 +1574,8 @@ vm_switch_integer_binary:
                     goto fail;
                 }
                 LangValue *args = &stack[sp - count];
-                LangValue result = vm_execute_function(
-                    vm, callee.as.function, args, count,
-                    instruction_span);
+                LangValue result = vm_invoke_function_value(
+                    vm, callee, args, count, instruction_span);
                 vm->active_span = instruction_span;
                 if (vm->trapped) goto fail;
                 sp -= count;
@@ -3298,6 +3422,37 @@ LangValue vm_execute_function(LangVM *vm, size_t function_index,
         vm, function_index, arguments, argument_count, call_span, NULL);
 }
 
+LangValue vm_invoke_function_value(
+    LangVM *vm, LangValue function_value,
+    const LangValue *arguments, size_t argument_count,
+    LangSpan call_span
+) {
+    if (function_value.tag == LANG_VALUE_FUNCTION)
+        return vm_execute_function(
+            vm, function_value.as.function,
+            arguments, argument_count, call_span);
+    if (function_value.tag != LANG_VALUE_BOUND_FUNCTION ||
+        function_value.as.bound_function.receiver == NULL) {
+        vm_runtime_error_at(
+            vm, call_span, "indirect call requires a valid function value");
+        return (LangValue){.tag=LANG_VALUE_UNIT};
+    }
+    LangValue *bound_arguments = vm_allocate_uninitialized(
+        argument_count + 1U, sizeof(*bound_arguments));
+    bound_arguments[0] = (LangValue){
+        .tag=LANG_VALUE_RAW_POINTER,
+        .as.pointer=function_value.as.bound_function.receiver
+    };
+    if (argument_count != 0U)
+        memcpy(bound_arguments + 1U, arguments,
+               argument_count * sizeof(*arguments));
+    LangValue result = vm_execute_function(
+        vm, function_value.as.bound_function.function,
+        bound_arguments, argument_count + 1U, call_span);
+    free(bound_arguments);
+    return result;
+}
+
 void vm_execute_async_task_step(LangVM *vm, Object *task) {
     VmAsyncFrame *frame = task->as.task.frame;
     const BytecodeFunction *function =
@@ -3326,6 +3481,15 @@ int lang_vm_run_module(LangVM *vm, const BytecodeModule *module,
         vm->exception_pending = false;
     }
     vm->instruction_count = 0U;
+    free(vm->static_fields);
+    vm->static_fields = module->static_count != 0U
+        ? vm_allocate(
+              module->static_count, sizeof(*vm->static_fields))
+        : NULL;
+    vm->static_field_count = module->static_count;
+    if (module->static_count != 0U)
+        memcpy(vm->static_fields, module->static_defaults,
+               module->static_count * sizeof(*vm->static_fields));
     size_t frame_local_stride = 1U;
     for (size_t i = 0U; i < module->function_count; ++i)
         if (module->functions[i].local_count > frame_local_stride)
@@ -3365,7 +3529,12 @@ int lang_vm_run_module(LangVM *vm, const BytecodeModule *module,
         for (size_t i = 0U; i < module->function_count; ++i)
             if (strcmp(module->functions[i].name, "main") == 0)
                 main_index = i;
-    if (main_index == module->function_count) return 1;
+    if (main_index == module->function_count) {
+        free(vm->static_fields);
+        vm->static_fields = NULL;
+        vm->static_field_count = 0U;
+        return 1;
+    }
     LangSpan entry_span = {
         source != NULL ? source->path : NULL, 0U, 0U
     };
@@ -3406,6 +3575,9 @@ int lang_vm_run_module(LangVM *vm, const BytecodeModule *module,
         vm->exception_value = (LangValue){.tag=LANG_VALUE_UNIT};
         vm->exception_pending = false;
     }
+    free(vm->static_fields);
+    vm->static_fields = NULL;
+    vm->static_field_count = 0U;
     vm_clear_string_literals(vm);
     return status;
 }

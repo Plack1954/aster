@@ -40,11 +40,25 @@ replace only the selected slot. This avoids duplicating a cleanup-managed parent
 an embedded native handle. Index instructions retain an unsafe-intent flag from
 their typed AST node; the development VM validates bounds for both flag values.
 
-`FUNCTION` pushes a validated function-table index. `CALL_INDIRECT` consumes
-that copyable value and its arguments, then creates an ordinary VM frame.
+`FUNCTION` pushes a validated function-table index. `BOUND_FUNCTION` combines
+a validated method index with a borrowed class receiver. `CALL_INDIRECT`
+consumes either copyable value and its arguments, then creates an ordinary VM
+frame, prepending the captured receiver for a bound method.
+For virtual members, binding resolves the target through verified runtime-class
+metadata. `CALL_VIRTUAL` performs the same lookup at call time. Class metadata
+also selects the actual destructor when `delete` is applied through a base
+reference.
+Interface slots use separate verified contract-to-implementation entries, so a
+single class method can implement several interfaces without corrupting its
+class override identity. The same runtime-class lookup serves interface calls,
+interface properties, and bound interface delegates.
 Static checking verifies the complete `ReturnType(ParameterTypes)` signature. Bytecode
 verification checks stack effects and function constants, while dispatch also
 checks target range, arity, and recursion depth.
+
+`LOAD_STATIC` and `STORE_STATIC` address verifier-checked module slots. Slots
+are initialized from scalar constants before `main` and discarded after the
+module run; they are not attached to VM call frames or class allocations.
 
 Use `lang dump-bytecode file.as` for a stable human-readable disassembly.
 Before dispatch, the VM validates opcode ranges, constant/function/local

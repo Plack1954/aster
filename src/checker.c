@@ -17,11 +17,12 @@ static bool class_member_accessible(
            strcmp(checker->current_module, owner->module_name) == 0;
 }
 
-static Function *declared_property_accessor(
-    const Decl *owner, const char *name, bool setter
+static Function *declared_property_accessor_inner(
+    const Decl *owner, const char *name, bool setter, size_t depth
 ) {
     if (owner == NULL ||
-        (owner->kind != DECL_STRUCT && owner->kind != DECL_CLASS))
+        (owner->kind != DECL_STRUCT && owner->kind != DECL_CLASS) ||
+        depth >= 256U)
         return NULL;
     for (size_t member = 0U;
          member < owner->as.structure.member_count; ++member) {
@@ -33,7 +34,23 @@ static Function *declared_property_accessor(
             strcmp(function->property_name, name) == 0)
             return function;
     }
+    Function *inherited = declared_property_accessor_inner(
+        owner->as.structure.base_class, name, setter, depth + 1U);
+    if (inherited != NULL) return inherited;
+    for (size_t interface = 0U;
+         interface < owner->as.structure.interface_count; ++interface) {
+        inherited = declared_property_accessor_inner(
+            owner->as.structure.interfaces[interface], name, setter,
+            depth + 1U);
+        if (inherited != NULL) return inherited;
+    }
     return NULL;
+}
+
+static Function *declared_property_accessor(
+    const Decl *owner, const char *name, bool setter
+) {
+    return declared_property_accessor_inner(owner, name, setter, 0U);
 }
 
 static const Decl *current_property_owner(Checker *checker) {
@@ -50,6 +67,58 @@ static const Decl *current_property_owner(Checker *checker) {
             return decl;
     }
     return NULL;
+}
+
+FieldDecl *checker_static_field_from_path(
+    Checker *checker, const char *path, const Decl **out_owner
+) {
+    const char *separator = last_path_separator(path);
+    if (separator == NULL) return NULL;
+    size_t owner_length = (size_t)(separator - path);
+    char *owner_path = lang_arena_strndup(
+        &checker->module->arena, path, owner_length);
+    const char *field_name = separator + 2U;
+    for (size_t i = 0U; i < checker->module->count; ++i) {
+        Decl *owner = checker->module->decls[i];
+        if (owner->kind != DECL_STRUCT && owner->kind != DECL_CLASS)
+            continue;
+        if (!visible_declaration_path_matches(
+                checker, owner_path, owner->as.structure.name,
+                owner->module_name))
+            continue;
+        for (size_t field = 0U;
+             field < owner->as.structure.static_field_count; ++field) {
+            FieldDecl *candidate =
+                &owner->as.structure.static_fields[field];
+            if (strcmp(candidate->name, field_name) != 0) continue;
+            if (out_owner != NULL) *out_owner = owner;
+            return candidate;
+        }
+    }
+    return NULL;
+}
+
+void checker_rewrite_unqualified_static_field(
+    Checker *checker, Expr *expr
+) {
+    const Decl *owner = current_property_owner(checker);
+    if (owner == NULL) return;
+    for (size_t field = 0U;
+         field < owner->as.structure.static_field_count; ++field) {
+        FieldDecl *candidate = &owner->as.structure.static_fields[field];
+        if (strcmp(candidate->name, expr->as.name) != 0) continue;
+        Expr *type_name = lang_arena_alloc(
+            &checker->module->arena, sizeof(*type_name));
+        memset(type_name, 0, sizeof(*type_name));
+        type_name->kind = EXPR_NAME;
+        type_name->span = expr->span;
+        type_name->as.name = owner->as.structure.name;
+        const char *field_name = expr->as.name;
+        expr->kind = EXPR_FIELD;
+        expr->as.field.object = type_name;
+        expr->as.field.field = field_name;
+        return;
+    }
 }
 
 static Function *static_property_accessor(
@@ -234,6 +303,10 @@ static void require_assigned_out_parameters(Checker *checker,
 
 Type *check_place(Checker *checker, Expr *expr) {
     if (expr->kind == EXPR_NAME) {
+        if (find_local(checker, expr->as.name) == NULL)
+            checker_rewrite_unqualified_static_field(checker, expr);
+        if (expr->kind != EXPR_NAME)
+            return check_place(checker, expr);
         Local *local = NULL;
         if (expr->resolved_local_id != 0U)
             for (size_t i = 0U; i < checker->local_count; ++i)
@@ -283,6 +356,24 @@ Type *check_place(Checker *checker, Expr *expr) {
         return local->type;
     }
     if (expr->kind == EXPR_FIELD) {
+        const char *static_path = checker_static_call_path(checker, expr);
+        const Decl *static_owner = NULL;
+        FieldDecl *static_field = static_path != NULL
+            ? checker_static_field_from_path(
+                  checker, static_path, &static_owner)
+            : NULL;
+        if (static_field != NULL) {
+            if (!class_member_accessible(
+                    checker, static_owner, static_field->is_public))
+                lang_diag(checker->diagnostics, expr->span,
+                          "static field `%s` is private to class `%s`",
+                          static_field->name,
+                          static_owner->as.structure.name);
+            expr->as.field.static_field = true;
+            expr->resolved_decl = static_owner;
+            expr->type = static_field->checked_type;
+            return static_field->checked_type;
+        }
         if (expr->as.field.object->kind == EXPR_NAME &&
             strcmp(expr->as.field.object->as.name, "this") == 0 &&
             find_local(checker, "this") == NULL &&
@@ -745,20 +836,32 @@ Type *check_expr(Checker *checker, Expr *expr) {
             }
             if (expr->as.assign.target->kind == EXPR_NAME &&
                 find_local(checker,
+                           expr->as.assign.target->as.name) == NULL)
+                checker_rewrite_unqualified_static_field(
+                    checker, expr->as.assign.target);
+            if (expr->as.assign.target->kind == EXPR_NAME &&
+                find_local(checker,
                            expr->as.assign.target->as.name) == NULL) {
                 const Decl *owner = current_property_owner(checker);
                 const char *property_name =
                     expr->as.assign.target->as.name;
-                if (declared_property_accessor(
-                        owner, property_name, false) != NULL ||
-                    declared_property_accessor(
-                        owner, property_name, true) != NULL) {
+                Function *property_getter = declared_property_accessor(
+                    owner, property_name, false);
+                Function *property_setter = declared_property_accessor(
+                    owner, property_name, true);
+                if (property_getter != NULL || property_setter != NULL) {
+                    bool property_static =
+                        (property_getter != NULL &&
+                         property_getter->is_static_member) ||
+                        (property_setter != NULL &&
+                         property_setter->is_static_member);
                     Expr *object = lang_arena_alloc(
                         &checker->module->arena, sizeof(*object));
                     memset(object, 0, sizeof(*object));
                     object->kind = EXPR_NAME;
                     object->span = expr->as.assign.target->span;
-                    object->as.name = "this";
+                    object->as.name = property_static
+                        ? owner->as.structure.name : "this";
                     expr->as.assign.target->kind = EXPR_FIELD;
                     expr->as.assign.target->as.field.object = object;
                     expr->as.assign.target->as.field.field = property_name;
@@ -904,6 +1007,33 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 }
             }
             Type *assignment_expected = NULL;
+            FieldDecl *assignment_static_field = NULL;
+            if (expr->as.assign.target->kind == EXPR_FIELD) {
+                const char *static_path = checker_static_call_path(
+                    checker, expr->as.assign.target);
+                const Decl *static_owner = NULL;
+                assignment_static_field = static_path != NULL
+                    ? checker_static_field_from_path(
+                          checker, static_path, &static_owner)
+                    : NULL;
+                if (assignment_static_field != NULL) {
+                    if (!class_member_accessible(
+                            checker, static_owner,
+                            assignment_static_field->is_public))
+                        lang_diag(
+                            checker->diagnostics,
+                            expr->as.assign.target->span,
+                            "static field `%s` is private to class `%s`",
+                            assignment_static_field->name,
+                            static_owner->as.structure.name);
+                    expr->as.assign.target->as.field.static_field = true;
+                    expr->as.assign.target->resolved_decl = static_owner;
+                    expr->as.assign.target->type =
+                        assignment_static_field->checked_type;
+                    assignment_expected =
+                        assignment_static_field->checked_type;
+                }
+            }
             if (expr->as.assign.target->kind == EXPR_FIELD &&
                 expr->as.assign.target->as.field.object->kind == EXPR_NAME &&
                 strcmp(expr->as.assign.target->as.field.object->as.name,
@@ -974,6 +1104,27 @@ Type *check_expr(Checker *checker, Expr *expr) {
             Expr *target = expr->as.assign.target;
             if (discard_assignment) {
                 target->type = value;
+                result = &type_unit;
+                break;
+            }
+            if (assignment_static_field != NULL) {
+                Type *place_type = assignment_static_field->checked_type;
+                if (coerce_literal(
+                        checker, expr->as.assign.value, place_type))
+                    value = place_type;
+                if (assignment_static_field->is_readonly)
+                    lang_diag(
+                        checker->diagnostics, target->span,
+                        "cannot assign to readonly static field `%s`",
+                        assignment_static_field->name);
+                if (!type_assignable(place_type, value))
+                    lang_diag(
+                        checker->diagnostics, expr->span,
+                        "assignment expects `%s`, found `%s`",
+                        type_display_name(checker, place_type),
+                        type_display_name(checker, value));
+                validate_compound_assignment(
+                    checker, expr, place_type);
                 result = &type_unit;
                 break;
             }
@@ -1330,6 +1481,23 @@ Type *check_expr(Checker *checker, Expr *expr) {
                         checker, expr, static_name);
                     goto checked_expression;
                 }
+                const Decl *static_owner = NULL;
+                FieldDecl *static_field = checker_static_field_from_path(
+                    checker, static_name, &static_owner);
+                if (static_field != NULL) {
+                    if (!class_member_accessible(
+                            checker, static_owner,
+                            static_field->is_public))
+                        lang_diag(
+                            checker->diagnostics, expr->span,
+                            "static field `%s` is private to class `%s`",
+                            static_field->name,
+                            static_owner->as.structure.name);
+                    expr->as.field.static_field = true;
+                    expr->resolved_decl = static_owner;
+                    result = static_field->checked_type;
+                    break;
+                }
                 if (strcmp(static_name, "string::Empty") == 0) {
                     expr->kind = EXPR_STRING;
                     expr->as.string.data = "";
@@ -1403,21 +1571,174 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 (object->declaration->kind == DECL_STRUCT ||
                  object->declaration->kind == DECL_CLASS)) {
                 const Decl *structure = object->declaration;
+                const Decl *property_owners[256];
+                size_t property_owner_count = 1U;
+                property_owners[0] = structure;
+                while (property_owner_count != 0U) {
+                    const Decl *property_owner =
+                        property_owners[--property_owner_count];
+                    for (size_t member = 0U;
+                         member < property_owner->as.structure.member_count;
+                         ++member) {
+                        Decl *candidate_decl =
+                            property_owner->as.structure.members[member];
+                        Function *candidate = &candidate_decl->as.function;
+                        const char *separator = strrchr(candidate->name, ':');
+                        const char *short_name = separator != NULL
+                            ? separator + 1U : candidate->name;
+                        if (candidate->is_property_getter &&
+                            !candidate->is_static_member &&
+                            strcmp(short_name, expr->as.field.field) == 0) {
+                            result = rewrite_instance_property_call(
+                                checker, expr, candidate->name,
+                                expr->as.field.object);
+                            goto checked_expression;
+                        }
+                    }
+                    if (object->kind == TYPE_CLASS) {
+                        if (property_owner->as.structure.base_class != NULL &&
+                            property_owner_count < 256U)
+                            property_owners[property_owner_count++] =
+                                property_owner->as.structure.base_class;
+                        for (size_t interface = 0U;
+                             interface < property_owner->as.structure
+                                 .interface_count &&
+                             property_owner_count < 256U; ++interface)
+                            property_owners[property_owner_count++] =
+                                property_owner->as.structure
+                                    .interfaces[interface];
+                    }
+                }
+                const Decl *method_structure = structure;
+                if (structure->as.structure.is_interface) {
+                    const Decl *pending[256];
+                    size_t pending_count = 0U;
+                    for (size_t interface = 0U;
+                         interface < structure->as.structure.interface_count;
+                         ++interface)
+                        pending[pending_count++] =
+                            structure->as.structure.interfaces[interface];
+                    while (pending_count != 0U &&
+                           method_structure == structure) {
+                        const Decl *candidate_owner =
+                            pending[--pending_count];
+                        for (size_t member = 0U;
+                             member < candidate_owner->as.structure
+                                 .member_count; ++member) {
+                            Function *candidate = &candidate_owner
+                                ->as.structure.members[member]->as.function;
+                            const char *candidate_separator =
+                                strrchr(candidate->name, ':');
+                            const char *candidate_name =
+                                candidate_separator != NULL
+                                    ? candidate_separator + 1U
+                                    : candidate->name;
+                            if (!candidate->is_static_member &&
+                                !candidate->is_constructor &&
+                                !candidate->is_drop &&
+                                !candidate->is_property_getter &&
+                                !candidate->is_property_setter &&
+                                strcmp(candidate_name,
+                                       expr->as.field.field) == 0) {
+                                method_structure = candidate_owner;
+                                break;
+                            }
+                        }
+                        for (size_t parent = 0U;
+                             parent < candidate_owner->as.structure
+                                 .interface_count &&
+                             pending_count < 256U; ++parent)
+                            pending[pending_count++] = candidate_owner
+                                ->as.structure.interfaces[parent];
+                    }
+                }
+                const Decl *selected_method = NULL;
+                size_t named_methods = 0U;
+                size_t matching_methods = 0U;
                 for (size_t member = 0U;
-                     member < structure->as.structure.member_count; ++member) {
-                    Function *candidate =
-                        &structure->as.structure.members[member]->as.function;
+                     member < method_structure->as.structure.member_count;
+                     ++member) {
+                    Decl *candidate_decl =
+                        method_structure->as.structure.members[member];
+                    Function *candidate = &candidate_decl->as.function;
                     const char *separator = strrchr(candidate->name, ':');
                     const char *short_name = separator != NULL
                         ? separator + 1U : candidate->name;
-                    if (candidate->is_property_getter &&
-                        !candidate->is_static_member &&
-                        strcmp(short_name, expr->as.field.field) == 0) {
-                        result = rewrite_instance_property_call(
-                            checker, expr, candidate->name,
-                            expr->as.field.object);
-                        goto checked_expression;
+                    if (candidate->is_static_member ||
+                        candidate->is_constructor || candidate->is_drop ||
+                        candidate->is_property_getter ||
+                        candidate->is_property_setter ||
+                        strcmp(short_name, expr->as.field.field) != 0)
+                        continue;
+                    ++named_methods;
+                    if (checker->expected_type == NULL ||
+                        checker->expected_type->kind != TYPE_FUNCTION ||
+                        object->kind != TYPE_CLASS ||
+                        candidate->param_count == 0U ||
+                        candidate->param_count - 1U !=
+                            checker->expected_type->argument_count ||
+                        !same_type(candidate->checked_return_type,
+                                   checker->expected_type->element))
+                        continue;
+                    bool exact = true;
+                    for (size_t parameter = 1U;
+                         parameter < candidate->param_count; ++parameter) {
+                        ParameterMode mode = parameter_mode_from_param(
+                            &candidate->params[parameter]);
+                        if (!same_type(
+                                candidate->params[parameter].checked_type,
+                                checker->expected_type
+                                    ->arguments[parameter - 1U]) ||
+                            mode != checker->expected_type
+                                ->parameter_modes[parameter - 1U]) {
+                            exact = false;
+                            break;
+                        }
                     }
+                    if (!exact) continue;
+                    selected_method = candidate_decl;
+                    ++matching_methods;
+                }
+                if (named_methods != 0U) {
+                    if (object->kind != TYPE_CLASS) {
+                        lang_diag(
+                            checker->diagnostics, expr->span,
+                            "bound instance delegates currently require a class receiver");
+                        result = &type_error;
+                        break;
+                    }
+                    if (checker->expected_type == NULL ||
+                        checker->expected_type->kind != TYPE_FUNCTION) {
+                        lang_diag(
+                            checker->diagnostics, expr->span,
+                            "bound method `%s` requires a target delegate type",
+                            expr->as.field.field);
+                        result = &type_error;
+                        break;
+                    }
+                    if (matching_methods != 1U ||
+                        selected_method == NULL) {
+                        lang_diag(
+                            checker->diagnostics, expr->span,
+                            matching_methods > 1U
+                                ? "bound method `%s` is ambiguous for the target delegate type"
+                                : "no overload of bound method `%s` matches the target delegate type",
+                            expr->as.field.field);
+                        result = &type_error;
+                        break;
+                    }
+                    if (!class_member_accessible(
+                            checker, structure,
+                            selected_method->is_public))
+                        lang_diag(
+                            checker->diagnostics, expr->span,
+                            "method `%s` is private to class `%s`",
+                            expr->as.field.field,
+                            structure->as.structure.name);
+                    expr->resolved_decl = selected_method;
+                    expr->as.field.bound_method = true;
+                    result = checker->expected_type;
+                    goto checked_expression;
                 }
                 if (declared_property_accessor(
                         structure, expr->as.field.field, true) != NULL) {
@@ -2496,6 +2817,45 @@ static bool type_has_c_abi(Checker *checker, Type *type,
     return false;
 }
 
+static bool interface_reaches(
+    const Decl *current, const Decl *target, size_t depth, size_t limit
+) {
+    if (current == target) return true;
+    if (current == NULL || depth >= limit) return false;
+    for (size_t i = 0U;
+         i < current->as.structure.interface_count; ++i)
+        if (interface_reaches(
+                current->as.structure.interfaces[i], target,
+                depth + 1U, limit))
+            return true;
+    return false;
+}
+
+static const char *member_short_name(const Function *function) {
+    const char *separator = strrchr(function->name, ':');
+    return separator != NULL ? separator + 1U : function->name;
+}
+
+static bool member_signatures_match(
+    const Function *implementation, const Function *contract
+) {
+    if (strcmp(member_short_name(implementation),
+               member_short_name(contract)) != 0 ||
+        implementation->param_count != contract->param_count ||
+        !same_type(implementation->checked_return_type,
+                   contract->checked_return_type))
+        return false;
+    for (size_t parameter = 1U;
+         parameter < implementation->param_count; ++parameter)
+        if (!same_type(implementation->params[parameter].checked_type,
+                       contract->params[parameter].checked_type) ||
+            parameter_mode_from_param(
+                &implementation->params[parameter]) !=
+            parameter_mode_from_param(&contract->params[parameter]))
+            return false;
+    return true;
+}
+
 bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
     for (size_t i = 0U; i < module->count; ++i) {
         Decl *first = module->decls[i];
@@ -2520,6 +2880,178 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 strcmp(first_name, second_name) == 0)
                 lang_diag(diagnostics, second->span,
                           "duplicate type `%s`", second_name);
+        }
+    }
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *decl = module->decls[i];
+        if (decl->kind != DECL_CLASS ||
+            decl->as.structure.heritage_type_count == 0U)
+            continue;
+        Checker checker;
+        memset(&checker, 0, sizeof(checker));
+        checker.module = module;
+        checker.diagnostics = diagnostics;
+        checker.current_module = decl->module_name;
+        decl->as.structure.interfaces = lang_arena_alloc(
+            &module->arena,
+            decl->as.structure.heritage_type_count *
+                sizeof(*decl->as.structure.interfaces));
+        for (size_t heritage = 0U;
+             heritage < decl->as.structure.heritage_type_count;
+             ++heritage) {
+            Type *base_type = resolve_declared_type(
+                &checker,
+                decl->as.structure.heritage_type_syntaxes[heritage],
+                decl->as.structure.heritage_type_names[heritage],
+                decl->span);
+            if (base_type->kind != TYPE_CLASS ||
+                base_type->declaration == NULL) {
+                lang_diag(diagnostics, decl->span,
+                          "base type `%s` must be a class or interface",
+                          decl->as.structure.heritage_type_names[heritage]);
+                continue;
+            }
+            Decl *base = (Decl *)base_type->declaration;
+            if (base->as.structure.is_interface) {
+                bool duplicate = false;
+                for (size_t previous = 0U;
+                     previous < decl->as.structure.interface_count;
+                     ++previous)
+                    duplicate = duplicate ||
+                        decl->as.structure.interfaces[previous] == base;
+                if (duplicate)
+                    lang_diag(diagnostics, decl->span,
+                              "duplicate interface `%s`",
+                              base->as.structure.name);
+                else
+                    decl->as.structure.interfaces[
+                        decl->as.structure.interface_count++] = base;
+                continue;
+            }
+            if (decl->as.structure.is_interface) {
+                lang_diag(diagnostics, decl->span,
+                          "interface `%s` cannot inherit class `%s`",
+                          decl->as.structure.name,
+                          base->as.structure.name);
+                continue;
+            }
+            if (decl->as.structure.base_class != NULL) {
+                lang_diag(diagnostics, decl->span,
+                          "class `%s` cannot have more than one base class",
+                          decl->as.structure.name);
+                continue;
+            }
+            decl->as.structure.base_class = base;
+            decl->as.structure.base_type_name =
+                decl->as.structure.heritage_type_names[heritage];
+            decl->as.structure.base_type_syntax =
+                decl->as.structure.heritage_type_syntaxes[heritage];
+            if (base->as.structure.is_sealed)
+                lang_diag(diagnostics, decl->span,
+                          "class `%s` cannot derive from sealed class `%s`",
+                          decl->as.structure.name,
+                          base->as.structure.name);
+            if (base->as.structure.field_count != 0U)
+                lang_diag(
+                    diagnostics, decl->span,
+                    "base classes with instance fields require base-constructor lowering, which is not implemented yet");
+        }
+    }
+    /* All direct bases are resolved now, so validate complete chains. */
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *decl = module->decls[i];
+        if (decl->kind != DECL_CLASS) continue;
+        const Decl *cursor = decl->as.structure.base_class;
+        for (size_t depth = 0U; cursor != NULL; ++depth) {
+            if (cursor == decl || depth >= module->count) {
+                lang_diag(diagnostics, decl->span,
+                          "class inheritance cycle involving `%s`",
+                          decl->as.structure.name);
+                break;
+            }
+            cursor = cursor->as.structure.base_class;
+        }
+        if (decl->as.structure.is_interface)
+            for (size_t interface = 0U;
+                 interface < decl->as.structure.interface_count;
+                 ++interface)
+                if (interface_reaches(
+                        decl->as.structure.interfaces[interface], decl,
+                        0U, module->count)) {
+                    lang_diag(
+                        diagnostics, decl->span,
+                        "interface inheritance cycle involving `%s`",
+                        decl->as.structure.name);
+                    break;
+                }
+    }
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *owner = module->decls[i];
+        if (owner->kind != DECL_STRUCT && owner->kind != DECL_CLASS)
+            continue;
+        Checker checker;
+        memset(&checker, 0, sizeof(checker));
+        checker.module = module;
+        checker.diagnostics = diagnostics;
+        checker.current_module = owner->module_name;
+        for (size_t field = 0U;
+             field < owner->as.structure.static_field_count; ++field) {
+            FieldDecl *declaration =
+                &owner->as.structure.static_fields[field];
+            declaration->checked_type = resolve_declared_type(
+                &checker, declaration->type_syntax,
+                declaration->type_name, declaration->span);
+            Type *type = declaration->checked_type;
+            bool supported = type != NULL &&
+                (is_numeric(type) || type->kind == TYPE_BOOL ||
+                 type->kind == TYPE_CHAR || type->kind == TYPE_CLASS ||
+                 type->kind == TYPE_RAW_POINTER ||
+                 (type->kind == TYPE_NAMED &&
+                  type->declaration != NULL &&
+                  type->declaration->kind == DECL_ENUM &&
+                  !type->declaration->as.enumeration.is_union));
+            if (!supported)
+                lang_diag(
+                    diagnostics, declaration->span,
+                    "static field `%s` currently requires a scalar, enum, pointer, or class-reference type",
+                    declaration->name);
+            if (declaration->initializer != NULL) {
+                Expr *initializer = declaration->initializer;
+                bool constant = initializer->kind == EXPR_INT ||
+                    initializer->kind == EXPR_FLOAT ||
+                    initializer->kind == EXPR_BOOL ||
+                    initializer->kind == EXPR_NULL ||
+                    (initializer->kind == EXPR_UNARY &&
+                     initializer->as.unary.op == TOK_MINUS &&
+                     (initializer->as.unary.operand->kind == EXPR_INT ||
+                      initializer->as.unary.operand->kind == EXPR_FLOAT));
+                if (!constant) {
+                    lang_diag(
+                        diagnostics, initializer->span,
+                        "static field initializers currently require a scalar constant or null");
+                } else {
+                    Type *previous_expected = checker.expected_type;
+                    checker.expected_type = type;
+                    Type *actual = check_expr(&checker, initializer);
+                    checker.expected_type = previous_expected;
+                    if (coerce_literal(&checker, initializer, type))
+                        actual = type;
+                    if (!type_assignable(type, actual))
+                        lang_diag(
+                            diagnostics, initializer->span,
+                            "static field initializer expects `%s`, found `%s`",
+                            type_display_name(&checker, type),
+                            type_display_name(&checker, actual));
+                }
+            }
+            for (size_t previous = 0U; previous < field; ++previous)
+                if (strcmp(
+                        owner->as.structure.static_fields[previous].name,
+                        declaration->name) == 0)
+                    lang_diag(
+                        diagnostics, declaration->span,
+                        "duplicate static field `%s`",
+                        declaration->name);
         }
     }
     for (size_t i = 0U; i < module->count; ++i) {
@@ -2599,6 +3131,254 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 &checker, parameter->type_syntax,
                 parameter->type_name, parameter->span);
             parameter->checked_type = type;
+        }
+    }
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *member_decl = module->decls[i];
+        if (member_decl->kind != DECL_FUNCTION) continue;
+        Function *member = &member_decl->as.function;
+        if (member->owner_type == NULL ||
+            (!member->is_abstract_member &&
+             !member->is_virtual_member &&
+             !member->is_override_member &&
+             !member->is_sealed_override))
+            continue;
+        Decl *owner = NULL;
+        for (size_t type = 0U; type < module->count; ++type) {
+            Decl *candidate = module->decls[type];
+            if (candidate->kind == DECL_CLASS &&
+                candidate->module_name != NULL &&
+                member_decl->module_name != NULL &&
+                strcmp(candidate->module_name,
+                       member_decl->module_name) == 0 &&
+                strcmp(candidate->as.structure.name,
+                       member->owner_type) == 0) {
+                owner = candidate;
+                break;
+            }
+        }
+        if (owner == NULL) continue;
+        if (member->is_static_member)
+            lang_diag(diagnostics, member_decl->span,
+                      "static methods cannot be abstract, virtual, or override");
+        if (member->is_constructor || member->is_drop)
+            lang_diag(diagnostics, member_decl->span,
+                      "constructors and destructors cannot be abstract, virtual, or override");
+        if (member->is_sealed_override && !member->is_override_member)
+            lang_diag(diagnostics, member_decl->span,
+                      "`sealed` on a method requires `override`");
+        if (!member_decl->is_public)
+            lang_diag(diagnostics, member_decl->span,
+                      "virtual methods must be public");
+        if (member->is_abstract_member &&
+            !owner->as.structure.is_abstract)
+            lang_diag(diagnostics, member_decl->span,
+                      "abstract method `%s` requires an abstract class",
+                      member->name);
+        if (member->is_abstract_member && member->body != NULL)
+            lang_diag(diagnostics, member_decl->span,
+                      "abstract methods do not have bodies");
+        if (member->is_virtual_member && member->is_override_member &&
+            !member->is_abstract_member)
+            lang_diag(diagnostics, member_decl->span,
+                      "an override method does not also declare `virtual`");
+        if (member->is_abstract_member && member->is_sealed_override)
+            lang_diag(diagnostics, member_decl->span,
+                      "an abstract override cannot be sealed");
+        if (!member->is_override_member) {
+            if (member->is_virtual_member)
+                member->virtual_root_decl = member_decl;
+            continue;
+        }
+        const Decl *matched = NULL;
+        for (Decl *base = owner->as.structure.base_class;
+             base != NULL && matched == NULL;
+             base = base->as.structure.base_class) {
+            for (size_t m = 0U; m < base->as.structure.member_count; ++m) {
+                Decl *candidate_decl = base->as.structure.members[m];
+                Function *candidate = &candidate_decl->as.function;
+                const char *member_short = strrchr(member->name, ':');
+                const char *candidate_short = strrchr(candidate->name, ':');
+                member_short = member_short != NULL
+                    ? member_short + 1U : member->name;
+                candidate_short = candidate_short != NULL
+                    ? candidate_short + 1U : candidate->name;
+                if ((!candidate->is_virtual_member &&
+                     !candidate->is_override_member) ||
+                    strcmp(member_short, candidate_short) != 0 ||
+                    member->param_count != candidate->param_count ||
+                    !same_type(member->checked_return_type,
+                               candidate->checked_return_type))
+                    continue;
+                bool signature = true;
+                for (size_t p = 1U; p < member->param_count; ++p)
+                    if (!same_type(member->params[p].checked_type,
+                                   candidate->params[p].checked_type) ||
+                        parameter_mode_from_param(&member->params[p]) !=
+                            parameter_mode_from_param(
+                                &candidate->params[p])) {
+                        signature = false;
+                        break;
+                    }
+                if (signature) matched = candidate_decl;
+            }
+        }
+        if (matched == NULL) {
+            lang_diag(diagnostics, member_decl->span,
+                      "override `%s` has no matching virtual base method",
+                      member->name);
+        } else {
+            if (matched->as.function.is_sealed_override)
+                lang_diag(diagnostics, member_decl->span,
+                          "cannot override sealed method `%s`",
+                          matched->as.function.name);
+            member->overridden_decl = matched;
+            member->virtual_root_decl =
+                matched->as.function.virtual_root_decl != NULL
+                    ? matched->as.function.virtual_root_decl : matched;
+        }
+    }
+    size_t interface_contract_capacity = 0U;
+    size_t interface_stack_capacity = module->count;
+    for (size_t i = 0U; i < module->count; ++i)
+        if (module->decls[i]->kind == DECL_CLASS) {
+            interface_stack_capacity +=
+                module->decls[i]->as.structure.interface_count;
+            if (module->decls[i]->as.structure.is_interface)
+                interface_contract_capacity +=
+                    module->decls[i]->as.structure.member_count;
+        }
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *owner = module->decls[i];
+        if (owner->kind != DECL_CLASS ||
+            owner->as.structure.is_interface)
+            continue;
+        owner->as.structure.interface_members = lang_arena_alloc(
+            &module->arena, interface_contract_capacity *
+                sizeof(*owner->as.structure.interface_members));
+        owner->as.structure.interface_implementations = lang_arena_alloc(
+            &module->arena, interface_contract_capacity *
+                sizeof(*owner->as.structure.interface_implementations));
+        Decl **stack = calloc(interface_stack_capacity, sizeof(*stack));
+        Decl **seen = calloc(module->count, sizeof(*seen));
+        if ((module->count != 0U && stack == NULL) ||
+            (module->count != 0U && seen == NULL)) {
+            free(stack);
+            free(seen);
+            fputs("fatal: out of memory\n", stderr);
+            exit(2);
+        }
+        size_t stack_count = 0U;
+        for (Decl *cursor = owner; cursor != NULL;
+             cursor = cursor->as.structure.base_class)
+            for (size_t interface = 0U;
+                 interface < cursor->as.structure.interface_count;
+                 ++interface)
+                if (stack_count < interface_stack_capacity)
+                    stack[stack_count++] =
+                        cursor->as.structure.interfaces[interface];
+        size_t seen_count = 0U;
+        while (stack_count != 0U) {
+            Decl *contract_owner = stack[--stack_count];
+            bool already_seen = false;
+            for (size_t seen_index = 0U;
+                 seen_index < seen_count; ++seen_index)
+                already_seen = already_seen ||
+                    seen[seen_index] == contract_owner;
+            if (already_seen) continue;
+            if (seen_count < module->count)
+                seen[seen_count++] = contract_owner;
+            for (size_t parent = 0U;
+                 parent < contract_owner->as.structure.interface_count;
+                 ++parent)
+                if (stack_count < interface_stack_capacity)
+                    stack[stack_count++] =
+                        contract_owner->as.structure.interfaces[parent];
+            for (size_t member = 0U;
+                 member < contract_owner->as.structure.member_count;
+                 ++member) {
+                Decl *contract_decl =
+                    contract_owner->as.structure.members[member];
+                Function *contract = &contract_decl->as.function;
+                Decl *implementation_decl = NULL;
+                for (Decl *cursor = owner;
+                     cursor != NULL && implementation_decl == NULL;
+                     cursor = cursor->as.structure.base_class)
+                    for (size_t candidate = 0U;
+                         candidate < cursor->as.structure.member_count;
+                         ++candidate) {
+                        Decl *candidate_decl =
+                            cursor->as.structure.members[candidate];
+                        Function *implementation =
+                            &candidate_decl->as.function;
+                        if (implementation->is_static_member ||
+                            implementation->is_abstract_member ||
+                            !candidate_decl->is_public ||
+                            !member_signatures_match(
+                                implementation, contract))
+                            continue;
+                        implementation_decl = candidate_decl;
+                        break;
+                    }
+                if (implementation_decl == NULL) {
+                    if (!owner->as.structure.is_abstract)
+                        lang_diag(
+                            diagnostics, owner->span,
+                            "class `%s` does not implement interface member `%s.%s`",
+                            owner->as.structure.name,
+                            contract_owner->as.structure.name,
+                            member_short_name(contract));
+                    continue;
+                }
+                size_t output = owner->as.structure
+                    .interface_implementation_count++;
+                owner->as.structure.interface_members[output] =
+                    contract_decl;
+                owner->as.structure.interface_implementations[output] =
+                    implementation_decl;
+            }
+        }
+        free(stack);
+        free(seen);
+    }
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *owner = module->decls[i];
+        if (owner->kind != DECL_CLASS ||
+            owner->as.structure.is_abstract)
+            continue;
+        for (Decl *base = owner->as.structure.base_class;
+             base != NULL; base = base->as.structure.base_class) {
+            for (size_t m = 0U; m < base->as.structure.member_count; ++m) {
+                Decl *abstract_decl = base->as.structure.members[m];
+                Function *abstract_member = &abstract_decl->as.function;
+                if (!abstract_member->is_abstract_member) continue;
+                const Decl *root = abstract_member->virtual_root_decl != NULL
+                    ? abstract_member->virtual_root_decl : abstract_decl;
+                bool implemented = false;
+                for (Decl *cursor = owner;
+                     cursor != NULL && !implemented;
+                     cursor = cursor->as.structure.base_class)
+                    for (size_t candidate = 0U;
+                         candidate < cursor->as.structure.member_count;
+                         ++candidate) {
+                        Function *method = &cursor->as.structure
+                            .members[candidate]->as.function;
+                        const Decl *method_root =
+                            method->virtual_root_decl != NULL
+                                ? method->virtual_root_decl
+                                : cursor->as.structure.members[candidate];
+                        if (method_root == root &&
+                            !method->is_abstract_member) {
+                            implemented = true;
+                            break;
+                        }
+                    }
+                if (!implemented)
+                    lang_diag(
+                        diagnostics, owner->span,
+                        "non-abstract class `%s` does not implement abstract member `%s`",
+                        owner->as.structure.name, abstract_member->name);
+            }
         }
     }
     for (size_t i = 0U; i < module->count; ++i) {
@@ -2724,7 +3504,7 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 !function->params[j].by_out
             };
         }
-        if (function->is_extern) {
+        if (function->is_extern || function->is_abstract_member) {
             function->local_count = function->param_count;
             continue;
         }

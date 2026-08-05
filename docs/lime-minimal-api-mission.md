@@ -227,10 +227,11 @@ application architecture is not yet the target design:
     provide the primary response vocabulary. Concrete typed result metadata
     still depends on the endpoint metadata/builder architecture.
 
-The existing README acknowledges that `StatefulApp<State>` exists because
-capturing closures and service injection are unavailable. Once Aster has
-classes and bound method delegates, that duplication must not become permanent
-framework architecture.
+`StatefulApp<State>` was introduced before Aster had classes and bound method
+delegates. Those language features now exist, so the duplication must not
+become permanent framework architecture. Lime can migrate stateful endpoints
+to ordinary service objects and bound handlers without introducing owned
+closures or implicit service injection.
 
 ## Target application shape
 

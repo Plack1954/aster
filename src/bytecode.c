@@ -26,6 +26,9 @@ void lang_bytecode_free(BytecodeModule *bytecode) {
         free(bytecode->constants[i].owned_string);
     free(bytecode->functions);
     free(bytecode->constants);
+    free(bytecode->static_defaults);
+    free(bytecode->virtual_entries);
+    free(bytecode->class_destructors);
     memset(bytecode, 0, sizeof(*bytecode));
 }
 
@@ -33,13 +36,14 @@ static const char *op_name(OpCode op) {
     static const char *names[] = {
         "CONSTANT","UNIT","TRUE","FALSE","POP","LOAD_LOCAL","STORE_LOCAL",
         "MOVE_LOCAL","REFERENCE_LOCAL","REFERENCE_FIELD_LOCAL","INVALIDATE_LOCAL",
+        "LOAD_STATIC","STORE_STATIC",
         "ADD_I64","SUB_I64","MUL_I64","DIV_I64","REM_I64",
         "SHIFT_LEFT","SHIFT_RIGHT",
         "BIT_AND","BIT_OR","BIT_XOR","BIT_NOT",
         "ADD_F64","SUB_F64","MUL_F64","DIV_F64",
         "NEG_I64","NEG_F64","NOT","CAST",
         "EQ","NEQ","LT_I64","LE_I64","GT_I64","GE_I64",
-        "JUMP","JUMP_IF_FALSE","FUNCTION","CALL","CALL_INDIRECT",
+        "JUMP","JUMP_IF_FALSE","FUNCTION","BOUND_FUNCTION","CALL","CALL_VIRTUAL","CALL_INDIRECT",
         "CALL_NATIVE","AWAIT","TASK_DELAY","TASK_WHEN_ALL","TASK_WHEN_ANY",
         "RETURN","CANCELLATION_SOURCE_NEW","CANCELLATION_TOKEN_NONE",
         "CANCELLATION_TOKEN_GET","CANCELLATION_CANCEL",

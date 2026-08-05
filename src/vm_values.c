@@ -188,6 +188,7 @@ void lang_vm_free(LangVM *vm) {
     free(vm->frame_locals);
     free(vm->frame_stacks);
     free(vm->frame_html_objects);
+    free(vm->static_fields);
     vm_clear_string_literals(vm);
     free(vm);
 }
@@ -769,6 +770,19 @@ uint32_t vm_language_destructor_for_metadata(
     if (variant_separator != NULL &&
         (size_t)(variant_separator - type_name) < type_length)
         type_length = (size_t)(variant_separator - type_name);
+    for (size_t i = 0U;
+         i < vm->module->class_destructor_count; ++i) {
+        const BytecodeClassDestructor *entry =
+            &vm->module->class_destructors[i];
+        if (entry->runtime_module_length == module_length &&
+            entry->runtime_type_length == type_length &&
+            (module_length == 0U ||
+             memcmp(entry->runtime_module, metadata, module_length) == 0) &&
+            memcmp(entry->runtime_type, type_name, type_length) == 0) {
+            if (entry->destructor_function >= UINT32_MAX) return 0U;
+            return (uint32_t)entry->destructor_function + 1U;
+        }
+    }
     static const char suffix[] = "::drop";
     for (size_t i = 0U; i < vm->module->function_count; ++i) {
         const char *name = vm->module->functions[i].name;

@@ -171,9 +171,11 @@ public long Point.Offset(Point self, long amount) {
 var result = point.Offset(2);
 ```
 
-The method call is ordinary typed call sugar for `Point.Offset(point, 2)`;
-there is no dynamic dispatch or inheritance. Mutation uses an explicit `ref`
-parameter:
+The method call is ordinary typed call sugar for `Point.Offset(point, 2)`.
+These type-qualified extension-style functions are statically dispatched.
+Declared class members may separately use single inheritance and
+`abstract`/`virtual`/`override` dynamic dispatch. Mutation of a value-type
+receiver uses an explicit `ref` parameter:
 
 ```text
 public void Router.Add(ref Router self, Route route) {
@@ -185,6 +187,13 @@ public void Router.Add(ref Router self, Route route) {
 parameter is a value copy. `ref` is the C#-shaped mutable reference form.
 Aster has no consuming parameter modifier and does not invalidate a named
 value after a call.
+
+Classes may implement nominal interfaces using the C# inheritance-list form,
+and interfaces may inherit multiple interfaces. Interface members are
+implicitly public and abstract. A concrete implementation must be a public
+instance method or property with an exact signature. Interface calls and bound
+delegates dispatch from the runtime class; interface reference assignment does
+not box, retain, or take ownership of the object.
 
 `List<T>` provides `.Add`, `.Insert`, `.RemoveAt`, `.Clear`, the `.Count` and
 `.Capacity` properties, and checked `values[index]` reads and assignments.
@@ -630,7 +639,7 @@ and generic extern functions are not supported.
 Generic `extern struct` declarations are rejected because Aster has not
 defined a cross-language generic ABI.
 
-Non-capturing language functions are copyable typed values:
+Language functions and bound class methods are copyable typed values:
 
 ```text
 delegate long Operation(long value);
@@ -644,13 +653,16 @@ long result = operation(4);
 ```
 
 Aliases use C# spelling, for example `using Count = uint;`. A `delegate`
-declaration gives a reusable name to an exact non-capturing function signature.
+declaration gives a reusable name to an exact function signature.
 
-Parameter and result types must match exactly. A function value is represented
-by a bytecode function-table index and indirect calls still receive compile-
-time signature and arity checks. Imported language functions work through the
-same normal symbol resolution. Extern C functions cannot currently become
-function values, and there are no capturing closures or heap environments.
+Parameter and result types must match exactly. A function value contains an
+invocation target and an optional borrowed class receiver; indirect calls still
+receive compile-time signature and arity checks. Imported language functions
+work through the same normal symbol resolution. Extern C functions cannot
+currently become function values, and there are no arbitrary capturing
+closures or heap environments. A bound delegate does not extend its receiver's
+lifetime. Binding a virtual class method resolves the override for the
+receiver's runtime class, as in C#.
 
 The compiler implementation uses an internal bump arena for syntax and type
 data. Guest `Arena` is a noncopyable owner of allocation blocks. `ArenaAlloc`

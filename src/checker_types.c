@@ -1559,8 +1559,33 @@ bool same_type(const Type *a, const Type *b) {
     return true;
 }
 
+static bool class_or_interface_assignable(
+    const Decl *expected, const Decl *actual, size_t depth
+) {
+    if (expected == actual) return true;
+    if (expected == NULL || actual == NULL || depth >= 256U)
+        return false;
+    if (class_or_interface_assignable(
+            expected, actual->as.structure.base_class, depth + 1U))
+        return true;
+    for (size_t interface = 0U;
+         interface < actual->as.structure.interface_count; ++interface)
+        if (class_or_interface_assignable(
+                expected, actual->as.structure.interfaces[interface],
+                depth + 1U))
+            return true;
+    return false;
+}
+
 bool type_assignable(const Type *expected, const Type *actual) {
     if (same_type(expected, actual)) return true;
+    if (expected != NULL && actual != NULL &&
+        expected->kind == TYPE_CLASS && actual->kind == TYPE_CLASS &&
+        expected->declaration != NULL && actual->declaration != NULL) {
+        if (class_or_interface_assignable(
+                expected->declaration, actual->declaration, 0U))
+            return true;
+    }
     return expected != NULL && actual != NULL &&
            expected->kind == TYPE_READONLY_SPAN &&
            actual->kind == TYPE_SLICE &&

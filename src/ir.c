@@ -167,7 +167,8 @@ static bool ir_align_up(size_t value, size_t alignment, size_t *result) {
 
 static void resolve_struct_member_layout(IrModule *module, IrTypeId id) {
     IrType *type = &module->types[id];
-    size_t offset = 0U;
+    size_t offset = type->shape == IR_TYPE_CLASS_REFERENCE
+        ? module->target.enum_tag_size : 0U;
     bool known = true;
     for (size_t field = 0U; field < type->field_count; ++field) {
         IrTypeId field_id = type->field_types[field];
@@ -189,15 +190,13 @@ static void resolve_struct_member_layout(IrModule *module, IrTypeId id) {
     type = &module->types[id];
     type->member_layout_known = known;
     if (type->shape == IR_TYPE_CLASS_REFERENCE) {
-        size_t alignment = 1U;
+        size_t alignment = module->target.enum_tag_alignment;
         if (known) {
             for (size_t field = 0U; field < type->field_count; ++field) {
                 IrTypeId field_id = type->field_types[field];
                 if (module->types[field_id].target_alignment > alignment)
                     alignment = module->types[field_id].target_alignment;
             }
-            if (type->field_count == 0U)
-                offset = 1U;
             known = ir_align_up(offset, alignment, &offset);
         }
         type->object_layout_known = known;
@@ -299,6 +298,7 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
     entry->shape = type_shape(type);
     entry->element_type = IR_INVALID_ID;
     entry->error_type = IR_INVALID_ID;
+    entry->base_type = IR_INVALID_ID;
     entry->copy_function = IR_INVALID_ID;
     entry->destructor_function = IR_INVALID_ID;
     entry->copy_policy = type_copy_policy(type);
@@ -324,6 +324,40 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
         (type->kind == TYPE_ARRAY || type->kind == TYPE_OPTION ||
          type->kind == TYPE_VEC);
     IrTypeId id = (IrTypeId)module->type_count++;
+    if (type != NULL && type->kind == TYPE_CLASS &&
+        type->declaration != NULL &&
+        type->declaration->as.structure.base_class != NULL) {
+        Type *base = lang_arena_alloc(
+            &module->lowering_module->arena, sizeof(*base));
+        memset(base, 0, sizeof(*base));
+        base->kind = TYPE_CLASS;
+        base->name = type->declaration->as.structure
+            .base_class->as.structure.name;
+        base->declaration =
+            type->declaration->as.structure.base_class;
+        module->types[id].base_type = ir_intern_type(module, base);
+    }
+    if (type != NULL && type->kind == TYPE_CLASS &&
+        type->declaration != NULL &&
+        type->declaration->as.structure.interface_count != 0U) {
+        size_t count = type->declaration->as.structure.interface_count;
+        module->types[id].interface_types = ir_resize(
+            NULL, count, sizeof(*module->types[id].interface_types));
+        module->types[id].interface_count = count;
+        for (size_t interface = 0U; interface < count; ++interface) {
+            const Decl *declaration = type->declaration->as.structure
+                .interfaces[interface];
+            Type *interface_type = lang_arena_alloc(
+                &module->lowering_module->arena,
+                sizeof(*interface_type));
+            memset(interface_type, 0, sizeof(*interface_type));
+            interface_type->kind = TYPE_CLASS;
+            interface_type->name = declaration->as.structure.name;
+            interface_type->declaration = declaration;
+            module->types[id].interface_types[interface] =
+                ir_intern_type(module, interface_type);
+        }
+    }
     if (type != NULL && type->element != NULL) {
         IrTypeId element = ir_intern_type(module, type->element);
         module->types[id].element_type = element;
@@ -481,6 +515,7 @@ IrTypeId ir_intern_iterator_type(IrModule *module,
     type->shape = IR_TYPE_ITERATOR;
     type->element_type = element_type;
     type->error_type = IR_INVALID_ID;
+    type->base_type = IR_INVALID_ID;
     type->copy_function = IR_INVALID_ID;
     type->destructor_function = IR_INVALID_ID;
     type->copy_policy = IR_COPY_DEEP;
@@ -520,6 +555,7 @@ IrTypeId ir_intern_element_builder_type(IrModule *module,
     type->shape = IR_TYPE_ELEMENT_BUILDER;
     type->element_type = result_type;
     type->error_type = IR_INVALID_ID;
+    type->base_type = IR_INVALID_ID;
     type->copy_function = IR_INVALID_ID;
     type->destructor_function = IR_INVALID_ID;
     type->copy_policy = IR_COPY_NONCOPYABLE;
@@ -712,6 +748,16 @@ uint32_t ir_field_index(const Type *object_type, const char *name) {
     const Decl *decl = object_type->declaration;
     for (size_t i = 0U; i < decl->as.structure.field_count; ++i)
         if (strcmp(decl->as.structure.fields[i].name, name) == 0)
+            return (uint32_t)i;
+    return UINT32_MAX;
+}
+
+static uint32_t ir_static_field_index(
+    const IrModule *ir, const Decl *owner, const char *name
+) {
+    for (size_t i = 0U; i < ir->static_field_count; ++i)
+        if (ir->static_fields[i].owner_declaration == owner &&
+            strcmp(ir->static_fields[i].name, name) == 0)
             return (uint32_t)i;
     return UINT32_MAX;
 }
@@ -1205,6 +1251,8 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     if (!indirect && target == NULL)
         native = true;
     IrOpcode opcode = indirect ? IR_OP_CALL_INDIRECT :
+                        expr->as.call.virtual_dispatch
+                            ? IR_OP_CALL_VIRTUAL :
                         native ? IR_OP_CALL_NATIVE : IR_OP_CALL_DIRECT;
     IrInstruction *call = ir_append_instruction(
         builder, opcode, ir_intern_type(builder->module, expr->type),
@@ -1805,7 +1853,38 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
         case EXPR_ASSIGN: {
             const Expr *target = expr->as.assign.target;
             TokenKind compound = expr->as.assign.compound_op;
-            if (target->kind == EXPR_UNARY &&
+            if (target->kind == EXPR_FIELD &&
+                target->as.field.static_field) {
+                uint32_t field = ir_static_field_index(
+                    builder->module, target->resolved_decl,
+                    target->as.field.field);
+                IrValueId value;
+                if (compound == TOK_ERROR) {
+                    value = ir_lower_expr(builder, expr->as.assign.value);
+                } else {
+                    IrInstruction *old = ir_append_instruction(
+                        builder, IR_OP_STATIC_FIELD_LOAD,
+                        ir_intern_type(builder->module, target->type),
+                        NULL, 0U, target->span);
+                    if (old != NULL) old->index = field;
+                    IrValueId operands[2] = {
+                        old != NULL ? old->result : IR_INVALID_ID,
+                        ir_lower_expr(builder, expr->as.assign.value)
+                    };
+                    IrInstruction *updated = ir_append_instruction(
+                        builder,
+                        binary_opcode(
+                            compound, is_float_type(target->type)),
+                        ir_intern_type(builder->module, target->type),
+                        operands, 2U, expr->span);
+                    value = updated != NULL
+                        ? updated->result : IR_INVALID_ID;
+                }
+                instruction = ir_append_instruction(
+                    builder, IR_OP_STATIC_FIELD_STORE,
+                    IR_INVALID_ID, &value, 1U, expr->span);
+                if (instruction != NULL) instruction->index = field;
+            } else if (target->kind == EXPR_UNARY &&
                 target->as.unary.op == TOK_STAR) {
                 IrValueId pointer = ir_lower_expr(
                     builder, target->as.unary.operand);
@@ -2146,7 +2225,33 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             break;
         }
         case EXPR_FIELD: {
+            if (expr->as.field.static_field) {
+                instruction = ir_append_instruction(
+                    builder, IR_OP_STATIC_FIELD_LOAD, type,
+                    NULL, 0U, expr->span);
+                if (instruction != NULL)
+                    instruction->index = ir_static_field_index(
+                        builder->module, expr->resolved_decl,
+                        expr->as.field.field);
+                break;
+            }
             const Expr *object = expr->as.field.object;
+            if (expr->as.field.bound_method &&
+                expr->resolved_decl != NULL &&
+                expr->resolved_decl->kind == DECL_FUNCTION) {
+                IrValueId receiver = ir_lower_expr(builder, object);
+                instruction = ir_append_instruction(
+                    builder, IR_OP_BOUND_METHOD_REF, type,
+                    &receiver, 1U, expr->span);
+                if (instruction != NULL) {
+                    instruction->symbol =
+                        expr->resolved_decl->as.function.name;
+                    instruction->symbol_length = strlen(instruction->symbol);
+                    instruction->index = ir_find_function(
+                        builder->module, expr->resolved_decl);
+                }
+                break;
+            }
             if (object->type != NULL &&
                 object->type->kind == TYPE_OPTION &&
                 strcmp(expr->as.field.field, "Value") == 0) {
@@ -2479,6 +2584,12 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         function->declaration = decl;
         function->span = decl->span;
         function->is_public = decl->is_public;
+        function->is_abstract =
+            decl->as.function.is_abstract_member;
+        function->is_virtual =
+            decl->as.function.is_virtual_member ||
+            decl->as.function.is_override_member;
+        function->virtual_root = IR_INVALID_ID;
         function->abi.calling_convention = IR_CALLING_CONVENTION_ASTER;
         function->abi.may_propagate_exception = true;
         function->is_destructor =
@@ -2522,6 +2633,128 @@ static void initialize_functions(const Module *module, IrModule *ir) {
             function->module_name != NULL &&
             strcmp(module->entry_module, function->module_name) == 0;
     }
+    for (size_t i = 0U; i < ir->function_count; ++i) {
+        const Function *source =
+            &ir->functions[i].declaration->as.function;
+        const Decl *root = source->virtual_root_decl;
+        if (root != NULL)
+            ir->functions[i].virtual_root =
+                ir_find_function(ir, root);
+    }
+}
+
+static void initialize_static_fields(const Module *module, IrModule *ir) {
+    for (size_t i = 0U; i < module->count; ++i) {
+        const Decl *owner = module->decls[i];
+        if (owner->kind == DECL_STRUCT || owner->kind == DECL_CLASS)
+            ir->static_field_count +=
+                owner->as.structure.static_field_count;
+    }
+    ir->static_fields = ir_resize(
+        NULL, ir->static_field_count, sizeof(*ir->static_fields));
+    size_t output = 0U;
+    for (size_t i = 0U; i < module->count; ++i) {
+        const Decl *owner = module->decls[i];
+        if (owner->kind != DECL_STRUCT && owner->kind != DECL_CLASS)
+            continue;
+        for (size_t field = 0U;
+             field < owner->as.structure.static_field_count; ++field) {
+            const FieldDecl *source =
+                &owner->as.structure.static_fields[field];
+            ir->static_fields[output++] = (IrStaticField){
+                .name=source->name,
+                .owner_name=owner->as.structure.name,
+                .module_name=owner->module_name,
+                .type=ir_intern_type(ir, source->checked_type),
+                .span=source->span,
+                .owner_declaration=owner
+            };
+            IrStaticField *target = &ir->static_fields[output - 1U];
+            const Expr *initializer = source->initializer;
+            if (initializer == NULL) continue;
+            if (initializer->kind == EXPR_INT)
+                target->initial_integer = initializer->as.integer;
+            else if (initializer->kind == EXPR_BOOL)
+                target->initial_integer =
+                    initializer->as.boolean ? 1U : 0U;
+            else if (initializer->kind == EXPR_FLOAT)
+                target->initial_floating = initializer->as.floating;
+            else if (initializer->kind == EXPR_UNARY &&
+                     initializer->as.unary.op == TOK_MINUS &&
+                     initializer->as.unary.operand->kind == EXPR_INT)
+                target->initial_integer =
+                    0U - initializer->as.unary.operand->as.integer;
+            else if (initializer->kind == EXPR_UNARY &&
+                     initializer->as.unary.op == TOK_MINUS &&
+                     initializer->as.unary.operand->kind == EXPR_FLOAT)
+                target->initial_floating =
+                    -initializer->as.unary.operand->as.floating;
+        }
+    }
+}
+
+static void initialize_interface_dispatches(
+    const Module *module, IrModule *ir
+) {
+    for (size_t i = 0U; i < module->count; ++i)
+        if (module->decls[i]->kind == DECL_CLASS &&
+            !module->decls[i]->as.structure.is_interface)
+            ir->interface_dispatch_count += module->decls[i]
+                ->as.structure.interface_implementation_count;
+    ir->interface_dispatches = ir_resize(
+        NULL, ir->interface_dispatch_count,
+        sizeof(*ir->interface_dispatches));
+    size_t output = 0U;
+    for (size_t i = 0U; i < module->count; ++i) {
+        const Decl *owner = module->decls[i];
+        if (owner->kind != DECL_CLASS ||
+            owner->as.structure.is_interface)
+            continue;
+        Type *runtime = lang_arena_alloc(
+            &ir->lowering_module->arena, sizeof(*runtime));
+        memset(runtime, 0, sizeof(*runtime));
+        runtime->kind = TYPE_CLASS;
+        runtime->name = owner->as.structure.name;
+        runtime->declaration = owner;
+        IrTypeId runtime_type = ir_intern_type(ir, runtime);
+        for (size_t entry = 0U;
+             entry < owner->as.structure.interface_implementation_count;
+             ++entry) {
+            const Decl *contract =
+                owner->as.structure.interface_members[entry];
+            const Decl *implementation =
+                owner->as.structure.interface_implementations[entry];
+            const Decl *interface_owner = NULL;
+            const char *owner_name = contract->as.function.owner_type;
+            for (size_t candidate = 0U;
+                 candidate < module->count; ++candidate)
+                if (module->decls[candidate]->kind == DECL_CLASS &&
+                    module->decls[candidate]->as.structure.is_interface &&
+                    module->decls[candidate]->module_name != NULL &&
+                    contract->module_name != NULL &&
+                    strcmp(module->decls[candidate]->module_name,
+                           contract->module_name) == 0 &&
+                    strcmp(module->decls[candidate]->as.structure.name,
+                           owner_name) == 0) {
+                    interface_owner = module->decls[candidate];
+                    break;
+                }
+            if (interface_owner == NULL) continue;
+            Type *interface_type = lang_arena_alloc(
+                &ir->lowering_module->arena, sizeof(*interface_type));
+            memset(interface_type, 0, sizeof(*interface_type));
+            interface_type->kind = TYPE_CLASS;
+            interface_type->name = interface_owner->as.structure.name;
+            interface_type->declaration = interface_owner;
+            ir->interface_dispatches[output++] = (IrInterfaceDispatch){
+                .interface_type=ir_intern_type(ir, interface_type),
+                .runtime_type=runtime_type,
+                .interface_function=ir_find_function(ir, contract),
+                .target_function=ir_find_function(ir, implementation)
+            };
+        }
+    }
+    ir->interface_dispatch_count = output;
 }
 
 static void resolve_type_destructors(IrModule *ir) {
@@ -2550,6 +2783,21 @@ static void resolve_type_destructors(IrModule *ir) {
             break;
         }
     }
+    for (size_t type_index = 0U;
+         type_index < ir->type_count; ++type_index) {
+        IrType *type = &ir->types[type_index];
+        if (type->shape != IR_TYPE_CLASS_REFERENCE ||
+            type->destructor_function != IR_INVALID_ID)
+            continue;
+        for (IrTypeId base = type->base_type;
+             base != IR_INVALID_ID && base < ir->type_count;
+             base = ir->types[base].base_type)
+            if (ir->types[base].destructor_function != IR_INVALID_ID) {
+                type->destructor_function =
+                    ir->types[base].destructor_function;
+                break;
+            }
+    }
 }
 
 bool lang_ir_lower_module(Module *module,
@@ -2560,7 +2808,9 @@ bool lang_ir_lower_module(Module *module,
     ir->target = *target;
     ir->lowering_module = module;
     ir->lowering_diagnostics = diagnostics;
+    initialize_static_fields(module, ir);
     initialize_functions(module, ir);
+    initialize_interface_dispatches(module, ir);
     for (size_t i = 0U; i < ir->function_count; ++i) {
         IrFunction *output = &ir->functions[i];
         const Function *source = &output->declaration->as.function;
@@ -2606,8 +2856,60 @@ bool lang_ir_lower_module(Module *module,
                     source->constructor_field_binding_ids[field],
                     source->constructor_field_types[field], true);
         }
-        ir_lower_stmt(&builder, source->body);
+        if (source->is_abstract_member)
+            ir_set_terminator(
+                &builder, IR_TERM_TRAP, IR_INVALID_ID,
+                IR_INVALID_ID, IR_INVALID_ID, source->span);
+        else
+            ir_lower_stmt(&builder, source->body);
         if (!ir_current_terminated(&builder)) {
+            if (source->is_drop && source->param_count == 1U &&
+                source->params[0].checked_type != NULL &&
+                source->params[0].checked_type->kind == TYPE_CLASS &&
+                source->params[0].checked_type->declaration != NULL) {
+                const Decl *owner =
+                    source->params[0].checked_type->declaration;
+                const Decl *base = owner->as.structure.base_class;
+                const Decl *base_destructor = NULL;
+                if (base != NULL)
+                    for (size_t member = 0U;
+                         member < base->as.structure.member_count; ++member)
+                        if (base->as.structure.members[member]
+                                ->as.function.is_drop) {
+                            base_destructor =
+                                base->as.structure.members[member];
+                            break;
+                        }
+                if (base_destructor != NULL) {
+                    uint32_t local = ir_find_local(
+                        &builder, source->params[0].binding_id,
+                        source->params[0].span);
+                    IrInstruction *receiver = ir_append_instruction(
+                        &builder, IR_OP_LOCAL_LOAD,
+                        ir_intern_type(
+                            ir, source->params[0].checked_type),
+                        NULL, 0U, source->span);
+                    if (receiver != NULL) receiver->index = local;
+                    IrValueId operand = receiver != NULL
+                        ? receiver->result : IR_INVALID_ID;
+                    IrInstruction *call = ir_append_instruction(
+                        &builder, IR_OP_CALL_DIRECT,
+                        ir_intern_type(
+                            ir, base_destructor->as.function
+                                    .checked_return_type),
+                        &operand, 1U, source->span);
+                    if (call != NULL) {
+                        call->index = ir_find_function(
+                            ir, base_destructor);
+                        call->symbol = base_destructor->as.function.name;
+                        call->symbol_length = strlen(call->symbol);
+                        call->argument_mode_count = 1U;
+                        call->argument_modes = ir_resize(
+                            NULL, 1U, sizeof(*call->argument_modes));
+                        call->argument_modes[0] = PARAMETER_MODE_VALUE;
+                    }
+                }
+            }
             /*
              * Parameters live outside the function body's lexical block.
              * Body cleanup plans therefore do not contain them. A local drop
@@ -2713,6 +3015,8 @@ bool lang_ir_lower_module(Module *module,
      * fail immediately during development. */
     for (size_t i = 0U; i < ir->function_count; ++i)
         ir->functions[i].declaration = NULL;
+    for (size_t i = 0U; i < ir->static_field_count; ++i)
+        ir->static_fields[i].owner_declaration = NULL;
     for (size_t i = 0U; i < ir->type_count; ++i)
         ir->types[i].checked_type = NULL;
     ir->lowering_module = NULL;

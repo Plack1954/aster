@@ -47,8 +47,49 @@ void c_backend_mark_function(CEmitter *emitter,
             const IrInstruction *instruction =
                 &function->blocks[b].instructions[i];
             if (instruction->opcode == IR_OP_CALL_DIRECT ||
-                instruction->opcode == IR_OP_FUNCTION_REF)
+                instruction->opcode == IR_OP_CALL_VIRTUAL ||
+                instruction->opcode == IR_OP_FUNCTION_REF ||
+                instruction->opcode == IR_OP_BOUND_METHOD_REF)
                 c_backend_mark_function(emitter, instruction->index);
+            if (instruction->opcode == IR_OP_CALL_VIRTUAL &&
+                instruction->index < emitter->ir->function_count) {
+                IrFunctionId root = emitter->ir->functions[
+                    instruction->index].virtual_root;
+                if (root == IR_INVALID_ID) root = instruction->index;
+                for (size_t target = 0U;
+                     target < emitter->ir->function_count; ++target)
+                    if (emitter->ir->functions[target].virtual_root == root &&
+                        !emitter->ir->functions[target].is_abstract)
+                        c_backend_mark_function(
+                            emitter, (IrFunctionId)target);
+                for (size_t entry = 0U;
+                     entry < emitter->ir->interface_dispatch_count; ++entry)
+                    if (emitter->ir->interface_dispatches[entry]
+                            .interface_function == root)
+                        c_backend_mark_function(
+                            emitter, emitter->ir->interface_dispatches[entry]
+                                .target_function);
+            }
+            if (instruction->opcode == IR_OP_BOUND_METHOD_REF &&
+                instruction->index < emitter->ir->function_count &&
+                emitter->ir->functions[instruction->index].is_virtual) {
+                IrFunctionId root = emitter->ir->functions[
+                    instruction->index].virtual_root;
+                if (root == IR_INVALID_ID) root = instruction->index;
+                for (size_t target = 0U;
+                     target < emitter->ir->function_count; ++target)
+                    if (emitter->ir->functions[target].virtual_root == root &&
+                        !emitter->ir->functions[target].is_abstract)
+                        c_backend_mark_function(
+                            emitter, (IrFunctionId)target);
+                for (size_t entry = 0U;
+                     entry < emitter->ir->interface_dispatch_count; ++entry)
+                    if (emitter->ir->interface_dispatches[entry]
+                            .interface_function == root)
+                        c_backend_mark_function(
+                            emitter, emitter->ir->interface_dispatches[entry]
+                                .target_function);
+            }
             if (instruction->opcode == IR_OP_CALL_NATIVE &&
                 c_backend_registry_native_symbol(instruction->symbol))
                 emitter->needs_native_runtime = true;
@@ -59,6 +100,13 @@ bool c_backend_function_needs_normal_variant(
     const CEmitter *emitter, size_t function_index) {
     const IrModule *ir = emitter->ir;
     if (function_index >= ir->function_count) return false;
+    if (ir->functions[function_index].is_virtual &&
+        !ir->functions[function_index].is_abstract)
+        return true;
+    for (size_t entry = 0U;
+         entry < ir->interface_dispatch_count; ++entry)
+        if (ir->interface_dispatches[entry].target_function == function_index)
+            return true;
     if (ir->functions[function_index].is_entry) return true;
     if (ir->functions[function_index].is_web_export)
         return true;
@@ -75,9 +123,11 @@ bool c_backend_function_needs_normal_variant(
                 const IrInstruction *instruction =
                     &caller->blocks[b].instructions[i];
                 if (instruction->index != function_index) continue;
-                if (instruction->opcode == IR_OP_FUNCTION_REF)
+                if (instruction->opcode == IR_OP_FUNCTION_REF ||
+                    instruction->opcode == IR_OP_BOUND_METHOD_REF)
                     return true;
-                if (instruction->opcode != IR_OP_CALL_DIRECT)
+                if (instruction->opcode != IR_OP_CALL_DIRECT &&
+                    instruction->opcode != IR_OP_CALL_VIRTUAL)
                     continue;
                 if (instruction->render_destination != IR_INVALID_ID &&
                     c_backend_function_has_render_root(
@@ -408,7 +458,8 @@ bool c_backend_function_needs_render_into_variant(
                  i < caller->blocks[b].instruction_count; ++i) {
                 const IrInstruction *instruction =
                     &caller->blocks[b].instructions[i];
-                if (instruction->opcode == IR_OP_CALL_DIRECT &&
+                if ((instruction->opcode == IR_OP_CALL_DIRECT ||
+                     instruction->opcode == IR_OP_CALL_VIRTUAL) &&
                     instruction->index == function_index &&
                     instruction->render_destination != IR_INVALID_ID)
                     return true;

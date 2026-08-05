@@ -80,6 +80,10 @@ Type-qualified functions support inferred `self` receivers with by-value,
 read-only `in`, and mutable `ref` parameter modes. Static method-call sugar
 does not hide ownership transfer: consuming a cleanup-managed receiver still
 invalidates the caller's value.
+Classes and structs also have C#-style static fields, automatic/custom static
+properties, and static methods. Scalar static storage has zero or constant
+initialization in both backends. Cleanup-bearing static values remain rejected
+until module shutdown establishes an explicit owner and destruction order.
 Half-open integer ranges provide allocation-free `for index in start..end`
 loops with one-time bound evaluation, checked increments, and normal
 break/continue cleanup. Text and router library traversal use the range form.
@@ -164,10 +168,23 @@ modules. Field and payload substitution drives checking, copy/move
 classification, clone eligibility, deterministic nested destruction, and
 layout reporting. Generic functions infer arguments from calls and expected
 results, canonicalize specializations across modules, and compile independent
-typed bytecode bodies, including recursive specializations. Copyable,
-non-capturing function values have exact static signatures and verified
-indirect calls; imported functions and generic higher-order functions are
-covered.
+typed bytecode bodies, including recursive specializations. Copyable function
+values and bound class-method delegates have exact static signatures and
+verified indirect calls; imported functions and generic higher-order functions
+are covered. Bound delegates borrow their manually managed receiver and do not
+provide general closure capture.
+
+Classes now support stateless single inheritance, abstract methods and
+properties, virtual/override dispatch, sealed overrides and sealed classes,
+derived-to-base assignment, virtual bound delegates, and runtime-correct
+destruction through base references in both backends. Stateful base classes
+remain rejected pending explicit base-constructor syntax and inherited-field
+layout.
+Nominal interfaces now support multiple interface inheritance, multiple
+interfaces per class, inherited implementations, methods and properties,
+interface-to-base-interface conversion, bound delegates, and deletion through
+an interface reference. Interface slots have independent dispatch mappings;
+they are not represented as synthetic class overrides.
 
 Aster-written modules now provide generic Pair construction, Option/Result
 queries, ownership-preserving List and StringBuilder composition, typed

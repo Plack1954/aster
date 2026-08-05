@@ -2046,6 +2046,77 @@ add_aster_generated_c_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/class_properties.as
     aster_class_properties
         "-DEXPECTED_OUTPUT=5\n8\n16\n2\nAda\n42\n9\n4\n")
+add_test(NAME static_class_members_vm
+    COMMAND lang run-ir tests/static_class_members.as)
+set_tests_properties(static_class_members_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+9[\r\n]+3[\r\n]+14[\r\n]+2")
+add_aster_generated_c_test(
+    static_class_members_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/static_class_members.as
+    aster_static_class_members
+        "-DEXPECTED_OUTPUT=7\n9\n3\n14\n2\n")
+add_test(NAME class_inheritance_vm
+    COMMAND lang run-ir tests/class_inheritance.as)
+set_tests_properties(class_inheritance_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+4[\r\n]+5[\r\n]+7[\r\n]+200[\r\n]+100[\r\n]+2[\r\n]+2[\r\n]+1[\r\n]+100")
+add_aster_generated_c_test(
+    class_inheritance_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/class_inheritance.as
+    aster_class_inheritance
+        "-DEXPECTED_OUTPUT=7\n4\n5\n7\n200\n100\n2\n2\n1\n100\n")
+foreach(inheritance_rejection
+        missing_abstract_override
+        override_nonvirtual
+        override_sealed_method
+        derive_sealed_class
+        instantiate_abstract_class)
+    add_test(NAME ${inheritance_rejection}_rejected
+        COMMAND lang check tests/checker/${inheritance_rejection}.as)
+    set_tests_properties(${inheritance_rejection}_rejected PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        WILL_FAIL TRUE)
+endforeach()
+add_test(NAME interfaces_vm
+    COMMAND lang run-ir tests/interfaces.as)
+set_tests_properties(interfaces_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+8[\r\n]+8[\r\n]+6[\r\n]+7[\r\n]+7[\r\n]+9[\r\n]+200[\r\n]+100")
+add_aster_generated_c_test(
+    interfaces_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/interfaces.as
+    aster_interfaces
+        "-DEXPECTED_OUTPUT=7\n8\n8\n6\n7\n7\n9\n200\n100\n")
+foreach(interface_rejection
+        interface_missing_member
+        interface_private_implementation
+        interface_inherits_class
+        interface_cycle
+        interface_multiple_base_classes
+        instantiate_interface
+        interface_field)
+    add_test(NAME ${interface_rejection}_rejected
+        COMMAND lang check tests/checker/${interface_rejection}.as)
+    set_tests_properties(${interface_rejection}_rejected PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        WILL_FAIL TRUE)
+endforeach()
+add_test(NAME private_static_field_rejected
+    COMMAND lang check tests/checker/private_static_field_rejected.as)
+set_tests_properties(private_static_field_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME private_static_property_setter_rejected
+    COMMAND lang check tests/checker/private_static_property_setter.as)
+set_tests_properties(private_static_property_setter_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME static_owned_field_rejected
+    COMMAND lang check tests/checker/static_owned_field_rejected.as)
+set_tests_properties(static_owned_field_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
 add_test(NAME private_property_setter_rejected
     COMMAND lang check tests/checker/private_property_setter.as)
 set_tests_properties(private_property_setter_rejected PROPERTIES
@@ -2056,6 +2127,42 @@ add_test(NAME read_only_property_assignment_rejected
 set_tests_properties(read_only_property_assignment_rejected PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE)
+add_test(NAME bound_method_delegates_vm
+    COMMAND lang run-ir tests/bound_method_delegates.as)
+set_tests_properties(bound_method_delegates_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "12[\r\n]+15[\r\n]+23[\r\n]+6")
+add_aster_generated_c_test(
+    bound_method_delegates_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/bound_method_delegates.as
+    aster_bound_method_delegates
+        "-DEXPECTED_OUTPUT=12\n15\n23\n6\n")
+add_test(NAME bound_struct_method_rejected
+    COMMAND lang check tests/checker/bound_struct_method_rejected.as)
+set_tests_properties(bound_struct_method_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME private_bound_method_rejected
+    COMMAND lang check tests/checker/private_bound_method_rejected.as)
+set_tests_properties(private_bound_method_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME bound_method_requires_delegate
+    COMMAND lang check tests/checker/bound_method_requires_delegate.as)
+set_tests_properties(bound_method_requires_delegate PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME bound_null_method_vm_trap
+    COMMAND lang run-ir tests/bound_null_method.as)
+set_tests_properties(bound_null_method_vm_trap PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_aster_generated_c_test(
+    bound_null_method_generated_c_trap
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/bound_null_method.as
+    aster_bound_null_method
+        -DEXPECTED_RUN_STATUS=1
+        "-DEXPECTED_ERROR=cannot.bind.an.instance.method.to.a.null.class.reference")
 
 add_executable(parser_recovery_test tests/parser_recovery.c)
 target_include_directories(parser_recovery_test PRIVATE src)

@@ -92,9 +92,9 @@ immediate completion, fault capture/rethrow at `await`, and deterministic
 cleanup of a suspended frame.
 
 `Task.FromResult` and `Task.CompletedTask()` are ordinary standard-library
-async functions. The latter is temporarily callable because Aster does not
-yet have C#-style static properties; its final intended surface is the .NET
-`Task.CompletedTask` property.
+async functions. The language now supports C#-style static properties, so the
+latter can be migrated to the intended .NET-shaped `Task.CompletedTask`
+property without another language feature.
 
 Generated-C tasks now carry scalar and cleanup-managed completion values,
 including strings, structs, lists, HTML, and response-shaped aggregates. A task

@@ -100,10 +100,12 @@ int main(void) {
                  type->target_size == target.pointer_size &&
                  type->target_alignment == target.pointer_alignment &&
                  type->object_layout_known &&
-                 type->object_size >= target.pointer_size + sizeof(int64_t) &&
+                 type->object_size >= target.enum_tag_size +
+                     target.pointer_size + sizeof(int64_t) &&
                  type->field_count == 2U &&
-                 type->field_offsets[0] == 0U &&
-                 type->field_offsets[1] >= sizeof(int64_t) &&
+                 type->field_offsets[0] >= target.enum_tag_size &&
+                 type->field_offsets[1] >=
+                     type->field_offsets[0] + sizeof(int64_t) &&
                  type->field_types[1] == (IrTypeId)i &&
                  type->destructor_function != IR_INVALID_ID &&
                  type->destructor_function < ir.function_count &&

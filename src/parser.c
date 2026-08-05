@@ -1663,17 +1663,24 @@ Stmt *parser_parse_statement(Parser *parser) {
 
 static Decl *parse_function(
     Parser *parser, Token start, bool is_extern,
-    const char *return_type, TypeSyntax *return_type_syntax, Token name);
+    const char *return_type, TypeSyntax *return_type_syntax, Token name,
+    bool declaration_only);
 static Decl *parse_destructor_decl(Parser *parser, Token start);
 
 static void configure_struct_member(
     Parser *parser, Decl *member, const char *owner,
     bool is_static, bool is_readonly,
+    bool is_abstract, bool is_virtual, bool is_override,
+    bool is_sealed_override,
     bool is_public, bool has_visibility, bool is_class) {
     Function *function = &member->as.function;
     function->owner_type = owner;
     function->is_static_member = is_static;
     function->is_readonly_member = is_readonly;
+    function->is_abstract_member = is_abstract;
+    function->is_virtual_member = is_virtual || is_abstract;
+    function->is_override_member = is_override;
+    function->is_sealed_override = is_sealed_override;
     function->name = join_text(parser, owner, "::", function->name);
     member->is_public = is_public;
     member->has_explicit_visibility = has_visibility;
@@ -1722,10 +1729,11 @@ static Stmt *property_expression_body(
 }
 
 static Expr *property_backing_field_expression(
-    Parser *parser, const char *backing_field, LangSpan span
+    Parser *parser, const char *owner, const char *backing_field,
+    bool is_static, LangSpan span
 ) {
     Expr *object = parser_new_expr(parser, EXPR_NAME, span);
-    object->as.name = "this";
+    object->as.name = is_static ? owner : "this";
     Expr *field = parser_new_expr(parser, EXPR_FIELD, span);
     field->as.field.object = object;
     field->as.field.field = backing_field;
@@ -1733,10 +1741,11 @@ static Expr *property_backing_field_expression(
 }
 
 static Stmt *automatic_property_body(
-    Parser *parser, const char *backing_field, bool getter, LangSpan span
+    Parser *parser, const char *owner, const char *backing_field,
+    bool is_static, bool getter, LangSpan span
 ) {
     Expr *field = property_backing_field_expression(
-        parser, backing_field, span);
+        parser, owner, backing_field, is_static, span);
     if (getter)
         return property_expression_body(parser, field, true, span);
     Expr *value = parser_new_expr(parser, EXPR_NAME, span);
@@ -1756,7 +1765,7 @@ static Decl *make_property_accessor(
     Decl *member = lang_arena_alloc(
         &parser->module->arena, sizeof(*member));
     member->kind = DECL_FUNCTION;
-    member->span = body->span;
+    member->span = body != NULL ? body->span : property.span;
     member->is_public = is_public;
     member->has_explicit_visibility = has_visibility;
     Function *function = &member->as.function;
@@ -1766,7 +1775,7 @@ static Decl *make_property_accessor(
     function->is_property_getter = getter;
     function->is_property_setter = !getter;
     function->body = body;
-    function->span = body->span;
+    function->span = member->span;
     if (getter) {
         function->return_type = type_name;
         function->return_type_syntax = type_syntax;
@@ -1790,18 +1799,23 @@ static Decl *make_property_accessor(
 
 static Decl *parse_struct_decl(
     Parser *parser, Token start, bool enumeration, bool is_union,
-    bool is_class) {
+    bool is_class, bool is_interface) {
     Token name = parser_expect(
         parser, TOK_IDENT,
         enumeration
             ? (is_union ? "expected union name" : "expected enum name")
-            : (is_class ? "expected class name" : "expected struct name"));
+            : (is_interface ? "expected interface name"
+                            : is_class ? "expected class name"
+                                       : "expected struct name"));
     Decl *decl = lang_arena_alloc(&parser->module->arena, sizeof(*decl));
     decl->kind = enumeration ? DECL_ENUM
-                             : is_class ? DECL_CLASS : DECL_STRUCT;
+                             : (is_class || is_interface)
+                                 ? DECL_CLASS : DECL_STRUCT;
     decl->span = start.span;
     const char **decl_name = enumeration ? &decl->as.enumeration.name : &decl->as.structure.name;
     *decl_name = parser_copy_token(parser, name);
+    if (!enumeration)
+        decl->as.structure.is_interface = is_interface;
     if (enumeration) decl->as.enumeration.is_union = is_union;
     parse_type_parameters(parser, decl);
     if (is_class && decl->type_param_count != 0U)
@@ -1810,22 +1824,63 @@ static Decl *parse_struct_decl(
     if (decl->type_param_count > 16U)
         lang_diag(parser->diagnostics, name.span,
                   "generic declarations are limited to 16 type parameters");
+    if ((is_class || is_interface) && parser_accept(parser, TOK_COLON)) {
+        ParserArrayBuilder heritage_names =
+            parser_array_builder(sizeof(const char *));
+        ParserArrayBuilder heritage_syntaxes =
+            parser_array_builder(sizeof(TypeSyntax *));
+        do {
+            TypeSyntax *syntax = NULL;
+            const char *heritage = parse_type(parser, &syntax);
+            parser_array_push(&heritage_names, &heritage);
+            parser_array_push(&heritage_syntaxes, &syntax);
+        } while (parser_accept(parser, TOK_COMMA));
+        decl->as.structure.heritage_type_count = heritage_names.count;
+        decl->as.structure.heritage_type_names =
+            parser_array_freeze(parser, &heritage_names);
+        decl->as.structure.heritage_type_syntaxes =
+            parser_array_freeze(parser, &heritage_syntaxes);
+    }
     parser_expect(parser, TOK_LBRACE, "expected `{` after type name");
     ParserArrayBuilder fields = parser_array_builder(sizeof(FieldDecl));
+    ParserArrayBuilder static_fields = parser_array_builder(sizeof(FieldDecl));
     ParserArrayBuilder members = parser_array_builder(sizeof(Decl *));
     while (parser->current.kind != TOK_RBRACE && parser->current.kind != TOK_EOF) {
         Token member_start = parser->current;
-        bool member_public = parser_accept(parser, TOK_PUB);
-        bool member_private = !member_public && parser_accept(parser, TOK_PRIVATE);
-        bool member_visibility = member_public || member_private;
+        bool explicit_public = parser_accept(parser, TOK_PUB);
+        bool member_private = !explicit_public &&
+            parser_accept(parser, TOK_PRIVATE);
+        bool member_public = is_interface || explicit_public;
+        bool member_visibility = is_interface ||
+            explicit_public || member_private;
+        if (is_interface && member_private)
+            lang_diag(parser->diagnostics, member_start.span,
+                      "interface members are public");
         bool member_static = parser_accept(parser, TOK_STATIC);
+        bool member_abstract = parser_accept(parser, TOK_ABSTRACT);
+        member_abstract = member_abstract || is_interface;
+        bool member_virtual = parser_accept(parser, TOK_VIRTUAL);
+        bool member_override = parser_accept(parser, TOK_OVERRIDE);
+        bool member_sealed = parser_accept(parser, TOK_SEALED);
+        if (member_sealed && !member_override)
+            member_override = parser_accept(parser, TOK_OVERRIDE);
         bool member_readonly = parser_accept(parser, TOK_READONLY);
-        if (is_class && parser_accept(parser, TOK_TILDE)) {
+        if (!is_class && !is_interface &&
+            (member_abstract || member_virtual ||
+                          member_override || member_sealed))
+            lang_diag(parser->diagnostics, member_start.span,
+                      "abstract, virtual, override, and sealed members require a class");
+        if ((is_class || is_interface) && parser_accept(parser, TOK_TILDE)) {
             Decl *member = parse_destructor_decl(parser, member_start);
             member->as.function.owner_type = *decl_name;
             member->as.function.params[0].name = "this";
             member->has_explicit_visibility = true;
-            if (member_visibility || member_static || member_readonly)
+            if (is_interface)
+                lang_diag(parser->diagnostics, member_start.span,
+                          "interfaces cannot declare destructors");
+            if (member_visibility || member_static || member_readonly ||
+                member_abstract || member_virtual || member_override ||
+                member_sealed)
                 lang_diag(parser->diagnostics, member_start.span,
                           "class destructors do not declare modifiers");
             if (strcmp(member->as.function.params[0].type_name,
@@ -1849,7 +1904,7 @@ static Decl *parse_struct_decl(
                 strcmp(type_name, *decl_name) == 0) {
                 Decl *member = parse_function(
                     parser, member_start, false,
-                    type_name, type_syntax, member_start);
+                    type_name, type_syntax, member_start, false);
                 member->as.function.is_constructor = true;
                 member->as.function.owner_type = *decl_name;
                 member->as.function.name = join_text(
@@ -1860,6 +1915,13 @@ static Decl *parse_struct_decl(
                 if (member_static)
                     lang_diag(parser->diagnostics, member_start.span,
                               "constructors cannot be static");
+                if (is_interface)
+                    lang_diag(parser->diagnostics, member_start.span,
+                              "interfaces cannot declare constructors");
+                if (member_abstract || member_virtual || member_override ||
+                    member_sealed || member_readonly)
+                    lang_diag(parser->diagnostics, member_start.span,
+                              "constructors cannot be abstract, virtual, override, sealed, or readonly");
                 parser_array_push(&members, &member);
                 continue;
             }
@@ -1868,11 +1930,15 @@ static Decl *parse_struct_decl(
             parse_declarator_suffix(parser, &type_syntax, &type_name);
             if (parser->current.kind == TOK_LPAREN) {
                 Decl *member = parse_function(
-                    parser, field, false, type_name, type_syntax, field);
+                    parser, field, false, type_name, type_syntax, field,
+                    member_abstract);
                 configure_struct_member(
                     parser, member, *decl_name, member_static,
-                    member_readonly,
-                    member_public, member_visibility || is_class, is_class);
+                    member_readonly, member_abstract, member_virtual,
+                    member_override, member_sealed,
+                    member_public,
+                    member_visibility || is_class || is_interface,
+                    is_class || is_interface);
                 parser_array_push(&members, &member);
                 continue;
             }
@@ -1904,8 +1970,11 @@ static Decl *parse_struct_decl(
                     member->as.function.name;
                 configure_struct_member(
                     parser, member, *decl_name, member_static,
-                    member_readonly,
-                    member_public, member_visibility || is_class, is_class);
+                    member_readonly, member_abstract, member_virtual,
+                    member_override, member_sealed,
+                    member_public,
+                    member_visibility || is_class || is_interface,
+                    is_class || is_interface);
                 parser_array_push(&members, &member);
                 continue;
             }
@@ -1927,6 +1996,9 @@ static Decl *parse_struct_decl(
                         parser_accept(parser, TOK_PRIVATE);
                     bool accessor_visibility =
                         accessor_public || accessor_private;
+                    if (is_interface && accessor_private)
+                        lang_diag(parser->diagnostics, accessor_start.span,
+                                  "interface accessors are public");
                     Token accessor = parser_expect(
                         parser, TOK_IDENT,
                         "expected `get` or `set` property accessor");
@@ -1948,10 +2020,12 @@ static Decl *parse_struct_decl(
                     Stmt *body = NULL;
                     if (automatic) {
                         any_automatic = true;
-                        body = automatic_property_body(
-                            parser, backing_field, getter,
-                            (LangSpan){field.span.file, field.span.start,
-                                       parser->previous.span.end});
+                        if (!member_abstract)
+                            body = automatic_property_body(
+                                parser, *decl_name, backing_field,
+                                member_static, getter,
+                                (LangSpan){field.span.file, field.span.start,
+                                           parser->previous.span.end});
                     } else if (parser_accept(parser, TOK_FAT_ARROW)) {
                         any_custom = true;
                         Expr *value = parser_parse_expression(parser);
@@ -1966,18 +2040,21 @@ static Decl *parse_struct_decl(
                         any_custom = true;
                         body = parse_block(parser);
                     }
-                    bool visible = accessor_visibility
-                        ? accessor_public : member_public;
+                    bool visible = is_interface ? true
+                        : accessor_visibility
+                            ? accessor_public : member_public;
                     Decl *member = make_property_accessor(
                         parser, field, type_name, type_syntax, getter,
                         body, visible,
                         accessor_visibility || member_visibility || is_class,
-                        automatic ? backing_field : NULL);
+                        automatic && !member_abstract
+                            ? backing_field : NULL);
                     configure_struct_member(
                         parser, member, *decl_name, member_static,
-                        member_readonly, visible,
+                        member_readonly, member_abstract, member_virtual,
+                        member_override, member_sealed, visible,
                         accessor_visibility || member_visibility || is_class,
-                        is_class);
+                        is_class || is_interface);
                     parser_array_push(&accessors, &member);
                 }
                 Token close = parser_expect(
@@ -1989,19 +2066,22 @@ static Decl *parse_struct_decl(
                 if (any_automatic && any_custom)
                     lang_diag(parser->diagnostics, field.span,
                               "automatic and custom accessors cannot be mixed");
-                if (any_automatic && member_static)
-                    lang_diag(parser->diagnostics, field.span,
-                              "static automatic properties are not implemented yet");
                 if (member_readonly && has_setter)
                     lang_diag(parser->diagnostics, field.span,
                               "a readonly property cannot declare a setter");
-                if (any_automatic) {
+                if (member_abstract && any_custom)
+                    lang_diag(parser->diagnostics, field.span,
+                              "abstract property accessors do not have bodies");
+                if (any_automatic && !member_abstract) {
                     FieldDecl backing = {
                         .name=backing_field, .type_name=type_name,
                         .span=field.span, .type_syntax=type_syntax,
-                        .is_public=false, .has_explicit_visibility=true
+                        .is_public=false, .has_explicit_visibility=true,
+                        .is_readonly=member_readonly
                     };
-                    parser_array_push(&fields, &backing);
+                    parser_array_push(
+                        member_static ? &static_fields : &fields,
+                        &backing);
                 }
                 Decl **property_accessors = accessors.items;
                 for (size_t accessor = 0U;
@@ -2015,10 +2095,7 @@ static Decl *parse_struct_decl(
                 free(accessors.items);
                 continue;
             }
-            if (member_static)
-                lang_diag(parser->diagnostics, field.span,
-                          "static fields are not supported yet; declare a static property");
-            if (member_visibility && !is_class)
+            if (member_visibility && !is_class && !is_interface)
                 lang_diag(parser->diagnostics, field.span,
                           "field visibility is not supported yet");
         }
@@ -2055,15 +2132,31 @@ static Decl *parse_struct_decl(
             parser->panic = false;
             continue;
         }
+        Expr *field_initializer = NULL;
+        if (!enumeration && (member_abstract || member_virtual ||
+                             member_override || member_sealed))
+            lang_diag(parser->diagnostics, field.span,
+                      "fields cannot be abstract, virtual, override, or sealed");
+        if (is_interface)
+            lang_diag(parser->diagnostics, field.span,
+                      "interfaces cannot declare instance fields");
+        if (!enumeration && parser_accept(parser, TOK_EQUAL)) {
+            field_initializer = parser_parse_expression(parser);
+            if (!member_static)
+                lang_diag(parser->diagnostics, field.span,
+                          "instance field initializers are not implemented yet");
+        }
         FieldDecl item = {
             .name=parser_copy_token(parser, field),
             .type_name=type_name,
             .span=field.span,
             .type_syntax=type_syntax,
             .is_public=member_public,
-            .has_explicit_visibility=member_visibility
+            .has_explicit_visibility=member_visibility,
+            .is_readonly=member_readonly,
+            .initializer=field_initializer
         };
-        parser_array_push(&fields, &item);
+        parser_array_push(member_static ? &static_fields : &fields, &item);
         if (!parser_accept(parser, TOK_COMMA))
             (void)parser_accept(parser, TOK_SEMICOLON);
     }
@@ -2073,6 +2166,9 @@ static Decl *parse_struct_decl(
     } else {
         decl->as.structure.field_count = fields.count;
         decl->as.structure.fields = parser_array_freeze(parser, &fields);
+        decl->as.structure.static_field_count = static_fields.count;
+        decl->as.structure.static_fields =
+            parser_array_freeze(parser, &static_fields);
         decl->as.structure.member_count = members.count;
         decl->as.structure.members = parser_array_freeze(parser, &members);
     }
@@ -2082,7 +2178,8 @@ static Decl *parse_struct_decl(
 
 static Decl *parse_function(
     Parser *parser, Token start, bool is_extern,
-    const char *return_type, TypeSyntax *return_type_syntax, Token name
+    const char *return_type, TypeSyntax *return_type_syntax, Token name,
+    bool declaration_only
 ) {
     Decl *decl = lang_arena_alloc(&parser->module->arena, sizeof(*decl));
     decl->kind = DECL_FUNCTION;
@@ -2134,9 +2231,9 @@ static Decl *parse_function(
     fn->params = parser_array_freeze(parser, &parameters);
     fn->return_type = return_type;
     fn->return_type_syntax = return_type_syntax;
-    if (is_extern) {
+    if (is_extern || declaration_only) {
         Token end = parser_expect(parser, TOK_SEMICOLON,
-                           "expected `;` after extern function declaration");
+                           "expected `;` after function declaration");
         fn->span = (LangSpan){start.span.file, start.span.start, end.span.end};
     } else {
         Function *previous_function = parser->current_function;
@@ -2401,7 +2498,10 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
             parser_next(&parser);
         }
         bool is_async = parser_accept(&parser, TOK_ASYNC);
-        if (!has_explicit_visibility && !is_async)
+        bool is_abstract_type = parser_accept(&parser, TOK_ABSTRACT);
+        bool is_sealed_type = parser_accept(&parser, TOK_SEALED);
+        if (!has_explicit_visibility && !is_async &&
+            !is_abstract_type && !is_sealed_type)
             start = parser.current;
         Decl *decl = NULL;
         bool is_extern = false;
@@ -2417,20 +2517,39 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
         if (decl != NULL) {
             /* Already parsed above. */
         } else if (parser_accept(&parser, TOK_STRUCT)) {
-            decl = parse_struct_decl(&parser, start, false, false, false);
+            decl = parse_struct_decl(
+                &parser, start, false, false, false, false);
             decl->as.structure.is_extern = is_extern;
         } else if (parser_accept(&parser, TOK_CLASS)) {
-            decl = parse_struct_decl(&parser, start, false, false, true);
+            decl = parse_struct_decl(
+                &parser, start, false, false, true, false);
+            decl->as.structure.is_abstract = is_abstract_type;
+            decl->as.structure.is_sealed = is_sealed_type;
+            if (is_abstract_type && is_sealed_type)
+                lang_diag(diagnostics, start.span,
+                          "a class cannot be both abstract and sealed");
             if (is_extern)
                 lang_diag(diagnostics, start.span,
                           "`extern class` is not supported");
+        } else if (parser_accept(&parser, TOK_INTERFACE)) {
+            decl = parse_struct_decl(
+                &parser, start, false, false, false, true);
+            decl->as.structure.is_abstract = true;
+            if (is_abstract_type || is_sealed_type)
+                lang_diag(diagnostics, start.span,
+                          "interfaces do not declare `abstract` or `sealed`");
+            if (is_extern)
+                lang_diag(diagnostics, start.span,
+                          "`extern interface` is not supported");
         } else if (parser_accept(&parser, TOK_ENUM)) {
-            decl = parse_struct_decl(&parser, start, true, false, false);
+            decl = parse_struct_decl(
+                &parser, start, true, false, false, false);
             if (is_extern)
                 lang_diag(diagnostics, start.span,
                           "`extern enum` is not supported; use an integer-backed C ABI wrapper");
         } else if (parser_accept(&parser, TOK_UNION)) {
-            decl = parse_struct_decl(&parser, start, true, true, false);
+            decl = parse_struct_decl(
+                &parser, start, true, true, false, false);
             if (is_extern)
                 lang_diag(diagnostics, start.span,
                           "`extern union` is not supported");
@@ -2474,7 +2593,7 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
                 "expected function name after return type");
             decl = parse_function(
                 &parser, start, is_extern, return_type,
-                return_type_syntax, name);
+                return_type_syntax, name, false);
             decl->as.function.is_async = is_async;
         } else {
             lang_diag(diagnostics, parser.current.span,
@@ -2485,6 +2604,10 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
         if (is_async && (decl == NULL || decl->kind != DECL_FUNCTION))
             lang_diag(diagnostics, start.span,
                       "`async` can only be applied to a function");
+        if ((is_abstract_type || is_sealed_type) &&
+            (decl == NULL || decl->kind != DECL_CLASS))
+            lang_diag(diagnostics, start.span,
+                      "`abstract` and `sealed` type modifiers require a class");
         if (is_private && (decl == NULL || decl->kind != DECL_FUNCTION))
             lang_diag(diagnostics, visibility.span,
                       "`private` visibility is only valid on functions");

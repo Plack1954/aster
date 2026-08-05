@@ -36,7 +36,10 @@ The current implementation supports:
 
 - scalar `bool`, signed integer, unsigned integer, `char`, floating, and
   `unit` representations;
-- top-level typed functions, direct calls, function values, and indirect calls;
+- top-level typed functions, direct and virtual calls, static class/struct
+  members, function values, bound class-method delegates, and indirect calls;
+- nominal interface conversions and runtime interface dispatch through
+  compiler-generated slot metadata;
 - locals and explicit IR load, move, store, clone, drop, and discard;
 - CFG blocks, branches, loops, expression-valued `if`/`switch`, returns, and
   traps;
@@ -95,7 +98,7 @@ The current implementation supports:
   buffer nor a per-node heap allocation;
 - internal destination-taking variants for components whose direct returned
   element or fragment root has no early-return escape, while ordinary calls
-  and function values retain their existing ABI;
+  and delegates retain their existing ABI;
 - complete manifest-target emission as a single C17 translation unit;
 - typed bridging to Aster's registered file, directory, SQLite, and bounded
   HTTP natives, including `Result` conversion, request views, response-body

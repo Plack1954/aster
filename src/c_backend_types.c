@@ -505,6 +505,37 @@ static bool emit_aggregate_type(
                 "    }\n"
                 "}\n\n",
                 type_id, type_id);
+        fprintf(emitter->output,
+                "static inline void aster_dictionary_erase_%" PRIu32
+                "(aster_dictionary_%" PRIu32
+                " *value, size_t index, size_t bucket) {\n"
+                "    size_t mask = value->bucket_count - 1U;\n"
+                "    value->buckets[bucket] = 0U;\n"
+                "    size_t scan = (bucket + 1U) & mask;\n"
+                "    while (value->buckets[scan] != 0U) {\n"
+                "        size_t entry = value->buckets[scan];\n"
+                "        value->buckets[scan] = 0U;\n"
+                "        size_t physical = entry - 1U;\n"
+                "        size_t destination = "
+                "(size_t)value->hashes[physical] & mask;\n"
+                "        while (value->buckets[destination] != 0U)\n"
+                "            destination = (destination + 1U) & mask;\n"
+                "        value->buckets[destination] = entry;\n"
+                "        scan = (scan + 1U) & mask;\n"
+                "    }\n"
+                "    size_t last = value->length - 1U;\n"
+                "    if (index != last) {\n"
+                "        value->keys[index] = value->keys[last];\n"
+                "        value->values[index] = value->values[last];\n"
+                "        value->hashes[index] = value->hashes[last];\n"
+                "        size_t moved = (size_t)value->hashes[index] & mask;\n"
+                "        while (value->buckets[moved] != last + 1U)\n"
+                "            moved = (moved + 1U) & mask;\n"
+                "        value->buckets[moved] = index + 1U;\n"
+                "    }\n"
+                "    --value->length;\n"
+                "}\n\n",
+                type_id, type_id);
         states[type_id] = 2U;
         return true;
     }
@@ -539,25 +570,25 @@ static bool emit_aggregate_type(
         return true;
     }
     if (type->shape == IR_TYPE_FUNCTION) {
-        fputs("typedef ", emitter->output);
+        fprintf(emitter->output,
+                "typedef struct aster_type_%" PRIu32 " {\n    ",
+                type_id);
         c_backend_emit_type(emitter, type->element_type);
         fprintf(emitter->output,
-                " (*aster_type_%" PRIu32 ")(", type_id);
-        if (type->argument_count == 0U) {
-            fputs("void", emitter->output);
-        } else {
-            for (size_t argument = 0U;
-                 argument < type->argument_count; ++argument) {
-                if (argument != 0U) fputs(", ", emitter->output);
-                c_backend_emit_type(
-                    emitter, type->argument_types[argument]);
-                if (type->parameter_modes != NULL &&
-                    parameter_mode_is_reference(
-                        type->parameter_modes[argument]))
-                    fputs(" *", emitter->output);
-            }
+                " (*invoke)(void *receiver");
+        for (size_t argument = 0U;
+             argument < type->argument_count; ++argument) {
+            fputs(", ", emitter->output);
+            c_backend_emit_type(
+                emitter, type->argument_types[argument]);
+            if (type->parameter_modes != NULL &&
+                parameter_mode_is_reference(
+                    type->parameter_modes[argument]))
+                fputs(" *", emitter->output);
         }
-        fputs(");\n\n", emitter->output);
+        fputs(");\n    void *receiver;\n", emitter->output);
+        fprintf(emitter->output,
+                "} aster_type_%" PRIu32 ";\n\n", type_id);
         states[type_id] = 2U;
         return true;
     }
@@ -574,7 +605,9 @@ static bool emit_aggregate_type(
                 type->array_length);
     } else if (type->shape == IR_TYPE_STRUCT ||
                type->shape == IR_TYPE_CLASS_REFERENCE) {
-        if (type->field_count == 0U)
+        if (type->shape == IR_TYPE_CLASS_REFERENCE)
+            fputs("    uint32_t _type_id;\n", emitter->output);
+        if (type->shape == IR_TYPE_STRUCT && type->field_count == 0U)
             fputs("    uint8_t _empty;\n", emitter->output);
         for (size_t field = 0U;
              field < type->field_count; ++field) {

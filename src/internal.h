@@ -30,7 +30,7 @@ typedef enum TokenKind {
     TOK_EOF, TOK_ERROR, TOK_IDENT, TOK_INT, TOK_FLOAT, TOK_STRING,
     TOK_DOLLAR,
     TOK_VAR, TOK_NEW, TOK_DELETE, TOK_CONST, TOK_REF, TOK_OUT,
-    TOK_STRUCT, TOK_CLASS, TOK_ENUM, TOK_UNION, TOK_IF, TOK_ELSE,
+    TOK_STRUCT, TOK_CLASS, TOK_INTERFACE, TOK_ENUM, TOK_UNION, TOK_IF, TOK_ELSE,
     TOK_WHILE, TOK_FOR, TOK_FOREACH, TOK_IN, TOK_MATCH, TOK_CASE,
     TOK_RETURN, TOK_BREAK,
     TOK_CONTINUE,
@@ -38,6 +38,7 @@ typedef enum TokenKind {
     TOK_UNSAFE, TOK_TRY, TOK_CATCH, TOK_FINALLY, TOK_THROW,
     TOK_ASYNC, TOK_AWAIT,
     TOK_NAMESPACE, TOK_USING, TOK_AS, TOK_PUB, TOK_PRIVATE, TOK_STATIC,
+    TOK_ABSTRACT, TOK_VIRTUAL, TOK_OVERRIDE, TOK_SEALED,
     TOK_READONLY, TOK_EXTERN,
     TOK_TYPE,
     TOK_DELEGATE,
@@ -297,6 +298,7 @@ struct Expr {
             ParameterMode *argument_modes;
             bool implicit_receiver;
             bool implicit_enum_value;
+            bool virtual_dispatch;
         } call;
         struct {
             Expr *target;
@@ -316,7 +318,12 @@ struct Expr {
             Expr *index;
             bool unchecked; /* Written in unsafe context; VM still traps. */
         } index;
-        struct { Expr *object; const char *field; } field;
+        struct {
+            Expr *object;
+            const char *field;
+            bool bound_method;
+            bool static_field;
+        } field;
         struct {
             const char *name;
             TypeSyntax *type_syntax;
@@ -439,6 +446,12 @@ typedef struct Function {
     bool is_drop;
     bool is_async;
     bool is_static_member;
+    bool is_abstract_member;
+    bool is_virtual_member;
+    bool is_override_member;
+    bool is_sealed_override;
+    const struct Decl *overridden_decl;
+    const struct Decl *virtual_root_decl;
     bool is_readonly_member;
     bool is_property_getter;
     bool is_property_setter;
@@ -463,6 +476,9 @@ typedef struct FieldDecl {
     TypeSyntax *type_syntax;
     bool is_public;
     bool has_explicit_visibility;
+    bool is_readonly;
+    Type *checked_type;
+    Expr *initializer;
 } FieldDecl;
 typedef struct Decl {
     DeclKind kind;
@@ -481,9 +497,25 @@ typedef struct Decl {
             const char *name;
             FieldDecl *fields;
             size_t field_count;
+            FieldDecl *static_fields;
+            size_t static_field_count;
+            const char *base_type_name;
+            TypeSyntax *base_type_syntax;
+            struct Decl *base_class;
+            const char **heritage_type_names;
+            TypeSyntax **heritage_type_syntaxes;
+            size_t heritage_type_count;
+            struct Decl **interfaces;
+            size_t interface_count;
+            struct Decl **interface_members;
+            struct Decl **interface_implementations;
+            size_t interface_implementation_count;
             struct Decl **members;
             size_t member_count;
             bool is_extern;
+            bool is_abstract;
+            bool is_sealed;
+            bool is_interface;
         } structure;
         struct {
             const char *name;
@@ -635,6 +667,8 @@ typedef enum IrOpcode {
     IR_OP_LOCAL_MOVE,
     IR_OP_LOCAL_STORE,
     IR_OP_LOCAL_DROP,
+    IR_OP_STATIC_FIELD_LOAD,
+    IR_OP_STATIC_FIELD_STORE,
     IR_OP_VALUE_CLONE,
     IR_OP_VALUE_DISCARD,
     IR_OP_ADD_CHECKED,
@@ -662,7 +696,9 @@ typedef enum IrOpcode {
     IR_OP_GREATER_EQUAL,
     IR_OP_CAST,
     IR_OP_FUNCTION_REF,
+    IR_OP_BOUND_METHOD_REF,
     IR_OP_CALL_DIRECT,
+    IR_OP_CALL_VIRTUAL,
     IR_OP_CALL_INDIRECT,
     IR_OP_CALL_NATIVE,
     IR_OP_AWAIT,
@@ -721,6 +757,9 @@ typedef struct IrType {
     IrTypeShape shape;
     IrTypeId element_type; /* Arrays, pointers, and slices; else invalid. */
     IrTypeId error_type; /* Result error type; else invalid. */
+    IrTypeId base_type; /* Direct class base; else invalid. */
+    IrTypeId *interface_types; /* Owned direct nominal interfaces. */
+    size_t interface_count;
     IrTypeId *argument_types; /* Owned function/generic arguments. */
     ParameterMode *parameter_modes; /* Owned for function arguments. */
     size_t argument_count;
@@ -840,7 +879,28 @@ typedef struct IrFunction {
     bool is_destructor;
     bool is_web_export;
     bool is_async;
+    bool is_abstract;
+    bool is_virtual;
+    IrFunctionId virtual_root;
 } IrFunction;
+
+typedef struct IrStaticField {
+    const char *name;
+    const char *owner_name;
+    const char *module_name;
+    IrTypeId type;
+    LangSpan span;
+    uint64_t initial_integer;
+    double initial_floating;
+    const Decl *owner_declaration; /* Lowering-only identity. */
+} IrStaticField;
+
+typedef struct IrInterfaceDispatch {
+    IrTypeId interface_type;
+    IrTypeId runtime_type;
+    IrFunctionId interface_function;
+    IrFunctionId target_function;
+} IrInterfaceDispatch;
 
 typedef struct IrModule {
     IrType *types;
@@ -848,6 +908,10 @@ typedef struct IrModule {
     size_t type_capacity;
     IrFunction *functions;
     size_t function_count;
+    IrStaticField *static_fields;
+    size_t static_field_count;
+    IrInterfaceDispatch *interface_dispatches;
+    size_t interface_dispatch_count;
     LangTargetInfo target;
     /* Non-owning lowering context; cleared before lang_ir_lower_module returns. */
     Module *lowering_module;
@@ -879,13 +943,15 @@ typedef enum OpCode {
     OP_CONSTANT, OP_UNIT, OP_TRUE, OP_FALSE, OP_POP,
     OP_LOAD_LOCAL, OP_STORE_LOCAL, OP_MOVE_LOCAL, OP_REFERENCE_LOCAL,
     OP_REFERENCE_FIELD_LOCAL, OP_INVALIDATE_LOCAL,
+    OP_LOAD_STATIC, OP_STORE_STATIC,
     OP_ADD_I64, OP_SUB_I64, OP_MUL_I64, OP_DIV_I64, OP_REM_I64,
     OP_SHIFT_LEFT, OP_SHIFT_RIGHT,
     OP_BIT_AND, OP_BIT_OR, OP_BIT_XOR, OP_BIT_NOT,
     OP_ADD_F64, OP_SUB_F64, OP_MUL_F64, OP_DIV_F64,
     OP_NEG_I64, OP_NEG_F64, OP_NOT, OP_CAST,
     OP_EQ, OP_NEQ, OP_LT_I64, OP_LE_I64, OP_GT_I64, OP_GE_I64,
-    OP_JUMP, OP_JUMP_IF_FALSE, OP_FUNCTION, OP_CALL,
+    OP_JUMP, OP_JUMP_IF_FALSE, OP_FUNCTION, OP_BOUND_FUNCTION, OP_CALL,
+    OP_CALL_VIRTUAL,
     OP_CALL_INDIRECT, OP_CALL_NATIVE, OP_AWAIT, OP_TASK_DELAY,
     OP_TASK_WHEN_ALL, OP_TASK_WHEN_ANY, OP_RETURN,
     OP_CANCELLATION_SOURCE_NEW, OP_CANCELLATION_TOKEN_NONE,
@@ -979,12 +1045,35 @@ typedef struct BytecodeFunction {
     int32_t *local_destructors;
 } BytecodeFunction;
 
+typedef struct BytecodeVirtualEntry {
+    const char *runtime_module;
+    size_t runtime_module_length;
+    const char *runtime_type;
+    size_t runtime_type_length;
+    size_t root_function;
+    size_t target_function;
+} BytecodeVirtualEntry;
+
+typedef struct BytecodeClassDestructor {
+    const char *runtime_module;
+    size_t runtime_module_length;
+    const char *runtime_type;
+    size_t runtime_type_length;
+    size_t destructor_function;
+} BytecodeClassDestructor;
+
 typedef struct BytecodeModule {
     BytecodeFunction *functions;
     size_t function_count;
     Constant *constants;
     size_t constant_count;
     size_t constant_capacity;
+    LangValue *static_defaults;
+    size_t static_count;
+    BytecodeVirtualEntry *virtual_entries;
+    size_t virtual_entry_count;
+    BytecodeClassDestructor *class_destructors;
+    size_t class_destructor_count;
 } BytecodeModule;
 
 bool lang_ir_compile_bytecode(const IrModule *ir,

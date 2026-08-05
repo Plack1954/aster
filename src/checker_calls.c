@@ -408,6 +408,37 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
             return check_expr(checker, expr);
         }
     }
+    if (checker->function != NULL &&
+        checker->function->owner_type != NULL) {
+        for (size_t i = 0U; i < checker->module->count; ++i) {
+            Decl *candidate_decl = checker->module->decls[i];
+            if (candidate_decl->kind != DECL_FUNCTION) continue;
+            Function *candidate = &candidate_decl->as.function;
+            if (!candidate->is_static_member ||
+                !candidate->is_property_getter ||
+                candidate->property_name == NULL ||
+                candidate->owner_type == NULL ||
+                strcmp(candidate->property_name, expr->as.name) != 0 ||
+                strcmp(candidate->owner_type,
+                       checker->function->owner_type) != 0)
+                continue;
+            Expr *callee = lang_arena_alloc(
+                &checker->module->arena, sizeof(*callee));
+            memset(callee, 0, sizeof(*callee));
+            callee->kind = EXPR_NAME;
+            callee->span = expr->span;
+            callee->as.name = candidate->name;
+            expr->kind = EXPR_CALL;
+            expr->as.call.callee = callee;
+            expr->as.call.arguments.items = NULL;
+            expr->as.call.arguments.count = 0U;
+            expr->as.call.argument_modes = NULL;
+            return checker_check_call(checker, expr);
+        }
+    }
+    checker_rewrite_unqualified_static_field(checker, expr);
+    if (expr->kind != EXPR_NAME)
+        return check_expr(checker, expr);
     const Decl *declaration = resolve_function_value_overload(
         checker, expr->as.name, expr->span);
     if (declaration != NULL) {
@@ -906,6 +937,116 @@ static_call:
         }
         return function_type->element;
     }
+    if (strstr(name, "::") == NULL && checker->function != NULL &&
+        checker->function->owner_type != NULL) {
+        size_t owner_length = strlen(checker->function->owner_type);
+        size_t name_length = strlen(name);
+        char *qualified = lang_arena_alloc(
+            &checker->module->arena,
+            owner_length + name_length + 3U);
+        memcpy(qualified, checker->function->owner_type, owner_length);
+        memcpy(qualified + owner_length, "::", 2U);
+        memcpy(qualified + owner_length + 2U, name, name_length + 1U);
+        for (size_t i = 0U; i < checker->module->count; ++i) {
+            Decl *candidate = checker->module->decls[i];
+            if (candidate->kind != DECL_FUNCTION ||
+                !candidate->as.function.is_static_member ||
+                strcmp(candidate->as.function.name, qualified) != 0)
+                continue;
+            expr->as.call.callee->as.name = qualified;
+            name = qualified;
+            break;
+        }
+    }
+    if (expr->as.call.implicit_receiver &&
+        expr->as.call.arguments.count != 0U) {
+        Expr *receiver = expr->as.call.arguments.items[0];
+        Type *receiver_type = receiver->type;
+        if (receiver_type != NULL && receiver_type->kind == TYPE_CLASS &&
+            receiver_type->declaration != NULL) {
+            const char *separator = last_path_separator(name);
+            const char *short_name = separator != NULL
+                ? separator + 2U : name;
+            const char *requested_name = name;
+            bool exact_exists = false;
+            for (size_t i = 0U; i < checker->module->count; ++i) {
+                Decl *candidate = checker->module->decls[i];
+                if (candidate->kind == DECL_FUNCTION &&
+                    strcmp(candidate->as.function.name, name) == 0) {
+                    exact_exists = true;
+                    break;
+                }
+            }
+            for (const Decl *base = exact_exists
+                     ? NULL
+                     : receiver_type->declaration->as.structure.base_class;
+                 base != NULL; base = base->as.structure.base_class) {
+                size_t owner_length = strlen(base->as.structure.name);
+                size_t method_length = strlen(short_name);
+                char *qualified = lang_arena_alloc(
+                    &checker->module->arena,
+                    owner_length + method_length + 3U);
+                memcpy(qualified, base->as.structure.name, owner_length);
+                memcpy(qualified + owner_length, "::", 2U);
+                memcpy(qualified + owner_length + 2U,
+                       short_name, method_length + 1U);
+                for (size_t i = 0U; i < checker->module->count; ++i) {
+                    Decl *candidate = checker->module->decls[i];
+                    if (candidate->kind != DECL_FUNCTION ||
+                        strcmp(candidate->as.function.name,
+                               qualified) != 0)
+                        continue;
+                    expr->as.call.callee->as.name = qualified;
+                    name = qualified;
+                    base = NULL;
+                    break;
+                }
+                if (base == NULL) break;
+            }
+            if (!exact_exists && strcmp(name, requested_name) == 0) {
+                const Decl *interfaces[256];
+                size_t interface_count = 0U;
+                for (const Decl *owner = receiver_type->declaration;
+                     owner != NULL; owner = owner->as.structure.base_class)
+                    for (size_t interface = 0U;
+                         interface < owner->as.structure.interface_count &&
+                         interface_count < 256U; ++interface)
+                        interfaces[interface_count++] =
+                            owner->as.structure.interfaces[interface];
+                while (interface_count != 0U &&
+                       strcmp(name, requested_name) == 0) {
+                    const Decl *interface = interfaces[--interface_count];
+                    size_t owner_length =
+                        strlen(interface->as.structure.name);
+                    size_t method_length = strlen(short_name);
+                    char *qualified = lang_arena_alloc(
+                        &checker->module->arena,
+                        owner_length + method_length + 3U);
+                    memcpy(qualified, interface->as.structure.name,
+                           owner_length);
+                    memcpy(qualified + owner_length, "::", 2U);
+                    memcpy(qualified + owner_length + 2U,
+                           short_name, method_length + 1U);
+                    for (size_t i = 0U;
+                         i < checker->module->count; ++i) {
+                        Decl *candidate = checker->module->decls[i];
+                        if (candidate->kind == DECL_FUNCTION &&
+                            strcmp(candidate->as.function.name,
+                                   qualified) == 0) {
+                            expr->as.call.callee->as.name = qualified;
+                            name = qualified;
+                            break;
+                        }
+                    }
+                    for (size_t parent = 0U;
+                         parent < interface->as.structure.interface_count &&
+                         interface_count < 256U; ++parent)
+                        interfaces[interface_count++] =
+                            interface->as.structure.interfaces[parent];
+                }
+            }
+        }
+    }
     CallOverloadSet overloads = collect_call_overloads(
         checker, name, expr, false);
     bool pending_overload = overloads.arity_count > 1U;
@@ -935,6 +1076,11 @@ static_call:
                   declared_function->name,
                   declared_function->owner_type);
     expr->resolved_decl = declared_declaration;
+    if (declared_function != NULL &&
+        expr->as.call.implicit_receiver &&
+        (declared_function->is_virtual_member ||
+         declared_function->is_override_member))
+        expr->as.call.virtual_dispatch = true;
     if (expr->resolved_decl != NULL &&
         expr->resolved_decl->type_param_count != 0U)
         return check_generic_call(
@@ -2659,10 +2805,36 @@ static_call:
     }
     Function *function = declared_function;
     if (function == NULL) {
+        const char *constructor = last_path_separator(name);
+        if (constructor != NULL &&
+            strcmp(constructor + 2U, "new") == 0) {
+            char *type_name = lang_arena_strndup(
+                &checker->module->arena, name,
+                (size_t)(constructor - name));
+            Decl *type = find_type_declaration(
+                checker, type_name, expr->span);
+            if (type != NULL && type->kind == DECL_CLASS &&
+                type->as.structure.is_interface) {
+                lang_diag(checker->diagnostics, expr->span,
+                          "cannot instantiate interface `%s`",
+                          type->as.structure.name);
+                return &type_error;
+            }
+        }
         lang_diag(checker->diagnostics, expr->span,
                   "unknown function `%s`", name);
         return &type_error;
     }
+    if (function->is_constructor &&
+        function->checked_return_type != NULL &&
+        function->checked_return_type->declaration != NULL &&
+        function->checked_return_type->declaration->kind == DECL_CLASS &&
+        function->checked_return_type->declaration
+            ->as.structure.is_abstract)
+        lang_diag(checker->diagnostics, expr->span,
+                  "cannot instantiate abstract class `%s`",
+                  function->checked_return_type->declaration
+                      ->as.structure.name);
     if (function->param_count != expr->as.call.arguments.count) {
         lang_diag(checker->diagnostics, expr->span,
                   "function `%s` expects %zu arguments, found %zu", name,

@@ -180,7 +180,6 @@ static ComputedLayout type_layout(
             return (ComputedLayout){8U, 8U, true};
         case TYPE_ISIZE: case TYPE_USIZE:
         case TYPE_RAW_POINTER:
-        case TYPE_FUNCTION:
         case TYPE_STRING: case TYPE_STRING_BUILDER: case TYPE_URL:
         case TYPE_HTML: case TYPE_BUFFER: case TYPE_ARENA:
         case TYPE_NATIVE_HANDLE:
@@ -190,6 +189,11 @@ static ComputedLayout type_layout(
         case TYPE_CLASS:
             return (ComputedLayout){
                 target->pointer_size, target->pointer_alignment, true
+            };
+        case TYPE_FUNCTION:
+            return (ComputedLayout){
+                (size_t)target->pointer_size * 2U,
+                target->pointer_alignment, true
             };
         case TYPE_STR: case TYPE_SLICE: case TYPE_READONLY_SPAN:
             return (ComputedLayout){

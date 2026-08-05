@@ -142,6 +142,7 @@ static bool instruction_consumes_operand(
                 function->value_types[
                     instruction->operands[operand]]);
         case IR_OP_CALL_DIRECT:
+        case IR_OP_CALL_VIRTUAL:
             return operand >= instruction->argument_mode_count ||
                 !parameter_mode_is_reference(
                     instruction->argument_modes[operand]);
@@ -216,6 +217,99 @@ static void emit_function_signature(CEmitter *emitter, size_t index,
         }
     }
     fputs(prototype ? ");\n" : ") {\n", emitter->output);
+}
+
+static void emit_delegate_adapter(
+    CEmitter *emitter, size_t index, bool bound
+) {
+    const IrFunction *function = &emitter->ir->functions[index];
+    size_t first_parameter = bound ? 1U : 0U;
+    c_backend_emit_type(emitter, function->return_type);
+    fprintf(
+        emitter->output, " aster_delegate_%s_%zu(void *receiver",
+        bound ? "bound" : "unbound", index);
+    for (size_t p = first_parameter;
+         p < function->parameter_count; ++p) {
+        fputs(", ", emitter->output);
+        c_backend_emit_type(emitter, function->parameters[p].type);
+        if (parameter_mode_is_reference(function->parameters[p].mode))
+            fputs(" *", emitter->output);
+        fprintf(emitter->output, " p%zu", p);
+    }
+    fputs(") {\n", emitter->output);
+    if (bound)
+        fputs("    if (receiver == NULL) "
+              "aster_trap(\"bound delegate receiver is null\");\n",
+              emitter->output);
+    else
+        fputs("    (void)receiver;\n", emitter->output);
+    fprintf(emitter->output, "    return aster_fn_%zu(", index);
+    if (bound) {
+        fputc('(', emitter->output);
+        c_backend_emit_type(
+            emitter, function->parameters[0].type);
+        fputs(")receiver", emitter->output);
+    }
+    for (size_t p = first_parameter;
+         p < function->parameter_count; ++p) {
+        if (p != first_parameter || bound) fputs(", ", emitter->output);
+        fprintf(emitter->output, "p%zu", p);
+    }
+    fputs(");\n}\n\n", emitter->output);
+}
+
+static void emit_delegate_adapters(CEmitter *emitter) {
+    size_t count = emitter->ir->function_count;
+    bool *unbound = calloc(count, sizeof(*unbound));
+    bool *bound = calloc(count, sizeof(*bound));
+    if ((count != 0U && unbound == NULL) ||
+        (count != 0U && bound == NULL)) {
+        free(unbound);
+        free(bound);
+        fputs("fatal: out of memory\n", stderr);
+        exit(2);
+    }
+    for (size_t f = 0U; f < count; ++f) {
+        if (!emitter->reachable_functions[f]) continue;
+        const IrFunction *function = &emitter->ir->functions[f];
+        for (size_t b = 0U; b < function->block_count; ++b)
+            for (size_t i = 0U;
+                 i < function->blocks[b].instruction_count; ++i) {
+                const IrInstruction *instruction =
+                    &function->blocks[b].instructions[i];
+                if (instruction->index >= count) continue;
+                if (instruction->opcode == IR_OP_FUNCTION_REF)
+                    unbound[instruction->index] = true;
+                else if (instruction->opcode == IR_OP_BOUND_METHOD_REF) {
+                    if (emitter->ir->functions[
+                            instruction->index].is_virtual) {
+                        IrFunctionId root = emitter->ir->functions[
+                            instruction->index].virtual_root;
+                        if (root == IR_INVALID_ID)
+                            root = instruction->index;
+                        for (size_t target = 0U; target < count; ++target)
+                            if (emitter->ir->functions[target].virtual_root == root &&
+                                !emitter->ir->functions[target].is_abstract)
+                                bound[target] = true;
+                        for (size_t entry = 0U;
+                             entry < emitter->ir->interface_dispatch_count;
+                             ++entry)
+                            if (emitter->ir->interface_dispatches[entry]
+                                    .interface_function == root)
+                                bound[emitter->ir->interface_dispatches[entry]
+                                    .target_function] = true;
+                    } else {
+                        bound[instruction->index] = true;
+                    }
+                }
+            }
+    }
+    for (size_t f = 0U; f < count; ++f) {
+        if (unbound[f]) emit_delegate_adapter(emitter, f, false);
+        if (bound[f]) emit_delegate_adapter(emitter, f, true);
+    }
+    free(unbound);
+    free(bound);
 }
 
 static void emit_render_function_signature(
@@ -960,6 +1054,9 @@ static bool c_emit_module(const IrModule *ir,
         return false;
     }
     c_backend_mark_function(&emitter, (IrFunctionId)entry);
+    for (size_t field = 0U; field < ir->static_field_count; ++field)
+        if (ir->static_fields[field].type < ir->type_count)
+            emitter.used_types[ir->static_fields[field].type] = true;
     for (size_t function = 0U;
          function < ir->function_count; ++function)
         if (c_backend_function_is_entry_module_export(
@@ -1027,6 +1124,27 @@ static bool c_emit_module(const IrModule *ir,
         free(emitter.css_asset_href);
         return false;
     }
+    for (size_t field = 0U; field < ir->static_field_count; ++field) {
+        fputs("static ", output);
+        c_backend_emit_type(&emitter, ir->static_fields[field].type);
+        const IrType *type =
+            &ir->types[ir->static_fields[field].type];
+        fprintf(output, " aster_static_%zu = ", field);
+        if (type->shape == IR_TYPE_FLOAT)
+            fprintf(output, "%.17g", ir->static_fields[field].initial_floating);
+        else if (type->shape == IR_TYPE_CLASS_REFERENCE ||
+                 type->shape == IR_TYPE_RAW_POINTER)
+            fputs("NULL", output);
+        else if (type->shape == IR_TYPE_UNSIGNED_INT ||
+                 type->shape == IR_TYPE_CHAR)
+            fprintf(output, "UINT64_C(%" PRIu64 ")",
+                    ir->static_fields[field].initial_integer);
+        else
+            fprintf(output, "INT64_C(%" PRId64 ")",
+                    (int64_t)ir->static_fields[field].initial_integer);
+        fputs(";\n", output);
+    }
+    if (ir->static_field_count != 0U) fputc('\n', output);
     fputs("static bool aster_exception_pending = false;\n"
           "static aster_string *aster_exception_message = NULL;\n"
           "const char *aster_exception_type = NULL;\n\n",
@@ -1054,6 +1172,7 @@ static bool c_emit_module(const IrModule *ir,
                     &emitter, f, true);
             }
         }
+    emit_delegate_adapters(&emitter);
     emit_clone_helper_prototypes(&emitter);
     emit_drop_helper_prototypes(&emitter);
     fputc('\n', output);

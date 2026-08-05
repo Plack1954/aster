@@ -158,6 +158,8 @@ struct LangVM {
     size_t native_capacity;
     const BytecodeModule *module;
     const LangSource *source;
+    LangValue *static_fields;
+    size_t static_field_count;
     const char *frames[128];
     LangSpan frame_call_sites[128];
     size_t frame_count;
@@ -198,6 +200,10 @@ uint32_t vm_language_destructor_for_metadata(
 LangValue vm_execute_function(LangVM *vm, size_t function_index,
                               const LangValue *arguments,
                               size_t argument_count, LangSpan call_span);
+LangValue vm_invoke_function_value(
+    LangVM *vm, LangValue function_value,
+    const LangValue *arguments, size_t argument_count,
+    LangSpan call_span);
 LangValue vm_task_delay(LangVM *vm, int64_t milliseconds,
                         Object *cancellation, LangSpan call_span);
 void vm_task_cancel(LangVM *vm, Object *task, LangValue exception);

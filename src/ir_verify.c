@@ -8,13 +8,15 @@ const char *ir_opcode_name(IrOpcode opcode) {
     static const char *names[] = {
         "parameter", "unit", "const_bool", "const_int", "const_float",
         "const_string", "const_null", "local_load", "local_move",
-        "local_store", "local_drop", "value_clone", "value_discard",
+        "local_store", "local_drop", "static_field_load",
+        "static_field_store", "value_clone", "value_discard",
         "add_checked", "sub_checked", "mul_checked", "div_checked",
         "rem_checked", "shift_left_checked", "shift_right_checked",
         "bit_and", "bit_or", "bit_xor", "bit_not",
         "add_float", "sub_float", "mul_float", "div_float", "negate",
         "not", "equal", "not_equal", "less", "less_equal", "greater",
-        "greater_equal", "cast", "function_ref", "call_direct",
+        "greater_equal", "cast", "function_ref", "bound_method_ref",
+        "call_direct", "call_virtual",
         "call_indirect", "call_native", "await", "exception_set",
         "exception_pending", "exception_match", "exception_take",
         "aggregate_make", "field_get",
@@ -84,13 +86,51 @@ static bool verify_value(const IrFunction *function, IrValueId value) {
     return value != IR_INVALID_ID && (size_t)value < function->value_count;
 }
 
+static bool ir_type_assignable_inner(
+    const IrModule *ir, IrTypeId expected, IrTypeId actual, size_t depth
+) {
+    if (expected == actual) return true;
+    if (!verify_type(ir, expected) || !verify_type(ir, actual) ||
+        ir->types[expected].shape != IR_TYPE_CLASS_REFERENCE ||
+        ir->types[actual].shape != IR_TYPE_CLASS_REFERENCE ||
+        depth >= ir->type_count)
+        return false;
+    if (ir_type_assignable_inner(
+            ir, expected, ir->types[actual].base_type, depth + 1U))
+        return true;
+    for (size_t interface = 0U;
+         interface < ir->types[actual].interface_count; ++interface)
+        if (ir_type_assignable_inner(
+                ir, expected,
+                ir->types[actual].interface_types[interface],
+                depth + 1U))
+            return true;
+    return false;
+}
+
+static bool ir_type_assignable(
+    const IrModule *ir, IrTypeId expected, IrTypeId actual
+) {
+    return ir_type_assignable_inner(ir, expected, actual, 0U);
+}
+
+static bool value_assignable(
+    const IrModule *ir, const IrFunction *function,
+    IrValueId value, IrTypeId expected
+) {
+    return verify_value(function, value) &&
+        ir_type_assignable(
+            ir, expected, function->value_types[value]);
+}
+
 static bool operand_count_valid(const IrInstruction *instruction) {
     switch (instruction->opcode) {
         case IR_OP_PARAMETER: case IR_OP_UNIT: case IR_OP_CONST_BOOL:
         case IR_OP_CONST_INT: case IR_OP_CONST_FLOAT:
         case IR_OP_CONST_STRING: case IR_OP_CONST_NULL:
         case IR_OP_LOCAL_LOAD: case IR_OP_LOCAL_MOVE:
-        case IR_OP_LOCAL_DROP: case IR_OP_FUNCTION_REF:
+        case IR_OP_LOCAL_DROP: case IR_OP_STATIC_FIELD_LOAD:
+        case IR_OP_FUNCTION_REF:
         case IR_OP_LOCAL_FIELD_GET: case IR_OP_LOCAL_FIELD_MOVE:
         case IR_OP_LOCAL_FIELD_BORROW:
         case IR_OP_LOCAL_ENUM_IS:
@@ -108,9 +148,10 @@ static bool operand_count_valid(const IrInstruction *instruction) {
             return instruction->operand_count == 0U;
         case IR_OP_BORROWED_ITERATOR_BEGIN:
             return instruction->operand_count <= 1U;
-        case IR_OP_LOCAL_STORE: case IR_OP_VALUE_CLONE:
+        case IR_OP_LOCAL_STORE: case IR_OP_STATIC_FIELD_STORE:
+        case IR_OP_VALUE_CLONE:
         case IR_OP_VALUE_DISCARD: case IR_OP_NEGATE: case IR_OP_NOT:
-        case IR_OP_BIT_NOT:
+        case IR_OP_BIT_NOT: case IR_OP_BOUND_METHOD_REF:
         case IR_OP_CAST: case IR_OP_FIELD_GET: case IR_OP_FIELD_SET:
         case IR_OP_LOCAL_FIELD_SET: case IR_OP_LOCAL_INDEX_GET:
         case IR_OP_ITERATOR_BEGIN:
@@ -136,7 +177,8 @@ static bool operand_count_valid(const IrInstruction *instruction) {
         case IR_OP_INDEX_SET: case IR_OP_LOCAL_INDEX_SET:
         case IR_OP_RAW_ALLOC: case IR_OP_RAW_STORE:
             return instruction->operand_count == 2U;
-        case IR_OP_CALL_DIRECT: case IR_OP_CALL_INDIRECT:
+        case IR_OP_CALL_DIRECT: case IR_OP_CALL_VIRTUAL:
+        case IR_OP_CALL_INDIRECT:
         case IR_OP_CALL_NATIVE: case IR_OP_AGGREGATE_MAKE:
             return true;
         case IR_OP_COUNT:
@@ -154,6 +196,7 @@ static bool result_type_valid(const IrModule *ir,
     bool produces_result;
     switch (instruction->opcode) {
         case IR_OP_LOCAL_STORE: case IR_OP_LOCAL_DROP:
+        case IR_OP_STATIC_FIELD_STORE:
         case IR_OP_VALUE_DISCARD: case IR_OP_EXCEPTION_SET:
         case IR_OP_FIELD_SET: case IR_OP_LOCAL_FIELD_SET:
         case IR_OP_INDEX_SET: case IR_OP_LOCAL_INDEX_SET:
@@ -172,6 +215,7 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_CONST_INT: case IR_OP_CONST_FLOAT:
         case IR_OP_CONST_STRING: case IR_OP_CONST_NULL:
         case IR_OP_LOCAL_LOAD: case IR_OP_LOCAL_MOVE:
+        case IR_OP_STATIC_FIELD_LOAD:
         case IR_OP_VALUE_CLONE:
         case IR_OP_ADD_CHECKED: case IR_OP_SUB_CHECKED:
         case IR_OP_MUL_CHECKED: case IR_OP_DIV_CHECKED:
@@ -183,7 +227,8 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_NEGATE: case IR_OP_NOT: case IR_OP_EQUAL:
         case IR_OP_NOT_EQUAL: case IR_OP_LESS: case IR_OP_LESS_EQUAL:
         case IR_OP_GREATER: case IR_OP_GREATER_EQUAL: case IR_OP_CAST:
-        case IR_OP_FUNCTION_REF: case IR_OP_CALL_DIRECT:
+        case IR_OP_FUNCTION_REF: case IR_OP_BOUND_METHOD_REF:
+        case IR_OP_CALL_DIRECT: case IR_OP_CALL_VIRTUAL:
         case IR_OP_CALL_INDIRECT: case IR_OP_CALL_NATIVE:
         case IR_OP_AWAIT: case IR_OP_EXCEPTION_PENDING:
         case IR_OP_EXCEPTION_MATCH: case IR_OP_EXCEPTION_TAKE:
@@ -429,6 +474,34 @@ static bool instruction_signature_valid(
                     return false;
             return true;
         }
+        case IR_OP_BOUND_METHOD_REF: {
+            if (instruction->index >= ir->function_count ||
+                !verify_type(ir, instruction->result_type))
+                return false;
+            IrTypeId receiver_type;
+            if (!value_type(ir, function, instruction->operands[0],
+                            &receiver_type))
+                return false;
+            const IrType *type = &ir->types[instruction->result_type];
+            const IrFunction *target =
+                &ir->functions[instruction->index];
+            if (ir->types[receiver_type].shape !=
+                    IR_TYPE_CLASS_REFERENCE ||
+                type->shape != IR_TYPE_FUNCTION ||
+                target->parameter_count == 0U ||
+                !ir_type_assignable(
+                    ir, target->parameters[0].type, receiver_type) ||
+                type->argument_count + 1U != target->parameter_count ||
+                type->element_type != target->return_type)
+                return false;
+            for (size_t i = 0U; i < type->argument_count; ++i)
+                if (type->argument_types[i] !=
+                        target->parameters[i + 1U].type ||
+                    type->parameter_modes[i] !=
+                        target->parameters[i + 1U].mode)
+                    return false;
+            return true;
+        }
         case IR_OP_CALL_INDIRECT: {
             if (instruction->operand_count == 0U) return false;
             IrTypeId callee_type;
@@ -515,8 +588,17 @@ static bool instruction_signature_valid(
         case IR_OP_LOCAL_STORE:
             return local != NULL &&
                    instruction->operand_count == 1U &&
+                   value_assignable(
+                       ir, function, instruction->operands[0], local->type);
+        case IR_OP_STATIC_FIELD_LOAD:
+            return instruction->index < ir->static_field_count &&
+                   instruction->result_type ==
+                       ir->static_fields[instruction->index].type;
+        case IR_OP_STATIC_FIELD_STORE:
+            return instruction->index < ir->static_field_count &&
                    value_is_type(
-                       function, instruction->operands[0], local->type);
+                       function, instruction->operands[0],
+                       ir->static_fields[instruction->index].type);
         case IR_OP_LOCAL_ENUM_IS:
             return local != NULL &&
                    instruction->operand_count == 0U &&
@@ -854,7 +936,8 @@ static bool instruction_signature_valid(
             }
             return false;
         }
-        case IR_OP_CALL_DIRECT: {
+        case IR_OP_CALL_DIRECT:
+        case IR_OP_CALL_VIRTUAL: {
             if (instruction->index >= ir->function_count)
                 return false;
             const IrFunction *target =
@@ -879,8 +962,8 @@ static bool instruction_signature_valid(
                 instruction->result_type != target->return_type)
                 return false;
             for (size_t i = 0U; i < instruction->operand_count; ++i)
-                if (!value_is_type(
-                        function, instruction->operands[i],
+                if (!value_assignable(
+                        ir, function, instruction->operands[i],
                         target->parameters[i].type) ||
                     instruction->argument_modes[i] !=
                         target->parameters[i].mode)
@@ -1030,12 +1113,22 @@ bool lang_ir_verify_module(const IrModule *ir,
                            LangDiagnostics *diagnostics) {
     if (ir == NULL ||
         (ir->type_count != 0U && ir->types == NULL) ||
-        (ir->function_count != 0U && ir->functions == NULL)) {
+        (ir->function_count != 0U && ir->functions == NULL) ||
+        (ir->static_field_count != 0U && ir->static_fields == NULL)) {
         lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
                   "IR module has invalid top-level storage");
         return false;
     }
     bool ok = true;
+    for (size_t field = 0U; field < ir->static_field_count; ++field) {
+        const IrStaticField *value = &ir->static_fields[field];
+        if (value->owner_declaration != NULL || value->name == NULL ||
+            value->owner_name == NULL || !verify_type(ir, value->type)) {
+            lang_diag(diagnostics, value->span,
+                      "IR static field %zu is malformed", field);
+            ok = false;
+        }
+    }
     for (size_t t = 0U; t < ir->type_count; ++t) {
         const IrType *type = &ir->types[t];
         if (type->checked_type != NULL || type->name == NULL ||
@@ -1076,6 +1169,61 @@ bool lang_ir_verify_module(const IrModule *ir,
                       "IR type t%zu has an invalid element type", t);
             ok = false;
         }
+        if (type->base_type != IR_INVALID_ID &&
+            (!verify_type(ir, type->base_type) ||
+             type->shape != IR_TYPE_CLASS_REFERENCE ||
+             ir->types[type->base_type].shape !=
+                 IR_TYPE_CLASS_REFERENCE)) {
+            lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                      "IR type t%zu (`%s`) has invalid base t%" PRIu32
+                      " (`%s`, shape %d)",
+                      t, type->name, type->base_type,
+                      verify_type(ir, type->base_type)
+                          ? ir->types[type->base_type].name : "<invalid>",
+                      verify_type(ir, type->base_type)
+                          ? (int)ir->types[type->base_type].shape : -1);
+            ok = false;
+        }
+        if (type->interface_count != 0U &&
+            type->interface_types == NULL) {
+            lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                      "IR type t%zu is missing interface metadata", t);
+            ok = false;
+        }
+        for (size_t interface = 0U;
+             type->interface_types != NULL &&
+             interface < type->interface_count; ++interface)
+            if (!verify_type(ir, type->interface_types[interface]) ||
+                type->shape != IR_TYPE_CLASS_REFERENCE ||
+                ir->types[type->interface_types[interface]].shape !=
+                    IR_TYPE_CLASS_REFERENCE) {
+                lang_diag(
+                    diagnostics, (LangSpan){NULL, 0U, 0U},
+                    "IR type t%zu has invalid interface metadata", t);
+                ok = false;
+            }
+        if (type->base_type != IR_INVALID_ID &&
+            verify_type(ir, type->base_type)) {
+            IrTypeId base = type->base_type;
+            size_t depth = 0U;
+            while (base != IR_INVALID_ID && verify_type(ir, base) &&
+                   depth++ < ir->type_count) {
+                if (base == (IrTypeId)t) {
+                    lang_diag(
+                        diagnostics, (LangSpan){NULL, 0U, 0U},
+                        "IR class type t%zu has an inheritance cycle", t);
+                    ok = false;
+                    break;
+                }
+                base = ir->types[base].base_type;
+            }
+            if (base != IR_INVALID_ID && depth > ir->type_count) {
+                lang_diag(
+                    diagnostics, (LangSpan){NULL, 0U, 0U},
+                    "IR class type t%zu has an invalid inheritance chain", t);
+                ok = false;
+            }
+        }
         if (type->error_type != IR_INVALID_ID &&
             !verify_type(ir, type->error_type)) {
             lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
@@ -1097,8 +1245,9 @@ bool lang_ir_verify_module(const IrModule *ir,
                 if (!destructor->is_destructor ||
                     destructor->parameter_count != 1U ||
                     destructor->parameters == NULL ||
-                    destructor->parameters[0].type !=
-                        (IrTypeId)t) {
+                    !ir_type_assignable(
+                        ir, destructor->parameters[0].type,
+                        (IrTypeId)t)) {
                     lang_diag(
                         diagnostics,
                         (LangSpan){NULL, 0U, 0U},
@@ -1297,6 +1446,58 @@ bool lang_ir_verify_module(const IrModule *ir,
                           "IR enum type t%zu is missing member layout", t);
                 ok = false;
             }
+        }
+    }
+    if (ir->interface_dispatch_count != 0U &&
+        ir->interface_dispatches == NULL) {
+        lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                  "IR module is missing interface dispatch metadata");
+        ok = false;
+    }
+    for (size_t entry = 0U;
+         ir->interface_dispatches != NULL &&
+         entry < ir->interface_dispatch_count; ++entry) {
+        const IrInterfaceDispatch *dispatch =
+            &ir->interface_dispatches[entry];
+        if (!verify_type(ir, dispatch->interface_type) ||
+            !verify_type(ir, dispatch->runtime_type) ||
+            ir->types[dispatch->interface_type].shape !=
+                IR_TYPE_CLASS_REFERENCE ||
+            ir->types[dispatch->runtime_type].shape !=
+                IR_TYPE_CLASS_REFERENCE ||
+            dispatch->interface_function >= ir->function_count ||
+            dispatch->target_function >= ir->function_count) {
+            lang_diag(diagnostics, (LangSpan){NULL, 0U, 0U},
+                      "IR interface dispatch entry %zu is invalid", entry);
+            ok = false;
+            continue;
+        }
+        const IrFunction *contract =
+            &ir->functions[dispatch->interface_function];
+        const IrFunction *target =
+            &ir->functions[dispatch->target_function];
+        bool signature = contract->is_abstract && contract->is_virtual &&
+            contract->parameter_count != 0U &&
+            contract->parameter_count == target->parameter_count &&
+            contract->return_type == target->return_type &&
+            contract->parameters[0].type == dispatch->interface_type &&
+            ir_type_assignable(
+                ir, dispatch->interface_type, dispatch->runtime_type) &&
+            ir_type_assignable(
+                ir, target->parameters[0].type, dispatch->runtime_type);
+        for (size_t parameter = 1U;
+             signature && parameter < contract->parameter_count;
+             ++parameter)
+            signature = contract->parameters[parameter].type ==
+                    target->parameters[parameter].type &&
+                contract->parameters[parameter].mode ==
+                    target->parameters[parameter].mode;
+        if (!signature) {
+            lang_diag(
+                diagnostics, (LangSpan){NULL, 0U, 0U},
+                "IR interface dispatch entry %zu has an incompatible signature",
+                entry);
+            ok = false;
         }
     }
     for (size_t f = 0U; f < ir->function_count; ++f) {
@@ -1545,7 +1746,8 @@ bool lang_ir_verify_module(const IrModule *ir,
                               "IR parameter index is out of range");
                     ok = false;
                 }
-                if (instruction->opcode == IR_OP_CALL_DIRECT &&
+                if ((instruction->opcode == IR_OP_CALL_DIRECT ||
+                     instruction->opcode == IR_OP_CALL_VIRTUAL) &&
                     instruction->index >= ir->function_count) {
                     lang_diag(diagnostics, instruction->span,
                               "IR direct call target is invalid");

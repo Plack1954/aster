@@ -44,6 +44,7 @@ static bool verify_function_stack(const BytecodeFunction *function) {
         switch (instruction.op) {
             case OP_CONSTANT: case OP_UNIT: case OP_TRUE: case OP_FALSE:
             case OP_FUNCTION:
+            case OP_LOAD_STATIC:
             case OP_LOAD_LOCAL: case OP_MOVE_LOCAL:
             case OP_REFERENCE_LOCAL:
             case OP_REFERENCE_FIELD_LOCAL:
@@ -70,7 +71,8 @@ static bool verify_function_stack(const BytecodeFunction *function) {
             case OP_EXCEPTION_TAKE:
                 pushed = 1;
                 break;
-            case OP_POP: case OP_STORE_LOCAL: case OP_EXCEPTION_SET:
+            case OP_POP: case OP_STORE_LOCAL: case OP_STORE_STATIC:
+            case OP_EXCEPTION_SET:
             case OP_DELETE_CLASS:
                 required = 1; popped = 1;
                 break;
@@ -142,6 +144,20 @@ static bool verify_function_stack(const BytecodeFunction *function) {
                 pushed = 1;
                 break;
             }
+            case OP_CALL_VIRTUAL:
+                if (instruction.a < 0 || instruction.b <= 0) {
+                    valid = false;
+                    break;
+                }
+                required = instruction.b;
+                popped = instruction.b;
+                pushed = 1;
+                break;
+            case OP_BOUND_FUNCTION:
+                required = 1;
+                popped = 1;
+                pushed = 1;
+                break;
             case OP_CALL_LOCAL: {
                 uint32_t count =
                     (uint32_t)instruction.b &
@@ -281,8 +297,37 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
         (module->function_count != 0U &&
          module->functions == NULL) ||
         (module->constant_count != 0U &&
-         module->constants == NULL))
+         module->constants == NULL) ||
+        (module->static_count != 0U &&
+         module->static_defaults == NULL) ||
+        (module->virtual_entry_count != 0U &&
+         module->virtual_entries == NULL) ||
+        (module->class_destructor_count != 0U &&
+         module->class_destructors == NULL))
         return false;
+    for (size_t entry = 0U;
+         entry < module->virtual_entry_count; ++entry) {
+        const BytecodeVirtualEntry *virtual_entry =
+            &module->virtual_entries[entry];
+        if (virtual_entry->runtime_type == NULL ||
+            virtual_entry->runtime_type_length == 0U ||
+            virtual_entry->root_function >= module->function_count ||
+            virtual_entry->target_function >= module->function_count ||
+            (virtual_entry->runtime_module_length != 0U &&
+             virtual_entry->runtime_module == NULL))
+            return false;
+    }
+    for (size_t entry = 0U;
+         entry < module->class_destructor_count; ++entry) {
+        const BytecodeClassDestructor *destructor =
+            &module->class_destructors[entry];
+        if (destructor->runtime_type == NULL ||
+            destructor->runtime_type_length == 0U ||
+            destructor->destructor_function >= module->function_count ||
+            (destructor->runtime_module_length != 0U &&
+             destructor->runtime_module == NULL))
+            return false;
+    }
     for (size_t f = 0U; f < module->function_count; ++f) {
         const BytecodeFunction *function =
             &module->functions[f];
@@ -313,6 +358,12 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                         PARAMETER_MODE_OUT)
                     return false;
             switch (instruction.op) {
+                case OP_LOAD_STATIC:
+                case OP_STORE_STATIC:
+                    if (instruction.a < 0 ||
+                        (size_t)instruction.a >= module->static_count)
+                        return false;
+                    break;
                 case OP_HTML_FRAGMENT_LOCAL:
                 case OP_HTML_BEGIN_LOCAL: {
                     uint32_t packed = (uint32_t)instruction.b;
@@ -665,6 +716,12 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                           function->call_sites[ip].argument_modes == NULL)))
                         return false;
                     break;
+                case OP_CALL_VIRTUAL:
+                    if (instruction.a < 0 ||
+                        (size_t)instruction.a >= module->function_count ||
+                        instruction.b <= 0)
+                        return false;
+                    break;
                 case OP_CALL_LOCAL: {
                     uint32_t encoded =
                         (uint32_t)instruction.b;
@@ -764,9 +821,11 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                         return false;
                     break;
                 case OP_FUNCTION:
+                case OP_BOUND_FUNCTION:
                     if (instruction.a < 0 ||
-                        (size_t)instruction.a >=
-                            module->function_count)
+                        (size_t)instruction.a >= module->function_count ||
+                        (instruction.op == OP_BOUND_FUNCTION &&
+                         instruction.b != 0 && instruction.b != 1))
                         return false;
                     break;
                 case OP_CALL_INDIRECT:

@@ -54,6 +54,17 @@ void lang_ir_dump_module(const IrModule *ir) {
             printf(" element=t%" PRIu32, type->element_type);
         if (type->error_type != IR_INVALID_ID)
             printf(" error=t%" PRIu32, type->error_type);
+        if (type->base_type != IR_INVALID_ID)
+            printf(" base=t%" PRIu32, type->base_type);
+        if (type->interface_count != 0U) {
+            fputs(" interfaces=[", stdout);
+            for (size_t interface = 0U;
+                 interface < type->interface_count; ++interface)
+                printf("%st%" PRIu32,
+                       interface == 0U ? "" : ",",
+                       type->interface_types[interface]);
+            fputc(']', stdout);
+        }
         if (type->argument_count != 0U) {
             fputs(" args=[", stdout);
             for (size_t a = 0U; a < type->argument_count; ++a)
@@ -211,6 +222,8 @@ void lang_ir_free_module(IrModule *ir) {
     for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].argument_types);
     for (size_t t = 0U; t < ir->type_count; ++t)
+        free(ir->types[t].interface_types);
+    for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].parameter_modes);
     for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].field_names);
@@ -231,6 +244,8 @@ void lang_ir_free_module(IrModule *ir) {
     for (size_t t = 0U; t < ir->type_count; ++t)
         free(ir->types[t].variant_payload_offsets);
     free(ir->functions);
+    free(ir->static_fields);
+    free(ir->interface_dispatches);
     free(ir->types);
     memset(ir, 0, sizeof(*ir));
 }

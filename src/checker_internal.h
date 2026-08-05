@@ -133,6 +133,10 @@ Type *resolve_declared_type_in_module(
     LangSpan span, const char *module_name);
 Type *check_place(Checker *checker, Expr *expr);
 Type *checker_check_name(Checker *checker, Expr *expr);
+FieldDecl *checker_static_field_from_path(
+    Checker *checker, const char *path, const Decl **out_owner);
+void checker_rewrite_unqualified_static_field(
+    Checker *checker, Expr *expr);
 const char *checker_static_call_path(Checker *checker, Expr *expr);
 Type *checker_check_call(Checker *checker, Expr *expr);
 Type *check_expr(Checker *checker, Expr *expr);

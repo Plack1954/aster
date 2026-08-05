@@ -1259,7 +1259,8 @@ static void lower_call(IrBytecodeBuilder *builder,
             ? instruction->argument_modes[i]
             : PARAMETER_MODE_VALUE;
         bool reference_argument =
-            instruction->opcode == IR_OP_CALL_DIRECT
+            (instruction->opcode == IR_OP_CALL_DIRECT ||
+             instruction->opcode == IR_OP_CALL_VIRTUAL)
                 ? parameter_mode_is_reference(mode)
                 : instruction->opcode == IR_OP_CALL_NATIVE
                 ? parameter_mode_is_mutable(mode)
@@ -1288,7 +1289,8 @@ static void lower_call(IrBytecodeBuilder *builder,
     if (!as_i32(builder, instruction->operand_count,
                 instruction->span, &count))
         return;
-    if (instruction->opcode == IR_OP_CALL_DIRECT) {
+    if (instruction->opcode == IR_OP_CALL_DIRECT ||
+        instruction->opcode == IR_OP_CALL_VIRTUAL) {
         int32_t target = INT32_MIN;
         if (instruction->symbol != NULL) {
             if (strcmp(instruction->symbol, "string::StartsWith") == 0 &&
@@ -1309,8 +1311,15 @@ static void lower_call(IrBytecodeBuilder *builder,
             !as_i32(builder, instruction->index,
                     instruction->span, &target))
             return;
+        if (instruction->opcode == IR_OP_CALL_VIRTUAL && target >= 0) {
+            IrFunctionId root = builder->ir->functions[target].virtual_root;
+            if (root != IR_INVALID_ID) target = (int32_t)root;
+        }
         size_t call_index = emit_instruction(
-            builder, OP_CALL, target, count, instruction->span);
+            builder,
+            instruction->opcode == IR_OP_CALL_VIRTUAL
+                ? OP_CALL_VIRTUAL : OP_CALL,
+            target, count, instruction->span);
         if (target < 0) {
             BytecodeCallSite *call_site =
                 &builder->function->call_sites[call_index];
@@ -1537,6 +1546,25 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                     instruction->index;
             store_result(builder, instruction);
             return;
+        case IR_OP_STATIC_FIELD_LOAD:
+            if (!as_i32(builder, instruction->index,
+                        instruction->span, &index))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_STATIC, index, 0,
+                instruction->span);
+            store_result(builder, instruction);
+            return;
+        case IR_OP_STATIC_FIELD_STORE:
+            move_value(
+                builder, instruction->operands[0], instruction->span);
+            if (!as_i32(builder, instruction->index,
+                        instruction->span, &index))
+                return;
+            (void)emit_instruction(
+                builder, OP_STORE_STATIC, index, 0,
+                instruction->span);
+            return;
         case IR_OP_LOCAL_STORE:
             {
             if (instruction->index < builder->source->parameter_count &&
@@ -1662,7 +1690,21 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 builder, OP_FUNCTION, index, 0, instruction->span);
             store_result(builder, instruction);
             return;
+        case IR_OP_BOUND_METHOD_REF:
+            if (!as_i32(builder, instruction->index,
+                        instruction->span, &index))
+                return;
+            move_value(
+                builder, instruction->operands[0], instruction->span);
+            (void)emit_instruction(
+                builder, OP_BOUND_FUNCTION, index,
+                builder->ir->functions[instruction->index].is_virtual
+                    ? 1 : 0,
+                instruction->span);
+            store_result(builder, instruction);
+            return;
         case IR_OP_CALL_DIRECT:
+        case IR_OP_CALL_VIRTUAL:
         case IR_OP_CALL_INDIRECT:
         case IR_OP_CALL_NATIVE:
             lower_call(builder, instruction);
@@ -2393,10 +2435,95 @@ static bool lower_function(IrBytecodeBuilder *builder) {
     return true;
 }
 
+static IrTypeId bytecode_class_type_for_function(
+    const IrModule *ir, const IrFunction *function
+) {
+    const char *separator = strstr(function->name, "::");
+    if (separator == NULL) return IR_INVALID_ID;
+    size_t name_length = (size_t)(separator - function->name);
+    for (size_t type = 0U; type < ir->type_count; ++type) {
+        const IrType *candidate = &ir->types[type];
+        if (candidate->shape != IR_TYPE_CLASS_REFERENCE ||
+            candidate->name == NULL || strlen(candidate->name) != name_length ||
+            strncmp(candidate->name, function->name, name_length) != 0)
+            continue;
+        if (candidate->module_name != NULL && function->module_name != NULL &&
+            strcmp(candidate->module_name, function->module_name) != 0)
+            continue;
+        return (IrTypeId)type;
+    }
+    return IR_INVALID_ID;
+}
+
+static IrFunctionId bytecode_virtual_target(
+    const IrModule *ir, IrFunctionId root, IrTypeId runtime_type
+) {
+    for (IrTypeId owner = runtime_type;
+         owner != IR_INVALID_ID && owner < ir->type_count;
+         owner = ir->types[owner].base_type)
+        for (size_t function = 0U; function < ir->function_count; ++function) {
+            const IrFunction *candidate = &ir->functions[function];
+            if (candidate->is_abstract || candidate->virtual_root != root)
+                continue;
+            if (bytecode_class_type_for_function(ir, candidate) == owner)
+                return (IrFunctionId)function;
+        }
+    return IR_INVALID_ID;
+}
+
+static bool bytecode_class_derives_from(
+    const IrModule *ir, IrTypeId actual, IrTypeId expected
+) {
+    for (IrTypeId type = actual;
+         type != IR_INVALID_ID && type < ir->type_count;
+         type = ir->types[type].base_type)
+        if (type == expected) return true;
+    return false;
+}
+
 bool lang_ir_compile_bytecode(const IrModule *ir,
                               LangDiagnostics *diagnostics,
                               BytecodeModule *bytecode) {
     memset(bytecode, 0, sizeof(*bytecode));
+    bytecode->static_count = ir->static_field_count;
+    bytecode->static_defaults = ir_bc_resize(
+        NULL, bytecode->static_count,
+        sizeof(*bytecode->static_defaults));
+    for (size_t field = 0U; field < bytecode->static_count; ++field) {
+        const IrType *type = &ir->types[ir->static_fields[field].type];
+        LangValue value = {.tag=LANG_VALUE_UNIT};
+        switch (type->shape) {
+            case IR_TYPE_BOOL:
+                value.tag = LANG_VALUE_BOOL;
+                value.as.boolean =
+                    ir->static_fields[field].initial_integer != 0U;
+                break;
+            case IR_TYPE_UNSIGNED_INT:
+            case IR_TYPE_CHAR:
+                value.tag = LANG_VALUE_U64;
+                value.as.u64 =
+                    ir->static_fields[field].initial_integer;
+                break;
+            case IR_TYPE_FLOAT:
+                value.tag = LANG_VALUE_F64;
+                value.as.f64 =
+                    ir->static_fields[field].initial_floating;
+                break;
+            case IR_TYPE_CLASS_REFERENCE:
+            case IR_TYPE_RAW_POINTER:
+                value.tag = LANG_VALUE_RAW_POINTER;
+                value.as.pointer = NULL;
+                break;
+            case IR_TYPE_SIGNED_INT:
+            case IR_TYPE_ENUM:
+            default:
+                value.tag = LANG_VALUE_I64;
+                value.as.i64 = (int64_t)
+                    ir->static_fields[field].initial_integer;
+                break;
+        }
+        bytecode->static_defaults[field] = value;
+    }
     bytecode->function_count = ir->function_count;
     bytecode->functions = ir_bc_resize(
         NULL, ir->function_count, sizeof(*bytecode->functions));
@@ -2419,6 +2546,92 @@ bool lang_ir_compile_bytecode(const IrModule *ir,
         output->is_entry = source->is_entry;
         output->is_async = source->is_async;
         output->is_public = source->is_public;
+    }
+    for (size_t root = 0U; root < ir->function_count; ++root) {
+        if (!ir->functions[root].is_virtual ||
+            ir->functions[root].virtual_root != root)
+            continue;
+        IrTypeId root_type = bytecode_class_type_for_function(
+            ir, &ir->functions[root]);
+        for (size_t type = 0U; type < ir->type_count; ++type)
+            if (ir->types[type].shape == IR_TYPE_CLASS_REFERENCE &&
+                bytecode_class_derives_from(
+                    ir, (IrTypeId)type, root_type) &&
+                bytecode_virtual_target(
+                    ir, (IrFunctionId)root, (IrTypeId)type) != IR_INVALID_ID)
+                ++bytecode->virtual_entry_count;
+    }
+    bytecode->virtual_entry_count += ir->interface_dispatch_count;
+    bytecode->virtual_entries = ir_bc_resize(
+        NULL, bytecode->virtual_entry_count,
+        sizeof(*bytecode->virtual_entries));
+    size_t virtual_output = 0U;
+    for (size_t root = 0U; root < ir->function_count; ++root) {
+        const IrFunction *root_function = &ir->functions[root];
+        if (!root_function->is_virtual ||
+            root_function->virtual_root != root)
+            continue;
+        IrTypeId root_type = bytecode_class_type_for_function(
+            ir, root_function);
+        for (size_t type = 0U; type < ir->type_count; ++type) {
+            const IrType *runtime = &ir->types[type];
+            if (runtime->shape != IR_TYPE_CLASS_REFERENCE ||
+                !bytecode_class_derives_from(
+                    ir, (IrTypeId)type, root_type))
+                continue;
+            IrFunctionId target = bytecode_virtual_target(
+                ir, (IrFunctionId)root, (IrTypeId)type);
+            if (target == IR_INVALID_ID) continue;
+            bytecode->virtual_entries[virtual_output++] =
+                (BytecodeVirtualEntry){
+                    .runtime_module=runtime->module_name,
+                    .runtime_module_length=runtime->module_name != NULL
+                        ? strlen(runtime->module_name) : 0U,
+                    .runtime_type=runtime->name,
+                    .runtime_type_length=strlen(runtime->name),
+                    .root_function=root,
+                    .target_function=target
+                };
+        }
+    }
+    for (size_t entry = 0U;
+         entry < ir->interface_dispatch_count; ++entry) {
+        const IrInterfaceDispatch *dispatch =
+            &ir->interface_dispatches[entry];
+        const IrType *runtime = &ir->types[dispatch->runtime_type];
+        bytecode->virtual_entries[virtual_output++] =
+            (BytecodeVirtualEntry){
+                .runtime_module=runtime->module_name,
+                .runtime_module_length=runtime->module_name != NULL
+                    ? strlen(runtime->module_name) : 0U,
+                .runtime_type=runtime->name,
+                .runtime_type_length=strlen(runtime->name),
+                .root_function=dispatch->interface_function,
+                .target_function=dispatch->target_function
+            };
+    }
+    for (size_t type = 0U; type < ir->type_count; ++type)
+        if (ir->types[type].shape == IR_TYPE_CLASS_REFERENCE &&
+            ir->types[type].destructor_function != IR_INVALID_ID)
+            ++bytecode->class_destructor_count;
+    bytecode->class_destructors = ir_bc_resize(
+        NULL, bytecode->class_destructor_count,
+        sizeof(*bytecode->class_destructors));
+    size_t destructor_output = 0U;
+    for (size_t type = 0U; type < ir->type_count; ++type) {
+        const IrType *runtime = &ir->types[type];
+        if (runtime->shape != IR_TYPE_CLASS_REFERENCE ||
+            runtime->destructor_function == IR_INVALID_ID)
+            continue;
+        bytecode->class_destructors[destructor_output++] =
+            (BytecodeClassDestructor){
+                .runtime_module=runtime->module_name,
+                .runtime_module_length=runtime->module_name != NULL
+                    ? strlen(runtime->module_name) : 0U,
+                .runtime_type=runtime->name,
+                .runtime_type_length=strlen(runtime->name),
+                .destructor_function=runtime->destructor_function
+            };
     }
     for (size_t f = 0U; f < ir->function_count; ++f) {
         IrBytecodeBuilder builder;

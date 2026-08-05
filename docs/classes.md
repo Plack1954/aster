@@ -79,8 +79,11 @@ delete counter;
 
 Construction initializes every declared field before allocating the finished
 object. Assignment to `alias` copies only the reference. `delete` accepts a
-class reference, does nothing for `null`, invokes the declared destructor once,
-drops owned value fields in reverse declaration order, and frees the object.
+class reference, does nothing for `null`, dynamically selects the destructor
+for the allocation's actual class, drops owned value fields in reverse
+declaration order, and frees the object. A derived destructor automatically
+continues through its base destructor chain. This remains deterministic manual
+destruction; there is no tracing collector or hidden retain/release operation.
 
 As in C and C++, aliases are not tracked. Accessing an alias after its object
 has been deleted, or deleting the same allocation twice, is programmer error.
@@ -100,14 +103,17 @@ represented as:
 typedef struct aster_type_N aster_type_N;
 
 struct aster_type_N {
+    uint32_t _type_id;
     int64_t f0;
     aster_type_N *f1;
 };
 ```
 
-The numeric type name is compiler-generated. Forward declarations allow self
-references and mutual class references. Empty classes receive one private byte
-in generated C because C17 has no standard empty-structure representation.
+The numeric type name and runtime type tag are compiler-generated. Forward
+declarations allow self references and mutual class references. The tag drives
+virtual calls, virtual delegate binding, and deletion through a base-class
+reference. It is ordinary ahead-of-time metadata, not a garbage-collector
+header.
 
 The bytecode backend also recognizes class references as pointer-like runtime
 values. It does not automatically retain or release them.
@@ -166,15 +172,193 @@ model. Their backing fields live inside the object allocated by `new` and are
 cleaned only when that object is explicitly deleted. Copying a property value
 uses its declared type's normal copy policy.
 
-Static properties with explicit accessor bodies are supported through the
-ordinary static-member lowering. Static automatic properties are not yet
-supported because Aster does not yet have static field storage.
+## Static members
+
+Classes and structs support C#-style static fields, properties, and methods:
+
+```csharp
+class Counter
+{
+    private static long Value = 10;
+
+    public static long Count { get; private set; }
+    public static long Current => Value;
+
+    public static void Add(long amount)
+    {
+        Value += amount;
+        Count += 1;
+    }
+}
+```
+
+Static fields occupy module storage rather than object storage. Every instance
+observes the same slot, and constructing or deleting an instance does not
+initialize or destroy it. The VM creates fresh static slots for each module
+run. Generated C emits ordinary translation-unit `static` objects.
+
+Fields receive their conventional zero value unless they declare a scalar
+constant initializer. Boolean, integer, floating, enum, raw-pointer, and class
+reference fields are supported. Owning static strings, collections, structs,
+and other cleanup-bearing values are rejected until Aster has an explicit
+program/module shutdown contract; the compiler does not invent a hidden
+process-lifetime owner or silently leak them.
+
+Automatic static properties use compiler-private static backing storage.
+Custom and expression-bodied static properties use ordinary static accessor
+methods. Member and accessor `public`/`private` rules are identical to instance
+members. Static methods may refer to members of their declaring type without
+repeating the type name.
+
+## Bound instance method delegates
+
+An instance method on a class can be converted to an exact delegate type. The
+receiver is captured by the resulting delegate, so later calls use the same
+object:
+
+```csharp
+delegate long Operation(long amount);
+
+class Counter
+{
+    private long Value;
+
+    public long Add(long amount)
+    {
+        Value += amount;
+        return Value;
+    }
+}
+
+Counter counter = new Counter();
+Operation operation = counter.Add;
+long result = operation(4);
+```
+
+The target delegate type selects overloaded methods using the method
+parameters after `this`. Return types, parameter types, and `ref`/`out` modes
+must match exactly. Private methods may be bound only from their declaring
+class. Binding through `null` traps immediately.
+
+A bound delegate is a trivially copyable pair containing an invocation target
+and a borrowed class pointer. It performs no allocation and does not retain,
+reference-count, clone, or own the receiver. Consequently, deleting the class
+instance invalidates every delegate bound to it; calling one afterward is the
+same programmer error as dereferencing any other dangling class reference.
+
+Binding struct instance methods is currently rejected. Supporting it requires
+an explicit decision between copying the struct into delegate storage and
+boxing it; Aster does neither implicitly today. Bound class methods are not
+general closures and cannot capture arbitrary locals.
+
+Virtual methods retain virtual behavior when bound. If an `Animal` reference
+actually points at a `Dog`, binding `animal.Speak` captures the `Dog` override,
+matching C# delegate behavior. The delegate still only borrows the receiver.
+
+## Single inheritance and virtual dispatch
+
+Aster supports C#-shaped single class inheritance and the `abstract`,
+`virtual`, `override`, and `sealed` modifiers:
+
+```csharp
+abstract class Animal
+{
+    public abstract long Speak();
+    public abstract long Age { get; }
+
+    public virtual long Legs()
+    {
+        return 4;
+    }
+}
+
+sealed class Dog : Animal
+{
+    public Dog() { }
+
+    public override long Speak() { return 1; }
+    public override long Age => 5;
+}
+
+Animal animal = new Dog();
+Console.WriteLine(animal.Speak());
+Console.WriteLine(animal.Legs());
+delete animal;
+```
+
+An abstract class cannot be instantiated. A concrete class must implement all
+inherited abstract methods and property accessors. An override must exactly
+match a virtual base signature, including parameter passing modes and return
+type. `sealed override` closes one virtual slot, while `sealed class` prevents
+further derivation. A virtual call dispatches from the allocation's runtime
+class in both bytecode and generated C; an inherited implementation remains
+the target when a derived class does not override it.
+
+Class-reference assignment supports the conventional implicit derived-to-base
+conversion. Aster does not permit an implicit base-to-derived downcast.
+Overload selection remains static; only a checked virtual member invocation is
+dynamically dispatched.
+
+## Interfaces
+
+Interfaces are nominal C#-shaped contracts. They may inherit multiple
+interfaces, and a class may implement multiple interfaces in addition to its
+single base class:
+
+```csharp
+interface IValue
+{
+    long Value();
+    long Number { get; }
+}
+
+interface IAdvanced : IValue
+{
+    long Twice();
+}
+
+class Counter : BaseCounter, IAdvanced
+{
+    public long Value() { return 7; }
+    public long Number => 8;
+    public long Twice() { return 14; }
+}
+```
+
+Interface members are implicitly public and abstract. A concrete class must
+provide a public instance member with the exact name, return type, parameter
+types, and `ref`/`out` modes. An implementation inherited from a base class is
+valid. One class member may satisfy matching slots from several interfaces;
+Aster records those slots independently rather than forcing the method into a
+single fake override chain.
+
+Interface conversion is nominal. A class converts to an interface only when
+its declaration or a base class names that interface, and a derived interface
+converts to its inherited interfaces. Calls, properties, and bound delegates
+dispatch through the allocation's runtime class in both backends. `delete`
+through an interface reference likewise runs the actual class destructor and
+its base chain. Interface references remain borrowed, manually managed class
+pointers—there is no boxing, hidden allocation, reference counting, or garbage
+collection.
+
+Interfaces cannot be instantiated and cannot declare fields, constructors,
+destructors, static members, or default method bodies. Explicit interface
+implementation syntax and default interface methods are not currently part of
+the language.
 
 ## Deliberate current boundary
 
 The following features remain intentionally unavailable:
 
-- inheritance, virtual dispatch, and interfaces.
+- multiple class inheritance;
+- base classes with instance fields and base-constructor initializers.
+
+The second restriction is deliberate and diagnosed. Stateless base classes
+already provide polymorphic APIs, abstract contracts, virtual properties,
+bound virtual delegates, and destructor chaining. Stateful inheritance will
+not be accepted until Aster has a real C#-shaped `: base(...)` constructor
+model and a prefix-compatible inherited-field layout; the compiler does not
+silently skip base construction or flatten private state with invented rules.
 
 Generic classes currently receive a targeted diagnostic.
 

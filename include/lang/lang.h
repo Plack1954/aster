@@ -80,6 +80,7 @@ typedef enum LangValueTag {
     LANG_VALUE_OBJECT,
     LANG_VALUE_RAW_POINTER,
     LANG_VALUE_FUNCTION,
+    LANG_VALUE_BOUND_FUNCTION,
     /* Reserved for diagnostics owned by a failed LangNativeResult. */
     LANG_VALUE_NATIVE_ERROR
 } LangValueTag;
@@ -110,6 +111,10 @@ typedef struct LangValue {
         void *object;
         void *pointer;
         size_t function;
+        struct {
+            size_t function;
+            void *receiver;
+        } bound_function;
     } as;
 } LangValue;
 

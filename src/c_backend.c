@@ -83,10 +83,11 @@ static void emit_borrowed_call_operand(
     fprintf(emitter->output, "&v%" PRIu32, value);
 }
 
-static void emit_call_operands(
+static void emit_call_operands_for_target(
     CEmitter *emitter,
     const IrFunction *function,
     const IrInstruction *instruction,
+    IrFunctionId target,
     size_t offset
 ) {
     for (size_t i = offset; i < instruction->operand_count; ++i) {
@@ -98,10 +99,102 @@ static void emit_call_operands(
         if (borrowed)
             emit_borrowed_call_operand(
                 emitter, function, instruction->operands[i]);
-        else
+        else {
+            IrTypeId actual = function->value_types[
+                instruction->operands[i]];
+            IrTypeId expected = IR_INVALID_ID;
+            if (target < emitter->ir->function_count &&
+                argument < emitter->ir->functions[target].parameter_count)
+                expected = emitter->ir->functions[target]
+                    .parameters[argument].type;
+            if (expected != IR_INVALID_ID && expected != actual &&
+                emitter->ir->types[expected].shape ==
+                    IR_TYPE_CLASS_REFERENCE &&
+                emitter->ir->types[actual].shape ==
+                    IR_TYPE_CLASS_REFERENCE) {
+                fputc('(', emitter->output);
+                c_backend_emit_type(emitter, expected);
+                fputc(')', emitter->output);
+            }
             emit_value_name(
                 emitter->output, instruction->operands[i]);
+        }
     }
+}
+
+static void emit_call_operands(
+    CEmitter *emitter,
+    const IrFunction *function,
+    const IrInstruction *instruction,
+    size_t offset
+) {
+    emit_call_operands_for_target(
+        emitter, function, instruction, instruction->index, offset);
+}
+
+static IrTypeId class_type_for_virtual_target(
+    const IrModule *ir, const IrFunction *target
+) {
+    const char *separator = strstr(target->name, "::");
+    if (separator == NULL) return IR_INVALID_ID;
+    size_t owner_length = (size_t)(separator - target->name);
+    for (size_t type = 0U; type < ir->type_count; ++type) {
+        const IrType *candidate = &ir->types[type];
+        if (candidate->shape != IR_TYPE_CLASS_REFERENCE ||
+            candidate->name == NULL ||
+            strlen(candidate->name) != owner_length ||
+            strncmp(candidate->name, target->name, owner_length) != 0)
+            continue;
+        if (candidate->module_name != NULL && target->module_name != NULL &&
+            strcmp(candidate->module_name, target->module_name) != 0)
+            continue;
+        return (IrTypeId)type;
+    }
+    return IR_INVALID_ID;
+}
+
+static IrFunctionId virtual_target_for_runtime_type(
+    const IrModule *ir, IrFunctionId root, IrTypeId runtime_type
+) {
+    for (size_t entry = 0U;
+         entry < ir->interface_dispatch_count; ++entry)
+        if (ir->interface_dispatches[entry].interface_function == root &&
+            ir->interface_dispatches[entry].runtime_type == runtime_type)
+            return ir->interface_dispatches[entry].target_function;
+    for (IrTypeId owner = runtime_type;
+         owner != IR_INVALID_ID && owner < ir->type_count;
+         owner = ir->types[owner].base_type) {
+        for (size_t function = 0U;
+             function < ir->function_count; ++function) {
+            const IrFunction *candidate = &ir->functions[function];
+            if (candidate->is_abstract ||
+                candidate->virtual_root != root)
+                continue;
+            if (class_type_for_virtual_target(ir, candidate) == owner)
+                return (IrFunctionId)function;
+        }
+    }
+    return IR_INVALID_ID;
+}
+
+static bool runtime_type_assignable_to(
+    const IrModule *ir, IrTypeId actual, IrTypeId expected, size_t depth
+) {
+    if (actual == expected) return true;
+    if (actual == IR_INVALID_ID || actual >= ir->type_count ||
+        expected == IR_INVALID_ID || expected >= ir->type_count ||
+        depth >= ir->type_count)
+        return false;
+    if (runtime_type_assignable_to(
+            ir, ir->types[actual].base_type, expected, depth + 1U))
+        return true;
+    for (size_t interface = 0U;
+         interface < ir->types[actual].interface_count; ++interface)
+        if (runtime_type_assignable_to(
+                ir, ir->types[actual].interface_types[interface],
+                expected, depth + 1U))
+            return true;
+    return false;
 }
 
 bool c_backend_function_has_render_root(
@@ -231,7 +324,9 @@ static void emit_list_callback_call(
     CEmitter *emitter, IrTypeId element,
     IrValueId callback, IrValueId list, const char *index) {
     FILE *output = emitter->output;
-    fprintf(output, "v%" PRIu32 "(", callback);
+    fprintf(output,
+            "v%" PRIu32 ".invoke(v%" PRIu32 ".receiver, ",
+            callback, callback);
     if (c_backend_type_needs_drop(emitter, element))
         fprintf(output, "aster_clone_%" PRIu32 "(", element);
     fprintf(output, "v%" PRIu32 "->data[%s]", list, index);
@@ -821,8 +916,20 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     instruction->index);
                 fputs(";\n", output);
             }
-            fprintf(output, "    l%" PRIu32 " = v%" PRIu32 ";\n",
-                    instruction->index, instruction->operands[0]);
+            fprintf(output, "    l%" PRIu32 " = ", instruction->index);
+            IrTypeId value_type = function->value_types[
+                instruction->operands[0]];
+            if (local_type != value_type &&
+                emitter->ir->types[local_type].shape ==
+                    IR_TYPE_CLASS_REFERENCE &&
+                emitter->ir->types[value_type].shape ==
+                    IR_TYPE_CLASS_REFERENCE) {
+                fputc('(', output);
+                c_backend_emit_type(emitter, local_type);
+                fputc(')', output);
+            }
+            fprintf(output, "v%" PRIu32 ";\n",
+                    instruction->operands[0]);
             if (c_backend_local_tracks_drop(
                     emitter, function, instruction->index))
                 fprintf(output,
@@ -1454,6 +1561,9 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    if (v%" PRIu32 " == NULL) aster_trap(\"class allocation failed\");\n",
                         instruction->result, instruction->result,
                         instruction->result);
+                fprintf(output,
+                        "    v%" PRIu32 "->_type_id = UINT32_C(%" PRIu32 ");\n",
+                        instruction->result, instruction->result_type);
                 for (size_t i = 0U; i < instruction->operand_count; ++i)
                     fprintf(output,
                             "    v%" PRIu32 "->f%" PRIu32 " = v%" PRIu32 ";\n",
@@ -1577,6 +1687,16 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    v%" PRIu32 " = l%" PRIu32 ".f%" PRIu32 ";\n",
                         instruction->result, instruction->index,
                         instruction->auxiliary);
+            return;
+        case IR_OP_STATIC_FIELD_LOAD:
+            fprintf(output,
+                    "    v%" PRIu32 " = aster_static_%" PRIu32 ";\n",
+                    instruction->result, instruction->index);
+            return;
+        case IR_OP_STATIC_FIELD_STORE:
+            fprintf(output,
+                    "    aster_static_%" PRIu32 " = v%" PRIu32 ";\n",
+                    instruction->index, instruction->operands[0]);
             return;
         case IR_OP_LOCAL_FIELD_BORROW:
             if (emitter->ir->types[function->locals[
@@ -2252,15 +2372,108 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 emitter, function, instruction, 0U);
             fputs(");\n", output);
             return;
+        case IR_OP_CALL_VIRTUAL: {
+            IrFunctionId root = instruction->index;
+            if (root < emitter->ir->function_count &&
+                emitter->ir->functions[root].virtual_root != IR_INVALID_ID)
+                root = emitter->ir->functions[root].virtual_root;
+            fprintf(output,
+                    "    if (v%" PRIu32 " == NULL) aster_trap(\"virtual call requires a non-null receiver\");\n"
+                    "    switch (*((uint32_t *)(void *)v%" PRIu32 ")) {\n",
+                    instruction->operands[0], instruction->operands[0]);
+            bool emitted = false;
+            IrTypeId root_type = root < emitter->ir->function_count
+                ? class_type_for_virtual_target(
+                      emitter->ir, &emitter->ir->functions[root])
+                : IR_INVALID_ID;
+            for (size_t runtime_type = 0U;
+                 runtime_type < emitter->ir->type_count; ++runtime_type) {
+                if (emitter->ir->types[runtime_type].shape !=
+                    IR_TYPE_CLASS_REFERENCE)
+                    continue;
+                bool belongs = runtime_type_assignable_to(
+                    emitter->ir, (IrTypeId)runtime_type, root_type, 0U);
+                if (!belongs) continue;
+                IrFunctionId target_id = virtual_target_for_runtime_type(
+                    emitter->ir, root, (IrTypeId)runtime_type);
+                if (target_id == IR_INVALID_ID) continue;
+                emitted = true;
+                fprintf(output,
+                        "    case UINT32_C(%zu): v%" PRIu32
+                        " = aster_fn_%" PRIu32 "(",
+                        runtime_type, instruction->result, target_id);
+                emit_call_operands_for_target(
+                    emitter, function, instruction,
+                    target_id, 0U);
+                fputs("); break;\n", output);
+            }
+            if (!emitted)
+                fputs("    default: aster_trap(\"virtual call has no concrete implementation\");\n",
+                      output);
+            else
+                fputs("    default: aster_trap(\"invalid runtime class for virtual call\");\n",
+                      output);
+            fputs("    }\n", output);
+            return;
+        }
         case IR_OP_FUNCTION_REF:
             fprintf(output,
-                    "    v%" PRIu32 " = aster_fn_%" PRIu32 ";\n",
-                    instruction->result, instruction->index);
+                    "    v%" PRIu32 " = (aster_type_%" PRIu32
+                    "){aster_delegate_unbound_%" PRIu32 ", NULL};\n",
+                    instruction->result, instruction->result_type,
+                    instruction->index);
+            return;
+        case IR_OP_BOUND_METHOD_REF:
+            fprintf(output,
+                    "    if (v%" PRIu32 " == NULL) "
+                    "aster_trap(\"cannot bind an instance method to a null class reference\");\n",
+                    instruction->operands[0]);
+            if (instruction->index < emitter->ir->function_count &&
+                emitter->ir->functions[instruction->index].is_virtual) {
+                IrFunctionId root = emitter->ir->functions[
+                    instruction->index].virtual_root;
+                if (root == IR_INVALID_ID) root = instruction->index;
+                fprintf(output,
+                        "    switch (*((uint32_t *)(void *)v%" PRIu32 ")) {\n",
+                        instruction->operands[0]);
+                for (size_t runtime = 0U;
+                     runtime < emitter->ir->type_count; ++runtime) {
+                    if (emitter->ir->types[runtime].shape !=
+                        IR_TYPE_CLASS_REFERENCE)
+                        continue;
+                    IrFunctionId target = virtual_target_for_runtime_type(
+                        emitter->ir, root, (IrTypeId)runtime);
+                    if (target == IR_INVALID_ID) continue;
+                    fprintf(output,
+                            "    case UINT32_C(%zu): v%" PRIu32
+                            " = (aster_type_%" PRIu32
+                            "){aster_delegate_bound_%" PRIu32
+                            ", (void *)v%" PRIu32 "}; break;\n",
+                            runtime, instruction->result,
+                            instruction->result_type, target,
+                            instruction->operands[0]);
+                }
+                fputs("    default: aster_trap(\"invalid runtime class while binding virtual method\");\n"
+                      "    }\n", output);
+            } else {
+                fprintf(output,
+                        "    v%" PRIu32 " = (aster_type_%" PRIu32
+                        "){aster_delegate_bound_%" PRIu32 ", "
+                        "(void *)v%" PRIu32 "};\n",
+                        instruction->result, instruction->result_type,
+                        instruction->index, instruction->operands[0]);
+            }
             return;
         case IR_OP_CALL_INDIRECT:
             fprintf(output,
-                    "    v%" PRIu32 " = v%" PRIu32 "(",
-                    instruction->result, instruction->operands[0]);
+                    "    if (v%" PRIu32 ".invoke == NULL) "
+                    "aster_trap(\"indirect call requires a valid function value\");\n"
+                    "    v%" PRIu32 " = v%" PRIu32 ".invoke("
+                    "v%" PRIu32 ".receiver",
+                    instruction->operands[0],
+                    instruction->result, instruction->operands[0],
+                    instruction->operands[0]);
+            if (instruction->operand_count > 1U) fputs(", ", output);
             emit_call_operands(
                 emitter, function, instruction, 1U);
             fputs(");\n", output);
@@ -2461,21 +2674,43 @@ void c_backend_emit_instruction(CEmitter *emitter,
         case IR_OP_CLASS_DELETE: {
             IrValueId value = instruction->operands[0];
             IrTypeId type_id = function->value_types[value];
-            const IrType *type = &emitter->ir->types[type_id];
             fprintf(output, "    if (v%" PRIu32 " != NULL) {\n", value);
-            if (type->destructor_function != IR_INVALID_ID)
-                fprintf(output,
-                        "        (void)aster_fn_%" PRIu32 "(v%" PRIu32 ");\n",
-                        type->destructor_function, value);
-            for (size_t field = type->field_count; field > 0U; --field) {
-                IrTypeId field_type = type->field_types[field - 1U];
-                if (c_backend_type_needs_drop(emitter, field_type))
+            fprintf(output,
+                    "        switch (*((uint32_t *)(void *)v%" PRIu32 ")) {\n",
+                    value);
+            for (size_t runtime_id = 0U;
+                 runtime_id < emitter->ir->type_count; ++runtime_id) {
+                const IrType *runtime = &emitter->ir->types[runtime_id];
+                if (runtime->shape != IR_TYPE_CLASS_REFERENCE) continue;
+                bool subtype = runtime_type_assignable_to(
+                    emitter->ir, (IrTypeId)runtime_id, type_id, 0U);
+                if (!subtype) continue;
+                fprintf(output, "        case UINT32_C(%zu):\n", runtime_id);
+                if (runtime->destructor_function != IR_INVALID_ID) {
+                    const IrFunction *destructor = &emitter->ir->functions[
+                        runtime->destructor_function];
                     fprintf(output,
-                            "        aster_drop_%" PRIu32
-                            "(&v%" PRIu32 "->f%zu);\n",
-                            field_type, value, field - 1U);
+                            "            (void)aster_fn_%" PRIu32 "((",
+                            runtime->destructor_function);
+                    c_backend_emit_type(
+                        emitter, destructor->parameters[0].type);
+                    fprintf(output, ")v%" PRIu32 ");\n", value);
+                }
+                for (size_t field = runtime->field_count;
+                     field > 0U; --field) {
+                    IrTypeId field_type = runtime->field_types[field - 1U];
+                    if (c_backend_type_needs_drop(emitter, field_type))
+                        fprintf(output,
+                                "            aster_drop_%" PRIu32
+                                "(&((aster_type_%zu *)v%" PRIu32
+                                ")->f%zu);\n",
+                                field_type, runtime_id, value, field - 1U);
+                }
+                fputs("            break;\n", output);
             }
             fprintf(output,
+                    "        default: aster_trap(\"invalid runtime class during delete\");\n"
+                    "        }\n"
                     "        free(v%" PRIu32 ");\n"
                     "    }\n",
                     value);
@@ -3073,6 +3308,11 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 } else {
                     IrTypeId dictionary_type =
                         function->value_types[instruction->operands[0]];
+                    if (remove)
+                        fprintf(output,
+                                "    size_t dictionary_bucket_match_%" PRIu32
+                                " = SIZE_MAX;\n",
+                                instruction->result);
                     fprintf(output,
                             "    uint64_t dictionary_hash_%" PRIu32
                             " = aster_dictionary_hash_%" PRIu32
@@ -3112,7 +3352,14 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     fprintf(output,
                             ") {\n"
                             "                dictionary_match_%" PRIu32
-                            " = dictionary_index_%" PRIu32 ";\n"
+                            " = dictionary_index_%" PRIu32 ";\n",
+                            instruction->result, instruction->result);
+                    if (remove)
+                        fprintf(output,
+                                "                dictionary_bucket_match_%" PRIu32
+                                " = dictionary_bucket_%" PRIu32 ";\n",
+                                instruction->result, instruction->result);
+                    fprintf(output,
                             "                break;\n"
                             "            }\n"
                             "            dictionary_bucket_%" PRIu32
@@ -3121,7 +3368,6 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             "->bucket_count - 1U);\n"
                             "        }\n"
                             "    }\n",
-                            instruction->result, instruction->result,
                             instruction->result, instruction->result,
                             instruction->operands[0]);
                 }
@@ -3209,43 +3455,13 @@ void c_backend_emit_instruction(CEmitter *emitter,
                                 dictionary->error_type,
                                 instruction->operands[0], instruction->result);
                     fprintf(output,
-                            "        memmove(&v%" PRIu32
-                            "->keys[dictionary_match_%" PRIu32 "], &v%" PRIu32
-                            "->keys[dictionary_match_%" PRIu32 " + 1U],\n"
-                            "            (v%" PRIu32
-                            "->length - dictionary_match_%" PRIu32
-                            " - 1U) * sizeof(*v%" PRIu32 "->keys));\n"
-                            "        memmove(&v%" PRIu32
-                            "->values[dictionary_match_%" PRIu32 "], &v%" PRIu32
-                            "->values[dictionary_match_%" PRIu32 " + 1U],\n"
-                            "            (v%" PRIu32
-                            "->length - dictionary_match_%" PRIu32
-                            " - 1U) * sizeof(*v%" PRIu32 "->values));\n"
-                            "        memmove(&v%" PRIu32
-                            "->hashes[dictionary_match_%" PRIu32 "], &v%" PRIu32
-                            "->hashes[dictionary_match_%" PRIu32 " + 1U],\n"
-                            "            (v%" PRIu32
-                            "->length - dictionary_match_%" PRIu32
-                            " - 1U) * sizeof(*v%" PRIu32 "->hashes));\n"
-                            "        --v%" PRIu32 "->length;\n"
-                            "        aster_dictionary_rebuild_%" PRIu32
-                            "(v%" PRIu32 ");\n"
+                            "        aster_dictionary_erase_%" PRIu32
+                            "(v%" PRIu32 ", dictionary_match_%" PRIu32
+                            ", dictionary_bucket_match_%" PRIu32 ");\n"
                             "    }\n",
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0],
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0],
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0], instruction->result,
-                            instruction->operands[0],
-                            instruction->operands[0],
                             function->value_types[instruction->operands[0]],
-                            instruction->operands[0]);
+                            instruction->operands[0], instruction->result,
+                            instruction->result);
                 } else {
                     if (add)
                         fprintf(output,

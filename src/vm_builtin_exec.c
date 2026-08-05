@@ -209,6 +209,10 @@ static void print_value(FILE *stream, LangValue value) {
         case LANG_VALUE_FUNCTION:
             fprintf(stream, "<fn:%zu>", value.as.function);
             break;
+        case LANG_VALUE_BOUND_FUNCTION:
+            fprintf(stream, "<bound-fn:%zu>",
+                    value.as.bound_function.function);
+            break;
         case LANG_VALUE_NATIVE_ERROR:
             fputs("<native-error>", stream);
             break;
@@ -522,10 +526,12 @@ static size_t vm_dictionary_find(const Object *dictionary, LangValue key) {
 static bool vm_list_call_callback(
     LangVM *vm, LangValue callback, LangValue item,
     LangSpan span, bool expects_bool, bool *matched) {
-    if (callback.tag != LANG_VALUE_FUNCTION) return false;
+    if (callback.tag != LANG_VALUE_FUNCTION &&
+        callback.tag != LANG_VALUE_BOUND_FUNCTION)
+        return false;
     LangValue argument = vm_value_clone(item);
-    LangValue callback_result = vm_execute_function(
-        vm, callback.as.function, &argument, 1U, span);
+    LangValue callback_result = vm_invoke_function_value(
+        vm, callback, &argument, 1U, span);
     if (vm->trapped) return false;
     if (expects_bool && callback_result.tag != LANG_VALUE_BOOL) {
         vm_value_drop_owned(vm, callback_result);
@@ -1247,7 +1253,8 @@ bool vm_call_builtin(LangVM *vm, int32_t index, LangValue *args,
         bool indexed = index == -48 || index == -49;
         size_t callback_argument = count - 1U;
         LangValue callback = args[callback_argument];
-        if (callback.tag != LANG_VALUE_FUNCTION ||
+        if ((callback.tag != LANG_VALUE_FUNCTION &&
+             callback.tag != LANG_VALUE_BOUND_FUNCTION) ||
             (!indexed && count != 2U) ||
             (indexed && count != 2U && count != 3U && count != 4U)) {
             runtime_error(vm, instruction, "invalid List callback");

@@ -156,9 +156,10 @@ Reason: normal functions, string comparisons, `if`, `while`, moves, and typed
 HTML already express the required behavior and exercise the intended language
 model directly.
 
-Consequences: handlers now also work as exact non-capturing function values,
-and bounded sequential keep-alive remains in the ordinary Aster server loop.
-Capturing handlers, concurrency, and broader production protocol features
+Consequences: handlers initially worked as exact non-capturing function
+values, and bounded sequential keep-alive remains in the ordinary Aster server
+loop. Bound class-method delegates now add an explicit borrowed receiver;
+arbitrary captures, concurrency, and broader production protocol features
 remain future work.
 
 ## Destructor identity belongs to runtime values
@@ -367,7 +368,13 @@ representation.
 
 Consequences: `B(A)` signatures are checked exactly and indirect calls
 have verifier/runtime guards. Imported language functions are valid values.
-Extern functions, captures, environments, and C trampolines are deferred.
+Extern function values, arbitrary captures, and owned closure environments are
+deferred.
+
+Evolution: class instance methods may now form a two-word delegate containing
+a generated invocation target and a borrowed class receiver. This adds no heap
+environment and does not retain the manually managed object. Arbitrary local
+capture and struct boxing remain deferred.
 
 ## Library migration keeps mechanisms below policy
 
