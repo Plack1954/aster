@@ -355,6 +355,29 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
         }
         return local->type;
     }
+    Local *this_local = find_local(checker, "this");
+    if (this_local != NULL && this_local->type->kind == TYPE_NAMED &&
+        this_local->type->declaration != NULL &&
+        this_local->type->declaration->kind == DECL_STRUCT) {
+        const Decl *owner = this_local->type->declaration;
+        for (size_t field = 0U;
+             field < owner->as.structure.field_count; ++field) {
+            if (strcmp(owner->as.structure.fields[field].name,
+                       expr->as.name) != 0)
+                continue;
+            Expr *object = lang_arena_alloc(
+                &checker->module->arena, sizeof(*object));
+            memset(object, 0, sizeof(*object));
+            object->kind = EXPR_NAME;
+            object->span = expr->span;
+            object->as.name = "this";
+            const char *field_name = expr->as.name;
+            expr->kind = EXPR_FIELD;
+            expr->as.field.object = object;
+            expr->as.field.field = field_name;
+            return check_expr(checker, expr);
+        }
+    }
     const Decl *declaration = resolve_function_value_overload(
         checker, expr->as.name, expr->span);
     if (declaration != NULL) {

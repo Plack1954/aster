@@ -3,7 +3,20 @@ namespace System;
 using System.Text;
 
 public struct TimeSpan { long ticks; }
-public struct DateTime { long unixTicks; }
+public struct DateTime {
+    long unixTicks;
+
+    public static DateTime UtcNow => new() {
+        unixTicks = NativeUtcNowUnixMilliseconds() * 10000
+    };
+    public int Year => DatePartsFromUnixTicks(unixTicks).year;
+    public int Month => DatePartsFromUnixTicks(unixTicks).month;
+    public int Day => DatePartsFromUnixTicks(unixTicks).day;
+    public int Hour => DatePartsFromUnixTicks(unixTicks).hour;
+    public int Minute => DatePartsFromUnixTicks(unixTicks).minute;
+    public int Second => DatePartsFromUnixTicks(unixTicks).second;
+    public int Millisecond => DatePartsFromUnixTicks(unixTicks).millisecond;
+}
 public struct DateTimeOffset { long unixTicks; short offsetMinutes; }
 public struct DateOnly { int dayNumber; }
 public struct TimeOnly { long ticks; }
@@ -330,11 +343,6 @@ public TimeSpan TimeSpan.Negate(TimeSpan self)
     return TimeSpan.FromTicks(-self.ticks);
 }
 
-public DateTime DateTime.UtcNow()
-{
-    return new() { unixTicks = NativeUtcNowUnixMilliseconds() * 10000 };
-}
-
 public DateTime DateTime.Add(DateTime self, TimeSpan value)
 {
     return new() { unixTicks = self.unixTicks + value.ticks };
@@ -343,35 +351,6 @@ public DateTime DateTime.Add(DateTime self, TimeSpan value)
 public DateTime DateTime.AddDays(DateTime self, double value)
 {
     return self.Add(TimeSpan.FromDays(value));
-}
-
-public int DateTime.Year(DateTime self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks).year;
-}
-public int DateTime.Month(DateTime self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks).month;
-}
-public int DateTime.Day(DateTime self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks).day;
-}
-public int DateTime.Hour(DateTime self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks).hour;
-}
-public int DateTime.Minute(DateTime self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks).minute;
-}
-public int DateTime.Second(DateTime self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks).second;
-}
-public int DateTime.Millisecond(DateTime self)
-{
-    return DatePartsFromUnixTicks(self.unixTicks).millisecond;
 }
 
 public string DateTime.ToString(DateTime self)

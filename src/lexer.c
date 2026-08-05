@@ -26,6 +26,7 @@ static const Keyword keywords[] = {
     {"namespace", TOK_NAMESPACE}, {"using", TOK_USING},
     {"as", TOK_AS}, {"public", TOK_PUB},
     {"private", TOK_PRIVATE},
+    {"static", TOK_STATIC},
     {"extern", TOK_EXTERN},
     {"type", TOK_TYPE},
     {"delegate", TOK_DELEGATE},

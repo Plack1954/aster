@@ -1608,6 +1608,36 @@ Stmt *parser_parse_statement(Parser *parser) {
     return stmt;
 }
 
+static Decl *parse_function(
+    Parser *parser, Token start, bool is_extern,
+    const char *return_type, TypeSyntax *return_type_syntax, Token name);
+
+static void configure_struct_member(
+    Parser *parser, Decl *member, const char *owner,
+    bool is_static, bool is_public, bool has_visibility) {
+    Function *function = &member->as.function;
+    function->owner_type = owner;
+    function->is_static_member = is_static;
+    function->name = join_text(parser, owner, "::", function->name);
+    member->is_public = is_public;
+    member->has_explicit_visibility = has_visibility;
+    if (is_static) return;
+    Param *parameters = lang_arena_alloc(
+        &parser->module->arena,
+        (function->param_count + 1U) * sizeof(*parameters));
+    parameters[0] = (Param){
+        .name="this", .type_name=owner, .borrowed=true,
+        .mutable_=false, .by_ref=false, .span=member->span,
+        .type_syntax=new_type_syntax(parser, TYPE_SYNTAX_NAMED, member->span)
+    };
+    parameters[0].type_syntax->as.name = owner;
+    if (function->param_count != 0U)
+        memcpy(parameters + 1U, function->params,
+               function->param_count * sizeof(*parameters));
+    function->params = parameters;
+    function->param_count += 1U;
+}
+
 static Decl *parse_struct_decl(
     Parser *parser, Token start, bool enumeration, bool is_union) {
     Token name = parser_expect(
@@ -1627,7 +1657,12 @@ static Decl *parse_struct_decl(
                   "generic declarations are limited to 16 type parameters");
     parser_expect(parser, TOK_LBRACE, "expected `{` after type name");
     ParserArrayBuilder fields = parser_array_builder(sizeof(FieldDecl));
+    ParserArrayBuilder members = parser_array_builder(sizeof(Decl *));
     while (parser->current.kind != TOK_RBRACE && parser->current.kind != TOK_EOF) {
+        bool member_public = parser_accept(parser, TOK_PUB);
+        bool member_private = !member_public && parser_accept(parser, TOK_PRIVATE);
+        bool member_visibility = member_public || member_private;
+        bool member_static = parser_accept(parser, TOK_STATIC);
         Token field;
         const char *type_name = "Unit";
         TypeSyntax *type_syntax = new_type_syntax(
@@ -1640,6 +1675,79 @@ static Decl *parse_struct_decl(
             field = parser_expect(parser, TOK_IDENT,
                            "expected field name after type");
             parse_declarator_suffix(parser, &type_syntax, &type_name);
+            if (parser->current.kind == TOK_LPAREN) {
+                Decl *member = parse_function(
+                    parser, field, false, type_name, type_syntax, field);
+                configure_struct_member(
+                    parser, member, *decl_name, member_static,
+                    member_public, member_visibility);
+                parser_array_push(&members, &member);
+                continue;
+            }
+            if (parser_accept(parser, TOK_FAT_ARROW)) {
+                Expr *value = parser_parse_expression(parser);
+                Token end = parser_expect(
+                    parser, TOK_SEMICOLON,
+                    "expected `;` after property expression");
+                Stmt *return_stmt = new_stmt(parser, STMT_RETURN, value->span);
+                return_stmt->as.return_value = value;
+                return_stmt->span.end = end.span.end;
+                Stmt *body = new_stmt(parser, STMT_BLOCK, field.span);
+                body->as.block.items = lang_arena_alloc(
+                    &parser->module->arena, sizeof(Stmt *));
+                body->as.block.items[0] = return_stmt;
+                body->as.block.count = 1U;
+                body->span.end = end.span.end;
+                Decl *member = lang_arena_alloc(
+                    &parser->module->arena, sizeof(*member));
+                member->kind = DECL_FUNCTION;
+                member->span = (LangSpan){field.span.file, field.span.start, end.span.end};
+                member->as.function.name = parser_copy_token(parser, field);
+                member->as.function.return_type = type_name;
+                member->as.function.return_type_syntax = type_syntax;
+                member->as.function.body = body;
+                member->as.function.span = member->span;
+                member->as.function.is_property_getter = true;
+                configure_struct_member(
+                    parser, member, *decl_name, member_static,
+                    member_public, member_visibility);
+                parser_array_push(&members, &member);
+                continue;
+            }
+            if (parser_accept(parser, TOK_LBRACE)) {
+                Token accessor = parser_expect(
+                    parser, TOK_IDENT, "expected `get` property accessor");
+                if (accessor.length != 3U ||
+                    strncmp(accessor.start, "get", 3U) != 0)
+                    lang_diag(parser->diagnostics, accessor.span,
+                              "read-only properties require a `get` accessor");
+                Stmt *body = parse_block(parser);
+                Token close = parser_expect(
+                    parser, TOK_RBRACE,
+                    "expected `}` after property accessors");
+                Decl *member = lang_arena_alloc(
+                    &parser->module->arena, sizeof(*member));
+                member->kind = DECL_FUNCTION;
+                member->span = (LangSpan){
+                    field.span.file, field.span.start, close.span.end};
+                member->as.function.name = parser_copy_token(parser, field);
+                member->as.function.return_type = type_name;
+                member->as.function.return_type_syntax = type_syntax;
+                member->as.function.body = body;
+                member->as.function.span = member->span;
+                member->as.function.is_property_getter = true;
+                configure_struct_member(
+                    parser, member, *decl_name, member_static,
+                    member_public, member_visibility);
+                parser_array_push(&members, &member);
+                continue;
+            }
+            if (member_static)
+                lang_diag(parser->diagnostics, field.span,
+                          "static fields are not supported yet; declare a static property");
+            if (member_visibility)
+                lang_diag(parser->diagnostics, field.span,
+                          "field visibility is not supported yet");
         }
         if (enumeration && parser_accept(parser, TOK_LPAREN)) {
             if (!is_union)
@@ -1690,6 +1798,8 @@ static Decl *parse_struct_decl(
     } else {
         decl->as.structure.field_count = fields.count;
         decl->as.structure.fields = parser_array_freeze(parser, &fields);
+        decl->as.structure.member_count = members.count;
+        decl->as.structure.members = parser_array_freeze(parser, &members);
     }
     decl->span.end = parser_expect(parser, TOK_RBRACE, "expected `}` after declaration").span.end;
     return decl;
@@ -2102,6 +2212,14 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
         decl->is_public = is_public;
         decl->has_explicit_visibility = has_explicit_visibility;
         parser_array_push(&declarations, &decl);
+        if (decl->kind == DECL_STRUCT) {
+            for (size_t member = 0U;
+                 member < decl->as.structure.member_count; ++member) {
+                Decl *nested = decl->as.structure.members[member];
+                nested->module_name = parser.current_module;
+                parser_array_push(&declarations, &nested);
+            }
+        }
     }
     module->import_count = imports.count;
     module->imports = parser_array_freeze(&parser, &imports);

@@ -51,11 +51,11 @@ int main()
     DateTime advanced = utc.Add(TimeSpan.FromSeconds(2.0));
     if (advanced.Subtract(utc).TotalSeconds() != 2.0) { return 3; }
     DateTime parsedDateTime = DateTime.Parse("1969-12-31T23:59:59.999Z");
-    if (parsedDateTime.Year() != 1969 || parsedDateTime.Month() != 12 ||
-        parsedDateTime.Day() != 31 ||
+    if (parsedDateTime.Year != 1969 || parsedDateTime.Month != 12 ||
+        parsedDateTime.Day != 31 ||
         parsedDateTime.ToString() != "1969-12-31T23:59:59.999Z")
         { return 9; }
-    if (parsedDateTime.AddDays(1.0).Day() != 1) { return 10; }
+    if (parsedDateTime.AddDays(1.0).Day != 1) { return 10; }
 
     DateOnly date = DateOnly.Parse("2024-02-29");
     if (date.Year() != 2024 || date.Month() != 2 || date.Day() != 29 ||
@@ -94,6 +94,6 @@ int main()
 
     long now = DateTimeOffset.UtcNow().ToUnixTimeMilliseconds();
     if (now < 1577836800000) { return 4; }
-    DateTime.UtcNow();
+    DateTime.UtcNow;
     return 0;
 }

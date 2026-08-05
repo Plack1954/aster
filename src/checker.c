@@ -346,6 +346,26 @@ static Type *rewrite_builtin_call(
     return checker_check_call(checker, expr);
 }
 
+static Type *rewrite_instance_property_call(
+    Checker *checker, Expr *expr, const char *name, Expr *receiver) {
+    Expr *callee = lang_arena_alloc(
+        &checker->module->arena, sizeof(*callee));
+    memset(callee, 0, sizeof(*callee));
+    callee->kind = EXPR_NAME;
+    callee->span = expr->span;
+    callee->as.name = name;
+    Expr **arguments = lang_arena_alloc(
+        &checker->module->arena, sizeof(*arguments));
+    arguments[0] = receiver;
+    expr->kind = EXPR_CALL;
+    expr->as.call.callee = callee;
+    expr->as.call.arguments.items = arguments;
+    expr->as.call.arguments.count = 1U;
+    expr->as.call.argument_modes = NULL;
+    expr->as.call.implicit_receiver = true;
+    return checker_check_call(checker, expr);
+}
+
 static Type *rewrite_zero_argument_builtin_call(
     Checker *checker, Expr *expr, const char *name) {
     Expr *callee = lang_arena_alloc(
@@ -945,6 +965,15 @@ Type *check_expr(Checker *checker, Expr *expr) {
         case EXPR_FIELD: {
             const char *static_name = checker_static_call_path(checker, expr);
             if (static_name != NULL) {
+                Function *static_member = find_function(
+                    checker, static_name, expr->span);
+                if (static_member != NULL &&
+                    static_member->is_property_getter &&
+                    static_member->is_static_member) {
+                    result = rewrite_zero_argument_builtin_call(
+                        checker, expr, static_name);
+                    goto checked_expression;
+                }
                 if (strcmp(static_name, "string::Empty") == 0) {
                     expr->kind = EXPR_STRING;
                     expr->as.string.data = "";
@@ -1010,6 +1039,27 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 break;
             }
             Type *object = check_place(checker, expr->as.field.object);
+            if (object->kind == TYPE_NAMED &&
+                object->declaration != NULL &&
+                object->declaration->kind == DECL_STRUCT) {
+                const Decl *structure = object->declaration;
+                for (size_t member = 0U;
+                     member < structure->as.structure.member_count; ++member) {
+                    Function *candidate =
+                        &structure->as.structure.members[member]->as.function;
+                    const char *separator = strrchr(candidate->name, ':');
+                    const char *short_name = separator != NULL
+                        ? separator + 1U : candidate->name;
+                    if (candidate->is_property_getter &&
+                        !candidate->is_static_member &&
+                        strcmp(short_name, expr->as.field.field) == 0) {
+                        result = rewrite_instance_property_call(
+                            checker, expr, candidate->name,
+                            expr->as.field.object);
+                        goto checked_expression;
+                    }
+                }
+            }
             if (object->kind == TYPE_CANCELLATION_TOKEN_SOURCE &&
                 strcmp(expr->as.field.field, "Token") == 0) {
                 result = rewrite_builtin_call(

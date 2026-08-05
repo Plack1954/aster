@@ -37,7 +37,7 @@ typedef enum TokenKind {
     TOK_TRUE, TOK_FALSE, TOK_NULL,
     TOK_UNSAFE, TOK_TRY, TOK_CATCH, TOK_FINALLY, TOK_THROW,
     TOK_ASYNC, TOK_AWAIT,
-    TOK_NAMESPACE, TOK_USING, TOK_AS, TOK_PUB, TOK_PRIVATE, TOK_EXTERN,
+    TOK_NAMESPACE, TOK_USING, TOK_AS, TOK_PUB, TOK_PRIVATE, TOK_STATIC, TOK_EXTERN,
     TOK_TYPE,
     TOK_DELEGATE,
     TOK_ELEMENT,
@@ -435,6 +435,9 @@ typedef struct Function {
     bool is_extern;
     bool is_drop;
     bool is_async;
+    bool is_static_member;
+    bool is_property_getter;
+    const char *owner_type;
     bool is_web_handler;
     const char *css_scope_attribute;
 } Function;
@@ -465,6 +468,8 @@ typedef struct Decl {
             const char *name;
             FieldDecl *fields;
             size_t field_count;
+            struct Decl **members;
+            size_t member_count;
             bool is_extern;
         } structure;
         struct {

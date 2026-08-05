@@ -209,6 +209,10 @@ add_test(NAME readonly_span_mutation_rejected
 set_tests_properties(readonly_span_mutation_rejected PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE)
+add_test(NAME struct_members_vm COMMAND lang run tests/struct_members.lang)
+set_tests_properties(struct_members_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42")
 add_test(NAME hello_run COMMAND lang run examples/hello.lang)
 set_tests_properties(hello_run PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
