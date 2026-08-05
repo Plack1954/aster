@@ -5,8 +5,8 @@ using System.Text;
 public using TestResult = Result<bool, string>;
 
 public struct TestSummary {
-    usize passed;
-    usize failed;
+    nuint passed;
+    nuint failed;
 }
 
 public TestResult TestPass() {

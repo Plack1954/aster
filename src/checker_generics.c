@@ -367,7 +367,7 @@ static bool infer_generic_pattern(
     } else if (strcmp(base, "List") == 0 && actual->kind == TYPE_VEC) {
         actual_arguments = &actual->element;
         actual_count = 1U;
-    } else if (strcmp(base, "Slice") == 0 && actual->kind == TYPE_SLICE) {
+    } else if (strcmp(base, "Span") == 0 && actual->kind == TYPE_SLICE) {
         actual_arguments = &actual->element;
         actual_count = 1U;
     } else if (strcmp(base, "Result") == 0 &&
@@ -473,7 +473,7 @@ static bool infer_generic_syntax(
     size_t actual_count = 0U;
     if ((strcmp(base, "Option") == 0 && actual->kind == TYPE_OPTION) ||
         (strcmp(base, "List") == 0 && actual->kind == TYPE_VEC) ||
-        (strcmp(base, "Slice") == 0 && actual->kind == TYPE_SLICE) ||
+        (strcmp(base, "Span") == 0 && actual->kind == TYPE_SLICE) ||
         (strcmp(base, "HashSet") == 0 && actual->kind == TYPE_HASH_SET) ||
         (strcmp(base, "Queue") == 0 && actual->kind == TYPE_QUEUE) ||
         (strcmp(base, "Stack") == 0 && actual->kind == TYPE_STACK) ||

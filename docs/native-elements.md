@@ -194,7 +194,7 @@ beginning with a statement-only token such as `var` is parsed by the ordinary
 block parser and produces `STMT_BLOCK`; braces beginning with an expression
 retain the child-expression meaning.
 Children produce `string`, `Html`, `Option<Child>`, fixed arrays of
-children, `List<Child>`, or `unit`. An option appends zero or one child; arrays
+children, `List<Child>`, or `void`. A nullable value appends zero or one child; arrays
 and vectors append in order. Owning child values are consumed by the parent
 builder, while fresh temporaries need no explicit move.
 

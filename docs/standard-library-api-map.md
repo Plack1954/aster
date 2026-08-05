@@ -245,10 +245,10 @@ Post first = posts[0];
 | --- | --- | --- | --- |
 | `List<T> values = new()` | target-typed `new()` | Exact |
 | `values.Add(value)` | `values.Add(value)` | Exact |
-| `values.Count` | `values.Count` | Exact | Read-only property; Aster currently exposes collection sizes as `usize`. |
-| `values.Capacity` | `values.Capacity` | Exact property shape | Read/write; Aster exposes collection sizes as `usize`. Capacity cannot be set below `Count`. |
+| `values.Count` | `values.Count` | Exact | Read-only property; Aster currently exposes collection sizes as `nuint`. |
+| `values.Capacity` | `values.Capacity` | Exact property shape | Read/write; Aster exposes collection sizes as `nuint`. Capacity cannot be set below `Count`. |
 | `values[index]` | `values[index]` | Exact | Checked reads and assignments are implemented. |
-| `values.Insert(index, value)` | `values.Insert(index, value)` | Exact name and behavior | Accepts insertion at `Count`; Aster indexes are `usize`. |
+| `values.Insert(index, value)` | `values.Insert(index, value)` | Exact name and behavior | Accepts insertion at `Count`; Aster indexes are `nuint`. |
 | `values.RemoveAt(index)` | `values.RemoveAt(index)` | Exact name and behavior | Releases the removed element and shifts later elements. |
 | `values.Contains(value)` | `values.Contains(value)` | Implemented for defined-equality types | Linear search using Aster value equality. |
 | `values.IndexOf(value)` | `values.IndexOf(value)` | Exact name and result shape | Returns the first index or `-1`; range overloads remain pending. |
@@ -259,7 +259,7 @@ Post first = posts[0];
 | `values.RemoveRange(index, count)` | `values.RemoveRange(index, count)` | Exact name and behavior | Checked removal; a zero-length range at `Count` is valid. |
 | `values.GetRange(index, count)` | `values.GetRange(index, count)` | Exact name and value behavior | Returns an independent `List<T>` value. |
 | `values.Reverse()` / `values.Reverse(index, count)` | same | Exact overload family | Reverses the complete list or a checked range in place. |
-| `values.EnsureCapacity(capacity)` | same | Exact name and behavior | Returns the resulting capacity as Aster `usize`. |
+| `values.EnsureCapacity(capacity)` | same | Exact name and behavior | Returns the resulting capacity as Aster `nuint`. |
 | `values.TrimExcess()` | same | Exact behavior | Shrinks to `Count` only below the documented 90-percent threshold. |
 | `values.Exists(predicate)` | same | Exact whole-list form | Stops at the first match. |
 | `values.FindAll(predicate)` | same | Exact whole-list form | Returns an independent list of matching values. |
@@ -313,11 +313,11 @@ The first bounded dictionary surface is implemented in the VM and generated C:
 | `values.Add(key, value)` | same | Exact; duplicate keys fail |
 | `values.TryAdd(key, value)` | same | Exact Boolean result; existing values are unchanged |
 | `values.TryGetValue(key, out value)` | same | Exact Boolean and output shape; unsuccessful lookup writes the default value |
-| `values.Count` | same | Exact property shape; Aster size is `usize` |
+| `values.Count` | same | Exact property shape; Aster size is `nuint` |
 | `values.ContainsKey(key)` | same | Exact |
 | `values.ContainsValue(value)` | same | Exact for values with built-in equality |
-| `values.Capacity` | same | Exact read-only property shape; Aster size is `usize` |
-| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `usize` |
+| `values.Capacity` | same | Exact read-only property shape; Aster size is `nuint` |
+| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `nuint` |
 | `values.TrimExcess()` | same | Exact behavior |
 | `values.TrimExcess(capacity)` | same | Exact behavior; capacity cannot be below `Count` |
 | `values[key]` | same | Checked read and insert-or-replace assignment |
@@ -343,9 +343,9 @@ The first bounded set surface is implemented in the VM and generated C:
 | `values.Add(value)` | same | Exact Boolean result; duplicates are unchanged |
 | `values.Contains(value)` | same | Exact |
 | `values.Remove(value)` | same | Exact Boolean result |
-| `values.Count` | same | Exact property shape; Aster size is `usize` |
-| `values.Capacity` | same | Exact read-only property shape; Aster size is `usize` |
-| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `usize` |
+| `values.Count` | same | Exact property shape; Aster size is `nuint` |
+| `values.Capacity` | same | Exact read-only property shape; Aster size is `nuint` |
+| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `nuint` |
 | `values.TrimExcess()` | same | Exact behavior |
 | `values.TrimExcess(capacity)` | same | Exact behavior; capacity cannot be below `Count` |
 | `values.Clear()` | same | Exact |
@@ -367,9 +367,9 @@ The first bounded FIFO surface is implemented in the VM and generated C:
 | `values.Peek()` | same | Exact non-removing result; empty queues fail |
 | `values.TryDequeue(out value)` | same | Exact Boolean/output shape; removes only on success |
 | `values.TryPeek(out value)` | same | Exact Boolean/output shape; never removes |
-| `values.Count` | same | Exact property shape; Aster size is `usize` |
-| `values.Capacity` | same | Exact read-only property shape; Aster size is `usize` |
-| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `usize` |
+| `values.Count` | same | Exact property shape; Aster size is `nuint` |
+| `values.Capacity` | same | Exact read-only property shape; Aster size is `nuint` |
+| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `nuint` |
 | `values.TrimExcess()` | same | Exact behavior |
 | `values.Clear()` | same | Exact |
 
@@ -390,9 +390,9 @@ The first bounded LIFO surface is implemented in the VM and generated C:
 | `values.Peek()` | same | Exact non-removing result; empty stacks fail |
 | `values.TryPop(out value)` | same | Exact Boolean/output shape; removes only on success |
 | `values.TryPeek(out value)` | same | Exact Boolean/output shape; never removes |
-| `values.Count` | same | Exact property shape; Aster size is `usize` |
-| `values.Capacity` | same | Exact read-only property shape; Aster size is `usize` |
-| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `usize` |
+| `values.Count` | same | Exact property shape; Aster size is `nuint` |
+| `values.Capacity` | same | Exact read-only property shape; Aster size is `nuint` |
+| `values.EnsureCapacity(capacity)` | same | Exact behavior; returns current capacity as `nuint` |
 | `values.TrimExcess()` | same | Exact behavior |
 | `values.TrimExcess(capacity)` | same | Exact behavior; capacity cannot be below `Count` |
 | `values.Clear()` | same | Exact |

@@ -320,7 +320,7 @@ static LangNativeResult sqlite_bind_blob_value(
         args[2].tag != LANG_VALUE_BYTE_SLICE ||
         args[2].as.bytes.length > (size_t)INT_MAX)
         return native_failure(
-            "sqlite_bind_blob expects `(Statement, positive i64, Slice<byte>)`");
+            "sqlite_bind_blob expects `(Statement, positive i64, Span<byte>)`");
     int status = sqlite3_bind_blob(
         statement->as.statement, (int)index,
         args[2].as.bytes.data, (int)args[2].as.bytes.length,
@@ -521,7 +521,7 @@ static LangNativeResult sqlite_column_blob_copy_value(
         index >= sqlite3_column_count(statement->as.statement) ||
         args[2].tag != LANG_VALUE_BYTE_SLICE)
         return native_failure(
-            "sqlite_column_blob_copy expects `(Statement, column, Slice<byte>)`");
+            "sqlite_column_blob_copy expects `(Statement, column, Span<byte>)`");
     if (sqlite3_column_type(statement->as.statement, (int)index) != SQLITE_BLOB)
         return result_error(vm, "SQLite column is not a blob");
     int length = sqlite3_column_bytes(statement->as.statement, (int)index);

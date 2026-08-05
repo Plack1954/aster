@@ -1,7 +1,7 @@
 private extern NativeHandle NativeHandleOpenId(long id);
 
 struct Marker {
-    id: long,
+    long id;
 }
 
 ~Marker() {
@@ -9,8 +9,8 @@ struct Marker {
 }
 
 struct Pair {
-    first: long,
-    second: long,
+    long first;
+    long second;
 }
 
 enum Phase {
@@ -18,29 +18,29 @@ enum Phase {
     Done,
 }
 
-element section -> Html {
-    children: Html,
+element Html section {
+    Html children;
 }
 
-element strong -> Html {
-    children: Html,
+element Html strong {
+    Html children;
 }
 
-element style -> Html {
-    children: Html,
+element Html style {
+    Html children;
 }
 
 private Html Badge(string label) {
     return <strong>{label}</strong>;
 }
 
-private Html render(bool show, [string; 2] labels) {
+private Html render(bool show, string labels[2]) {
     return <section>
         <style scoped>.featured { color: red; }</style>
         if (show) {
             <Badge label="Featured" />
         }
-        for (label in labels) {
+        foreach (string label in labels) {
             <strong>{label}</strong>
         }
     </section>;
@@ -103,11 +103,11 @@ int main() {
     pair.first = 9;
     Console.WriteLine(pair.second);
 
-    [long; 2] values = [3, 4];
+    long values[2] = [3, 4];
     values[0] = 5;
     Console.WriteLine(values[1]);
     long total = 0;
-    for (item in values) {
+    foreach (long item in values) {
         total = total + item;
     }
     Console.WriteLine(total);

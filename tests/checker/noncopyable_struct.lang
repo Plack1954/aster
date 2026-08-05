@@ -1,5 +1,5 @@
 struct Owner {
-    arena: Arena,
+    Arena arena;
 }
 
 int main() {

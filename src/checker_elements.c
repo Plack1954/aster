@@ -330,7 +330,7 @@ Type *check_element(Checker *checker, Expr *expr) {
                     lang_diag(
                         checker->diagnostics,
                         item->as.expression->span,
-                        "fragment child must produce text, a scalar, `Html`, or `unit`; found `%s`",
+                        "fragment child must produce text, a scalar, `Html`, or `void`; found `%s`",
                         child->name);
             }
         }
@@ -491,7 +491,7 @@ Type *check_element(Checker *checker, Expr *expr) {
                     if (!is_element_child_type(child))
                         lang_diag(checker->diagnostics,
                                   item->as.expression->span,
-                                  "component child must produce text, a scalar, `Html`, or `unit`; found `%s`",
+                                  "component child must produce text, a scalar, `Html`, or `void`; found `%s`",
                                   child->name);
                 }
             }
@@ -646,7 +646,7 @@ Type *check_element(Checker *checker, Expr *expr) {
                 if (!is_element_child_type(child))
                     lang_diag(checker->diagnostics,
                               item->as.expression->span,
-                              "element child must produce text, a scalar, `Html`, or `unit`; found `%s`",
+                              "element child must produce text, a scalar, `Html`, or `void`; found `%s`",
                               child->name);
             }
         }

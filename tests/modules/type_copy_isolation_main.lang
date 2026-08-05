@@ -3,7 +3,7 @@ namespace Types.CloneIsolation;
 using Types.Dep;
 
 struct Resource {
-    id: long,
+    long id;
 }
 
 int main() {

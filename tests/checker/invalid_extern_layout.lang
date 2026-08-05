@@ -1,5 +1,5 @@
 extern struct BadCLayout {
-    text: string,
+    string text;
 }
 
 int main() {

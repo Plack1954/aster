@@ -5,7 +5,7 @@ using System.Text;
 
 private void MarkdownAppendEscaped(ref StringBuilder output, string value)
 {
-    for (usize index = 0; index < value.Length; index++)
+    for (nuint index = 0; index < value.Length; index++)
     {
         byte current = StringByteAt(value, index);
         if (current == 38) { output.Append("&amp;"); }
@@ -18,8 +18,8 @@ private void MarkdownAppendEscaped(ref StringBuilder output, string value)
 
 private void MarkdownAppendInline(ref StringBuilder output, string value)
 {
-    usize cursor = 0;
-    usize segment = 0;
+    nuint cursor = 0;
+    nuint segment = 0;
     bool strong = false;
     while (cursor + 1 < value.Length)
     {
@@ -46,7 +46,7 @@ private void MarkdownAppendInline(ref StringBuilder output, string value)
 
 private bool MarkdownOrderedItem(string line)
 {
-    usize cursor = 0;
+    nuint cursor = 0;
     while (cursor < line.Length &&
            StringByteAt(line, cursor) >= 48 &&
            StringByteAt(line, cursor) <= 57)
@@ -58,9 +58,9 @@ private bool MarkdownOrderedItem(string line)
         StringByteAt(line, cursor + 1) == 32;
 }
 
-private usize MarkdownOrderedTextStart(string line)
+private nuint MarkdownOrderedTextStart(string line)
 {
-    usize cursor = 0;
+    nuint cursor = 0;
     while (cursor < line.Length &&
            StringByteAt(line, cursor) >= 48 &&
            StringByteAt(line, cursor) <= 57)
@@ -70,9 +70,9 @@ private usize MarkdownOrderedTextStart(string line)
     return cursor + 2;
 }
 
-private usize MarkdownHeadingLevel(string line)
+private nuint MarkdownHeadingLevel(string line)
 {
-    usize level = 0;
+    nuint level = 0;
     while (level < line.Length && level < 6 &&
            StringByteAt(line, level) == 35)
     {
@@ -86,7 +86,7 @@ private usize MarkdownHeadingLevel(string line)
     return level;
 }
 
-private string MarkdownHeadingOpen(usize level)
+private string MarkdownHeadingOpen(nuint level)
 {
     if (level == 1) { return "<h1>"; }
     if (level == 2) { return "<h2>"; }
@@ -96,7 +96,7 @@ private string MarkdownHeadingOpen(usize level)
     return "<h6>";
 }
 
-private string MarkdownHeadingClose(usize level)
+private string MarkdownHeadingClose(nuint level)
 {
     if (level == 1) { return "</h1>"; }
     if (level == 2) { return "</h2>"; }
@@ -110,16 +110,16 @@ public Html Markdown(string source)
 {
     StringBuilder output = new();
     bool listOpen = false;
-    usize cursor = 0;
+    nuint cursor = 0;
     while (cursor < source.Length)
     {
-        usize end = cursor;
+        nuint end = cursor;
         while (end < source.Length && StringByteAt(source, end) != 10)
         {
             end += 1;
         }
         string line = StringSlice(source, cursor, end);
-        usize headingLevel = MarkdownHeadingLevel(line);
+        nuint headingLevel = MarkdownHeadingLevel(line);
         if (headingLevel > 0)
         {
             if (listOpen)
@@ -160,7 +160,7 @@ public Html Markdown(string source)
                 output.Append("</p>");
             }
         }
-        cursor = if (end < source.Length) { end + 1 } else { end };
+        cursor = end < source.Length ? end + 1 : end;
     }
     if (listOpen) { output.Append("</ol>"); }
     return Html.UnsafeRaw(output.ToString());

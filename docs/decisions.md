@@ -230,7 +230,7 @@ Consequences: division/comparison property expressions must be parenthesized.
 
 ## Compiler-known minimum containers
 
-Decision: implement `Option<T>`, `Result<T, E>`, `Slice<T>`, and `List<T>` as
+Decision: implement `Option<T>`, `Result<T, E>`, `Span<T>`, and `List<T>` as
 isolated compiler-known type constructors in Version 1.
 
 Context: the required standard surface needs typed containers before general
@@ -1048,7 +1048,7 @@ Alternatives: return a newly allocated buffer for every read, expose `FILE *`
 as a raw pointer, implement the whole copy operation natively, or wait for a
 larger I/O framework.
 
-Reason: the existing unsafe `Buffer` to `Slice<byte>` bridge already expresses
+Reason: the existing unsafe `Buffer` to `Span<byte>` bridge already expresses
 non-owning byte access. Borrowing that slice for one native call preserves
 explicit ownership while Aster controls looping, EOF, totals, and cleanup.
 

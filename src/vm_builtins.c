@@ -187,7 +187,7 @@ static LangNativeResult native_fill_bytes(LangVM *vm, const LangValue *args,
         args[1].as.u64 > UINT8_MAX)
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},
-            "native_fill_bytes expects `(Slice<u8>, u8)`"
+            "native_fill_bytes expects `(Span<u8>, u8)`"
         };
     if (bytes.length != 0U)
         memset(bytes.data, (int)args[1].as.u64, bytes.length);
@@ -279,7 +279,7 @@ static LangNativeResult native_process_argument_count_value(
     if (process_argument_count > (size_t)UINT64_MAX)
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},
-            "process argument count is not representable as usize"
+            "process argument count is not representable as nuint"
         };
     return (LangNativeResult){
         true,
@@ -296,7 +296,7 @@ static LangNativeResult native_process_argument_value(
     if (arg_count != 1U || args[0].tag != LANG_VALUE_U64)
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},
-            "native_process_arg expects one usize index"
+            "native_process_arg expects one nuint index"
         };
     if (args[0].as.u64 >=
         (uint64_t)vm_process_argument_count(vm))
@@ -1152,7 +1152,7 @@ static LangNativeResult native_file_read_bytes_value(
         !lang_value_byte_slice(&args[1], &bytes))
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},
-            "native_file_read_into expects `(file, Slice<u8>)`"
+            "native_file_read_into expects `(file, Span<u8>)`"
         };
     NativeFile *file = lang_native_handle_data(&args[0]);
     if (file == NULL || file->stream == NULL)
@@ -1182,7 +1182,7 @@ static LangNativeResult native_file_write_bytes_value(
         args[2].as.u64 > (uint64_t)bytes.length)
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},
-            "native_file_write_bytes expects `(file, Slice<u8>, usize)`"
+            "native_file_write_bytes expects `(file, Span<u8>, nuint)`"
         };
     NativeFile *file = lang_native_handle_data(&args[0]);
     if (file == NULL || file->stream == NULL)
@@ -1219,7 +1219,7 @@ static LangNativeResult native_byte_slice_length_value(
         !lang_value_byte_slice(&args[0], &bytes))
         return (LangNativeResult){
             false, {.tag=LANG_VALUE_UNIT},
-            "byte_slice_len expects one Slice<u8>"
+            "byte_slice_len expects one Span<u8>"
         };
     return (LangNativeResult){
         true,

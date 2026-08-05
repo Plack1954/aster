@@ -5,7 +5,7 @@ private String record(long index, bool active) {
 int main() {
     Console.WriteLine(record(0, true));
 
-    usize total = 0;
+    nuint total = 0;
     long index = 0;
     bool active = true;
     while (index < 300000) {

@@ -5,7 +5,7 @@
 #include <string.h>
 
 Type type_error = {.kind=TYPE_ERROR, .name="<error>"};
-Type type_unit = {.kind=TYPE_UNIT, .name="unit"};
+Type type_unit = {.kind=TYPE_UNIT, .name="Unit"};
 Type type_never = {.kind=TYPE_NEVER, .name="never"};
 Type type_bool = {.kind=TYPE_BOOL, .name="bool"};
 Type type_i8 = {.kind=TYPE_I8, .name="i8"};
@@ -16,8 +16,8 @@ Type type_u8 = {.kind=TYPE_U8, .name="u8"};
 Type type_u16 = {.kind=TYPE_U16, .name="u16"};
 Type type_u32 = {.kind=TYPE_U32, .name="u32"};
 Type type_u64 = {.kind=TYPE_U64, .name="u64"};
-Type type_isize = {.kind=TYPE_ISIZE, .name="isize"};
-Type type_usize = {.kind=TYPE_USIZE, .name="usize"};
+Type type_isize = {.kind=TYPE_ISIZE, .name="nint"};
+Type type_usize = {.kind=TYPE_USIZE, .name="nuint"};
 Type type_f32 = {.kind=TYPE_F32, .name="f32"};
 Type type_f64 = {.kind=TYPE_F64, .name="f64"};
 Type type_char = {.kind=TYPE_CHAR, .name="char"};
@@ -84,7 +84,7 @@ Type type_raw_pointer = {
     .pointer_mutable=true
 };
 Type type_u8_slice = {
-    .kind=TYPE_SLICE, .name="Slice<u8>", .element=&type_u8
+    .kind=TYPE_SLICE, .name="Span<u8>", .element=&type_u8
 };
 
 bool is_signed_integer(const Type *type) {
@@ -783,7 +783,7 @@ static Type *resolve_generic_syntax(Checker *checker,
     size_t expected = 1U;
     bool requires_cleanup = false;
     bool managed = false;
-    if (strcmp(base, "Slice") == 0) kind = TYPE_SLICE;
+    if (strcmp(base, "Span") == 0) kind = TYPE_SLICE;
     else if (strcmp(base, "List") == 0) {
         kind = TYPE_VEC;
         requires_cleanup = true;
@@ -1026,7 +1026,7 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
                     name,
                     checker->substitution_decl->type_params[i]) == 0)
                 return checker->substitution_arguments[i];
-    if (strcmp(name, "unit") == 0) return &type_unit;
+    if (strcmp(name, "Unit") == 0) return &type_unit;
     if (strcmp(name, "void") == 0) return &type_unit;
     if (strcmp(name, "never") == 0) return &type_never;
     if (strcmp(name, "bool") == 0) return &type_bool;
@@ -1046,8 +1046,8 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
     if (strcmp(name, "uint") == 0) return &type_u32;
     if (strcmp(name, "u64") == 0) return &type_u64;
     if (strcmp(name, "ulong") == 0) return &type_u64;
-    if (strcmp(name, "isize") == 0) return &type_isize;
-    if (strcmp(name, "usize") == 0) return &type_usize;
+    if (strcmp(name, "nint") == 0) return &type_isize;
+    if (strcmp(name, "nuint") == 0) return &type_usize;
     if (strcmp(name, "f32") == 0) return &type_f32;
     if (strcmp(name, "float") == 0) return &type_f32;
     if (strcmp(name, "f64") == 0) return &type_f64;
@@ -1188,11 +1188,11 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
         pointer->requires_cleanup = false;
         return pointer;
     }
-    if (strncmp(name, "Slice<", 6U) == 0) {
+    if (strncmp(name, "Span<", 6U) == 0) {
         size_t length = strlen(name);
         if (length < 8U || name[length - 1U] != '>') {
             lang_diag(checker->diagnostics, span,
-                      "malformed Slice type `%s`", name);
+                      "malformed Span type `%s`", name);
             return &type_error;
         }
         char *element_name = lang_arena_strndup(
@@ -1576,7 +1576,7 @@ Type *lang_checker_resolve_aggregate_member(
     if (members == NULL || member_index >= member_count ||
         members[member_index].type_name == NULL ||
         (decl->kind == DECL_ENUM &&
-         strcmp(members[member_index].type_name, "unit") == 0))
+         strcmp(members[member_index].type_name, "Unit") == 0))
         return NULL;
     Checker checker;
     memset(&checker, 0, sizeof(checker));

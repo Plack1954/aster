@@ -261,7 +261,7 @@ int main(void) {
     bool has_payload_move =
         contains_opcode(&ir, IR_OP_LOCAL_ENUM_PAYLOAD_MOVE);
     bool has_iterator =
-        contains_opcode(&ir, IR_OP_ITERATOR_BEGIN) &&
+        contains_opcode(&ir, IR_OP_BORROWED_ITERATOR_BEGIN) &&
         contains_opcode(&ir, IR_OP_LOCAL_ITERATOR_HAS_NEXT) &&
         contains_opcode(&ir, IR_OP_LOCAL_ITERATOR_NEXT);
     bool has_raw_pointer =

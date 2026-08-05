@@ -224,7 +224,7 @@ int main()
         { return 46; }
     List<byte> decoded = Convert.FromBase64String(" AgQG\r\nCAoM\t");
     if (decoded.Count != base64Bytes.Count) { return 47; }
-    for (usize index = 0; index < decoded.Count; index++)
+    for (nuint index = 0; index < decoded.Count; index++)
     {
         if (decoded[index] != base64Bytes[index]) { return 48; }
     }

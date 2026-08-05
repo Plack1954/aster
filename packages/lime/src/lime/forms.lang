@@ -32,7 +32,7 @@ public long FormFile.Length(FormFile self) { return (long)self.bytes.Length; }
 public MemoryStream FormFile.OpenReadStream(FormFile self)
 {
     List<byte> bytes = new();
-    for (usize index = 0; index < self.bytes.Length; index += 1)
+    for (nuint index = 0; index < self.bytes.Length; index += 1)
     {
         bytes.Add(StringByteAt(self.bytes, index));
     }
@@ -78,17 +78,17 @@ public List<FormFile> FormCollection.Files(FormCollection self)
     return self.files;
 }
 
-private Option<usize> FindBytes(string source, string value, usize start)
+private Option<nuint> FindBytes(string source, string value, nuint start)
 {
     if (value.Length == 0 || value.Length > source.Length)
     {
         return Option.None;
     }
-    usize last = source.Length - value.Length;
-    usize index = start;
+    nuint last = source.Length - value.Length;
+    nuint index = start;
     while (index <= last)
     {
-        usize offset = 0;
+        nuint offset = 0;
         while (offset < value.Length &&
             StringByteAt(source, index + offset) ==
                 StringByteAt(value, offset))
@@ -110,7 +110,7 @@ private byte FormAsciiLower(byte value)
 private bool FormAsciiEqual(string left, string right)
 {
     if (left.Length != right.Length) { return false; }
-    for (usize index = 0; index < left.Length; index += 1)
+    for (nuint index = 0; index < left.Length; index += 1)
     {
         if (FormAsciiLower(StringByteAt(left, index)) !=
             FormAsciiLower(StringByteAt(right, index)))
@@ -123,7 +123,7 @@ private bool FormAsciiEqual(string left, string right)
 
 private bool FormMediaTypeIs(string value, string expected)
 {
-    usize index = 0;
+    nuint index = 0;
     while (index < value.Length &&
         (StringByteAt(value, index) == 32 ||
          StringByteAt(value, index) == 9))
@@ -131,7 +131,7 @@ private bool FormMediaTypeIs(string value, string expected)
         index += 1;
     }
     if (expected.Length > value.Length - index) { return false; }
-    for (usize offset = 0; offset < expected.Length; offset += 1)
+    for (nuint offset = 0; offset < expected.Length; offset += 1)
     {
         if (FormAsciiLower(StringByteAt(value, index + offset)) !=
             FormAsciiLower(StringByteAt(expected, offset)))
@@ -151,8 +151,8 @@ private bool FormMediaTypeIs(string value, string expected)
 
 private string TrimHttpWhitespace(string value)
 {
-    usize start = 0;
-    usize end = value.Length;
+    nuint start = 0;
+    nuint end = value.Length;
     while (start < end &&
         (StringByteAt(value, start) == 32 ||
          StringByteAt(value, start) == 9))
@@ -181,7 +181,7 @@ private string UnquoteHeaderValue(string value)
 
 private Option<string> HeaderParameter(string value, string parameter)
 {
-    usize cursor = 0;
+    nuint cursor = 0;
     while (cursor < value.Length)
     {
         while (cursor < value.Length &&
@@ -191,14 +191,14 @@ private Option<string> HeaderParameter(string value, string parameter)
         {
             cursor += 1;
         }
-        usize nameStart = cursor;
+        nuint nameStart = cursor;
         while (cursor < value.Length &&
             StringByteAt(value, cursor) != 61 &&
             StringByteAt(value, cursor) != 59)
         {
             cursor += 1;
         }
-        usize nameEnd = cursor;
+        nuint nameEnd = cursor;
         while (nameEnd > nameStart &&
             (StringByteAt(value, nameEnd - 1) == 32 ||
              StringByteAt(value, nameEnd - 1) == 9))
@@ -208,8 +208,8 @@ private Option<string> HeaderParameter(string value, string parameter)
         if (cursor < value.Length && StringByteAt(value, cursor) == 61)
         {
             cursor += 1;
-            usize valueStart = cursor;
-            usize valueEnd = cursor;
+            nuint valueStart = cursor;
+            nuint valueEnd = cursor;
             if (cursor < value.Length && StringByteAt(value, cursor) == 34)
             {
                 valueStart = cursor;
@@ -261,10 +261,10 @@ private Option<string> HeaderParameter(string value, string parameter)
 
 private Option<string> PartHeader(string headers, string name)
 {
-    usize cursor = 0;
+    nuint cursor = 0;
     while (cursor < headers.Length)
     {
-        usize end = cursor;
+        nuint end = cursor;
         while (end < headers.Length &&
             !(end + 1 < headers.Length &&
               StringByteAt(headers, end) == 13 &&
@@ -272,7 +272,7 @@ private Option<string> PartHeader(string headers, string name)
         {
             end += 1;
         }
-        usize colon = cursor;
+        nuint colon = cursor;
         while (colon < end && StringByteAt(headers, colon) != 58)
         {
             colon += 1;
@@ -288,8 +288,7 @@ private Option<string> PartHeader(string headers, string name)
                 )
             ));
         }
-        cursor = if (end < headers.Length) { end + 2 }
-            else { headers.Length };
+        cursor = end < headers.Length ? end + 2 : headers.Length;
     }
     return Option.None;
 }
@@ -298,23 +297,22 @@ private FormCollection ParseUrlEncodedForm(string body)
 {
     List<FormField> fields = new();
     List<FormFile> files = new();
-    usize pairStart = 0;
+    nuint pairStart = 0;
     while (pairStart < body.Length)
     {
-        usize pairEnd = pairStart;
+        nuint pairEnd = pairStart;
         while (pairEnd < body.Length &&
             StringByteAt(body, pairEnd) != 38)
         {
             pairEnd += 1;
         }
-        usize separator = pairStart;
+        nuint separator = pairStart;
         while (separator < pairEnd &&
             StringByteAt(body, separator) != 61)
         {
             separator += 1;
         }
-        usize valueStart = if (separator < pairEnd)
-            { separator + 1 } else { pairEnd };
+        nuint valueStart = separator < pairEnd ? separator + 1 : pairEnd;
         string name = "";
         string value = "";
         switch (UrlDecode(body.Substring(
@@ -365,7 +363,7 @@ private FormCollection ParseMultipartForm(
 
     List<FormField> fields = new();
     List<FormFile> files = new();
-    usize cursor = marker.Length;
+    nuint cursor = marker.Length;
     int partCount = 0;
     bool complete = false;
     while (!complete)
@@ -384,7 +382,7 @@ private FormCollection ParseMultipartForm(
             throw new FormatException("Malformed multipart boundary.");
         }
         cursor += 2;
-        usize headerEnd = 0;
+        nuint headerEnd = 0;
         switch (FindBytes(body, "\r\n\r\n", cursor))
         {
             case Option.Some(value): { headerEnd = value; }
@@ -395,8 +393,8 @@ private FormCollection ParseMultipartForm(
         string headers = body.Substring(
             cursor, headerEnd - cursor
         );
-        usize contentStart = headerEnd + 4;
-        usize contentEnd = 0;
+        nuint contentStart = headerEnd + 4;
+        nuint contentEnd = 0;
         switch (FindBytes(body, nextMarker, contentStart))
         {
             case Option.Some(value): { contentEnd = value; }

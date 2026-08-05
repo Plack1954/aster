@@ -9,7 +9,7 @@ private bool Contains(List<string> values, string wanted)
 
 private void AppendAfterRead(ref List<string> values)
 {
-    int found = if (Contains(values, "missing")) { 1 } else { 0 };
+    int found = Contains(values, "missing") ? 1 : 0;
     Console.WriteLine(found);
     values.Add("added");
 }

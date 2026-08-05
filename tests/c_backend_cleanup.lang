@@ -1,5 +1,5 @@
 struct Tracked {
-    id: long,
+    long id;
 }
 
 ~Tracked() {

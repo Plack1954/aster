@@ -3,7 +3,7 @@ private extern long NativeHandleId(NativeHandle handle);
 private extern long NativeHandleDropLog();
 
 struct ArticleResource {
-    handle: NativeHandle,
+    NativeHandle handle;
 }
 
 int main() {

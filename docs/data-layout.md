@@ -8,8 +8,8 @@ host target description records:
 - enum/union tag size and alignment
 - whether the host satisfies the currently supported C ABI assumptions
 
-Primitive integer widths are defined by their language names. `isize` and
-`usize` follow the target pointer width. Raw pointers and opaque owning runtime
+Primitive integer widths are defined by their language names. `nint` and
+`nuint` follow the target pointer width. Raw pointers and opaque owning runtime
 handles occupy one pointer; `string` and slices are pointer-plus-length values.
 `List<T>` is one such pointer-sized owning handle; its data pointer, length,
 capacity, element stride, and allocation policy are private runtime state.

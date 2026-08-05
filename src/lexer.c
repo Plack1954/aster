@@ -24,10 +24,10 @@ static const Keyword keywords[] = {
     {"throw", TOK_THROW},
     {"async", TOK_ASYNC}, {"await", TOK_AWAIT},
     {"namespace", TOK_NAMESPACE}, {"using", TOK_USING},
-    {"as", TOK_AS}, {"pub", TOK_PUB}, {"public", TOK_PUB},
+    {"as", TOK_AS}, {"public", TOK_PUB},
     {"private", TOK_PRIVATE},
     {"extern", TOK_EXTERN},
-    {"type", TOK_TYPE}, {"using", TOK_TYPE},
+    {"type", TOK_TYPE},
     {"delegate", TOK_DELEGATE},
     {"element", TOK_ELEMENT}
 };

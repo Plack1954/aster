@@ -29,7 +29,7 @@ private Html page(
     return <main
         id="app"
         class=panelClass
-        data-state=$"{if (active) { "ready" } else { "idle" }}"
+        data-state=$"{active ? "ready" : "idle"}"
         data-summary=$"issue-{issueId}-{active}"
         aria-label="Dashboard"
         title=$"{titleText} #{issueId}"

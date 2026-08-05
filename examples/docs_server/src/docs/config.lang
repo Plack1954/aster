@@ -38,8 +38,8 @@ private bool IsSpace(byte value) {
 }
 
 private string trim(string value) {
-    usize start = 0;
-    usize end = value.Length;
+    nuint start = 0;
+    nuint end = value.Length;
     bool scanningStart = true;
     while (scanningStart) {
         if (start >= end) {
@@ -65,11 +65,11 @@ private string trim(string value) {
 
 private Result<long, string> ParseNumber(string value) {
     string text = trim(value);
-    usize length = text.Length;
+    nuint length = text.Length;
     if (length == 0) {
         return Result.Err("expected a decimal integer");
     }
-    usize index = 0;
+    nuint index = 0;
     long result = 0;
     while (index < length) {
         byte byte = StringByteAt(text, index);
@@ -90,11 +90,11 @@ public Result<ServerConfig, string> ParseConfig(string source) {
     long maxHeaderBytes = 16384;
     long maxBodyBytes = 1048576;
     long timeoutMs = 5000;
-    usize length = source.Length;
-    usize cursor = 0;
+    nuint length = source.Length;
+    nuint cursor = 0;
 
     while (cursor < length) {
-        usize end = cursor;
+        nuint end = cursor;
         bool findingEnd = true;
         while (findingEnd) {
             if (end >= length) {
@@ -106,10 +106,10 @@ public Result<ServerConfig, string> ParseConfig(string source) {
             }
         }
         string line = trim(StringSlice(source, cursor, end));
-        usize lineLength = line.Length;
+        nuint lineLength = line.Length;
         if (lineLength > 0) {
           if (StringByteAt(line, 0) != 35) {
-            usize equals = 0;
+            nuint equals = 0;
             bool found = false;
             while (!found) {
                 if (equals >= lineLength) {

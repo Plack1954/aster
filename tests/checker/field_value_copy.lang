@@ -1,7 +1,7 @@
 using System.Text;
 
 struct Record {
-    name: string,
+    string name;
 }
 
 private string ViewName(string value) {

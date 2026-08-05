@@ -13,7 +13,7 @@ int main() {
     Result<string, string> pathResult = NativeProcessArg(0);
     switch (pathResult) {
         case Result.Ok(path): {
-            Result<usize, string> result =
+            Result<nuint, string> result =
                 ForEachLineBuffered(
                     path,
                     7,

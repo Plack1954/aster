@@ -29,7 +29,7 @@ int main()
 
     names.Add("Ada");
     names.Add("Grace");
-    usize grownCapacity = names.Capacity;
+    nuint grownCapacity = names.Capacity;
     if (grownCapacity < names.Count) { return 3; }
 
     names.Insert(1, "Edsger");
@@ -47,7 +47,7 @@ int main()
     if (names.Count != 4) { return 9; }
     if (names[1] != "Margaret") { return 10; }
 
-    usize capacityBeforeClear = names.Capacity;
+    nuint capacityBeforeClear = names.Capacity;
     names.Clear();
     if (names.Count != 0) { return 11; }
     if (names.Capacity != capacityBeforeClear) { return 12; }
@@ -126,7 +126,7 @@ int main()
         ordered[4] != 1) { return 38; }
 
     List<int> reserved = new();
-    usize ensured = reserved.EnsureCapacity(9);
+    nuint ensured = reserved.EnsureCapacity(9);
     if (ensured < 9 || reserved.Capacity != ensured) { return 39; }
     reserved.Capacity = 12;
     if (reserved.Capacity != 12) { return 40; }

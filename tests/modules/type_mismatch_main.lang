@@ -3,7 +3,7 @@ namespace Types.Mismatch;
 using Types.TypeDep;
 
 struct Resource {
-    id: long,
+    long id;
 }
 
 ~Resource() {

@@ -133,21 +133,6 @@ static bool probe_accept(TypeProbe *probe, TokenKind kind) {
 
 static bool probe_type(TypeProbe *probe) {
     bool constant = probe_accept(probe, TOK_CONST);
-    if (probe_accept(probe, TOK_STAR)) {
-        if (probe->current.kind != TOK_CONST &&
-            probe->current.kind != TOK_IDENT)
-            return false;
-        probe_next(probe);
-        return !constant && probe_type(probe);
-    }
-    if (probe_accept(probe, TOK_LBRACKET)) {
-        if (!probe_type(probe) ||
-            !probe_accept(probe, TOK_SEMICOLON) ||
-            !probe_accept(probe, TOK_INT) ||
-            !probe_accept(probe, TOK_RBRACKET))
-            return false;
-        return true;
-    }
     if (probe_accept(probe, TOK_LPAREN)) {
         if (!probe_type(probe)) return false;
         while (probe_accept(probe, TOK_COMMA))
@@ -155,8 +140,6 @@ static bool probe_type(TypeProbe *probe) {
         return probe_accept(probe, TOK_RPAREN);
     }
     if (probe->current.kind != TOK_IDENT) return false;
-    bool function_prefix = probe->current.length == 2U &&
-        memcmp(probe->current.start, "fn", 2U) == 0;
     probe_next(probe);
     while (probe->current.kind == TOK_DOT) {
         probe_next(probe);
@@ -174,23 +157,6 @@ static bool probe_type(TypeProbe *probe) {
             probe->current.length = 1U;
         } else if (!probe_accept(probe, TOK_GREATER)) {
             return false;
-        }
-    }
-    if (probe_accept(probe, TOK_LPAREN)) {
-        if (probe->current.kind != TOK_RPAREN) {
-            if (!probe_accept(probe, TOK_REF))
-                (void)probe_accept(probe, TOK_OUT);
-            if (!probe_type(probe)) return false;
-            while (probe_accept(probe, TOK_COMMA)) {
-                if (!probe_accept(probe, TOK_REF))
-                    (void)probe_accept(probe, TOK_OUT);
-                if (!probe_type(probe)) return false;
-            }
-        }
-        if (!probe_accept(probe, TOK_RPAREN)) return false;
-        if (function_prefix) {
-            if (!probe_accept(probe, TOK_ARROW) || !probe_type(probe))
-                return false;
         }
     }
     if (probe_accept(probe, TOK_QUESTION)) constant = false;
@@ -273,26 +239,26 @@ static size_t type_syntax_text_length(const TypeSyntax *syntax) {
             return length;
         }
         case TYPE_SYNTAX_FUNCTION: {
-            size_t length = sizeof("fn()->") - 1U +
+            size_t length = sizeof("Func<>") - 1U +
                 type_syntax_text_length(syntax->as.function.return_type);
             for (size_t i = 0U; i < syntax->as.function.parameter_count; ++i) {
                 ParameterMode mode = syntax->as.function.parameter_modes[i];
                 length += type_syntax_text_length(
                     syntax->as.function.parameters[i]) +
-                    (i == 0U ? 0U : 1U) +
+                    1U +
                     (mode == PARAMETER_MODE_VALUE ? 0U : 4U);
             }
             return length;
         }
         case TYPE_SYNTAX_POINTER:
-            return (syntax->as.pointer.mutable_ ? 5U : 7U) +
+            return (syntax->as.pointer.mutable_ ? 1U : 7U) +
                 type_syntax_text_length(syntax->as.pointer.element);
         case TYPE_SYNTAX_ARRAY: {
             char count[32];
             int written = snprintf(count, sizeof(count), "%zu",
                                    syntax->as.array.count);
             return type_syntax_text_length(syntax->as.array.element) +
-                (written > 0 ? (size_t)written : 0U) + 3U;
+                (written > 0 ? (size_t)written : 0U) + 2U;
         }
         case TYPE_SYNTAX_TUPLE: {
             size_t length = 2U;
@@ -323,8 +289,8 @@ static char *write_type_syntax(char *out, const TypeSyntax *syntax) {
             *out++ = '>';
             return out;
         case TYPE_SYNTAX_FUNCTION:
-            memcpy(out, "fn(", 3U);
-            out += 3U;
+            memcpy(out, "Func<", 5U);
+            out += 5U;
             for (size_t i = 0U; i < syntax->as.function.parameter_count; ++i) {
                 if (i != 0U) *out++ = ',';
                 ParameterMode mode = syntax->as.function.parameter_modes[i];
@@ -334,20 +300,22 @@ static char *write_type_syntax(char *out, const TypeSyntax *syntax) {
                 }
                 out = write_type_syntax(out, syntax->as.function.parameters[i]);
             }
-            memcpy(out, ")->", 3U);
-            return write_type_syntax(
-                out + 3U, syntax->as.function.return_type);
+            if (syntax->as.function.parameter_count != 0U) *out++ = ',';
+            out = write_type_syntax(out, syntax->as.function.return_type);
+            *out++ = '>';
+            return out;
         case TYPE_SYNTAX_POINTER: {
-            const char *prefix = syntax->as.pointer.mutable_
-                ? "*mut " : "*const ";
-            size_t length = strlen(prefix);
-            memcpy(out, prefix, length);
-            return write_type_syntax(out + length, syntax->as.pointer.element);
+            if (!syntax->as.pointer.mutable_) {
+                memcpy(out, "const ", 6U);
+                out += 6U;
+            }
+            out = write_type_syntax(out, syntax->as.pointer.element);
+            *out++ = '*';
+            return out;
         }
         case TYPE_SYNTAX_ARRAY:
-            *out++ = '[';
             out = write_type_syntax(out, syntax->as.array.element);
-            *out++ = ';';
+            *out++ = '[';
             out += snprintf(out, 32U, "%zu", syntax->as.array.count);
             *out++ = ']';
             return out;
@@ -394,78 +362,9 @@ static size_t parse_array_count(Parser *parser, Token token) {
     return (size_t)value;
 }
 
-static TypeSyntax *parse_function_type_parameters(
-    Parser *parser, TypeSyntax *return_type, LangSpan start,
-    bool arrow_return) {
-    ParserArrayBuilder parameters = parser_array_builder(
-        sizeof(TypeSyntax *));
-    ParserArrayBuilder modes = parser_array_builder(sizeof(ParameterMode));
-    while (parser->current.kind != TOK_RPAREN &&
-           parser->current.kind != TOK_EOF) {
-        bool by_ref = parser_accept(parser, TOK_REF);
-        bool by_out = !by_ref && parser_accept(parser, TOK_OUT);
-        ParameterMode mode = by_out ? PARAMETER_MODE_OUT : by_ref
-            ? PARAMETER_MODE_MUTABLE_REFERENCE : PARAMETER_MODE_VALUE;
-        TypeSyntax *parameter = parse_type_syntax(parser);
-        parser_array_push(&parameters, &parameter);
-        parser_array_push(&modes, &mode);
-        if (!parser_accept(parser, TOK_COMMA)) break;
-    }
-    Token close = parser_expect(
-        parser, TOK_RPAREN, "expected `)` after function parameter types");
-    if (arrow_return) {
-        parser_expect(parser, TOK_ARROW,
-                      "expected `->` after function parameter types");
-        return_type = parse_type_syntax(parser);
-    }
-    TypeSyntax *function = new_type_syntax(
-        parser, TYPE_SYNTAX_FUNCTION,
-        (LangSpan){start.file, start.start,
-                   return_type != NULL ? return_type->span.end : close.span.end});
-    function->as.function.parameter_count = parameters.count;
-    function->as.function.parameters = parser_array_freeze(parser, &parameters);
-    function->as.function.parameter_modes = parser_array_freeze(parser, &modes);
-    function->as.function.return_type = return_type;
-    return function;
-}
-
 static TypeSyntax *parse_type_syntax(Parser *parser) {
     Token start = parser->current;
     bool constant = parser_accept(parser, TOK_CONST);
-    if (parser_accept(parser, TOK_STAR)) {
-        bool mutable_ = true;
-        if (parser_accept(parser, TOK_CONST)) {
-            mutable_ = false;
-        } else {
-            Token qualifier = parser_expect(
-                parser, TOK_IDENT, "expected `mut` or `const` after `*`");
-            const char *text = parser_copy_token(parser, qualifier);
-            if (strcmp(text, "mut") != 0) {
-                lang_diag(parser->diagnostics, qualifier.span,
-                          "raw pointer qualifier must be `mut` or `const`");
-            }
-        }
-        TypeSyntax *element = parse_type_syntax(parser);
-        TypeSyntax *pointer = new_type_syntax(
-            parser, TYPE_SYNTAX_POINTER,
-            (LangSpan){start.span.file, start.span.start, element->span.end});
-        pointer->as.pointer.mutable_ = mutable_;
-        pointer->as.pointer.element = element;
-        return pointer;
-    }
-    if (parser_accept(parser, TOK_LBRACKET)) {
-        TypeSyntax *element = parse_type_syntax(parser);
-        parser_expect(parser, TOK_SEMICOLON, "expected `;` in array type");
-        Token count = parser_expect(parser, TOK_INT, "expected array length");
-        Token close = parser_expect(
-            parser, TOK_RBRACKET, "expected `]` after array type");
-        TypeSyntax *array = new_type_syntax(
-            parser, TYPE_SYNTAX_ARRAY,
-            (LangSpan){start.span.file, start.span.start, close.span.end});
-        array->as.array.element = element;
-        array->as.array.count = parse_array_count(parser, count);
-        return array;
-    }
     if (parser_accept(parser, TOK_LPAREN)) {
         ParserArrayBuilder elements = parser_array_builder(
             sizeof(TypeSyntax *));
@@ -497,10 +396,7 @@ static TypeSyntax *parse_type_syntax(Parser *parser) {
     TypeSyntax *syntax = new_type_syntax(
         parser, TYPE_SYNTAX_NAMED, name_token.span);
     syntax->as.name = name;
-    if (strcmp(name, "fn") == 0 && parser_accept(parser, TOK_LPAREN)) {
-        syntax = parse_function_type_parameters(
-            parser, NULL, name_token.span, true);
-    } else if (parser_accept(parser, TOK_LESS)) {
+    if (parser_accept(parser, TOK_LESS)) {
         ParserArrayBuilder arguments = parser_array_builder(
             sizeof(TypeSyntax *));
         while (parser->current.kind != TOK_GREATER &&
@@ -511,20 +407,29 @@ static TypeSyntax *parse_type_syntax(Parser *parser) {
         }
         Token close = parser->current;
         expect_type_greater(parser);
-        if (strcmp(name, "Func") == 0) {
-            if (arguments.count == 0U) {
+        if (strcmp(name, "Func") == 0 || strcmp(name, "Action") == 0) {
+            bool action = strcmp(name, "Action") == 0;
+            if (!action && arguments.count == 0U) {
                 lang_diag(parser->diagnostics, name_token.span,
                           "`Func` requires at least a return type");
                 syntax->kind = TYPE_SYNTAX_ERROR;
                 free(arguments.items);
             } else {
                 TypeSyntax **items = arguments.items;
-                TypeSyntax *return_type = items[arguments.count - 1U];
+                TypeSyntax *return_type;
+                if (action) {
+                    return_type = new_type_syntax(
+                        parser, TYPE_SYNTAX_NAMED, name_token.span);
+                    return_type->as.name = "Unit";
+                } else {
+                    return_type = items[arguments.count - 1U];
+                }
                 TypeSyntax *function = new_type_syntax(
                     parser, TYPE_SYNTAX_FUNCTION,
                     (LangSpan){name_token.span.file, name_token.span.start,
                                close.span.end});
-                function->as.function.parameter_count = arguments.count - 1U;
+                function->as.function.parameter_count =
+                    action ? arguments.count : arguments.count - 1U;
                 if (function->as.function.parameter_count != 0U) {
                     function->as.function.parameters = lang_arena_alloc(
                         &parser->module->arena,
@@ -557,11 +462,15 @@ static TypeSyntax *parse_type_syntax(Parser *parser) {
                 parser, &arguments);
             syntax = generic;
         }
+    } else if (strcmp(name, "Action") == 0) {
+        TypeSyntax *return_type = new_type_syntax(
+            parser, TYPE_SYNTAX_NAMED, name_token.span);
+        return_type->as.name = "Unit";
+        TypeSyntax *function = new_type_syntax(
+            parser, TYPE_SYNTAX_FUNCTION, name_token.span);
+        function->as.function.return_type = return_type;
+        syntax = function;
     }
-    if (syntax->kind != TYPE_SYNTAX_FUNCTION &&
-        parser_accept(parser, TOK_LPAREN))
-        syntax = parse_function_type_parameters(
-            parser, syntax, syntax->span, false);
     if (parser_accept(parser, TOK_QUESTION)) {
         TypeSyntax *base = new_type_syntax(
             parser, TYPE_SYNTAX_NAMED, syntax->span);
@@ -727,45 +636,17 @@ static char *numeric_token_text(Parser *parser, Token token) {
     return text;
 }
 
-static Expr *parse_if_expression(Parser *parser, Token start) {
-    Expr *expr = parser_new_expr(parser, EXPR_IF, start.span);
-    parser_expect(parser, TOK_LPAREN, "expected `(` after `if`");
-    expr->as.if_.condition = parser_parse_expression(parser);
-    parser_expect(parser, TOK_RPAREN, "expected `)` after `if` condition");
-    expr->as.if_.then_branch = parse_block(parser);
-    if (!parser_accept(parser, TOK_ELSE)) {
-        lang_diag(parser->diagnostics, parser->current.span,
-                  "`if` expression requires an `else` branch");
-        expr->as.if_.else_branch =
-            new_stmt(parser, STMT_BLOCK, parser->current.span);
-    } else if (parser_accept(parser, TOK_IF)) {
-        Expr *nested = parse_if_expression(parser, parser->previous);
-        Stmt *body = new_stmt(parser, STMT_EXPR, nested->span);
-        body->as.expression = nested;
-        Stmt *block = new_stmt(parser, STMT_BLOCK, nested->span);
-        ParserArrayBuilder items = parser_array_builder(sizeof(Stmt *));
-        parser_array_push(&items, &body);
-        block->as.block.count = 1U;
-        block->as.block.items = parser_array_freeze(parser, &items);
-        expr->as.if_.else_branch = block;
-    } else {
-        expr->as.if_.else_branch = parse_block(parser);
-    }
-    expr->span.end = expr->as.if_.else_branch->span.end;
-    return expr;
-}
-
-static Expr *parse_match_expression(Parser *parser, Token start) {
-    Expr *expr = parser_new_expr(parser, EXPR_MATCH, start.span);
+static Expr *parse_match_expression(Parser *parser, Expr *value,
+                                    Token switch_token) {
+    Expr *expr = parser_new_expr(
+        parser, EXPR_MATCH,
+        (LangSpan){value->span.file, value->span.start,
+                   switch_token.span.end});
     ParserArrayBuilder arms = parser_array_builder(sizeof(MatchArm));
-    parser_expect(parser, TOK_LPAREN, "expected `(` after `switch`");
-    expr->as.match_.value = parser_parse_expression(parser);
-    parser_expect(parser, TOK_RPAREN, "expected `)` after `switch` value");
+    expr->as.match_.value = value;
     parser_expect(parser, TOK_LBRACE, "expected `{` after switch value");
     while (parser->current.kind != TOK_RBRACE &&
            parser->current.kind != TOK_EOF) {
-        parser_expect(parser, TOK_CASE,
-               "expected `case` before switch pattern");
         Token arm_start = parser->current;
         const char *variant = parser_parse_path(parser);
         const char *binding = NULL;
@@ -778,9 +659,17 @@ static Expr *parse_match_expression(Parser *parser, Token start) {
             parser_expect(parser, TOK_RPAREN,
                    "expected `)` after payload binding");
         }
-        parser_expect(parser, TOK_COLON,
-               "expected `:` after switch case");
-        Stmt *body = parse_block(parser);
+        parser_expect(parser, TOK_FAT_ARROW,
+               "expected `=>` after switch pattern");
+        Expr *arm_value = parser_parse_expression(parser);
+        Stmt *arm_statement = new_stmt(
+            parser, STMT_EXPR, arm_value->span);
+        arm_statement->as.expression = arm_value;
+        Stmt *body = new_stmt(parser, STMT_BLOCK, arm_value->span);
+        body->as.block.count = 1U;
+        body->as.block.items = lang_arena_alloc(
+            &parser->module->arena, sizeof(*body->as.block.items));
+        body->as.block.items[0] = arm_statement;
         MatchArm arm = {
                 .variant=variant,
                 .binding=binding,
@@ -794,7 +683,9 @@ static Expr *parse_match_expression(Parser *parser, Token start) {
                 }
             };
         parser_array_push(&arms, &arm);
-        (void)parser_accept(parser, TOK_COMMA);
+        if (parser->current.kind != TOK_RBRACE)
+            parser_expect(parser, TOK_COMMA,
+                          "expected `,` after switch expression arm");
     }
     Token close = parser_expect(parser, TOK_RBRACE,
                          "expected `}` after switch cases");
@@ -953,10 +844,6 @@ static Expr *parse_interpolation(
 
 Expr *parser_parse_primary(Parser *parser) {
     Token token = parser->current;
-    if (parser_accept(parser, TOK_IF))
-        return parse_if_expression(parser, token);
-    if (parser_accept(parser, TOK_MATCH))
-        return parse_match_expression(parser, token);
     if (parser_accept(parser, TOK_INT)) {
         Expr *expr = parser_new_expr(parser, EXPR_INT, token.span);
         char *text = numeric_token_text(parser, token);
@@ -1202,19 +1089,6 @@ static Expr *parse_postfix(Parser *parser) {
             Token close = parser_expect(parser, TOK_RBRACKET, "expected `]` after index");
             index->span.end = close.span.end;
             expr = index;
-        } else if (parser->current.kind == TOK_AS) {
-            Parser lookahead = *parser;
-            parser_next(&lookahead);
-            if (parser->stop_at_element_slash &&
-                lookahead.current.kind == TOK_EQUAL)
-                break;
-            parser_next(parser);
-            Expr *cast = parser_new_expr(parser, EXPR_CAST, expr->span);
-            cast->as.cast.value = expr;
-            cast->as.cast.type_name = parse_type(
-                parser, &cast->as.cast.type_syntax);
-            cast->span.end = parser->previous.span.end;
-            expr = cast;
         } else {
             break;
         }
@@ -1323,8 +1197,42 @@ static Expr *parse_binary(Parser *parser, int minimum) {
     return left;
 }
 
+static Stmt *expression_branch(Parser *parser, Expr *value) {
+    Stmt *statement = new_stmt(parser, STMT_EXPR, value->span);
+    statement->as.expression = value;
+    Stmt *block = new_stmt(parser, STMT_BLOCK, value->span);
+    block->as.block.count = 1U;
+    block->as.block.items = lang_arena_alloc(
+        &parser->module->arena, sizeof(*block->as.block.items));
+    block->as.block.items[0] = statement;
+    return block;
+}
+
+static Expr *parse_conditional(Parser *parser) {
+    Expr *condition = parse_binary(parser, 1);
+    if (parser->current.kind == TOK_MATCH) {
+        Token switch_token = parser->current;
+        parser_next(parser);
+        condition = parse_match_expression(
+            parser, condition, switch_token);
+    }
+    if (!parser_accept(parser, TOK_QUESTION)) return condition;
+    Expr *when_true = parser_parse_expression(parser);
+    parser_expect(parser, TOK_COLON,
+                  "expected `:` in conditional expression");
+    Expr *when_false = parse_conditional(parser);
+    Expr *conditional = parser_new_expr(
+        parser, EXPR_IF,
+        (LangSpan){condition->span.file, condition->span.start,
+                   when_false->span.end});
+    conditional->as.if_.condition = condition;
+    conditional->as.if_.then_branch = expression_branch(parser, when_true);
+    conditional->as.if_.else_branch = expression_branch(parser, when_false);
+    return conditional;
+}
+
 Expr *parser_parse_expression(Parser *parser) {
-    Expr *expr = parse_binary(parser, 1);
+    Expr *expr = parse_conditional(parser);
     TokenKind assignment = parser->current.kind;
     if (assignment == TOK_EQUAL ||
         assignment == TOK_PLUS_EQUAL ||
@@ -1491,6 +1399,9 @@ Stmt *parser_parse_statement(Parser *parser) {
     }
     if (parser_accept(parser, TOK_VAR)) {
         Token name = parser_expect(parser, TOK_IDENT, "expected local name");
+        if (name.length == 1U && name.start[0] == '_')
+            lang_diag(parser->diagnostics, name.span,
+                      "discard assignments use `_ = expression;`, not `var _ = expression;`");
         parser_expect(parser, TOK_EQUAL, "locals require an initializer");
         Expr *value = parser_parse_expression(parser);
         Token end = parser_expect(parser, TOK_SEMICOLON, "expected `;` after local declaration");
@@ -1536,13 +1447,7 @@ Stmt *parser_parse_statement(Parser *parser) {
     }
     if (parser_accept(parser, TOK_FOR)) {
         parser_expect(parser, TOK_LPAREN, "expected `(` after `for`");
-        Parser probe = *parser;
-        if (probe.current.kind == TOK_IDENT)
-            parser_next(&probe);
-        bool legacy_iteration =
-            parser->current.kind == TOK_IDENT &&
-            probe.current.kind == TOK_IN;
-        if (!legacy_iteration) {
+        {
             Stmt *stmt = new_stmt(parser, STMT_C_FOR, start.span);
             if (parser->current.kind != TOK_SEMICOLON)
                 stmt->as.c_for.initializer = parser_parse_statement(parser);
@@ -1592,24 +1497,6 @@ Stmt *parser_parse_statement(Parser *parser) {
             stmt->span.end = stmt->as.c_for.body->span.end;
             return stmt;
         }
-        Token name = parser_expect(parser, TOK_IDENT, "expected loop variable");
-        parser_expect(parser, TOK_IN, "expected `in` after loop variable");
-        Stmt *stmt = new_stmt(parser, STMT_FOR, start.span);
-        stmt->as.for_.name = parser_copy_token(parser, name);
-        stmt->as.for_.borrowed = false;
-        stmt->as.for_.iterable = parser_parse_expression(parser);
-        if (parser_accept(parser, TOK_DOT_DOT) ||
-            parser_accept(parser, TOK_DOT_DOT_EQUAL)) {
-            if (parser->previous.kind == TOK_DOT_DOT_EQUAL)
-                lang_diag(
-                    parser->diagnostics, parser->previous.span,
-                    "inclusive ranges are not supported; use a half-open `..` range");
-            stmt->as.for_.range_end = parser_parse_expression(parser);
-        }
-        parser_expect(parser, TOK_RPAREN, "expected `)` after `for` clause");
-        stmt->as.for_.body = parse_block(parser);
-        stmt->span.end = stmt->as.for_.body->span.end;
-        return stmt;
     }
     if (parser_accept(parser, TOK_FOREACH)) {
         parser_expect(parser, TOK_LPAREN, "expected `(` after `foreach`");
@@ -1625,6 +1512,15 @@ Stmt *parser_parse_statement(Parser *parser) {
         stmt->as.for_.foreach = true;
         stmt->as.for_.iterable = parser_parse_expression(parser);
         stmt->as.for_.borrowed = true;
+        if (parser_accept(parser, TOK_DOT_DOT) ||
+            parser_accept(parser, TOK_DOT_DOT_EQUAL)) {
+            if (parser->previous.kind == TOK_DOT_DOT_EQUAL)
+                lang_diag(
+                    parser->diagnostics, parser->previous.span,
+                    "inclusive ranges are not supported; use a half-open `..` range");
+            stmt->as.for_.range_end = parser_parse_expression(parser);
+            stmt->as.for_.borrowed = false;
+        }
         parser_expect(parser, TOK_RPAREN, "expected `)` after `foreach` clause");
         stmt->as.for_.body = parse_block(parser);
         stmt->span.end = stmt->as.for_.body->span.end;
@@ -1733,29 +1629,17 @@ static Decl *parse_struct_decl(
     ParserArrayBuilder fields = parser_array_builder(sizeof(FieldDecl));
     while (parser->current.kind != TOK_RBRACE && parser->current.kind != TOK_EOF) {
         Token field;
-        const char *type_name = "unit";
+        const char *type_name = "Unit";
         TypeSyntax *type_syntax = new_type_syntax(
             parser, TYPE_SYNTAX_NAMED, parser->current.span);
-        type_syntax->as.name = "unit";
+        type_syntax->as.name = "Unit";
         if (enumeration) {
             field = parser_expect(parser, TOK_IDENT, "expected variant name");
         } else {
-            Parser lookahead = *parser;
-            Token first = lookahead.current;
-            parser_next(&lookahead);
-            bool legacy = first.kind == TOK_IDENT &&
-                          lookahead.current.kind == TOK_COLON;
-            if (legacy) {
-                field = parser_expect(parser, TOK_IDENT, "expected field name");
-                parser_expect(parser, TOK_COLON, "expected `:` after field name");
-                type_name = parse_type(parser, &type_syntax);
-            } else {
-                type_name = parse_type(parser, &type_syntax);
-                field = parser_expect(parser, TOK_IDENT,
-                               "expected field name after type");
-                parse_declarator_suffix(
-                    parser, &type_syntax, &type_name);
-            }
+            type_name = parse_type(parser, &type_syntax);
+            field = parser_expect(parser, TOK_IDENT,
+                           "expected field name after type");
+            parse_declarator_suffix(parser, &type_syntax, &type_name);
         }
         if (enumeration && parser_accept(parser, TOK_LPAREN)) {
             if (!is_union)
@@ -1778,6 +1662,17 @@ static Decl *parse_struct_decl(
             }
             if (parser->current.kind == TOK_RPAREN)
                 parser_next(parser);
+        }
+        if (parser->panic) {
+            while (parser->current.kind != TOK_COMMA &&
+                   parser->current.kind != TOK_SEMICOLON &&
+                   parser->current.kind != TOK_RBRACE &&
+                   parser->current.kind != TOK_EOF)
+                parser_next(parser);
+            if (!parser_accept(parser, TOK_COMMA))
+                (void)parser_accept(parser, TOK_SEMICOLON);
+            parser->panic = false;
+            continue;
         }
         FieldDecl item = {
             .name=parser_copy_token(parser, field),
@@ -1888,10 +1783,10 @@ static Decl *parse_destructor_decl(Parser *parser, Token start) {
     (void)snprintf(
         function_name, function_name_length, "%s::drop", type);
     function->name = function_name;
-    function->return_type = "unit";
+    function->return_type = "void";
     function->return_type_syntax = new_type_syntax(
         parser, TYPE_SYNTAX_NAMED, type_name.span);
-    function->return_type_syntax->as.name = "unit";
+    function->return_type_syntax->as.name = "void";
     function->is_drop = true;
     function->params = lang_arena_alloc(
         &parser->module->arena, sizeof(*function->params));
@@ -1914,24 +1809,6 @@ static Decl *parse_destructor_decl(Parser *parser, Token start) {
         start.span.file, start.span.start, function->body->span.end
     };
     decl->span = function->span;
-    return decl;
-}
-
-static Decl *parse_alias_decl(Parser *parser, Token start) {
-    Token name = parser_expect(parser, TOK_IDENT, "expected alias name");
-    parser_expect(parser, TOK_EQUAL, "expected `=` after alias name");
-    TypeSyntax *target_syntax = NULL;
-    const char *target = parse_type(parser, &target_syntax);
-    Token end = parser_expect(parser, TOK_SEMICOLON,
-                       "expected `;` after type alias");
-    Decl *decl = lang_arena_alloc(&parser->module->arena, sizeof(*decl));
-    decl->kind = DECL_ALIAS;
-    decl->as.alias.name = parser_copy_token(parser, name);
-    decl->as.alias.target = target;
-    decl->as.alias.target_syntax = target_syntax;
-    decl->span = (LangSpan){
-        start.span.file, start.span.start, end.span.end
-    };
     return decl;
 }
 
@@ -1992,21 +1869,12 @@ static Decl *parse_delegate_decl(Parser *parser, Token start) {
 }
 
 static Decl *parse_element_decl(Parser *parser, Token start) {
-    Parser lookahead = *parser;
-    parser_next(&lookahead);
     Token name;
     const char *result_type;
     TypeSyntax *result_type_syntax = NULL;
-    if (lookahead.current.kind == TOK_ARROW) {
-        name = parser_expect_element_word(parser, "expected element name");
-        parser_expect(parser, TOK_ARROW,
-               "expected `->` after element name");
-        result_type = parse_type(parser, &result_type_syntax);
-    } else {
-        result_type = parse_type(parser, &result_type_syntax);
-        name = parser_expect_element_word(
-            parser, "expected element name after result type");
-    }
+    result_type = parse_type(parser, &result_type_syntax);
+    name = parser_expect_element_word(
+        parser, "expected element name after result type");
     parser_expect(parser, TOK_LBRACE,
            "expected `{` before element properties");
     Decl *decl =
@@ -2019,35 +1887,31 @@ static Decl *parse_element_decl(Parser *parser, Token start) {
         sizeof(FieldDecl));
     while (parser->current.kind != TOK_RBRACE &&
            parser->current.kind != TOK_EOF) {
-        Parser property_lookahead = *parser;
-        Token first = property_lookahead.current;
-        LangSpan property_span = first.span;
-        parser_next(&property_lookahead);
-        bool legacy = parser_element_property_word(first.kind) &&
-                      (property_lookahead.current.kind == TOK_COLON ||
-                       property_lookahead.current.kind == TOK_MINUS);
+        LangSpan property_span = parser->current.span;
         char *property_name;
         const char *type_name;
         TypeSyntax *type_syntax = NULL;
-        if (legacy) {
-            parser_next(parser);
-            property_name = parser_parse_element_property_name(parser, first);
-            parser_expect(parser, TOK_COLON,
-                   "expected `:` after element property name");
-            type_name = parse_type(parser, &type_syntax);
+        type_name = parse_type(parser, &type_syntax);
+        Token property = parser->current;
+        property_span = property.span;
+        if (!parser_element_property_word(property.kind)) {
+            lang_diag(parser->diagnostics, property.span,
+                      "expected element property name after type");
         } else {
-            type_name = parse_type(parser, &type_syntax);
-            Token property = parser->current;
-            property_span = property.span;
-            if (!parser_element_property_word(property.kind)) {
-                lang_diag(parser->diagnostics, property.span,
-                          "expected element property name after type");
-            } else {
+            parser_next(parser);
+        }
+        property_name = parser_parse_element_property_name(parser, property);
+        parse_declarator_suffix(parser, &type_syntax, &type_name);
+        if (parser->panic) {
+            while (parser->current.kind != TOK_COMMA &&
+                   parser->current.kind != TOK_SEMICOLON &&
+                   parser->current.kind != TOK_RBRACE &&
+                   parser->current.kind != TOK_EOF)
                 parser_next(parser);
-            }
-            property_name = parser_parse_element_property_name(parser, property);
-            parse_declarator_suffix(
-                parser, &type_syntax, &type_name);
+            if (!parser_accept(parser, TOK_COMMA))
+                (void)parser_accept(parser, TOK_SEMICOLON);
+            parser->panic = false;
+            continue;
         }
         FieldDecl item = {
             .name=property_name,
@@ -2154,8 +2018,6 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
         bool is_extern = false;
         if (parser_accept(&parser, TOK_TILDE)) {
             decl = parse_destructor_decl(&parser, start);
-        } else if (parser_accept(&parser, TOK_TYPE)) {
-            decl = parse_alias_decl(&parser, start);
         } else if (parser_accept(&parser, TOK_DELEGATE)) {
             decl = parse_delegate_decl(&parser, start);
         } else if (parser_accept(&parser, TOK_ELEMENT)) {
@@ -2222,7 +2084,7 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
             decl->as.function.is_async = is_async;
         } else {
             lang_diag(diagnostics, parser.current.span,
-                      "expected a function, struct, enum, union, element, type, or drop declaration");
+                      "expected a function, struct, enum, union, element, using, delegate, or destructor declaration");
             parser_next(&parser);
             continue;
         }

@@ -14,7 +14,7 @@ int main() {
     sbyte signed = AddI8(20, 22);
     ushort unsigned = AddU16(65000, 535);
     float floating = half(5.0);
-    usize index = 1;
+    nuint index = 1;
     int values[2] = [10, 20];
     ulong maximum = 18446744073709551615;
     long minimum = -9223372036854775808;

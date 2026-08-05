@@ -73,7 +73,7 @@ public MemoryStream HttpRequestBodyStream(NativeHandle request)
 {
     string body = HttpRequestBody(request);
     List<byte> bytes = new();
-    for (usize index = 0; index < body.Length; index += 1)
+    for (nuint index = 0; index < body.Length; index += 1)
     {
         bytes.Add(body[index]);
     }

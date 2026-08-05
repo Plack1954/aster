@@ -1,5 +1,5 @@
 struct Grow<T> {
-    next: Grow<List<T>>,
+    Grow<List<T>> next;
 }
 
 private void invalid(Grow<long> value) {

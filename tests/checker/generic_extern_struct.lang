@@ -1,5 +1,5 @@
 extern struct CBox<T> {
-    value: T,
+    T value;
 }
 
 int main() {

@@ -257,7 +257,7 @@ private Response post(Blog blog, Request request)
 
 private void XmlAppend(ref StringBuilder output, string value)
 {
-    for (usize index = 0; index < value.Length; index++)
+    for (nuint index = 0; index < value.Length; index++)
     {
         byte current = StringByteAt(value, index);
         if (current == 38) { output.Append("&amp;"); }

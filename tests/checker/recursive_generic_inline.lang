@@ -1,5 +1,5 @@
 struct Loop<T> {
-    next: Loop<T>,
+    Loop<T> next;
 }
 
 private void invalid(Loop<long> value) {

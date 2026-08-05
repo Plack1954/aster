@@ -22,20 +22,20 @@ public extern Result<string, IoError> NativeFileReadAll(
     NativeHandle file
 );
 
-public extern Result<usize, IoError> NativeFileWrite(
+public extern Result<nuint, IoError> NativeFileWrite(
     NativeHandle file,
     string data
 );
 
-public extern Result<usize, IoError> NativeFileReadInto(
+public extern Result<nuint, IoError> NativeFileReadInto(
     NativeHandle file,
-    Slice<byte> bytes
+    Span<byte> bytes
 );
 
-public extern Result<usize, IoError> NativeFileWriteBytes(
+public extern Result<nuint, IoError> NativeFileWriteBytes(
     NativeHandle file,
-    Slice<byte> bytes,
-    usize count
+    Span<byte> bytes,
+    nuint count
 );
 
 public extern Result<long, IoError> NativeFileSeek(
@@ -46,7 +46,7 @@ public extern Result<long, IoError> NativeFileSeek(
 
 public extern Result<long, IoError> NativeFileLength(NativeHandle file);
 
-public extern Result<unit, IoError> NativeFileFlush(NativeHandle file);
+public extern Result<Unit, IoError> NativeFileFlush(NativeHandle file);
 
 public extern void NativeFileClose(NativeHandle file);
 
@@ -218,11 +218,10 @@ public List<byte> Stream.Read(ref Stream self, int count)
     if (self.kind == 2)
     {
         long available = (long)self.memory.Count - self.position;
-        int amount = if (available < (long)count) { (int)available }
-            else { count };
+        int amount = available < (long)count ? (int)available : count;
         for (int index = 0; index < amount; index += 1)
         {
-            result.Add(self.memory[(usize)(self.position + (long)index)]);
+            result.Add(self.memory[(nuint)(self.position + (long)index)]);
         }
         self.position += (long)amount;
         return result;
@@ -234,11 +233,11 @@ public List<byte> Stream.Read(ref Stream self, int count)
     Buffer buffer = Buffer.allocate((long)count);
     unsafe
     {
-        Slice<byte> bytes = BufferAsMutSlice(buffer);
-        usize amount = FileResultOrThrow(
+        Span<byte> bytes = BufferAsMutSlice(buffer);
+        nuint amount = FileResultOrThrow(
             NativeFileReadInto(self.file.Value, bytes)
         );
-        for (usize index = 0; index < amount; index += 1)
+        for (nuint index = 0; index < amount; index += 1)
         {
             result.Add(ByteSliceAt(bytes, index));
         }
@@ -250,7 +249,7 @@ public List<byte> Stream.Read(ref Stream self, int count)
 public int Stream.ReadByte(ref Stream self)
 {
     List<byte> bytes = self.Read(1);
-    return if (bytes.Count == 0) { -1 } else { (int)bytes[0] };
+    return bytes.Count == 0 ? -1 : (int)bytes[0];
 }
 
 public void Stream.Write(ref Stream self, List<byte> bytes)
@@ -266,7 +265,7 @@ public void Stream.Write(ref Stream self, List<byte> bytes)
         {
             if (self.position < (long)self.memory.Count)
             {
-                self.memory.Set((usize)self.position, value);
+                self.memory.Set((nuint)self.position, value);
             }
             else
             {
@@ -283,12 +282,12 @@ public void Stream.Write(ref Stream self, List<byte> bytes)
     Buffer buffer = Buffer.allocate((long)bytes.Count);
     unsafe
     {
-        Slice<byte> destination = BufferAsMutSlice(buffer);
-        for (usize index = 0; index < bytes.Count; index += 1)
+        Span<byte> destination = BufferAsMutSlice(buffer);
+        for (nuint index = 0; index < bytes.Count; index += 1)
         {
             ByteSliceSet(destination, index, bytes[index]);
         }
-        usize written = FileResultOrThrow(
+        nuint written = FileResultOrThrow(
             NativeFileWriteBytes(self.file.Value, destination, bytes.Count)
         );
         self.position += (long)written;
@@ -355,7 +354,7 @@ public void Stream.SetLength(ref Stream self, long value)
     while ((long)self.memory.Count < value) { self.memory.Add(0); }
     if ((long)self.memory.Count > value)
     {
-        self.memory.RemoveRange((usize)value, self.memory.Count - (usize)value);
+        self.memory.RemoveRange((nuint)value, self.memory.Count - (nuint)value);
     }
     if (self.position > value) { self.position = value; }
 }
@@ -489,7 +488,7 @@ private List<byte> BinaryReader.ReadExactly(ref BinaryReader self, int count)
         }
         for (int index = 0; index < count; index += 1)
         {
-            bytes.Add(self.memory[(usize)(self.position + (long)index)]);
+            bytes.Add(self.memory[(nuint)(self.position + (long)index)]);
         }
         self.position += (long)count;
         return bytes;
@@ -501,17 +500,17 @@ private List<byte> BinaryReader.ReadExactly(ref BinaryReader self, int count)
     Buffer buffer = Buffer.allocate((long)count);
     unsafe
     {
-        Slice<byte> source = BufferAsMutSlice(buffer);
-        usize amount = FileResultOrThrow(
+        Span<byte> source = BufferAsMutSlice(buffer);
+        nuint amount = FileResultOrThrow(
             NativeFileReadInto(self.file.Value, source)
         );
-        for (usize index = 0; index < amount; index += 1)
+        for (nuint index = 0; index < amount; index += 1)
         {
             bytes.Add(ByteSliceAt(source, index));
         }
         self.position += (long)amount;
     }
-    if (bytes.Count != (usize)count)
+    if (bytes.Count != (nuint)count)
     {
         throw new IOException("Unable to read beyond the end of the stream.");
     }
@@ -538,14 +537,7 @@ public ushort BinaryReader.ReadUInt16(ref BinaryReader self)
 public short BinaryReader.ReadInt16(ref BinaryReader self)
 {
     ushort raw = BinaryReader.ReadUInt16(ref self);
-    return if (raw <= 32767)
-    {
-        (short)raw
-    }
-    else
-    {
-        (short)((int)raw - 65536)
-    };
+    return raw <= 32767 ? (short)raw : (short)((int)raw - 65536);
 }
 
 public uint BinaryReader.ReadUInt32(ref BinaryReader self)
@@ -560,14 +552,8 @@ public uint BinaryReader.ReadUInt32(ref BinaryReader self)
 public int BinaryReader.ReadInt32(ref BinaryReader self)
 {
     uint raw = BinaryReader.ReadUInt32(ref self);
-    return if (raw <= 2147483647)
-    {
-        (int)raw
-    }
-    else
-    {
-        (int)((long)raw - 4294967296)
-    };
+    return raw <= 2147483647
+        ? (int)raw : (int)((long)raw - 4294967296);
 }
 
 public ulong BinaryReader.ReadUInt64(ref BinaryReader self)
@@ -576,7 +562,7 @@ public ulong BinaryReader.ReadUInt64(ref BinaryReader self)
     ulong result = 0;
     for (int index = 0; index < 8; index += 1)
     {
-        result |= (ulong)bytes[(usize)index] << (ulong)(index * 8);
+        result |= (ulong)bytes[(nuint)index] << (ulong)(index * 8);
     }
     return result;
 }
@@ -587,9 +573,9 @@ public long BinaryReader.ReadInt64(ref BinaryReader self)
     long result = 0;
     for (int index = 0; index < 7; index += 1)
     {
-        result |= (long)bytes[(usize)index] << (long)(index * 8);
+        result |= (long)bytes[(nuint)index] << (long)(index * 8);
     }
-    result |= ((long)bytes[7] - if (bytes[7] >= 128) { 256 } else { 0 })
+    result |= ((long)bytes[7] - (bytes[7] >= 128 ? 256 : 0))
         << 56;
     return result;
 }
@@ -652,7 +638,7 @@ public void BinaryWriter.Write(ref BinaryWriter self, byte value)
     if (self.kind == 2)
     {
         if (self.position < (long)self.memory.Count)
-            { self.memory.Set((usize)self.position, value); }
+            { self.memory.Set((nuint)self.position, value); }
         else { self.memory.Add(value); }
         self.position += 1;
         return;
@@ -664,9 +650,9 @@ public void BinaryWriter.Write(ref BinaryWriter self, byte value)
     Buffer buffer = Buffer.allocate(1);
     unsafe
     {
-        Slice<byte> destination = BufferAsMutSlice(buffer);
+        Span<byte> destination = BufferAsMutSlice(buffer);
         ByteSliceSet(destination, 0, value);
-        usize written = FileResultOrThrow(
+        nuint written = FileResultOrThrow(
             NativeFileWriteBytes(self.file.Value, destination, 1)
         );
         self.position += (long)written;
@@ -677,7 +663,7 @@ public void BinaryWriter.Write(ref BinaryWriter self, bool value)
 {
     BinaryWriter.Write(
         ref self,
-        if (value) { (byte)1 } else { (byte)0 }
+        value ? (byte)1 : (byte)0
     );
 }
 
@@ -796,7 +782,7 @@ public List<byte> File.ReadAllBytes(string path)
 public void File.WriteAllText(string path, string contents)
 {
     NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "wb"));
-    usize written = FileResultOrThrow(NativeFileWrite(file, contents));
+    nuint written = FileResultOrThrow(NativeFileWrite(file, contents));
     if (written != contents.Length)
     {
         throw new IOException("file write did not write the complete string");
@@ -815,7 +801,7 @@ public List<string> File.ReadAllLines(string path)
     return FileResultOrThrow(ReadLinesBuffered(path, 65536));
 }
 
-public Result<usize, IoError> CopyFileBuffered(
+public Result<nuint, IoError> CopyFileBuffered(
     string sourcePath,
     string destinationPath,
     long bufferSize
@@ -827,18 +813,18 @@ public Result<usize, IoError> CopyFileBuffered(
     NativeHandle destination =
         try NativeFileOpen(destinationPath, "wb");
     Buffer buffer = Buffer.allocate(bufferSize);
-    usize total = 0;
+    nuint total = 0;
     bool reading = true;
 
     while (reading) {
         unsafe {
-            Slice<byte> bytes = BufferAsMutSlice(buffer);
-            usize count =
+            Span<byte> bytes = BufferAsMutSlice(buffer);
+            nuint count =
                 try NativeFileReadInto(source, bytes);
             if (count == 0) {
                 reading = false;
             } else {
-                usize written = try NativeFileWriteBytes(
+                nuint written = try NativeFileWriteBytes(
                     destination,
                     bytes,
                     count,
@@ -861,19 +847,19 @@ public Result<List<string>, IoError> ReadLinesBuffered(
     Buffer buffer = Buffer.allocate(bufferSize);
     List<string> lines = new();
     StringBuilder line = new();
-    usize lineLength = 0;
+    nuint lineLength = 0;
     bool reading = true;
     bool skipLineFeed = false;
 
     while (reading) {
         unsafe {
-            Slice<byte> bytes = BufferAsMutSlice(buffer);
-            usize count = try NativeFileReadInto(file, bytes);
+            Span<byte> bytes = BufferAsMutSlice(buffer);
+            nuint count = try NativeFileReadInto(file, bytes);
             if (count == 0) {
                 reading = false;
             } else {
-                usize cursor = 0;
-                usize segmentStart = 0;
+                nuint cursor = 0;
+                nuint segmentStart = 0;
                 if (skipLineFeed)
                 {
                     if (ByteSliceAt(bytes, 0) == 10)
@@ -936,7 +922,7 @@ public Result<List<string>, IoError> ReadLinesBuffered(
     return Result.Ok(lines);
 }
 
-public Result<usize, IoError> ForEachLineBuffered(
+public Result<nuint, IoError> ForEachLineBuffered(
     string path,
     long bufferSize,
     LineHandler handler
@@ -947,20 +933,20 @@ public Result<usize, IoError> ForEachLineBuffered(
     NativeHandle file = try NativeFileOpen(path, "rb");
     Buffer buffer = Buffer.allocate(bufferSize);
     StringBuilder line = new();
-    usize lineLength = 0;
-    usize lineCount = 0;
+    nuint lineLength = 0;
+    nuint lineCount = 0;
     bool reading = true;
     bool skipLineFeed = false;
 
     while (reading) {
         unsafe {
-            Slice<byte> bytes = BufferAsMutSlice(buffer);
-            usize count = try NativeFileReadInto(file, bytes);
+            Span<byte> bytes = BufferAsMutSlice(buffer);
+            nuint count = try NativeFileReadInto(file, bytes);
             if (count == 0) {
                 reading = false;
             } else {
-                usize cursor = 0;
-                usize segmentStart = 0;
+                nuint cursor = 0;
+                nuint segmentStart = 0;
                 if (skipLineFeed)
                 {
                     if (ByteSliceAt(bytes, 0) == 10)
@@ -1072,20 +1058,20 @@ public extern string NativeDirectoryGetCurrentDirectory();
 public extern void NativeDirectorySetCurrentDirectory(string path);
 private extern string NativeEnvironmentNewLine();
 
-public extern Result<unit, FilesystemError> NativeCreateDirectory(
+public extern Result<Unit, FilesystemError> NativeCreateDirectory(
     string path
 );
 
-public extern Result<unit, FilesystemError> NativeRenamePath(
+public extern Result<Unit, FilesystemError> NativeRenamePath(
     string source,
     string destination
 );
 
-public extern Result<unit, FilesystemError> NativeRemoveFile(
+public extern Result<Unit, FilesystemError> NativeRemoveFile(
     string path
 );
 
-public extern Result<unit, FilesystemError> NativeRemoveDirectory(
+public extern Result<Unit, FilesystemError> NativeRemoveDirectory(
     string path
 );
 
@@ -1104,7 +1090,7 @@ public void File.Copy(string sourceFileName, string destFileName)
     {
         throw new IOException("destination file already exists");
     }
-    usize ignored = FileResultOrThrow(
+    nuint ignored = FileResultOrThrow(
         CopyFileBuffered(sourceFileName, destFileName, 65536)
     );
 }
@@ -1119,7 +1105,7 @@ public void File.Copy(
     {
         throw new IOException("destination file already exists");
     }
-    usize ignored = FileResultOrThrow(
+    nuint ignored = FileResultOrThrow(
         CopyFileBuffered(sourceFileName, destFileName, 65536)
     );
 }
@@ -1130,7 +1116,7 @@ public void File.Move(string sourceFileName, string destFileName)
     {
         throw new IOException("destination path already exists");
     }
-    unit ignored = FileResultOrThrow(
+    Unit ignored = FileResultOrThrow(
         NativeRenamePath(sourceFileName, destFileName)
     );
 }
@@ -1141,7 +1127,7 @@ public void File.Delete(string path)
     {
         return;
     }
-    unit ignored = FileResultOrThrow(NativeRemoveFile(path));
+    Unit ignored = FileResultOrThrow(NativeRemoveFile(path));
 }
 
 public bool Directory.Exists(string path)
@@ -1159,7 +1145,7 @@ public void Directory.CreateDirectory(string path)
     {
         return;
     }
-    unit ignored = FileResultOrThrow(NativeCreateDirectory(path));
+    Unit ignored = FileResultOrThrow(NativeCreateDirectory(path));
 }
 
 public void Directory.Move(string sourceDirName, string destDirName)
@@ -1168,14 +1154,14 @@ public void Directory.Move(string sourceDirName, string destDirName)
     {
         throw new IOException("destination path already exists");
     }
-    unit ignored = FileResultOrThrow(
+    Unit ignored = FileResultOrThrow(
         NativeRenamePath(sourceDirName, destDirName)
     );
 }
 
 public void Directory.Delete(string path)
 {
-    unit ignored = FileResultOrThrow(NativeRemoveDirectory(path));
+    Unit ignored = FileResultOrThrow(NativeRemoveDirectory(path));
 }
 
 public string Directory.GetCurrentDirectory()
@@ -1350,7 +1336,7 @@ public void File.WriteAllLines(string path, List<string> contents)
 public void File.AppendAllText(string path, string contents)
 {
     NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "ab"));
-    usize written = FileResultOrThrow(NativeFileWrite(file, contents));
+    nuint written = FileResultOrThrow(NativeFileWrite(file, contents));
     if (written != contents.Length)
     {
         throw new IOException("file append did not write the complete string");

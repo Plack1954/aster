@@ -1,7 +1,7 @@
 namespace Shared.Generics;
 
 public struct Box<T> {
-    value: T,
+    T value;
 }
 
 public union Maybe<T> {

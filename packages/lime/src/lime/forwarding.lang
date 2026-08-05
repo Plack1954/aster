@@ -91,11 +91,11 @@ private Option<string> ForwardedValueFromRight(string values, long offset)
     {
         return Option.None;
     }
-    usize end = values.Length;
+    nuint end = values.Length;
     long current = 0;
     while (true)
     {
-        usize start = end;
+        nuint start = end;
         while (start > 0 && StringByteAt(values, start - 1) != 44)
         {
             start -= 1;
@@ -125,7 +125,7 @@ private bool IsSafeForwardedHost(string value)
     {
         return false;
     }
-    for (usize index = 0; index < value.Length; index++)
+    for (nuint index = 0; index < value.Length; index++)
     {
         byte current = StringByteAt(value, index);
         if (current <= 32 || current == 47 || current == 92 ||

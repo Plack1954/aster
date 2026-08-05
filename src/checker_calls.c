@@ -1390,7 +1390,7 @@ static_call:
                        &type_usize))
             lang_diag(
                 checker->diagnostics, expr->span,
-                "string indexing expects `(string, usize)`");
+                "string indexing expects `(string, nuint)`");
         return &type_u8;
     }
     if (strcmp(name, "Html::UnsafeRaw") == 0) {
@@ -1650,7 +1650,7 @@ static_call:
             expr->as.call.arguments.items[0]->type->kind != TYPE_QUEUE ||
             !same_type(expr->as.call.arguments.items[1]->type, &type_usize)) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`Queue.EnsureCapacity` expects a Queue and usize capacity");
+                      "`Queue.EnsureCapacity` expects a Queue and nuint capacity");
             return &type_usize;
         }
         require_mutable_dictionary(
@@ -1755,7 +1755,7 @@ static_call:
             expr->as.call.arguments.items[0]->type->kind != TYPE_STACK ||
             !same_type(expr->as.call.arguments.items[1]->type, &type_usize)) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`Stack.EnsureCapacity` expects a Stack and usize capacity");
+                      "`Stack.EnsureCapacity` expects a Stack and nuint capacity");
             return &type_usize;
         }
         require_mutable_dictionary(
@@ -1772,7 +1772,7 @@ static_call:
             (count == 2U && !same_type(
                 expr->as.call.arguments.items[1]->type, &type_usize))) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`Stack.TrimExcess` expects a Stack and optional usize capacity");
+                      "`Stack.TrimExcess` expects a Stack and optional nuint capacity");
             return &type_unit;
         }
         require_mutable_dictionary(
@@ -1913,7 +1913,7 @@ static_call:
             !is_hash_storage_type(expr->as.call.arguments.items[0]->type) ||
             !same_type(expr->as.call.arguments.items[1]->type, &type_usize)) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`Dictionary.EnsureCapacity` expects a Dictionary and usize capacity");
+                      "`Dictionary.EnsureCapacity` expects a Dictionary and nuint capacity");
             return &type_usize;
         }
         require_mutable_dictionary(
@@ -1930,7 +1930,7 @@ static_call:
             (count == 2U && !same_type(
                 expr->as.call.arguments.items[1]->type, &type_usize))) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`Dictionary.TrimExcess` expects a Dictionary and optional usize capacity");
+                      "`Dictionary.TrimExcess` expects a Dictionary and optional nuint capacity");
             return &type_unit;
         }
         require_mutable_dictionary(
@@ -2008,7 +2008,7 @@ static_call:
         if (expr->as.call.arguments.count != 3U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_VEC) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`List.%s` expects a List, a usize index, and an element",
+                      "`List.%s` expects a List, a nuint index, and an element",
                       member);
             return &type_unit;
         }
@@ -2018,7 +2018,7 @@ static_call:
         if (!same_type(expr->as.call.arguments.items[1]->type, &type_usize))
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[1]->span,
-                      "List index expects `usize`, found `%s`",
+                      "List index expects `nuint`, found `%s`",
                       expr->as.call.arguments.items[1]->type->name);
         (void)coerce_literal(
             checker, expr->as.call.arguments.items[2], vector->element);
@@ -2043,7 +2043,7 @@ static_call:
         if (expr->as.call.arguments.count != 2U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_VEC) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`List.RemoveAt` expects a List and a usize index");
+                      "`List.RemoveAt` expects a List and a nuint index");
             return &type_unit;
         }
         (void)coerce_literal(
@@ -2051,7 +2051,7 @@ static_call:
         if (!same_type(expr->as.call.arguments.items[1]->type, &type_usize))
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[1]->span,
-                      "List index expects `usize`, found `%s`",
+                      "List index expects `nuint`, found `%s`",
                       expr->as.call.arguments.items[1]->type->name);
         if (expr->as.call.arguments.items[0]->kind == EXPR_NAME) {
             Local *local = find_local(
@@ -2113,7 +2113,7 @@ static_call:
                 TYPE_VEC) {
             lang_diag(checker->diagnostics, expr->span,
                       "`%s` expects compatible List values%s",
-                      name, insert ? " and a usize index" : "");
+                      name, insert ? " and a nuint index" : "");
             return &type_unit;
         }
         Type *target = expr->as.call.arguments.items[0]->type;
@@ -2130,7 +2130,7 @@ static_call:
                            &type_usize))
                 lang_diag(checker->diagnostics,
                           expr->as.call.arguments.items[1]->span,
-                          "List index expects `usize`, found `%s`",
+                          "List index expects `nuint`, found `%s`",
                           expr->as.call.arguments.items[1]->type->name);
         }
         if (expr->as.call.arguments.items[0]->kind == EXPR_NAME) {
@@ -2149,7 +2149,7 @@ static_call:
         if (expr->as.call.arguments.count != 3U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_VEC) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`%s` expects a List, a usize index, and a usize count",
+                      "`%s` expects a List, a nuint index, and a nuint count",
                       name);
             return get ? &type_error : &type_unit;
         }
@@ -2160,7 +2160,7 @@ static_call:
                            &type_usize))
                 lang_diag(checker->diagnostics,
                           expr->as.call.arguments.items[i]->span,
-                          "List range expects `usize`, found `%s`",
+                          "List range expects `nuint`, found `%s`",
                           expr->as.call.arguments.items[i]->type->name);
         }
         if (!get && expr->as.call.arguments.items[0]->kind == EXPR_NAME) {
@@ -2178,7 +2178,7 @@ static_call:
         if ((count != 1U && count != 3U) ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_VEC) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`List.Reverse` expects no arguments or a usize index and count");
+                      "`List.Reverse` expects no arguments or a nuint index and count");
             return &type_unit;
         }
         if (count == 3U) {
@@ -2189,7 +2189,7 @@ static_call:
                                &type_usize))
                     lang_diag(checker->diagnostics,
                               expr->as.call.arguments.items[i]->span,
-                              "List range expects `usize`, found `%s`",
+                              "List range expects `nuint`, found `%s`",
                               expr->as.call.arguments.items[i]->type->name);
             }
         }
@@ -2209,7 +2209,7 @@ static_call:
         if (expr->as.call.arguments.count != 2U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_VEC) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`%s` expects a List and a usize capacity", name);
+                      "`%s` expects a List and a nuint capacity", name);
             return ensure ? &type_usize : &type_unit;
         }
         (void)coerce_literal(
@@ -2217,7 +2217,7 @@ static_call:
         if (!same_type(expr->as.call.arguments.items[1]->type, &type_usize))
             lang_diag(checker->diagnostics,
                       expr->as.call.arguments.items[1]->span,
-                      "List capacity expects `usize`, found `%s`",
+                      "List capacity expects `nuint`, found `%s`",
                       expr->as.call.arguments.items[1]->type->name);
         if (expr->as.call.arguments.items[0]->kind == EXPR_NAME) {
             Local *local = find_local(
@@ -2292,7 +2292,7 @@ static_call:
                            &type_usize))
                 lang_diag(checker->diagnostics,
                           expr->as.call.arguments.items[i]->span,
-                          "List range expects `usize`, found `%s`",
+                          "List range expects `nuint`, found `%s`",
                           expr->as.call.arguments.items[i]->type->name);
         }
         if (strcmp(name, "List::RemoveAll") == 0 &&
@@ -2314,7 +2314,7 @@ static_call:
         if (expr->as.call.arguments.count != 2U ||
             expr->as.call.arguments.items[0]->type->kind != TYPE_VEC) {
             lang_diag(checker->diagnostics, expr->span,
-                      "`List.Get` expects a List and a usize index");
+                      "`List.Get` expects a List and a nuint index");
             return &type_error;
         }
         Type *vector = expr->as.call.arguments.items[0]->type;
@@ -2325,7 +2325,7 @@ static_call:
             lang_diag(
                 checker->diagnostics,
                 expr->as.call.arguments.items[1]->span,
-                "`List::Get` index expects `usize`, found `%s`",
+                "`List::Get` index expects `nuint`, found `%s`",
                 expr->as.call.arguments.items[1]->type->name);
         if (vector->element->requires_cleanup)
             lang_diag(
@@ -2519,7 +2519,7 @@ static_call:
                                        checker,
                                        decl->as.enumeration.name,
                                        expr->span);
-                    bool payload = strcmp(candidate->type_name, "unit") != 0;
+                    bool payload = strcmp(candidate->type_name, "Unit") != 0;
                     if (!payload && !expr->as.call.implicit_enum_value &&
                         expr->as.call.arguments.count == 0U)
                         lang_diag(

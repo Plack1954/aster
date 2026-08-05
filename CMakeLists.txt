@@ -5,6 +5,12 @@ include(GNUInstallDirs)
 
 option(LANG_SANITIZE "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(LANG_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+option(ASTER_GENERATED_C_STRICT
+    "Compile every generated-C test with the full warning suite" OFF)
+option(ASTER_ENABLE_SQLITE_TESTS
+    "Enable the slow SQLite and issue-tracker integration tests" OFF)
+set(ASTER_GENERATED_C_TEST_LANES 2 CACHE STRING
+    "Maximum number of generated-C test compilers run concurrently")
 option(LANG_VM_COMPUTED_GOTO
     "Use the optional GCC/Clang computed-goto VM dispatch" OFF)
 set(ASTER_H2O_SOURCE_ROOT "" CACHE PATH
@@ -135,6 +141,21 @@ install(DIRECTORY std/
     FILES_MATCHING PATTERN "*.lang")
 
 enable_testing()
+set_property(GLOBAL PROPERTY ASTER_GENERATED_C_NEXT_LANE 0)
+
+function(aster_limit_generated_c_test test_name)
+    if(NOT ASTER_GENERATED_C_TEST_LANES MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "ASTER_GENERATED_C_TEST_LANES must be a positive integer")
+    endif()
+    get_property(next_lane GLOBAL PROPERTY ASTER_GENERATED_C_NEXT_LANE)
+    math(EXPR lane "${next_lane} % ${ASTER_GENERATED_C_TEST_LANES}")
+    math(EXPR next_lane "${next_lane} + 1")
+    set_property(GLOBAL PROPERTY ASTER_GENERATED_C_NEXT_LANE ${next_lane})
+    set_tests_properties(${test_name} PROPERTIES
+        RESOURCE_LOCK "aster_generated_c_compiler_${lane}"
+        TIMEOUT 120)
+endfunction()
 
 # Keep generated-C test toolchain, runtime, and sanitizer wiring in one place.
 # Additional -D arguments are forwarded to the runner and may intentionally
@@ -152,10 +173,12 @@ function(add_aster_generated_c_test name source_file output_basename)
             -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
             -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
             -DGENERATED_SANITIZE=${LANG_SANITIZE}
+            -DGENERATED_STRICT=${ASTER_GENERATED_C_STRICT}
             "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
             -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
             ${ARGN}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_backend.cmake)
+    aster_limit_generated_c_test(${name})
 endfunction()
 
 function(add_aster_generated_project_test name manifest_file target_name)
@@ -171,10 +194,12 @@ function(add_aster_generated_project_test name manifest_file target_name)
             -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
             -DRUNTIME_LIBRARY=$<TARGET_FILE:langlib>
             -DGENERATED_SANITIZE=${LANG_SANITIZE}
+            -DGENERATED_STRICT=${ASTER_GENERATED_C_STRICT}
             "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}"
             -DEXECUTABLE_SUFFIX=${CMAKE_EXECUTABLE_SUFFIX}
             ${ARGN}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_c_project.cmake)
+    aster_limit_generated_c_test(${name})
 endfunction()
 
 add_test(NAME language_tests COMMAND lang test)
@@ -468,7 +493,7 @@ set_tests_properties(multi_route_http_application PROPERTIES
     PASS_REGULAR_EXPRESSION
         "<h2>home</h2>[\r\n]+<strong>42</strong>[\r\n]+<p>Aster</p>[\r\n]+<p>/users</p>"
 )
-if(SQLite3_FOUND)
+if(ASTER_ENABLE_SQLITE_TESTS AND SQLite3_FOUND)
     add_test(NAME sqlite_application
         COMMAND lang run examples/sqlite.lang)
     set_tests_properties(sqlite_application PROPERTIES
@@ -651,8 +676,9 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
             "wasm islands verified: typed exports, SSR counter, and two forms"
     )
 endif()
-if(UNIX AND ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
-   ASTER_WASM_OPTIMIZER AND ASTER_CURL_EXECUTABLE AND SQLite3_FOUND)
+if(ASTER_ENABLE_SQLITE_TESTS AND UNIX AND ASTER_WASM_CLANG AND
+   ASTER_WASM_LINKER AND ASTER_WASM_OPTIMIZER AND
+   ASTER_CURL_EXECUTABLE AND SQLite3_FOUND)
     add_test(NAME lime_browser_http_integration
         COMMAND bash tests/lime_browser_integration.sh
             $<TARGET_FILE:lang>
@@ -1342,7 +1368,7 @@ add_aster_generated_project_test(
     docs_server_c_backend_compile_and_run
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/docs_server/aster.toml
     render)
-if(SQLite3_FOUND)
+if(ASTER_ENABLE_SQLITE_TESTS AND SQLite3_FOUND)
     add_aster_generated_project_test(
     issue_tracker_c_backend_compile_and_run
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/aster.toml
@@ -2226,7 +2252,7 @@ if(LANG_HAVE_H2O AND UNIX)
         ENVIRONMENT "LD_LIBRARY_PATH=${ASTER_H2O_BUILD_ROOT}"
     )
 endif()
-if(SQLite3_FOUND)
+if(ASTER_ENABLE_SQLITE_TESTS AND SQLite3_FOUND)
     add_test(NAME issue_tracker_vm_http_integration
         COMMAND generated_http_integration_test vm)
     set_tests_properties(issue_tracker_vm_http_integration PROPERTIES

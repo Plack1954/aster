@@ -9,7 +9,7 @@ private Result<bool, string> InspectLine(string line) {
 
 private Result<int, string> run() {
     string path = try NativeProcessArg(0);
-    usize count = try ForEachLineBuffered(
+    nuint count = try ForEachLineBuffered(
         path,
         17,
         InspectLine,

@@ -4,7 +4,7 @@ int main()
 {
     Dictionary<string, int> scores = new();
     if (scores.Count != 0) { return 1; }
-    usize reserved = scores.EnsureCapacity(10);
+    nuint reserved = scores.EnsureCapacity(10);
     if (reserved < 10 || scores.Capacity != reserved) { return 22; }
 
     scores.Add("Aster", 10);

@@ -188,7 +188,7 @@ static void print_value(FILE *stream, LangValue value) {
                              value.as.string.length, stream);
             break;
         case LANG_VALUE_BYTE_SLICE:
-            fprintf(stream, "Slice<u8>(%zu)", value.as.bytes.length);
+            fprintf(stream, "Span<u8>(%zu)", value.as.bytes.length);
             break;
         case LANG_VALUE_OBJECT: {
             Object *object = value.as.object;

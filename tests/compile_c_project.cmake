@@ -37,16 +37,20 @@ if(C_COMPILER_ID STREQUAL "MSVC")
         list(APPEND C_FLAGS "/I${INCLUDE_DIRECTORY}")
     endif()
 else()
-    set(C_FLAGS
-        -std=c17
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Wconversion
-        -Wshadow
-        -Wstrict-prototypes
-        -Wmissing-prototypes
-        -Werror)
+    set(C_FLAGS -std=c17)
+    if(GENERATED_STRICT)
+        list(APPEND C_FLAGS
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wconversion
+            -Wshadow
+            -Wstrict-prototypes
+            -Wmissing-prototypes
+            -Werror)
+    else()
+        list(APPEND C_FLAGS -w)
+    endif()
     if(GENERATED_SANITIZE)
         list(APPEND C_FLAGS
             -fsanitize=address,undefined
@@ -65,16 +69,35 @@ if(DEFINED EXTRA_LIBRARIES)
     list(APPEND LINK_INPUTS ${EXTRA_LIBRARIES})
 endif()
 
-execute_process(
-    COMMAND "${C_COMPILER}" ${C_FLAGS} "${GENERATED_C}" ${LINK_INPUTS}
-            -o "${GENERATED_EXE}"
-    RESULT_VARIABLE COMPILE_STATUS
-    OUTPUT_VARIABLE COMPILE_OUTPUT
-    ERROR_VARIABLE COMPILE_ERROR
-)
-if(NOT COMPILE_STATUS EQUAL 0)
-    message(FATAL_ERROR
-        "generated project C did not compile:\n${COMPILE_OUTPUT}${COMPILE_ERROR}")
+set(COMPILE_STAMP "${GENERATED_EXE}.compile.sha256")
+file(SHA256 "${GENERATED_C}" GENERATED_C_HASH)
+set(COMPILE_FINGERPRINT
+    "${GENERATED_C_HASH}|${C_COMPILER}|${C_FLAGS}|${LINK_INPUTS}")
+if(DEFINED RUNTIME_LIBRARY AND EXISTS "${RUNTIME_LIBRARY}")
+    file(SHA256 "${RUNTIME_LIBRARY}" RUNTIME_LIBRARY_HASH)
+    string(APPEND COMPILE_FINGERPRINT "|${RUNTIME_LIBRARY_HASH}")
+endif()
+string(SHA256 COMPILE_HASH "${COMPILE_FINGERPRINT}")
+set(COMPILE_REQUIRED TRUE)
+if(EXISTS "${GENERATED_EXE}" AND EXISTS "${COMPILE_STAMP}")
+    file(READ "${COMPILE_STAMP}" PREVIOUS_COMPILE_HASH)
+    if(PREVIOUS_COMPILE_HASH STREQUAL COMPILE_HASH)
+        set(COMPILE_REQUIRED FALSE)
+    endif()
+endif()
+if(COMPILE_REQUIRED)
+    execute_process(
+        COMMAND "${C_COMPILER}" ${C_FLAGS} "${GENERATED_C}" ${LINK_INPUTS}
+                -o "${GENERATED_EXE}"
+        RESULT_VARIABLE COMPILE_STATUS
+        OUTPUT_VARIABLE COMPILE_OUTPUT
+        ERROR_VARIABLE COMPILE_ERROR
+    )
+    if(NOT COMPILE_STATUS EQUAL 0)
+        message(FATAL_ERROR
+            "generated project C did not compile:\n${COMPILE_OUTPUT}${COMPILE_ERROR}")
+    endif()
+    file(WRITE "${COMPILE_STAMP}" "${COMPILE_HASH}")
 endif()
 
 if(DEFINED DRIVER_EXECUTABLE)

@@ -17,7 +17,7 @@ public struct BrowserAssets
 private bool BrowserSegmentValid(string value)
 {
     if (value.Length == 0) { return false; }
-    for (usize index = 0; index < value.Length; index++)
+    for (nuint index = 0; index < value.Length; index++)
     {
         byte current = StringByteAt(value, index);
         if (!((current >= 65 && current <= 90) ||

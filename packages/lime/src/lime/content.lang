@@ -24,8 +24,8 @@ private bool ContentSpace(byte value)
 
 private string ContentTrim(string value)
 {
-    usize start = 0;
-    usize end = value.Length;
+    nuint start = 0;
+    nuint end = value.Length;
     while (start < end && ContentSpace(StringByteAt(value, start)))
     {
         start += 1;
@@ -39,7 +39,7 @@ private string ContentTrim(string value)
 
 private Result<string, string> ContentScalar(string raw)
 {
-    usize length = raw.Length;
+    nuint length = raw.Length;
     if (length >= 2 && StringByteAt(raw, 0) == 34 &&
         StringByteAt(raw, length - 1) == 34)
     {
@@ -67,8 +67,8 @@ private Result<ContentDocument, string> ParseContentDocument(
     string source
 )
 {
-    usize length = source.Length;
-    usize firstEnd = 0;
+    nuint length = source.Length;
+    nuint firstEnd = 0;
     while (firstEnd < length && StringByteAt(source, firstEnd) != 10)
     {
         firstEnd += 1;
@@ -79,10 +79,10 @@ private Result<ContentDocument, string> ParseContentDocument(
     }
 
     List<ContentField> fields = new();
-    usize cursor = if (firstEnd < length) { firstEnd + 1 } else { length };
+    nuint cursor = firstEnd < length ? firstEnd + 1 : length;
     while (cursor < length)
     {
-        usize end = cursor;
+        nuint end = cursor;
         while (end < length && StringByteAt(source, end) != 10)
         {
             end += 1;
@@ -90,7 +90,7 @@ private Result<ContentDocument, string> ParseContentDocument(
         string line = ContentTrim(StringSlice(source, cursor, end));
         if (line == "+++")
         {
-            usize bodyStart = if (end < length) { end + 1 } else { length };
+            nuint bodyStart = end < length ? end + 1 : length;
             return Result.Ok(new()
             {
                 path = path,
@@ -100,7 +100,7 @@ private Result<ContentDocument, string> ParseContentDocument(
         }
         if (line.Length != 0)
         {
-            usize equals = 0;
+            nuint equals = 0;
             while (equals < line.Length &&
                    StringByteAt(line, equals) != 61)
             {
@@ -128,7 +128,7 @@ private Result<ContentDocument, string> ParseContentDocument(
                 value = try ContentScalar(raw)
             });
         }
-        cursor = if (end < length) { end + 1 } else { length };
+        cursor = end < length ? end + 1 : length;
     }
     return Result.Err("content file requires closing `+++`");
 }
@@ -172,14 +172,14 @@ public string ContentDocument.Required(
 
 private Result<List<string>, string> ContentStringList(string raw)
 {
-    usize length = raw.Length;
+    nuint length = raw.Length;
     if (length < 2 || StringByteAt(raw, 0) != 91 ||
         StringByteAt(raw, length - 1) != 93)
     {
         return Result.Err("frontmatter string list requires `[...]`");
     }
     List<string> values = new();
-    usize cursor = 1;
+    nuint cursor = 1;
     while (cursor + 1 < length)
     {
         while (cursor + 1 < length &&
@@ -193,7 +193,7 @@ private Result<List<string>, string> ContentStringList(string raw)
         {
             return Result.Err("frontmatter string list requires quoted values");
         }
-        usize start = cursor + 1;
+        nuint start = cursor + 1;
         cursor = start;
         while (cursor < length && StringByteAt(raw, cursor) != 34)
         {

@@ -19,8 +19,8 @@ public enum JsonValueKind
 public struct JsonElement
 {
     string Source;
-    usize Start;
-    usize End;
+    nuint Start;
+    nuint End;
     JsonValueKind ValueKind;
 }
 
@@ -34,7 +34,7 @@ public struct JsonSerializer {}
 struct JsonParser
 {
     string Source;
-    usize Position;
+    nuint Position;
 }
 
 private void JsonFail()
@@ -85,7 +85,7 @@ private uint JsonReadHex4(ref JsonParser parser)
 private void JsonConsumeUtf8(ref JsonParser parser)
 {
     byte first = parser.Source[parser.Position];
-    usize remaining = parser.Source.Length - parser.Position;
+    nuint remaining = parser.Source.Length - parser.Position;
     int count = 0;
     uint codePoint = 0;
     uint minimum = 0;
@@ -113,10 +113,10 @@ private void JsonConsumeUtf8(ref JsonParser parser)
         JsonFail();
     }
 
-    if (remaining < (usize)count) { JsonFail(); }
+    if (remaining < (nuint)count) { JsonFail(); }
     for (int index = 1; index < count; index++)
     {
-        byte continuation = parser.Source[parser.Position + (usize)index];
+        byte continuation = parser.Source[parser.Position + (nuint)index];
         if ((continuation & 192) != 128) { JsonFail(); }
         codePoint = codePoint * 64 + (uint)(continuation & 63);
     }
@@ -125,7 +125,7 @@ private void JsonConsumeUtf8(ref JsonParser parser)
     {
         JsonFail();
     }
-    parser.Position += (usize)count;
+    parser.Position += (nuint)count;
 }
 
 private void JsonParseStringToken(ref JsonParser parser)
@@ -193,7 +193,7 @@ private void JsonExpectLiteral(ref JsonParser parser, string literal)
     {
         JsonFail();
     }
-    for (usize index = 0; index < literal.Length; index++)
+    for (nuint index = 0; index < literal.Length; index++)
     {
         if (parser.Source[parser.Position + index] != literal[index])
         {
@@ -280,7 +280,7 @@ private JsonElement JsonParseValue(ref JsonParser parser, int depth)
     JsonSkipWhiteSpace(ref parser);
     if (parser.Position >= parser.Source.Length) { JsonFail(); }
 
-    usize start = parser.Position;
+    nuint start = parser.Position;
     JsonValueKind kind = JsonValueKind.Undefined;
     byte current = parser.Source[parser.Position];
 
@@ -421,7 +421,7 @@ private void JsonAppendCodePoint(ref StringBuilder builder, uint codePoint)
     }
 }
 
-private string JsonDecodeString(string source, usize start, usize end)
+private string JsonDecodeString(string source, nuint start, nuint end)
 {
     StringBuilder builder = new();
     JsonParser parser = new()
@@ -429,8 +429,8 @@ private string JsonDecodeString(string source, usize start, usize end)
         Source = source,
         Position = start + 1,
     };
-    usize contentEnd = end - 1;
-    usize plainStart = parser.Position;
+    nuint contentEnd = end - 1;
+    nuint plainStart = parser.Position;
 
     while (parser.Position < contentEnd)
     {
@@ -496,7 +496,7 @@ private void JsonAppendHex4(ref StringBuilder builder, uint value)
 private uint JsonDecodeUtf8CodePoint(ref JsonParser parser)
 {
     byte first = parser.Source[parser.Position];
-    usize remaining = parser.Source.Length - parser.Position;
+    nuint remaining = parser.Source.Length - parser.Position;
     int count = 0;
     uint codePoint = 0;
     uint minimum = 0;
@@ -522,10 +522,10 @@ private uint JsonDecodeUtf8CodePoint(ref JsonParser parser)
     {
         JsonFail();
     }
-    if (remaining < (usize)count) { JsonFail(); }
+    if (remaining < (nuint)count) { JsonFail(); }
     for (int index = 1; index < count; index++)
     {
-        byte continuation = parser.Source[parser.Position + (usize)index];
+        byte continuation = parser.Source[parser.Position + (nuint)index];
         if ((continuation & 192) != 128) { JsonFail(); }
         codePoint = codePoint * 64 + (uint)(continuation & 63);
     }
@@ -534,7 +534,7 @@ private uint JsonDecodeUtf8CodePoint(ref JsonParser parser)
     {
         JsonFail();
     }
-    parser.Position += (usize)count;
+    parser.Position += (nuint)count;
     return codePoint;
 }
 
@@ -635,7 +635,7 @@ public string JsonSerializer.Serialize(string? value)
 
 public string JsonSerializer.Serialize(bool value)
 {
-    return if (value) { "true" } else { "false" };
+    return value ? "true" : "false";
 }
 
 public string JsonSerializer.Serialize(sbyte value) { return value.ToString(); }
@@ -862,9 +862,9 @@ public bool JsonElement.TryGetProperty(
     };
     while (parser.Source[parser.Position] != 125)
     {
-        usize nameStart = parser.Position;
+        nuint nameStart = parser.Position;
         JsonParseStringToken(ref parser);
-        usize nameEnd = parser.Position;
+        nuint nameEnd = parser.Position;
         JsonSkipWhiteSpace(ref parser);
         parser.Position += 1;
         JsonElement propertyValue = JsonParseValue(ref parser, 1);

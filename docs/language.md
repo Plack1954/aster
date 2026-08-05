@@ -164,11 +164,11 @@ with method syntax. Receivers use the same explicit type-first syntax as every
 other parameter:
 
 ```text
-public long Point.offset(Point self, long amount) {
+public long Point.Offset(Point self, long amount) {
     return self.x + amount;
 }
 
-var result = point.offset(2);
+var result = point.Offset(2);
 ```
 
 The method call is ordinary typed call sugar for `Point.Offset(point, 2)`;
@@ -223,7 +223,7 @@ copies, and `FindAll` constructs an independent result.
 `.Count`, `.ContainsKey`, `.ContainsValue`, `.Remove`, `.Clear`, and checked
 indexer reads and assignments. Its read-only `.Capacity`,
 `.EnsureCapacity(capacity)`, and both `.TrimExcess()` forms expose predictable
-storage control using Aster `usize` collection sizes.
+storage control using Aster `nuint` collection sizes.
 Indexer assignment replaces an existing value or inserts a new key. The
 initial implementation accepts scalar, character, `string`, and raw-pointer
 keys with built-in equality and has matching VM and generated-C hash-table
@@ -266,7 +266,7 @@ source available. The VM and generated C use the same recursive copy semantics
 for strings, lists, arrays, structs, and union payloads.
 
 The integer types `sbyte`, `short`, `int`, `long`, `byte`, `ushort`, `uint`, `ulong`,
-`isize`, and `usize` have distinct static identities. Arithmetic traps when
+`nint`, and `nuint` have distinct static identities. Arithmetic traps when
 its result does not fit the selected width. `float` and `double` are distinct;
 `float` operations round through the host's IEEE single-precision
 representation. Arithmetic operands must match, contextual literals are
@@ -283,9 +283,9 @@ Raw pointer types are written as `T*` and `const T*`; pointee type and
 mutability participate in type identity. `null` is contextually typed and
 therefore requires an expected raw-pointer type; raw pointers support equality
 and inequality but not ordering. A null, expired, or undersized load/store
-traps in the interpreter. `Slice<T>` is a distinct typed,
+traps in the interpreter. `Span<T>` is a distinct typed,
 non-owning generic form. `BufferAsMutSlice` exposes a call-scoped
-`Slice<byte>` from a mutable `Buffer` inside `unsafe`; the compiler does not
+`Span<byte>` from a mutable `Buffer` inside `unsafe`; the compiler does not
 prove that the buffer remains alive. Inside `unsafe`, the initial
 `*pointer` dereference supports `const long*` and `long*`, while
 `*pointer = value` and its compound forms require `long*`. The interpreter
@@ -424,7 +424,7 @@ Operations are single-path primitives: recursive creation and recursive
 removal are intentionally not implicit.
 
 `std.file` supports both complete text reads and bounded byte streaming.
-`NativeFileReadInto` fills a caller-provided `Slice<byte>` and returns zero
+`NativeFileReadInto` fills a caller-provided `Span<byte>` and returns zero
 at end of file. `NativeFileWriteBytes` writes exactly the requested prefix
 or returns an error. `CopyFileBuffered` is an Aster-written loop that owns
 both RAII file handles and one reusable `Buffer`; it never allocates storage
@@ -454,7 +454,7 @@ so it is restricted to copyable element types.
 Ordinary aggregate parameters are values:
 
 ```text
-private usize Inspect(List<long> values) {
+private nuint Inspect(List<long> values) {
     return values.Count();
 }
 ```
@@ -612,11 +612,11 @@ Generic functions infer their type arguments from parameters and, when
 available, the expected return type:
 
 ```text
-private T identity<T>(owned T value) {
+private T Identity<T>(T value) {
     return value;
 }
 
-long number = identity(42);
+long number = Identity(42);
 ```
 
 Every concrete argument list creates one canonical specialized function across

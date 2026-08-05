@@ -1,7 +1,7 @@
 namespace Shared;
 
 public struct Box<T> {
-    value: T,
+    T value;
 }
 
 public T identity<T>(T value) {

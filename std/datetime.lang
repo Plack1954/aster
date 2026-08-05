@@ -23,10 +23,10 @@ private extern long NativeUtcNowUnixMilliseconds();
 
 private long DaysFromCivil(int year, int month, int day)
 {
-    int adjustedYear = year - if (month <= 2) { 1 } else { 0 };
+    int adjustedYear = year - (month <= 2 ? 1 : 0);
     long era = (long)adjustedYear / 400;
     long yearOfEra = (long)adjustedYear - era * 400;
-    int shiftedMonth = month + if (month > 2) { -3 } else { 9 };
+    int shiftedMonth = month + (month > 2 ? -3 : 9);
     long dayOfYear =
         (153 * (long)shiftedMonth + 2) / 5 + (long)day - 1;
     long dayOfEra = yearOfEra * 365 + yearOfEra / 4 -
@@ -45,14 +45,9 @@ private DateParts DatePartsFromUnixTicks(long unixTicks)
         days -= 1;
     }
     long shiftedDays = days + 719468;
-    long era = if (shiftedDays >= 0)
-    {
-        shiftedDays / 146097
-    }
-    else
-    {
-        (shiftedDays - 146096) / 146097
-    };
+    long era = shiftedDays >= 0
+        ? shiftedDays / 146097
+        : (shiftedDays - 146096) / 146097;
     long dayOfEra = shiftedDays - era * 146097;
     long yearOfEra = (dayOfEra - dayOfEra / 1460 +
         dayOfEra / 36524 - dayOfEra / 146096) / 365;
@@ -61,15 +56,9 @@ private DateParts DatePartsFromUnixTicks(long unixTicks)
         (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100);
     long shiftedMonth = (5 * dayOfYear + 2) / 153;
     int day = (int)(dayOfYear - (153 * shiftedMonth + 2) / 5 + 1);
-    int month = (int)(shiftedMonth + if (shiftedMonth < 10)
-    {
-        (long)3
-    }
-    else
-    {
-        (long)-9
-    });
-    year += if (month <= 2) { 1 } else { 0 };
+    int month = (int)(shiftedMonth +
+        (shiftedMonth < 10 ? (long)3 : (long)-9));
+    year += month <= 2 ? 1 : 0;
 
     int hour = (int)(dayMilliseconds / 3600000);
     dayMilliseconds %= 3600000;
@@ -155,7 +144,7 @@ private string FormatDateTime(long unixTicks, short offsetMinutes)
     return builder.ToString();
 }
 
-private int DateDigit(string value, usize index)
+private int DateDigit(string value, nuint index)
 {
     byte digit = value[index];
     if (digit < 48 || digit > 57)
@@ -165,7 +154,7 @@ private int DateDigit(string value, usize index)
     return (int)(digit - 48);
 }
 
-private int DateTwoDigits(string value, usize index)
+private int DateTwoDigits(string value, nuint index)
 {
     return DateDigit(value, index) * 10 + DateDigit(value, index + 1);
 }
@@ -177,7 +166,7 @@ private bool IsLeapYear(int year)
 
 private int DaysInMonth(int year, int month)
 {
-    if (month == 2) { return if (IsLeapYear(year)) { 29 } else { 28 }; }
+    if (month == 2) { return IsLeapYear(year) ? 29 : 28; }
     if (month == 4 || month == 6 || month == 9 || month == 11) { return 30; }
     return 31;
 }
@@ -202,8 +191,8 @@ private DateTimeOffset ParseDateTimeOffset(string value)
     int second = DateTwoDigits(value, 17);
     int millisecond = DateDigit(value, 20) * 100 +
         DateDigit(value, 21) * 10 + DateDigit(value, 22);
-    int offsetHours = if (utc) { 0 } else { DateTwoDigits(value, 24) };
-    int offsetMinutePart = if (utc) { 0 } else { DateTwoDigits(value, 27) };
+    int offsetHours = utc ? 0 : DateTwoDigits(value, 24);
+    int offsetMinutePart = utc ? 0 : DateTwoDigits(value, 27);
     if (year < 1 || month < 1 || month > 12 || day < 1 ||
         day > DaysInMonth(year, month) || hour > 23 || minute > 59 ||
         second > 59 || offsetHours > 14 || offsetMinutePart > 59 ||
@@ -257,16 +246,10 @@ private TimeOnly ParseTimeOnly(string value)
     }
     int hour = DateTwoDigits(value, 0);
     int minute = DateTwoDigits(value, 3);
-    int second = if (minutePrecision) { 0 } else { DateTwoDigits(value, 6) };
-    int millisecond = if (millisecondPrecision)
-    {
+    int second = minutePrecision ? 0 : DateTwoDigits(value, 6);
+    int millisecond = millisecondPrecision ?
         DateDigit(value, 9) * 100 + DateDigit(value, 10) * 10 +
-            DateDigit(value, 11)
-    }
-    else
-    {
-        0
-    };
+            DateDigit(value, 11) : 0;
     if (hour > 23 || minute > 59 || second > 59)
     {
         throw new FormatException("String was not recognized as a valid TimeOnly.");

@@ -11,7 +11,7 @@ bool lang_register_native(
 ```
 
 A callback receives a borrowed argument array and returns a tagged
-`LangNativeResult`. Public values cover unit, Boolean, signed and unsigned
+`LangNativeResult`. Public values cover `Unit`, Boolean, signed and unsigned
 integers, float, borrowed string views, mutable byte slices, opaque objects,
 and raw pointers. The callback must not retain borrowed string or slice data
 beyond the call.
@@ -51,7 +51,7 @@ their registered C destructor. `NativeHandle` is cleanup-managed and cannot be
 cloned. `lang_value_drop` releases an embedding-owned value.
 
 `BufferAsMutSlice(buffer)` is an unsafe, call-scoped bridge from a mutable
-cleanup-managed `Buffer` to `Slice<byte>`. C callbacks inspect it with
+cleanup-managed `Buffer` to `Span<byte>`. C callbacks inspect it with
 `lang_value_byte_slice`. The slice does not own or extend the buffer lifetime.
 The interpreter deliberately does not add a reference count or lifetime check
 to buffers and raw slices. The reference count used by immutable `string` does
@@ -86,7 +86,7 @@ List<string> lines = File.ReadAllLines(path);
 
 The `NativeFile*` and buffered `Result` APIs remain available for callers that
 want to branch on I/O failure as data.
-The byte-streaming calls borrow both the file handle and a `Slice<byte>` derived
+The byte-streaming calls borrow both the file handle and a `Span<byte>` derived
 from a live mutable `Buffer`. Reads return the number of initialized bytes;
 zero means EOF for a non-empty slice. Writes validate the requested prefix
 against slice length, handle partial host writes internally, and flush before

@@ -1,5 +1,5 @@
 int main() {
-    for (value in 0..=3) {
+    foreach (long value in 0..=3) {
         Console.WriteLine(value);
     }
     0

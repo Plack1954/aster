@@ -1,6 +1,6 @@
 struct Pair {
-    first: long,
-    second: long,
+    long first;
+    long second;
 }
 
 private long add(long first, long second) {

@@ -1,6 +1,6 @@
 struct Pair<A, B> {
-    first: A,
-    second: B,
+    A first;
+    B second;
 }
 
 private void invalid(Pair<long> value) {

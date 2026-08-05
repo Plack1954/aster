@@ -1027,8 +1027,8 @@ static TypeKind vm_type_kind(const IrType *type) {
     if (strcmp(type->name, "u16") == 0) return TYPE_U16;
     if (strcmp(type->name, "u32") == 0) return TYPE_U32;
     if (strcmp(type->name, "u64") == 0) return TYPE_U64;
-    if (strcmp(type->name, "isize") == 0) return TYPE_ISIZE;
-    if (strcmp(type->name, "usize") == 0) return TYPE_USIZE;
+    if (strcmp(type->name, "nint") == 0) return TYPE_ISIZE;
+    if (strcmp(type->name, "nuint") == 0) return TYPE_USIZE;
     if (strcmp(type->name, "f32") == 0) return TYPE_F32;
     if (strcmp(type->name, "f64") == 0) return TYPE_F64;
     if (strcmp(type->name, "char") == 0) return TYPE_CHAR;

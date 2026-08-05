@@ -1,5 +1,5 @@
 struct Resource {
-    id: long,
+    long id;
 }
 
 ~Resource() {
@@ -7,7 +7,7 @@ struct Resource {
 }
 
 int main() {
-    var _ = Resource { id: 7 };
+    _ = Resource { id: 7 };
     Console.WriteLine(8);
     return 0;
 }

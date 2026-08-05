@@ -4,9 +4,9 @@ using System.Text;
 
 public Result<bool, string> ValidateTitle(
     string title,
-    usize maxTitleBytes
+    nuint maxTitleBytes
 ) {
-    usize length = title.Length;
+    nuint length = title.Length;
     if (length == 0) {
         return Result.Err("issue title cannot be empty");
     }

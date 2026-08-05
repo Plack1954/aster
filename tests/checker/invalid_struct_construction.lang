@@ -1,6 +1,6 @@
 struct Point {
-    x: long,
-    y: long,
+    long x;
+    long y;
 }
 
 int main() {

@@ -5,7 +5,7 @@ using System.Text;
 
 public struct AppConfig {
     string databasePath;
-    usize maxTitleBytes;
+    nuint maxTitleBytes;
 }
 
 private bool IsSpace(byte value) {
@@ -13,8 +13,8 @@ private bool IsSpace(byte value) {
 }
 
 private string trim(string value) {
-    usize start = 0;
-    usize end = value.Length;
+    nuint start = 0;
+    nuint end = value.Length;
     while (start < end && IsSpace(StringByteAt(value, start))) {
         start += 1;
     }
@@ -24,38 +24,38 @@ private string trim(string value) {
     return StringSlice(value, start, end);
 }
 
-private Result<usize, string> ParseLimit(string value) {
+private Result<nuint, string> ParseLimit(string value) {
     string text = trim(value);
-    usize length = text.Length;
+    nuint length = text.Length;
     if (length == 0) {
         return Result.Err("expected a decimal limit");
     }
-    usize result = 0;
-    for (usize index = 0; index < length; index++) {
+    nuint result = 0;
+    for (nuint index = 0; index < length; index++) {
         byte byte = StringByteAt(text, index);
         if (byte < 48 || byte > 57) {
             return Result.Err("invalid decimal limit");
         }
-        result = result * 10 + (usize)(byte - 48);
+        result = result * 10 + (nuint)(byte - 48);
     }
     return Result.Ok(result);
 }
 
 public Result<AppConfig, string> ParseConfig(string source) {
     string databasePath = ":memory:";
-    usize maxTitleBytes = 120;
-    usize length = source.Length;
-    usize cursor = 0;
+    nuint maxTitleBytes = 120;
+    nuint length = source.Length;
+    nuint cursor = 0;
 
     while (cursor < length) {
-        usize end = cursor;
+        nuint end = cursor;
         while (end < length && StringByteAt(source, end) != 10) {
             end += 1;
         }
         string line = trim(StringSlice(source, cursor, end));
-        usize lineLength = line.Length;
+        nuint lineLength = line.Length;
         if (lineLength > 0 && StringByteAt(line, 0) != 35) {
-            usize equals = 0;
+            nuint equals = 0;
             while (equals < lineLength &&
                   StringByteAt(line, equals) != 61) {
                 equals += 1;

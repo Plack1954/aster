@@ -3,7 +3,7 @@ using Aster.Memory;
 int main() {
     Buffer buffer = Buffer.allocate(17);
     unsafe {
-        Slice<byte> bytes = BufferAsMutSlice(buffer);
+        Span<byte> bytes = BufferAsMutSlice(buffer);
         Console.WriteLine(ByteSliceLen(bytes));
         long total = 0;
         foreach (byte value in bytes) {

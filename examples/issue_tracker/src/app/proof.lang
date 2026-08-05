@@ -13,10 +13,10 @@ using System.Text;
 private Result<long, string> SeedDatabase(
     Database database,
     List<string> titles,
-    usize maxTitleBytes
+    nuint maxTitleBytes
 ) {
     long inserted = 0;
-    for (title in titles) {
+    foreach (string title in titles) {
         string source = title;
         Result<bool, string> valid =
             ValidateTitle(source, maxTitleBytes);

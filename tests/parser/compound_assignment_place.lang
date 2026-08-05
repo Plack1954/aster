@@ -1,5 +1,5 @@
 int main() {
-    [long; 2] values = [1, 2];
+    long values[2] = [1, 2];
     values[0] += 1;
     0
 }

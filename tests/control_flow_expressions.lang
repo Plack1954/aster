@@ -4,32 +4,18 @@ union Choice {
 }
 
 private long choose(bool flag) {
-    return if (flag) {
-        10
-    } else {
-        20
-    };
+    return flag ? 10 : 20;
 }
 
 private long chained(long value) {
-    long result = if (value == 1) {
-        30
-    } else if (value == 2) {
-        40
-    } else {
-        50
-    };
+    long result = value == 1 ? 30 : value == 2 ? 40 : 50;
     return result;
 }
 
 private long inspect(Choice choice) {
-    return switch (choice) {
-        case Choice.Number(value): {
-            value
-        }
-        case Choice.Empty: {
-            0
-        }
+    return choice switch {
+        Choice.Number(value) => value,
+        Choice.Empty => 0
     };
 }
 

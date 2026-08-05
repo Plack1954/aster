@@ -15,14 +15,14 @@ private byte StaticAsciiLower(byte value)
 
 private bool StaticEndsWith(string value, string suffix)
 {
-    usize valueLength = value.Length;
-    usize suffixLength = suffix.Length;
+    nuint valueLength = value.Length;
+    nuint suffixLength = suffix.Length;
     if (suffixLength > valueLength)
     {
         return false;
     }
-    usize start = valueLength - suffixLength;
-    for (usize index = 0; index < suffixLength; index++)
+    nuint start = valueLength - suffixLength;
+    for (nuint index = 0; index < suffixLength; index++)
     {
         if (StaticAsciiLower(StringByteAt(value, start + index)) !=
             StaticAsciiLower(StringByteAt(suffix, index)))
@@ -54,14 +54,14 @@ public AssetKind StaticAssetKind(string path)
 
 private bool StaticPathSafe(string path)
 {
-    usize length = path.Length;
+    nuint length = path.Length;
     if (length < 2 || StringByteAt(path, 0) != 47)
     {
         return false;
     }
 
-    usize segmentStart = 1;
-    for (usize index = 1; index <= length; index++)
+    nuint segmentStart = 1;
+    for (nuint index = 1; index <= length; index++)
     {
         bool boundary = index == length ||
             StringByteAt(path, index) == 47;
@@ -75,7 +75,7 @@ private bool StaticPathSafe(string path)
             continue;
         }
 
-        usize segmentLength = index - segmentStart;
+        nuint segmentLength = index - segmentStart;
         if (segmentLength == 0 ||
             (segmentLength == 1 &&
              StringByteAt(path, segmentStart) == 46) ||
@@ -126,7 +126,7 @@ public Result<Response, string> StaticFile(
 
 private bool StaticPrefixValid(string prefix)
 {
-    usize length = prefix.Length;
+    nuint length = prefix.Length;
     return length >= 3 &&
         StringByteAt(prefix, 0) == 47 &&
         StringByteAt(prefix, length - 1) == 47 &&
@@ -168,7 +168,7 @@ private Option<Response> ResolveStatic(
     {
         return Option.None;
     }
-    usize prefixLength = urlPrefix.Length;
+    nuint prefixLength = urlPrefix.Length;
     if (request.path.Length <= prefixLength)
     {
         return Option.None;

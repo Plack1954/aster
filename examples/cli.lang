@@ -4,7 +4,7 @@ using System.Text;
 private Result<int, string> run() {
     List<CliArgument> arguments =
         try CliParseProcessArguments();
-    for (argument in arguments) {
+    foreach (string argument in arguments) {
         switch (argument) {
             case CliArgument.Flag(name): {
                 Console.WriteLine("flag");

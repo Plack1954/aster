@@ -42,18 +42,18 @@ private Result<bool, string> SsgEnsureDirectory(string path)
 
 private Result<bool, string> SsgEnsureTree(string path)
 {
-    usize length = path.Length;
+    nuint length = path.Length;
     if (length == 0) { return Result.Err("SSG output root cannot be empty"); }
     if (length == 1 && StringByteAt(path, 0) == 47)
     {
         return Result.Err("SSG output root cannot be /");
     }
-    usize segmentStart = 0;
+    nuint segmentStart = 0;
     if (StringByteAt(path, 0) == 47)
     {
         segmentStart = 1;
     }
-    for (usize index = segmentStart; index <= length; index++)
+    for (nuint index = segmentStart; index <= length; index++)
     {
         bool boundary = index == length || StringByteAt(path, index) == 47;
         if (!boundary) { continue; }
@@ -97,8 +97,8 @@ private string SsgOutputPath(
 
 private Result<bool, string> SsgEnsureParent(string path)
 {
-    usize separator = 0;
-    for (usize index = 0; index < path.Length; index++)
+    nuint separator = 0;
+    for (nuint index = 0; index < path.Length; index++)
     {
         if (StringByteAt(path, index) == 47) { separator = index; }
     }
@@ -110,7 +110,7 @@ private Result<bool, string> SsgWrite(string path, string bytes)
 {
     try SsgEnsureParent(path);
     NativeHandle output = try NativeFileOpen(path, "wb");
-    usize written = try NativeFileWrite(output, bytes);
+    nuint written = try NativeFileWrite(output, bytes);
     if (written != bytes.Length)
     {
         return Result.Err("SSG output write was incomplete");
@@ -298,14 +298,8 @@ private Result<int, string> SsgCopyStaticTree(
     ref List<string> outputs
 )
 {
-    string sourcePath = if (relative.Length == 0)
-    {
-        mounted.root
-    }
-    else
-    {
-        SsgJoinPath(mounted.root, relative)
-    };
+    string sourcePath = relative.Length == 0
+        ? mounted.root : SsgJoinPath(mounted.root, relative);
     DirectoryStream source = try NativeDirectoryOpen(sourcePath);
     int files = 0;
     for (;;)

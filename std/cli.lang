@@ -22,7 +22,7 @@ public string CliNamedName(string value) {
 }
 
 public string CliNamedValue(string value) {
-    usize length = value.Length;
+    nuint length = value.Length;
     switch (StringFindByte(value, 61)) {
         case Option.Some(position): {
             return StringSlice(value, position + 1, length);
@@ -36,20 +36,20 @@ public string CliNamedValue(string value) {
 
 public Result<List<CliArgument>, string> CliParseProcessArguments() {
     List<CliArgument> output = new();
-    usize index = 0;
-    usize count = NativeProcessArgCount();
+    nuint index = 0;
+    nuint count = NativeProcessArgCount();
     bool optionsEnabled = true;
 
     while (index < count) {
         string argument = try NativeProcessArg(index);
         string view = argument;
-        usize length = view.Length;
+        nuint length = view.Length;
 
         if (optionsEnabled) {
             if (view == "--") {
                 optionsEnabled = false;
             } else if (view.StartsWith("--")) {
-                Option<usize> separator =
+                Option<nuint> separator =
                     StringFindByte(view, 61);
                 switch (separator) {
                     case Option.Some(position): {

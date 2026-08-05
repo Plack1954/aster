@@ -10,7 +10,7 @@ private long RangeEnd() {
 
 int main() {
     long total = 0;
-    for (index in RangeStart()..RangeEnd()) {
+    foreach (long index in RangeStart()..RangeEnd()) {
         if (index == 3) {
             continue;
         }
@@ -21,20 +21,20 @@ int main() {
     }
     Console.WriteLine(total);
 
-    usize limit = 4;
-    usize unsignedTotal = 0;
-    for (index in 0..limit) {
+    nuint limit = 4;
+    nuint unsignedTotal = 0;
+    foreach (nuint index in 0..limit) {
         unsignedTotal += index;
     }
     Console.WriteLine(unsignedTotal);
 
-    for (ignored in 5..2) {
+    foreach (long ignored in 5..2) {
         Console.WriteLine(ignored);
     }
 
     byte narrowStart = 254;
     byte narrowEnd = 255;
-    for (value in narrowStart..narrowEnd) {
+    foreach (byte value in narrowStart..narrowEnd) {
         Console.WriteLine(value);
     }
     return 0;

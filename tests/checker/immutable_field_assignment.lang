@@ -1,5 +1,5 @@
 struct Point {
-    x: long,
+    long x;
 }
 
 private void mutate(Point point) {

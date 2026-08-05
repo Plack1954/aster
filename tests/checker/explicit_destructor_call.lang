@@ -1,5 +1,5 @@
 struct Item {
-    value: long,
+    long value;
 }
 
 ~Item() {

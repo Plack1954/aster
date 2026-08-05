@@ -1,4 +1,4 @@
 int main() {
-    long number = "text" as long;
+    long number = (long)"text";
     return 0;
 }

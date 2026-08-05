@@ -41,8 +41,8 @@ public Html RouterDispatch(
     Router router,
     string path
 ) {
-    usize length = router.routes.Count;
-    for (usize index = 0; index < length; index++) {
+    nuint length = router.routes.Count;
+    for (nuint index = 0; index < length; index++) {
         Route route = router.routes[index];
         if (HttpPathMatches(route.path, path)) {
             Handler handler = route.handler;

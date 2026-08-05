@@ -14,7 +14,7 @@ int main()
     Buffer buffer = Buffer.allocate(0);
     unsafe
     {
-        Slice<byte> bytes = BufferAsMutSlice(buffer);
+        Span<byte> bytes = BufferAsMutSlice(buffer);
         Console.WriteLine(ByteSliceLen(bytes));
     }
     return 0;

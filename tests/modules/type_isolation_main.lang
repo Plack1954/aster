@@ -3,7 +3,7 @@ namespace Types.Main;
 using Types.TypeDep;
 
 struct Resource {
-    id: long,
+    long id;
 }
 
 ~Resource() {

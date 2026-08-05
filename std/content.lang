@@ -14,15 +14,9 @@ private string ContentJoin(string root, string name)
 
 private int ContentStringCompare(string left, string right)
 {
-    usize shared = if (left.Length < right.Length)
-    {
-        left.Length
-    }
-    else
-    {
-        right.Length
-    };
-    for (usize index = 0; index < shared; index++)
+    nuint shared = left.Length < right.Length
+        ? left.Length : right.Length;
+    for (nuint index = 0; index < shared; index++)
     {
         byte leftByte = StringByteAt(left, index);
         byte rightByte = StringByteAt(right, index);

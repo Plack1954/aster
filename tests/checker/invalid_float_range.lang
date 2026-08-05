@@ -1,5 +1,5 @@
 int main() {
-    for (value in 0.0..3.0) {
+    foreach (double value in 0.0..3.0) {
         Console.WriteLine(value);
     }
     0

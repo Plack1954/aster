@@ -1,6 +1,6 @@
 struct Pair<A, B> {
-    first: A,
-    second: B,
+    A first;
+    B second;
 }
 
 private Pair<int, int> MakePair(int first, int second) {
@@ -10,7 +10,7 @@ private Pair<int, int> MakePair(int first, int second) {
     };
 }
 
-private int total(Pair<int, int> pair, [int; 3] values) {
+private int total(Pair<int, int> pair, int values[3]) {
     return pair.first + pair.second +
            values[0] + values[1] + values[2];
 }
@@ -19,7 +19,7 @@ int main() {
     Pair<int, int> pair = MakePair(2, 3);
     pair.first = 5;
 
-    [int; 3] values = [7, 11, 13];
+    int values[3] = [7, 11, 13];
     values[1] = 17;
 
     if (total(pair, values) == 45) {

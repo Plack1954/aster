@@ -1,5 +1,5 @@
 struct Box<T> {
-    value: T,
+    T value;
 }
 
 private void invalid(Box<Arena> arenaBox) {

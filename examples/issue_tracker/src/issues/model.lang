@@ -104,11 +104,11 @@ public long IssueRepository.CountIssues(IssueRepository self)
 // Temporary compatibility boundary for the older Result-shaped issue-tracker
 // routes. New code uses IssueRepository directly and lets SqliteException
 // propagate to the application boundary.
-public Result<unit, SqliteError> EnsureSchema(Database database)
+public Result<Unit, SqliteError> EnsureSchema(Database database)
 {
     try
     {
-        unit completed = IssueRepository.Create(database).EnsureSchema();
+        Unit completed = IssueRepository.Create(database).EnsureSchema();
         return Result.Ok(completed);
     }
     catch (SqliteException error) { return Result.Err(error.Message); }

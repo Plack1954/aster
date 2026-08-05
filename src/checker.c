@@ -987,7 +987,7 @@ Type *check_expr(Checker *checker, Expr *expr) {
                             FieldDecl *candidate =
                                 &enumeration->as.enumeration.variants[v];
                             if (strcmp(candidate->name, variant) != 0 ||
-                                strcmp(candidate->type_name, "unit") != 0)
+                                strcmp(candidate->type_name, "Unit") != 0)
                                 continue;
                             Expr *callee = lang_arena_alloc(
                                 &checker->module->arena, sizeof(*callee));
@@ -1611,8 +1611,8 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                        iterable->kind != TYPE_STRING) {
                 lang_diag(checker->diagnostics, stmt->as.for_.iterable->span,
                           stmt->as.for_.foreach
-                              ? "`foreach` requires a string, fixed array, Slice, or Vec"
-                              : "`for` requires a string, fixed array, Slice, Vec, or integer range");
+                              ? "`foreach` requires a string, fixed array, Span, or Vec"
+                              : "`for` requires a string, fixed array, Span, Vec, or integer range");
             } else {
                 element = iterable->kind == TYPE_STRING
                     ? &type_char : iterable->element;
@@ -1795,7 +1795,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                                 &enum_decl->as.enumeration.variants[v];
                             if (strcmp(variant->name, variant_name) == 0) {
                                 valid = true;
-                                if (strcmp(variant->type_name, "unit") != 0)
+                                if (strcmp(variant->type_name, "Unit") != 0)
                                     payload =
                                         resolve_type_syntax_in_applied_declaration(
                                             checker, matched,

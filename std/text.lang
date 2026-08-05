@@ -27,23 +27,23 @@ private extern bool UnicodeIsDigit(char value);
 private extern bool UnicodeIsUpper(char value);
 private extern bool UnicodeIsLower(char value);
 private extern bool UnicodeIsWhiteSpace(char value);
-private extern ulong UnicodeDecodeScalar(string value, usize index);
+private extern ulong UnicodeDecodeScalar(string value, nuint index);
 
 // Aster strings are immutable, reference-counted UTF-8 values. The public
 // member names follow System.String, while positions and Length count bytes.
 // These primitives remain available for parsers and runtime-facing code.
 
-public extern usize StringLen(string value);
+public extern nuint StringLen(string value);
 
 public extern byte StringByteAt(
     string value,
-    usize index
+    nuint index
 );
 
 public extern string StringSlice(
     string value,
-    usize start,
-    usize end
+    nuint start,
+    nuint end
 );
 
 public extern string I64ToString(long value);
@@ -90,14 +90,14 @@ private void AppendSpecialCasing(ref StringBuilder builder, ulong packed)
     }
 }
 
-private char DecodeUnicodeScalar(string value, usize index, out usize length)
+private char DecodeUnicodeScalar(string value, nuint index, out nuint length)
 {
     ulong decoded = UnicodeDecodeScalar(value, index);
     if (decoded == ~(ulong)0)
     {
         throw new FormatException("String contains invalid UTF-8 data.");
     }
-    length = (usize)(decoded >> 32);
+    length = (nuint)(decoded >> 32);
     return (char)(uint)(decoded & 4294967295);
 }
 
@@ -127,10 +127,10 @@ public bool char.IsLetterOrDigit(char value)
 public List<char> string.ToCharArray(string self)
 {
     List<char> result = new();
-    usize index = 0;
+    nuint index = 0;
     while (index < self.Length)
     {
-        usize length = 0;
+        nuint length = 0;
         char scalar = DecodeUnicodeScalar(self, index, out length);
         result.Add(scalar);
         index += length;
@@ -141,10 +141,10 @@ public List<char> string.ToCharArray(string self)
 public string string.ToUpperInvariant(string self)
 {
     StringBuilder result = new();
-    usize index = 0;
+    nuint index = 0;
     while (index < self.Length)
     {
-        usize length = 0;
+        nuint length = 0;
         char scalar = DecodeUnicodeScalar(self, index, out length);
         ulong special = UnicodeSpecialUpper(scalar);
         if (special != 0) { AppendSpecialCasing(ref result, special); }
@@ -157,10 +157,10 @@ public string string.ToUpperInvariant(string self)
 public string string.ToLowerInvariant(string self)
 {
     StringBuilder result = new();
-    usize index = 0;
+    nuint index = 0;
     while (index < self.Length)
     {
-        usize length = 0;
+        nuint length = 0;
         char scalar = DecodeUnicodeScalar(self, index, out length);
         ulong special = UnicodeSpecialLower(scalar);
         if (special != 0) { AppendSpecialCasing(ref result, special); }
@@ -181,7 +181,7 @@ public List<byte> UTF8Encoding.GetBytes(UTF8Encoding self, string value)
     // enter a Unicode-facing API.
     value.ToCharArray();
     List<byte> bytes = new();
-    for (usize index = 0; index < value.Length; index += 1)
+    for (nuint index = 0; index < value.Length; index += 1)
     {
         bytes.Add(value[index]);
     }
@@ -207,12 +207,12 @@ public string sbyte.ToString(sbyte self) { return I64ToString((long)self); }
 public string short.ToString(short self) { return I64ToString((long)self); }
 public string int.ToString(int self) { return I64ToString((long)self); }
 public string long.ToString(long self) { return I64ToString(self); }
-public string isize.ToString(isize self) { return I64ToString((long)self); }
+public string nint.ToString(nint self) { return I64ToString((long)self); }
 public string byte.ToString(byte self) { return U64ToString((ulong)self); }
 public string ushort.ToString(ushort self) { return U64ToString((ulong)self); }
 public string uint.ToString(uint self) { return U64ToString((ulong)self); }
 public string ulong.ToString(ulong self) { return U64ToString(self); }
-public string usize.ToString(usize self) { return U64ToString((ulong)self); }
+public string nuint.ToString(nuint self) { return U64ToString((ulong)self); }
 public string float.ToString(float self) { return F32ToString(self); }
 public string double.ToString(double self) { return F64ToString(self); }
 
@@ -374,7 +374,7 @@ public bool Convert.ToBoolean(float value) { return value != 0.0; }
 public bool Convert.ToBoolean(double value) { return value != 0.0; }
 public bool Convert.ToBoolean(string value) { return ParseBoolean(value); }
 
-public sbyte Convert.ToSByte(bool value) { return if (value) { 1 } else { 0 }; }
+public sbyte Convert.ToSByte(bool value) { return value ? 1 : 0; }
 public sbyte Convert.ToSByte(sbyte value) { return value; }
 public sbyte Convert.ToSByte(short value) { return ConvertSignedToSByte((long)value); }
 public sbyte Convert.ToSByte(int value) { return ConvertSignedToSByte((long)value); }
@@ -387,7 +387,7 @@ public sbyte Convert.ToSByte(float value) { return ConvertSignedToSByte(RoundCon
 public sbyte Convert.ToSByte(double value) { return ConvertSignedToSByte(RoundConvertToInt64(value)); }
 public sbyte Convert.ToSByte(string value) { return sbyte.Parse(value); }
 
-public short Convert.ToInt16(bool value) { return if (value) { 1 } else { 0 }; }
+public short Convert.ToInt16(bool value) { return value ? 1 : 0; }
 public short Convert.ToInt16(sbyte value) { return (short)value; }
 public short Convert.ToInt16(short value) { return value; }
 public short Convert.ToInt16(int value) { return ConvertSignedToInt16((long)value); }
@@ -400,7 +400,7 @@ public short Convert.ToInt16(float value) { return ConvertSignedToInt16(RoundCon
 public short Convert.ToInt16(double value) { return ConvertSignedToInt16(RoundConvertToInt64(value)); }
 public short Convert.ToInt16(string value) { return short.Parse(value); }
 
-public int Convert.ToInt32(bool value) { return if (value) { 1 } else { 0 }; }
+public int Convert.ToInt32(bool value) { return value ? 1 : 0; }
 public int Convert.ToInt32(sbyte value) { return (int)value; }
 public int Convert.ToInt32(short value) { return (int)value; }
 public int Convert.ToInt32(int value) { return value; }
@@ -413,7 +413,7 @@ public int Convert.ToInt32(float value) { return ConvertSignedToInt32(RoundConve
 public int Convert.ToInt32(double value) { return ConvertSignedToInt32(RoundConvertToInt64(value)); }
 public int Convert.ToInt32(string value) { return int.Parse(value); }
 
-public long Convert.ToInt64(bool value) { return if (value) { 1 } else { 0 }; }
+public long Convert.ToInt64(bool value) { return value ? 1 : 0; }
 public long Convert.ToInt64(sbyte value) { return (long)value; }
 public long Convert.ToInt64(short value) { return (long)value; }
 public long Convert.ToInt64(int value) { return (long)value; }
@@ -426,7 +426,7 @@ public long Convert.ToInt64(float value) { return RoundConvertToInt64((double)va
 public long Convert.ToInt64(double value) { return RoundConvertToInt64(value); }
 public long Convert.ToInt64(string value) { return long.Parse(value); }
 
-public byte Convert.ToByte(bool value) { return if (value) { 1 } else { 0 }; }
+public byte Convert.ToByte(bool value) { return value ? 1 : 0; }
 public byte Convert.ToByte(sbyte value) { return ConvertSignedToByte((long)value); }
 public byte Convert.ToByte(short value) { return ConvertSignedToByte((long)value); }
 public byte Convert.ToByte(int value) { return ConvertSignedToByte((long)value); }
@@ -439,7 +439,7 @@ public byte Convert.ToByte(float value) { return ConvertSignedToByte(RoundConver
 public byte Convert.ToByte(double value) { return ConvertSignedToByte(RoundConvertToInt64(value)); }
 public byte Convert.ToByte(string value) { return byte.Parse(value); }
 
-public ushort Convert.ToUInt16(bool value) { return if (value) { 1 } else { 0 }; }
+public ushort Convert.ToUInt16(bool value) { return value ? 1 : 0; }
 public ushort Convert.ToUInt16(sbyte value) { return ConvertSignedToUInt16((long)value); }
 public ushort Convert.ToUInt16(short value) { return ConvertSignedToUInt16((long)value); }
 public ushort Convert.ToUInt16(int value) { return ConvertSignedToUInt16((long)value); }
@@ -452,7 +452,7 @@ public ushort Convert.ToUInt16(float value) { return ConvertSignedToUInt16(Round
 public ushort Convert.ToUInt16(double value) { return ConvertSignedToUInt16(RoundConvertToInt64(value)); }
 public ushort Convert.ToUInt16(string value) { return ushort.Parse(value); }
 
-public uint Convert.ToUInt32(bool value) { return if (value) { 1 } else { 0 }; }
+public uint Convert.ToUInt32(bool value) { return value ? 1 : 0; }
 public uint Convert.ToUInt32(sbyte value) { return ConvertSignedToUInt32((long)value); }
 public uint Convert.ToUInt32(short value) { return ConvertSignedToUInt32((long)value); }
 public uint Convert.ToUInt32(int value) { return ConvertSignedToUInt32((long)value); }
@@ -465,7 +465,7 @@ public uint Convert.ToUInt32(float value) { return ConvertSignedToUInt32(RoundCo
 public uint Convert.ToUInt32(double value) { return ConvertSignedToUInt32(RoundConvertToInt64(value)); }
 public uint Convert.ToUInt32(string value) { return uint.Parse(value); }
 
-public ulong Convert.ToUInt64(bool value) { return if (value) { 1 } else { 0 }; }
+public ulong Convert.ToUInt64(bool value) { return value ? 1 : 0; }
 public ulong Convert.ToUInt64(sbyte value) { return ConvertSignedToUInt64((long)value); }
 public ulong Convert.ToUInt64(short value) { return ConvertSignedToUInt64((long)value); }
 public ulong Convert.ToUInt64(int value) { return ConvertSignedToUInt64((long)value); }
@@ -478,7 +478,7 @@ public ulong Convert.ToUInt64(float value) { return RoundConvertToUInt64((double
 public ulong Convert.ToUInt64(double value) { return RoundConvertToUInt64(value); }
 public ulong Convert.ToUInt64(string value) { return ulong.Parse(value); }
 
-public float Convert.ToSingle(bool value) { return if (value) { 1.0 } else { 0.0 }; }
+public float Convert.ToSingle(bool value) { return value ? 1.0 : 0.0; }
 public float Convert.ToSingle(sbyte value) { return (float)value; }
 public float Convert.ToSingle(short value) { return (float)value; }
 public float Convert.ToSingle(int value) { return (float)value; }
@@ -491,7 +491,7 @@ public float Convert.ToSingle(float value) { return value; }
 public float Convert.ToSingle(double value) { return (float)value; }
 public float Convert.ToSingle(string value) { return float.Parse(value); }
 
-public double Convert.ToDouble(bool value) { return if (value) { 1.0 } else { 0.0 }; }
+public double Convert.ToDouble(bool value) { return value ? 1.0 : 0.0; }
 public double Convert.ToDouble(sbyte value) { return (double)value; }
 public double Convert.ToDouble(short value) { return (double)value; }
 public double Convert.ToDouble(int value) { return (double)value; }
@@ -506,7 +506,7 @@ public double Convert.ToDouble(string value) { return double.Parse(value); }
 
 public string Convert.ToString(bool value)
 {
-    return if (value) { "True" } else { "False" };
+    return value ? "True" : "False";
 }
 public string Convert.ToString(sbyte value) { return value.ToString(); }
 public string Convert.ToString(short value) { return value.ToString(); }
@@ -525,7 +525,7 @@ private byte Base64Digit(byte value)
     if (value < 26) { return 65 + value; }
     if (value < 52) { return 97 + value - 26; }
     if (value < 62) { return 48 + value - 52; }
-    return if (value == 62) { 43 } else { 47 };
+    return value == 62 ? 43 : 47;
 }
 
 private int Base64Value(byte value)
@@ -605,8 +605,8 @@ public string Convert.ToBase64String(
 )
 {
     if (offset < 0 || length < 0 ||
-        (usize)offset > inArray.Count ||
-        (usize)length > inArray.Count - (usize)offset)
+        (nuint)offset > inArray.Count ||
+        (nuint)length > inArray.Count - (nuint)offset)
     {
         throw new ArgumentException("offset and length must identify a valid range");
     }
@@ -619,8 +619,8 @@ public string Convert.ToBase64String(
         options == Base64FormattingOptions.InsertLineBreaks;
     StringBuilder builder = new();
     int lineLength = 0;
-    usize index = (usize)offset;
-    usize end = index + (usize)length;
+    nuint index = (nuint)offset;
+    nuint end = index + (nuint)length;
     while (index + 3 <= end)
     {
         uint bits = ((uint)inArray[index] << 16) |
@@ -640,7 +640,7 @@ public string Convert.ToBase64String(
             ref lineLength, insertLineBreaks);
         index += 3;
     }
-    usize remaining = end - index;
+    nuint remaining = end - index;
     if (remaining == 1)
     {
         uint bits = (uint)inArray[index] << 16;
@@ -677,7 +677,7 @@ public string Convert.ToBase64String(
 public List<byte> Convert.FromBase64String(string value)
 {
     List<byte> symbols = new();
-    for (usize index = 0; index < value.Length; index++)
+    for (nuint index = 0; index < value.Length; index++)
     {
         byte symbol = value[index];
         if (!IsBase64WhiteSpace(symbol)) { symbols.Add(symbol); }
@@ -685,7 +685,7 @@ public List<byte> Convert.FromBase64String(string value)
     if (symbols.Count % 4 != 0) { Base64FormatError(); }
 
     List<byte> bytes = new();
-    usize index = 0;
+    nuint index = 0;
     while (index < symbols.Count)
     {
         byte first = symbols[index];
@@ -694,8 +694,8 @@ public List<byte> Convert.FromBase64String(string value)
         byte fourth = symbols[index + 3];
         int firstValue = Base64Value(first);
         int secondValue = Base64Value(second);
-        int thirdValue = if (third == 61) { 0 } else { Base64Value(third) };
-        int fourthValue = if (fourth == 61) { 0 } else { Base64Value(fourth) };
+        int thirdValue = third == 61 ? 0 : Base64Value(third);
+        int fourthValue = fourth == 61 ? 0 : Base64Value(fourth);
         bool finalQuartet = index + 4 == symbols.Count;
         if (firstValue < 0 || secondValue < 0 ||
             thirdValue < 0 || fourthValue < 0 ||
@@ -721,7 +721,7 @@ private bool IsAsciiWhiteSpace(byte value)
     return value == 32 || (value >= 9 && value <= 13);
 }
 
-private usize WhiteSpaceLengthAt(string value, usize index)
+private nuint WhiteSpaceLengthAt(string value, nuint index)
 {
     byte first = value[index];
     if (IsAsciiWhiteSpace(first)) { return 1; }
@@ -742,7 +742,7 @@ private usize WhiteSpaceLengthAt(string value, usize index)
     return 0;
 }
 
-private usize WhiteSpaceLengthBefore(string value, usize end)
+private nuint WhiteSpaceLengthBefore(string value, nuint end)
 {
     byte last = value[end - 1];
     if (IsAsciiWhiteSpace(last)) { return 1; }
@@ -776,8 +776,8 @@ private long ParseSignedDecimal(
     ulong negativeLimit
 )
 {
-    usize start = 0;
-    usize end = text.Length;
+    nuint start = 0;
+    nuint end = text.Length;
     while (start < end && IsAsciiWhiteSpace(text[start]))
     {
         start += 1;
@@ -796,9 +796,9 @@ private long ParseSignedDecimal(
     }
     if (start == end) { NumericFormatError(); }
 
-    ulong limit = if (negative) { negativeLimit } else { positiveLimit };
+    ulong limit = negative ? negativeLimit : positiveLimit;
     ulong value = 0;
-    for (usize index = start; index < end; index++)
+    for (nuint index = start; index < end; index++)
     {
         byte current = text[index];
         if (current < 48 || current > 57) { NumericFormatError(); }
@@ -817,8 +817,8 @@ private long ParseSignedDecimal(
 
 private ulong ParseUnsignedDecimal(string text, ulong limit)
 {
-    usize start = 0;
-    usize end = text.Length;
+    nuint start = 0;
+    nuint end = text.Length;
     while (start < end && IsAsciiWhiteSpace(text[start]))
     {
         start += 1;
@@ -838,7 +838,7 @@ private ulong ParseUnsignedDecimal(string text, ulong limit)
     if (start == end) { NumericFormatError(); }
 
     ulong value = 0;
-    for (usize index = start; index < end; index++)
+    for (nuint index = start; index < end; index++)
     {
         byte current = text[index];
         if (current < 48 || current > 57) { NumericFormatError(); }
@@ -852,8 +852,8 @@ private ulong ParseUnsignedDecimal(string text, ulong limit)
 
 private double ParseInvariantFloating(string text)
 {
-    usize start = 0;
-    usize end = text.Length;
+    nuint start = 0;
+    nuint end = text.Length;
     while (start < end && IsAsciiWhiteSpace(text[start]))
     {
         start += 1;
@@ -903,7 +903,7 @@ private double ParseInvariantFloating(string text)
             exponentNegative = text[start] == 45;
             start += 1;
         }
-        usize exponentStart = start;
+        nuint exponentStart = start;
         while (start < end && text[start] >= 48 && text[start] <= 57)
         {
             if (exponent < 400)
@@ -922,7 +922,7 @@ private double ParseInvariantFloating(string text)
         if (exponentNegative) { value /= 10.0; }
         else { value *= 10.0; }
     }
-    return if (negative) { -value } else { value };
+    return negative ? -value : value;
 }
 
 public sbyte sbyte.Parse(string text)
@@ -947,9 +947,9 @@ public long long.Parse(string text)
     );
 }
 
-public isize isize.Parse(string text)
+public nint nint.Parse(string text)
 {
-    return (isize)long.Parse(text);
+    return (nint)long.Parse(text);
 }
 
 public byte byte.Parse(string text)
@@ -972,9 +972,9 @@ public ulong ulong.Parse(string text)
     return ParseUnsignedDecimal(text, 18446744073709551615);
 }
 
-public usize usize.Parse(string text)
+public nuint nuint.Parse(string text)
 {
-    return (usize)ulong.Parse(text);
+    return (nuint)ulong.Parse(text);
 }
 
 public float float.Parse(string text)
@@ -1015,10 +1015,10 @@ public bool long.TryParse(string text, out long result)
     catch (Exception error) { return false; }
 }
 
-public bool isize.TryParse(string text, out isize result)
+public bool nint.TryParse(string text, out nint result)
 {
     result = 0;
-    try { result = isize.Parse(text); return true; }
+    try { result = nint.Parse(text); return true; }
     catch (Exception error) { return false; }
 }
 
@@ -1050,10 +1050,10 @@ public bool ulong.TryParse(string text, out ulong result)
     catch (Exception error) { return false; }
 }
 
-public bool usize.TryParse(string text, out usize result)
+public bool nuint.TryParse(string text, out nuint result)
 {
     result = 0;
-    try { result = usize.Parse(text); return true; }
+    try { result = nuint.Parse(text); return true; }
     catch (Exception error) { return false; }
 }
 
@@ -1071,9 +1071,9 @@ public bool double.TryParse(string text, out double result)
     catch (Exception error) { return false; }
 }
 
-public Option<usize> StringFindByte(string value, byte byte)
+public Option<nuint> StringFindByte(string value, byte byte)
 {
-    for (usize index = 0; index < value.Length; index++)
+    for (nuint index = 0; index < value.Length; index++)
     {
         if (value[index] == byte)
         {
@@ -1089,7 +1089,7 @@ public bool string.StartsWith(string self, string value)
     {
         return false;
     }
-    for (usize index = 0; index < value.Length; index++)
+    for (nuint index = 0; index < value.Length; index++)
     {
         if (self[index] != value[index])
         {
@@ -1105,8 +1105,8 @@ public bool string.EndsWith(string self, string value)
     {
         return false;
     }
-    usize start = self.Length - value.Length;
-    for (usize index = 0; index < value.Length; index++)
+    nuint start = self.Length - value.Length;
+    for (nuint index = 0; index < value.Length; index++)
     {
         if (self[start + index] != value[index])
         {
@@ -1124,7 +1124,7 @@ public long string.IndexOf(string self, string value)
 public long string.IndexOf(
     string self,
     string value,
-    usize startIndex
+    nuint startIndex
 )
 {
     if (value.Length == 0)
@@ -1135,7 +1135,7 @@ public long string.IndexOf(
     {
         return -1;
     }
-    usize start = startIndex;
+    nuint start = startIndex;
     while (start + value.Length <= self.Length)
     {
         if (StringSlice(self, start, start + value.Length) == value)
@@ -1157,7 +1157,7 @@ public long string.LastIndexOf(string self, string value)
     {
         return -1;
     }
-    usize start = self.Length - value.Length;
+    nuint start = self.Length - value.Length;
     while (true)
     {
         if (StringSlice(self, start, start + value.Length) == value)
@@ -1178,15 +1178,15 @@ public bool string.Contains(string self, string value)
     return self.IndexOf(value) != -1;
 }
 
-public string string.Substring(string self, usize startIndex)
+public string string.Substring(string self, nuint startIndex)
 {
     return StringSlice(self, startIndex, self.Length);
 }
 
 public string string.Substring(
     string self,
-    usize startIndex,
-    usize length
+    nuint startIndex,
+    nuint length
 )
 {
     return StringSlice(self, startIndex, startIndex + length);
@@ -1194,7 +1194,7 @@ public string string.Substring(
 
 public string string.Insert(
     string self,
-    usize startIndex,
+    nuint startIndex,
     string value
 )
 {
@@ -1205,15 +1205,15 @@ public string string.Insert(
     );
 }
 
-public string string.Remove(string self, usize startIndex)
+public string string.Remove(string self, nuint startIndex)
 {
     return self.Substring(0, startIndex);
 }
 
 public string string.Remove(
     string self,
-    usize startIndex,
-    usize count
+    nuint startIndex,
+    nuint count
 )
 {
     return string.Concat(
@@ -1239,11 +1239,11 @@ public string string.Replace(
     }
 
     StringBuilder builder = new();
-    usize cursor = 0;
+    nuint cursor = 0;
     long found = first;
     while (found != -1)
     {
-        usize position = (usize)found;
+        nuint position = (nuint)found;
         builder.Append(self.Substring(cursor, position - cursor));
         builder.Append(newValue);
         cursor = position + oldValue.Length;
@@ -1270,10 +1270,10 @@ public bool string.IsNullOrWhiteSpace(string? value)
         return true;
     }
     string present = value.Value;
-    usize index = 0;
+    nuint index = 0;
     while (index < present.Length)
     {
-        usize width = WhiteSpaceLengthAt(present, index);
+        nuint width = WhiteSpaceLengthAt(present, index);
         if (width == 0)
         {
             return false;
@@ -1285,10 +1285,10 @@ public bool string.IsNullOrWhiteSpace(string? value)
 
 public string string.TrimStart(string self)
 {
-    usize start = 0;
+    nuint start = 0;
     while (start < self.Length)
     {
-        usize width = WhiteSpaceLengthAt(self, start);
+        nuint width = WhiteSpaceLengthAt(self, start);
         if (width == 0) { break; }
         start += width;
     }
@@ -1297,10 +1297,10 @@ public string string.TrimStart(string self)
 
 public string string.TrimEnd(string self)
 {
-    usize end = self.Length;
+    nuint end = self.Length;
     while (end > 0)
     {
-        usize width = WhiteSpaceLengthBefore(self, end);
+        nuint width = WhiteSpaceLengthBefore(self, end);
         if (width == 0) { break; }
         end -= width;
     }
@@ -1309,17 +1309,17 @@ public string string.TrimEnd(string self)
 
 public string string.Trim(string self)
 {
-    usize start = 0;
-    usize end = self.Length;
+    nuint start = 0;
+    nuint end = self.Length;
     while (start < end)
     {
-        usize width = WhiteSpaceLengthAt(self, start);
+        nuint width = WhiteSpaceLengthAt(self, start);
         if (width == 0) { break; }
         start += width;
     }
     while (end > start)
     {
-        usize width = WhiteSpaceLengthBefore(self, end);
+        nuint width = WhiteSpaceLengthBefore(self, end);
         if (width == 0) { break; }
         end -= width;
     }
@@ -1340,17 +1340,10 @@ private void AddSplitEntry(
     StringSplitOptions options
 )
 {
-    string entry = if (HasSplitOption(
+    string entry = HasSplitOption(
         options,
         StringSplitOptions.TrimEntries
-    ))
-    {
-        value.Trim()
-    }
-    else
-    {
-        value
-    };
+    ) ? value.Trim() : value;
     if (!HasSplitOption(
             options,
             StringSplitOptions.RemoveEmptyEntries
@@ -1400,11 +1393,11 @@ public List<string> string.Split(
         AddSplitEntry(ref parts, self, options);
         return parts;
     }
-    usize start = 0;
+    nuint start = 0;
     long found = self.IndexOf(separator);
-    while (found != -1 && parts.Count < (usize)(count - 1))
+    while (found != -1 && parts.Count < (nuint)(count - 1))
     {
-        usize position = (usize)found;
+        nuint position = (nuint)found;
         AddSplitEntry(
             ref parts,
             self.Substring(start, position - start),
@@ -1420,11 +1413,11 @@ public List<string> string.Split(
 public List<string> string.Split(string self)
 {
     List<string> parts = new();
-    usize start = 0;
-    usize index = 0;
+    nuint start = 0;
+    nuint index = 0;
     while (index < self.Length)
     {
-        usize width = WhiteSpaceLengthAt(self, index);
+        nuint width = WhiteSpaceLengthAt(self, index);
         if (width == 0)
         {
             index += 1;
@@ -1502,15 +1495,9 @@ public string string.Join(string separator, List<string> values)
 
 public int string.CompareOrdinal(string first, string second)
 {
-    usize shared = if (first.Length < second.Length)
-    {
-        first.Length
-    }
-    else
-    {
-        second.Length
-    };
-    for (usize index = 0; index < shared; index++)
+    nuint shared = first.Length < second.Length
+        ? first.Length : second.Length;
+    for (nuint index = 0; index < shared; index++)
     {
         if (first[index] < second[index]) { return -1; }
         if (first[index] > second[index]) { return 1; }

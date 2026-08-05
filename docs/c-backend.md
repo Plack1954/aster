@@ -111,7 +111,7 @@ The current implementation supports:
 Narrow integers are represented in generated C with `int64_t` or `uint64_t`.
 Generated checked helpers enforce the Aster type's actual width before the C
 operation occurs. This avoids relying on signed C overflow or integer-promotion
-behavior. The emitter uses the IR target description for `isize` and `usize`
+behavior. The emitter uses the IR target description for `nint` and `nuint`
 width.
 
 The typed IR owns resolved field type IDs and union payload type IDs. The C

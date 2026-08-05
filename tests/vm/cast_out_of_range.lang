@@ -1,6 +1,6 @@
 int main() {
     long wide = 300;
-    byte byte = wide as byte;
+    byte byte = (byte)wide;
     Console.WriteLine(byte);
     return 0;
 }

@@ -53,7 +53,7 @@ public enum TransactionMode
 }
 
 private extern Result<NativeHandle, SqliteError> NativeSqliteOpen(string path);
-private extern Result<unit, SqliteError> NativeSqliteExecute(
+private extern Result<Unit, SqliteError> NativeSqliteExecute(
     NativeHandle database,
     string sql
 );
@@ -61,29 +61,29 @@ private extern Result<NativeHandle, SqliteError> NativeSqlitePrepare(
     NativeHandle database,
     string sql
 );
-private extern Result<unit, SqliteError> NativeSqliteBindI64(
+private extern Result<Unit, SqliteError> NativeSqliteBindI64(
     NativeHandle statement,
     long index,
     long value
 );
-private extern Result<unit, SqliteError> NativeSqliteBindText(
+private extern Result<Unit, SqliteError> NativeSqliteBindText(
     NativeHandle statement,
     long index,
     string value
 );
-private extern Result<unit, SqliteError> NativeSqliteBindDouble(
+private extern Result<Unit, SqliteError> NativeSqliteBindDouble(
     NativeHandle statement,
     long index,
     double value
 );
-private extern Result<unit, SqliteError> NativeSqliteBindNull(
+private extern Result<Unit, SqliteError> NativeSqliteBindNull(
     NativeHandle statement,
     long index
 );
-private extern Result<unit, SqliteError> NativeSqliteBindBlob(
+private extern Result<Unit, SqliteError> NativeSqliteBindBlob(
     NativeHandle statement,
     long index,
-    Slice<byte> value
+    Span<byte> value
 );
 private extern Result<long, SqliteError> NativeSqliteParameterIndex(
     NativeHandle statement,
@@ -117,13 +117,13 @@ private extern Result<long, SqliteError> NativeSqliteColumnBlobLength(
     NativeHandle statement,
     long index
 );
-private extern Result<unit, SqliteError> NativeSqliteColumnBlobCopy(
+private extern Result<Unit, SqliteError> NativeSqliteColumnBlobCopy(
     NativeHandle statement,
     long index,
-    Slice<byte> destination
+    Span<byte> destination
 );
-private extern Result<unit, SqliteError> NativeSqliteReset(NativeHandle statement);
-private extern Result<unit, SqliteError> NativeSqliteClearBindings(
+private extern Result<Unit, SqliteError> NativeSqliteReset(NativeHandle statement);
+private extern Result<Unit, SqliteError> NativeSqliteClearBindings(
     NativeHandle statement
 );
 private extern Result<long, SqliteError> NativeSqliteStatementChanges(
@@ -137,10 +137,10 @@ private extern Result<NativeHandle, SqliteError> NativeSqliteBeginTransaction(
     NativeHandle database,
     long mode
 );
-private extern Result<unit, SqliteError> NativeSqliteCommitTransaction(
+private extern Result<Unit, SqliteError> NativeSqliteCommitTransaction(
     NativeHandle transaction
 );
-private extern Result<unit, SqliteError> NativeSqliteRollbackTransaction(
+private extern Result<Unit, SqliteError> NativeSqliteRollbackTransaction(
     NativeHandle transaction
 );
 
@@ -178,7 +178,7 @@ public Database Database.Open(string path)
 
 public void Database.Execute(Database self, string sql)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteExecute(self.Handle, sql)
     );
 }
@@ -203,7 +203,7 @@ public long Database.LastInsertRowId(Database self)
 
 public void Statement.Bind(Statement self, long index, long value)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteBindI64(self.Handle, index, value)
     );
 }
@@ -215,13 +215,13 @@ public void Statement.Bind(Statement self, long index, int value)
 
 public void Statement.Bind(Statement self, long index, bool value)
 {
-    long encoded = if (value) { 1 } else { 0 };
+    long encoded = value ? 1 : 0;
     self.Bind(index, encoded);
 }
 
 public void Statement.Bind(Statement self, long index, double value)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteBindDouble(self.Handle, index, value)
     );
 }
@@ -233,14 +233,14 @@ public void Statement.Bind(Statement self, long index, float value)
 
 public void Statement.Bind(Statement self, long index, string value)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteBindText(self.Handle, index, value)
     );
 }
 
 public void Statement.BindNull(Statement self, long index)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteBindNull(self.Handle, index)
     );
 }
@@ -250,12 +250,12 @@ public void Statement.Bind(Statement self, long index, List<byte> value)
     Buffer buffer = Buffer.allocate((long)value.Count);
     unsafe
     {
-        Slice<byte> bytes = BufferAsMutSlice(buffer);
-        for (usize at = 0; at < value.Count; at += 1)
+        Span<byte> bytes = BufferAsMutSlice(buffer);
+        for (nuint at = 0; at < value.Count; at += 1)
         {
             ByteSliceSet(bytes, at, value[at]);
         }
-        unit ignored = SqliteResultOrThrow(
+        Unit ignored = SqliteResultOrThrow(
             NativeSqliteBindBlob(self.Handle, index, bytes)
         );
     }
@@ -335,12 +335,12 @@ public long Statement.Execute(Statement self)
 
 public void Statement.Reset(Statement self)
 {
-    unit ignored = SqliteResultOrThrow(NativeSqliteReset(self.Handle));
+    Unit ignored = SqliteResultOrThrow(NativeSqliteReset(self.Handle));
 }
 
 public void Statement.ClearBindings(Statement self)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteClearBindings(self.Handle)
     );
 }
@@ -419,11 +419,11 @@ public List<byte> Statement.GetBytes(Statement self, long index)
     List<byte> result = new();
     unsafe
     {
-        Slice<byte> bytes = BufferAsMutSlice(buffer);
-        unit ignored = SqliteResultOrThrow(
+        Span<byte> bytes = BufferAsMutSlice(buffer);
+        Unit ignored = SqliteResultOrThrow(
             NativeSqliteColumnBlobCopy(self.Handle, index, bytes)
         );
-        for (usize at = 0; at < (usize)length; at += 1)
+        for (nuint at = 0; at < (nuint)length; at += 1)
         {
             result.Add(ByteSliceAt(bytes, at));
         }
@@ -503,7 +503,7 @@ public bool Row.IsNull(Row self, string name)
 
 public string? Row.GetNullableString(Row self, long index)
 {
-    return if (self.IsNull(index)) { null } else { self.GetString(index) };
+    return self.IsNull(index) ? null : self.GetString(index);
 }
 
 public string? Row.GetNullableString(Row self, string name)
@@ -513,7 +513,7 @@ public string? Row.GetNullableString(Row self, string name)
 
 public long? Row.GetNullableInt64(Row self, long index)
 {
-    return if (self.IsNull(index)) { null } else { self.GetInt64(index) };
+    return self.IsNull(index) ? null : self.GetInt64(index);
 }
 
 public long? Row.GetNullableInt64(Row self, string name)
@@ -546,14 +546,14 @@ public Transaction Database.BeginTransaction(
 
 public void Transaction.Commit(Transaction self)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteCommitTransaction(self.State)
     );
 }
 
 public void Transaction.Rollback(Transaction self)
 {
-    unit ignored = SqliteResultOrThrow(
+    Unit ignored = SqliteResultOrThrow(
         NativeSqliteRollbackTransaction(self.State)
     );
 }
@@ -640,7 +640,7 @@ public Result<Database, SqliteError> SqliteOpen(string path)
     }
 }
 
-public Result<unit, SqliteError> SqliteExecute(
+public Result<Unit, SqliteError> SqliteExecute(
     Database database,
     string sql
 )
@@ -663,7 +663,7 @@ public Result<Statement, SqliteError> SqlitePrepare(
     }
 }
 
-public Result<unit, SqliteError> SqliteBindI64(
+public Result<Unit, SqliteError> SqliteBindI64(
     Statement statement,
     long index,
     long value
@@ -672,7 +672,7 @@ public Result<unit, SqliteError> SqliteBindI64(
     return NativeSqliteBindI64(statement.Handle, index, value);
 }
 
-public Result<unit, SqliteError> SqliteBindText(
+public Result<Unit, SqliteError> SqliteBindText(
     Statement statement,
     long index,
     string value
@@ -687,7 +687,7 @@ public Result<Step, SqliteError> SqliteStep(Statement statement)
     {
         case Result.Ok(hasRow):
         {
-            return Result.Ok(if (hasRow) { Step.Row } else { Step.Done });
+            return Result.Ok(hasRow ? Step.Row : Step.Done);
         }
         case Result.Err(error): { return Result.Err(error); }
     }
@@ -719,17 +719,17 @@ public Result<long, SqliteError> SqliteLastInsertId(Database database)
     return NativeSqliteLastInsertId(database.Handle);
 }
 
-public Result<unit, SqliteError> SqliteBegin(Database database)
+public Result<Unit, SqliteError> SqliteBegin(Database database)
 {
     return NativeSqliteExecute(database.Handle, "BEGIN");
 }
 
-public Result<unit, SqliteError> SqliteCommit(Database database)
+public Result<Unit, SqliteError> SqliteCommit(Database database)
 {
     return NativeSqliteExecute(database.Handle, "COMMIT");
 }
 
-public Result<unit, SqliteError> SqliteRollback(Database database)
+public Result<Unit, SqliteError> SqliteRollback(Database database)
 {
     return NativeSqliteExecute(database.Handle, "ROLLBACK");
 }

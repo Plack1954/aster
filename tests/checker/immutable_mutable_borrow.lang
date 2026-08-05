@@ -1,6 +1,6 @@
 struct Counter {
-    value: long,
-    label: string,
+    long value;
+    string label;
 }
 
 private void increment(ref Counter counter) {

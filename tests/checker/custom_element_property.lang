@@ -1,5 +1,5 @@
-element meter -> Html {
-    value: long,
+element Html meter {
+    long value;
 }
 
 int main() {
