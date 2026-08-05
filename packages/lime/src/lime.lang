@@ -330,6 +330,18 @@ public delegate Html HtmlMiddleware(
     Request request,
     Html page
 );
+public delegate Response ExceptionHandler(Exception error);
+public delegate Response StatefulHandler<State>(State state, Request request);
+public delegate List<string> StatefulBuildSource<State>(State state);
+public delegate FilterResult StatefulRequestFilter<State>(
+    State state,
+    Request request
+);
+public delegate Html StatefulHtmlMiddleware<State>(
+    State state,
+    Request request,
+    Html page
+);
 
 struct UrlValue
 {
@@ -385,7 +397,7 @@ public struct App
     List<HtmlMiddleware> htmlMiddleware;
     List<StaticDirectory> staticDirectories;
     Handler fallback;
-    Response(Exception) exceptionHandler;
+    ExceptionHandler exceptionHandler;
     Option<ForwardedHeadersOptions> forwardedHeaders;
 }
 
@@ -393,7 +405,7 @@ struct StatefulRoute<State>
 {
     string method;
     string path;
-    Response(State, Request) handler;
+    StatefulHandler<State> handler;
 }
 
 public struct StatefulApp<State>
@@ -401,11 +413,11 @@ public struct StatefulApp<State>
     State state;
     List<StatefulRoute<State>> routes;
     List<BuildPage> pages;
-    List<FilterResult(State, Request)> filters;
-    List<Html(State, Request, Html)> htmlMiddleware;
+    List<StatefulRequestFilter<State>> filters;
+    List<StatefulHtmlMiddleware<State>> htmlMiddleware;
     List<StaticDirectory> staticDirectories;
-    Response(State, Request) fallback;
-    Response(Exception) exceptionHandler;
+    StatefulHandler<State> fallback;
+    ExceptionHandler exceptionHandler;
     Option<ForwardedHeadersOptions> forwardedHeaders;
 }
 
@@ -1483,7 +1495,7 @@ public void App.UseForwardedHeaders(
 
 public void App.OnException(
     ref App self,
-    Response(Exception) handler
+    ExceptionHandler handler
 )
 {
     self.exceptionHandler = handler;
@@ -1771,7 +1783,7 @@ public Response App.dispatch(App self, Request request)
     }
     catch (Exception error)
     {
-        Response(Exception) handler = self.exceptionHandler;
+        ExceptionHandler handler = self.exceptionHandler;
         return handler(error);
     }
 }
@@ -1807,7 +1819,7 @@ public Response App.dispatchFallback(App self, Request request)
     }
     catch (Exception error)
     {
-        Response(Exception) handler = self.exceptionHandler;
+        ExceptionHandler handler = self.exceptionHandler;
         return handler(error);
     }
 }
@@ -1905,13 +1917,13 @@ private Response DispatchRoutes(
 
 public StatefulApp<State> StatefulAppNew<State>(
     State state,
-    Response(State, Request) fallback
+    StatefulHandler<State> fallback
 )
 {
     List<StatefulRoute<State>> routes = new();
     List<BuildPage> pages = new();
-    List<FilterResult(State, Request)> filters = new();
-    List<Html(State, Request, Html)> htmlMiddleware = new();
+    List<StatefulRequestFilter<State>> filters = new();
+    List<StatefulHtmlMiddleware<State>> htmlMiddleware = new();
     List<StaticDirectory> staticDirectories = new();
     return new()
     {
@@ -1939,7 +1951,7 @@ public void StatefulApp.UseForwardedHeaders<State>(
 
 public void StatefulApp.OnException<State>(
     ref StatefulApp<State> self,
-    Response(Exception) handler
+    ExceptionHandler handler
 )
 {
     self.exceptionHandler = handler;
@@ -1976,7 +1988,7 @@ public List<string> StatefulApp.StaticRoots<State>(
 
 public void StatefulApp.filter<State>(
     ref StatefulApp<State> self,
-    FilterResult(State, Request) filter
+    StatefulRequestFilter<State> filter
 )
 {
     self.filters.Add(filter);
@@ -1984,7 +1996,7 @@ public void StatefulApp.filter<State>(
 
 public void StatefulApp.AfterHtml<State>(
     ref StatefulApp<State> self,
-    Html(State, Request, Html) middleware
+    StatefulHtmlMiddleware<State> middleware
 )
 {
     self.htmlMiddleware.Add(middleware);
@@ -1994,7 +2006,7 @@ public void StatefulApp.route<State>(
     ref StatefulApp<State> self,
     string method,
     string path,
-    Response(State, Request) handler
+    StatefulHandler<State> handler
 )
 {
     StatefulRoute<State> route = new()
@@ -2009,7 +2021,7 @@ public void StatefulApp.route<State>(
 public void StatefulApp.Get<State>(
     ref StatefulApp<State> self,
     string path,
-    Response(State, Request) handler
+    StatefulHandler<State> handler
 )
 {
     self.route("GET", path, handler);
@@ -2043,8 +2055,8 @@ public Result<bool, string> StatefulApp.page<State>(
 public Result<bool, string> StatefulApp.TryGetFrom<State>(
     ref StatefulApp<State> self,
     string pattern,
-    Response(State, Request) handler,
-    List<string>(State) source
+    StatefulHandler<State> handler,
+    StatefulBuildSource<State> source
 )
 {
     if (!RouteHasParameter(pattern))
@@ -2053,7 +2065,7 @@ public Result<bool, string> StatefulApp.TryGetFrom<State>(
             "parameterized build source requires a parameterized GET route"
         );
     }
-    List<string>(State) buildSource = source;
+    StatefulBuildSource<State> buildSource = source;
     List<string> paths = buildSource(self.state);
     foreach (string path in paths)
     {
@@ -2082,8 +2094,8 @@ public Result<bool, string> StatefulApp.TryGetFrom<State>(
 public void StatefulApp.Get<State>(
     ref StatefulApp<State> self,
     string pattern,
-    Response(State, Request) handler,
-    List<string>(State) source
+    StatefulHandler<State> handler,
+    StatefulBuildSource<State> source
 )
 {
     bool ignored = LimeResultOrThrow(
@@ -2094,7 +2106,7 @@ public void StatefulApp.Get<State>(
 public void StatefulApp.post<State>(
     ref StatefulApp<State> self,
     string path,
-    Response(State, Request) handler
+    StatefulHandler<State> handler
 )
 {
     self.route("POST", path, handler);
@@ -2103,7 +2115,7 @@ public void StatefulApp.post<State>(
 public void StatefulApp.put<State>(
     ref StatefulApp<State> self,
     string path,
-    Response(State, Request) handler
+    StatefulHandler<State> handler
 )
 {
     self.route("PUT", path, handler);
@@ -2112,7 +2124,7 @@ public void StatefulApp.put<State>(
 public void StatefulApp.patch<State>(
     ref StatefulApp<State> self,
     string path,
-    Response(State, Request) handler
+    StatefulHandler<State> handler
 )
 {
     self.route("PATCH", path, handler);
@@ -2121,7 +2133,7 @@ public void StatefulApp.patch<State>(
 public void StatefulApp.delete<State>(
     ref StatefulApp<State> self,
     string path,
-    Response(State, Request) handler
+    StatefulHandler<State> handler
 )
 {
     self.route("DELETE", path, handler);
@@ -2130,7 +2142,7 @@ public void StatefulApp.delete<State>(
 public void StatefulApp.head<State>(
     ref StatefulApp<State> self,
     string path,
-    Response(State, Request) handler
+    StatefulHandler<State> handler
 )
 {
     self.route("HEAD", path, handler);
@@ -2181,7 +2193,7 @@ public Response StatefulApp.dispatch<State>(
     }
     catch (Exception error)
     {
-        Response(Exception) handler = self.exceptionHandler;
+        ExceptionHandler handler = self.exceptionHandler;
         return handler(error);
     }
 }
@@ -2207,7 +2219,7 @@ private Response DispatchStatefulAppFallbackUnchecked<State>(
             );
         }
     }
-    Response(State, Request) fallback = self.fallback;
+    StatefulHandler<State> fallback = self.fallback;
     return ApplyStatefulHtmlMiddleware(
         self.state,
         self.htmlMiddleware,
@@ -2227,7 +2239,7 @@ public Response StatefulApp.dispatchFallback<State>(
     }
     catch (Exception error)
     {
-        Response(Exception) handler = self.exceptionHandler;
+        ExceptionHandler handler = self.exceptionHandler;
         return handler(error);
     }
 }
@@ -2236,8 +2248,8 @@ private Response DispatchStatefulRoutes<State>(
     State state,
     List<StatefulRoute<State>> routes,
     List<StaticDirectory> staticDirectories,
-    List<Html(State, Request, Html)> middleware,
-    Response(State, Request) fallback,
+    List<StatefulHtmlMiddleware<State>> middleware,
+    StatefulHandler<State> fallback,
     Request request
 )
 {
@@ -2251,7 +2263,7 @@ private Response DispatchStatefulRoutes<State>(
             if (route.method == request.method)
             {
                 request.route = routePath;
-                Response(State, Request) handler = route.handler;
+                StatefulHandler<State> handler = route.handler;
                 return ApplyStatefulHtmlMiddleware(
                     state,
                     middleware,
@@ -2271,7 +2283,7 @@ private Response DispatchStatefulRoutes<State>(
                 RouteMatches(routePath, request.path))
             {
                 request.route = routePath;
-                Response(State, Request) handler = route.handler;
+                StatefulHandler<State> handler = route.handler;
                 return ApplyStatefulHtmlMiddleware(
                     state,
                     middleware,
@@ -2330,12 +2342,12 @@ private Response DispatchStatefulRoutes<State>(
 
 private Html ApplyStatefulHtml<State>(
     State state,
-    List<Html(State, Request, Html)> middleware,
+    List<StatefulHtmlMiddleware<State>> middleware,
     Request request,
     Html page
 )
 {
-    foreach (Html(State, Request, Html) transform in middleware)
+    foreach (StatefulHtmlMiddleware<State> transform in middleware)
     {
         page = transform(state, request, page);
     }
@@ -2344,7 +2356,7 @@ private Html ApplyStatefulHtml<State>(
 
 private Response ApplyStatefulHtmlMiddleware<State>(
     State state,
-    List<Html(State, Request, Html)> middleware,
+    List<StatefulHtmlMiddleware<State>> middleware,
     Request request,
     Response response
 )
@@ -2407,11 +2419,11 @@ private Response ApplyStatefulHtmlMiddleware<State>(
 
 private FilterResult ApplyStatefulRequestFilters<State>(
     State state,
-    List<FilterResult(State, Request)> filters,
+    List<StatefulRequestFilter<State>> filters,
     Request request
 )
 {
-    foreach (FilterResult(State, Request) filter in filters)
+    foreach (StatefulRequestFilter<State> filter in filters)
     {
         switch (filter(state, request))
         {

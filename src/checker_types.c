@@ -852,6 +852,24 @@ static Type *resolve_generic_syntax(Checker *checker,
                   "unknown generic type `%s`", base);
         return &type_error;
     }
+    if (generic_decl->kind == DECL_ALIAS &&
+        generic_decl->type_param_count == count) {
+        const Decl *previous_decl = checker->substitution_decl;
+        Type **previous_arguments = checker->substitution_arguments;
+        size_t previous_count = checker->substitution_argument_count;
+        const char *previous_module = checker->current_module;
+        checker->substitution_decl = generic_decl;
+        checker->substitution_arguments = arguments;
+        checker->substitution_argument_count = count;
+        checker->current_module = generic_decl->module_name;
+        Type *resolved = resolve_type_syntax(
+            checker, generic_decl->as.alias.target_syntax);
+        checker->current_module = previous_module;
+        checker->substitution_decl = previous_decl;
+        checker->substitution_arguments = previous_arguments;
+        checker->substitution_argument_count = previous_count;
+        return resolved;
+    }
     if ((generic_decl->kind != DECL_STRUCT &&
          generic_decl->kind != DECL_ENUM) ||
         generic_decl->type_param_count != count) {

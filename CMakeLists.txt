@@ -213,6 +213,11 @@ add_test(NAME struct_members_vm COMMAND lang run tests/struct_members.lang)
 set_tests_properties(struct_members_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "42")
+add_test(NAME generic_delegate_vm COMMAND lang run tests/generic_delegate.lang)
+set_tests_properties(generic_delegate_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_aster_generated_c_test(
+    generic_delegate_generated_c tests/generic_delegate.lang generic_delegate)
 add_aster_generated_c_test(
     struct_members_generated_c tests/struct_members.lang struct_members)
 add_test(NAME constructor_missing_field_rejected

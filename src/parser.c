@@ -1998,6 +1998,14 @@ static Decl *parse_delegate_decl(Parser *parser, Token start) {
     (void)parse_type(parser, &return_type_syntax);
     Token name = parser_expect(parser, TOK_IDENT,
                         "expected delegate name after return type");
+    Decl *decl = lang_arena_alloc(
+        &parser->module->arena, sizeof(*decl));
+    decl->kind = DECL_ALIAS;
+    decl->as.alias.name = parser_copy_token(parser, name);
+    parse_type_parameters(parser, decl);
+    if (decl->type_param_count > 16U)
+        lang_diag(parser->diagnostics, name.span,
+                  "generic delegates are limited to 16 type parameters");
     parser_expect(parser, TOK_LPAREN,
            "expected `(` after delegate name");
     ParserArrayBuilder parameters = parser_array_builder(
@@ -2037,10 +2045,6 @@ static Decl *parse_delegate_decl(Parser *parser, Token start) {
     function_syntax->as.function.return_type = return_type_syntax;
     const char *function_type = format_type_syntax(parser, function_syntax);
 
-    Decl *decl = lang_arena_alloc(
-        &parser->module->arena, sizeof(*decl));
-    decl->kind = DECL_ALIAS;
-    decl->as.alias.name = parser_copy_token(parser, name);
     decl->as.alias.target = function_type;
     decl->as.alias.target_syntax = function_syntax;
     decl->span = (LangSpan){

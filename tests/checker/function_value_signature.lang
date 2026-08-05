@@ -3,6 +3,6 @@ private bool predicate(long value) {
 }
 
 int main() {
-    long(long) operation = predicate;
+    Func<long, long> operation = predicate;
     return 0;
 }

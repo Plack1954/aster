@@ -8,7 +8,7 @@ int main() {
     Generic.Box<long> value = new Generic.Box<long> { value = 11 };
     Console.WriteLine(First.read(value) + Second.read(value));
     Console.WriteLine(First.echo(7) + Second.echo(7));
-    long(long) callback = First.echo;
+    Func<long, long> callback = First.echo;
     Console.WriteLine(callback(3));
 
     Generic.Maybe<long> maybe =

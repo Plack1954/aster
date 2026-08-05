@@ -1,5 +1,10 @@
 namespace Lime.Content;
 
+public delegate Result<T, string> ContentDecoder<T>(
+    ContentDocument document
+);
+public delegate T ContentValueDecoder<T>(ContentDocument document);
+
 using Aster.Content;
 using System.IO;
 using System.Text;
@@ -280,7 +285,7 @@ public List<ContentDocument> LoadContentDirectory(
 public Result<List<T>, string> TryDecodeContentDirectory<T>(
     string root,
     string suffix,
-    Result<T, string>(ContentDocument) decoder
+    ContentDecoder<T> decoder
 )
 {
     List<ContentDocument> documents = try TryLoadContentDirectory(root, suffix);
@@ -295,7 +300,7 @@ public Result<List<T>, string> TryDecodeContentDirectory<T>(
 public List<T> DecodeContentDirectory<T>(
     string root,
     string suffix,
-    T(ContentDocument) decoder
+    ContentValueDecoder<T> decoder
 )
 {
     List<ContentDocument> documents = LoadContentDirectory(root, suffix);

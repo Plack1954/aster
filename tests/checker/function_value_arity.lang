@@ -3,7 +3,7 @@ private long AddOne(long value) {
 }
 
 int main() {
-    long(long) operation = AddOne;
+    Func<long, long> operation = AddOne;
     Console.WriteLine(operation(1, 2));
     return 0;
 }

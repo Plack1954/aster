@@ -1,6 +1,6 @@
 private extern long NativeClock();
 
 int main() {
-    long() clock = nativeClock;
+    Func<long> clock = nativeClock;
     return 0;
 }
