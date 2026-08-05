@@ -631,6 +631,14 @@ Type *check_expr(Checker *checker, Expr *expr) {
                     : 0U);
             break;
         case EXPR_ASSIGN: {
+            bool discard_assignment =
+                expr->as.assign.target->kind == EXPR_NAME &&
+                strcmp(expr->as.assign.target->as.name, "_") == 0;
+            if (discard_assignment &&
+                expr->as.assign.compound_op != TOK_ERROR) {
+                lang_diag(checker->diagnostics, expr->span,
+                          "discard assignment does not support compound operators");
+            }
             if (expr->as.assign.compound_op == TOK_ERROR &&
                 expr->as.assign.target->kind == EXPR_FIELD &&
                 strcmp(expr->as.assign.target->as.field.field,
@@ -764,6 +772,11 @@ Type *check_expr(Checker *checker, Expr *expr) {
             Type *value = check_expr(checker, expr->as.assign.value);
             checker->expected_type = previous_expected;
             Expr *target = expr->as.assign.target;
+            if (discard_assignment) {
+                target->type = value;
+                result = &type_unit;
+                break;
+            }
             if (target->kind == EXPR_UNARY &&
                 target->as.unary.op == TOK_STAR) {
                 Type *pointer = check_expr(

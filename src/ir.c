@@ -1841,6 +1841,18 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                     ir_intern_type(builder->module, expr->type),
                     operands, 2U, expr->span);
             } else if (target->kind == EXPR_NAME) {
+                if (strcmp(target->as.name, "_") == 0) {
+                    IrValueId value = ir_lower_expr(
+                        builder, expr->as.assign.value);
+                    (void)ir_append_instruction(
+                        builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                        &value, 1U, expr->span);
+                    instruction = ir_append_instruction(
+                        builder, IR_OP_UNIT,
+                        ir_intern_type(builder->module, &ir_unit_type),
+                        NULL, 0U, expr->span);
+                    break;
+                }
                 uint32_t local = ir_find_local(
                     builder, target->resolved_local_id,
                     target->span);
