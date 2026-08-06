@@ -90,6 +90,9 @@ private async Task<bool> VerifyEndpointDispatchAsync()
     app.MapFallback(Missing);
     app.OnException(HandleException);
     app.MapGet("/async/{id:int}", HandleAsync);
+    app.MapPost("/async-post/{id:int}", HandleAsync);
+    RouteGroup group = app.MapGroup("/group");
+    group.MapDelete("/{id:int}", HandleAsync);
     app.MapGet("/sync", HandleSync);
     List<string> methods = new();
     methods.Add("POST");
@@ -103,6 +106,12 @@ private async Task<bool> VerifyEndpointDispatchAsync()
     ));
     Response syncHandled = await app.DispatchAsync(RequestNew(
         "GET", "/sync", "", "", "", ""
+    ));
+    Response postHandled = await app.DispatchAsync(RequestNew(
+        "POST", "/async-post/43", "", "", "", ""
+    ));
+    Response groupHandled = await app.DispatchAsync(RequestNew(
+        "DELETE", "/group/44", "", "", "", ""
     ));
     Response methodHandled = await app.DispatchAsync(RequestNew(
         "PUT", "/methods", "", "", "", ""
@@ -126,6 +135,8 @@ private async Task<bool> VerifyEndpointDispatchAsync()
     ));
 
     return ResponseTextEquals(handled, 200, "GET:42") &&
+        ResponseTextEquals(postHandled, 200, "POST:43") &&
+        ResponseTextEquals(groupHandled, 200, "DELETE:44") &&
         ResponseTextEquals(syncHandled, 200, "sync") &&
         ResponseTextEquals(methodHandled, 200, "PUT") &&
         methodRejected.StatusCode == StatusCodes.Status405MethodNotAllowed &&

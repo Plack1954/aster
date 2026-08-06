@@ -112,9 +112,10 @@ constrained parameters, which outrank ordinary parameters and catch-alls.
 Chained constraints are conjunctive. Conflicting equal-precedence endpoints
 and contradictory or incompatible constraint chains are rejected.
 
-The first typed route-binding slice supports one route parameter on `MapGet`.
-The parameter may be `string`, `int`, `long`, or `bool`, and a handler may
-optionally receive `Request` first:
+Typed route binding supports one route parameter across `MapGet`, `MapPost`,
+`MapPut`, `MapPatch`, `MapDelete`, `MapHead`, and `MapMethods`. The parameter
+may be `string`, `int`, `long`, or `bool`, and a handler may optionally receive
+`Request` first:
 
 ```aster
 private Response Article(string slug)
@@ -138,9 +139,9 @@ constraint failure means the endpoint did not match. Registration rejects a
 typed handler unless its pattern contains exactly one route parameter.
 
 This is deliberately not advertised as arbitrary Minimal API binding yet.
-Multiple route parameters, typed handlers on the other `Map*` methods, and
-query/header/body/form binding remain future work. Until a handler shape is
-supported, the low-level route-value API represents absence explicitly:
+Multiple route parameters and query/header/body/form binding remain future
+work. Until a handler shape is supported, the low-level route-value API
+represents absence explicitly:
 
 ```aster
 switch (request.RouteValue("slug"))

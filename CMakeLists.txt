@@ -697,6 +697,7 @@ find_program(ASTER_WASM_LINKER NAMES wasm-ld)
 find_program(ASTER_WASM_OPTIMIZER NAMES wasm-opt)
 find_program(ASTER_NODE_EXECUTABLE NAMES node)
 find_program(ASTER_CURL_EXECUTABLE NAMES curl)
+find_program(ASTER_PYTHON_EXECUTABLE NAMES python3)
 if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
    ASTER_WASM_OPTIMIZER AND ASTER_NODE_EXECUTABLE)
     add_test(NAME wasm_counter_trial
@@ -1330,6 +1331,14 @@ add_test(NAME lime_library_check
 set_tests_properties(lime_library_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+if(ASTER_PYTHON_EXECUTABLE)
+    add_test(NAME lime_typed_routes_generated
+        COMMAND ${ASTER_PYTHON_EXECUTABLE}
+            tools/generate_lime_typed_routes.py --check)
+    set_tests_properties(lime_typed_routes_generated PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+endif()
 add_test(NAME lime_current_http_check
     COMMAND lang project check packages/lime/aster.toml current_http)
 set_tests_properties(lime_current_http_check PROPERTIES

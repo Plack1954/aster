@@ -199,10 +199,12 @@ compatibility frameworks.
 The routing foundation is now materially closer to Minimal APIs, but the
 application architecture is not yet the target design:
 
-1. `MapGet` handlers can receive one `string`, `int`, `long`, or `bool` route
-   parameter directly, optionally after `Request`. The same bounded shapes
-   work for async handlers, bound methods, and route groups. Multiple route
-   parameters and the other `Map*` methods do not yet use typed adapters.
+1. Every `Map*` method accepts handlers with one `string`, `int`, `long`, or
+   `bool` route parameter directly, optionally after `Request`. The same
+   bounded shapes work for async handlers, bound methods, and route groups.
+   Multiple route parameters do not yet use typed adapters. A single
+   declarative generator owns the repetitive exact-delegate overload matrix;
+   CTest rejects a stale generated surface.
 2. This first binding slice returns 400 when conversion fails after endpoint
    selection. Explicit query/header/body/form binding sources do not yet
    exist.
@@ -612,8 +614,9 @@ It must not distort production HTTP semantics.
 
 ### Stage 3: compile-time handler adapters
 
-- Extend the implemented one-parameter `MapGet` adapters to multiple route
-  parameters and the complete `Map*` family without runtime reflection.
+- Extend the implemented one-parameter adapters to multiple route parameters
+  without runtime reflection; the complete `Map*` family already shares the
+  same sync, async, bound-method, and route-group shapes.
 - Bind handler parameters by recorded name rather than relying on the
   one-parameter positional equivalence of the first slice.
 - Preserve the implemented stable 400 conversion-failure response.

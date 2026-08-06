@@ -1112,6 +1112,16 @@ private bool TypedRouteBindingWorks()
     app.MapGet("/flags/{enabled:bool}", TypedBool);
     app.MapGet("/request/{id:int}", TypedRequestInt);
     app.MapGet("/unconstrained/{id}", TypedInt);
+    app.MapPost("/posts/{slug}", TypedString);
+    app.MapPut("/users/{id:int}", TypedInt);
+    app.MapPatch("/orders/{id:long}", TypedLong);
+    app.MapDelete("/flags/{enabled:bool}", TypedBool);
+    app.MapHead("/request/{id:int}", TypedRequestInt);
+    List<string> customMethods = new();
+    customMethods.Add("CONNECT");
+    app.MapMethods("/custom/{slug}", customMethods, TypedString);
+    RouteGroup group = app.MapGroup("/group");
+    group.MapPost("/{slug}", TypedString);
 
     if (!TextResponseEquals(
             app.Dispatch(request("GET", "/articles/aster")),
@@ -1130,6 +1140,32 @@ private bool TypedRouteBindingWorks()
         ) ||
         !TextResponseEquals(
             app.Dispatch(request("GET", "/request/7")), 200, "GET:7"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("POST", "/posts/aster")),
+            200, "string:aster"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("PUT", "/users/43")), 200, "int:43"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("PATCH", "/orders/2147483649")),
+            200, "long:2147483649"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("DELETE", "/flags/false")),
+            200, "bool:false"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("HEAD", "/request/8")), 200, "HEAD:8"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("CONNECT", "/custom/aster")),
+            200, "string:aster"
+        ) ||
+        !TextResponseEquals(
+            app.Dispatch(request("POST", "/group/aster")),
+            200, "string:aster"
         ) ||
         app.Dispatch(request(
             "GET", "/unconstrained/not-an-integer"

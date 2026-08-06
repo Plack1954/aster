@@ -2242,12 +2242,7 @@ private EndpointBuilder WebApplication.MapTypedMethod(
     return self.MapEndpoint(pattern, methods, handler);
 }
 
-public EndpointBuilder WebApplication.MapMethods(
-    WebApplication self,
-    string path,
-    List<string> methods,
-    Handler handler
-)
+private void ValidateHttpMethods(List<string> methods)
 {
     if (methods.Count == 0)
     {
@@ -2274,6 +2269,34 @@ public EndpointBuilder WebApplication.MapMethods(
             }
         }
     }
+}
+
+private EndpointBuilder WebApplication.MapTypedMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    RouteHandler handler
+)
+{
+    ValidateHttpMethods(methods);
+    RoutePattern pattern = ParseRoutePattern(path);
+    if (pattern.ParameterCount != 1)
+    {
+        throw new ArgumentException(
+            "typed route handler requires exactly one route parameter"
+        );
+    }
+    return self.MapEndpoint(pattern, methods, handler);
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    Handler handler
+)
+{
+    ValidateHttpMethods(methods);
     RoutePattern pattern = ParseRoutePattern(path);
     return self.MapEndpoint(
         pattern, methods, RouteHandler.Sync(handler)
@@ -2287,31 +2310,7 @@ public EndpointBuilder WebApplication.MapMethods(
     AsyncHandler handler
 )
 {
-    if (methods.Count == 0)
-    {
-        throw new ArgumentException("endpoint requires an HTTP method");
-    }
-    for (nuint index = 0; index < methods.Count; index += 1)
-    {
-        string method = methods[index];
-        if (method.Length == 0)
-        {
-            throw new ArgumentException("HTTP method cannot be empty");
-        }
-        if (!HttpMethodValid(method))
-        {
-            throw new ArgumentException(
-                "HTTP method must be an uppercase token"
-            );
-        }
-        for (nuint other = 0; other < index; other += 1)
-        {
-            if (methods[other] == method)
-            {
-                throw new ArgumentException("HTTP method is duplicated");
-            }
-        }
-    }
+    ValidateHttpMethods(methods);
     RoutePattern pattern = ParseRoutePattern(path);
     return self.MapEndpoint(
         pattern, methods, RouteHandler.Async(handler)
@@ -2595,6 +2594,920 @@ public EndpointBuilder WebApplication.MapHead(WebApplication self, string path, 
 {
     return self.MapMethodAsync("HEAD", path, handler);
 }
+
+// BEGIN GENERATED TYPED ROUTE OVERLOADS: WEBAPPLICATION
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, StringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.String(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, IntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.Int(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, LongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.Long(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, BoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.Bool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, RequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.RequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, RequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.RequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, RequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.RequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, RequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.RequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncRequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncRequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncRequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "POST", path, RouteHandler.AsyncRequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, StringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.String(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, IntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.Int(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, LongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.Long(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, BoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.Bool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, RequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.RequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, RequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.RequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, RequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.RequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, RequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.RequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncRequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncRequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncRequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPut(
+    WebApplication self, string path, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PUT", path, RouteHandler.AsyncRequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, StringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.String(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, IntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.Int(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, LongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.Long(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, BoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.Bool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, RequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.RequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, RequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.RequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, RequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.RequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, RequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.RequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncRequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncRequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncRequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapPatch(
+    WebApplication self, string path, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "PATCH", path, RouteHandler.AsyncRequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, StringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.String(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, IntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.Int(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, LongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.Long(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, BoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.Bool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, RequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.RequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, RequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.RequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, RequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.RequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, RequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.RequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncRequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncRequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncRequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapDelete(
+    WebApplication self, string path, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "DELETE", path, RouteHandler.AsyncRequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, StringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.String(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, IntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.Int(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, LongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.Long(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, BoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.Bool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, RequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.RequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, RequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.RequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, RequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.RequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, RequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.RequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncRequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncRequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncRequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapHead(
+    WebApplication self, string path, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethod(
+        "HEAD", path, RouteHandler.AsyncRequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    StringRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.String(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    IntRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.Int(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    LongRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.Long(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    BoolRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.Bool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    RequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.RequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    RequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.RequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    RequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.RequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    RequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.RequestBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncStringRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncIntRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncLongRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncBool(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncRequestStringRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncRequestString(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncRequestIntRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncRequestInt(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncRequestLongRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncRequestLong(handler)
+    );
+}
+
+public EndpointBuilder WebApplication.MapMethods(
+    WebApplication self,
+    string path,
+    List<string> methods,
+    AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.MapTypedMethods(
+        path, methods, RouteHandler.AsyncRequestBool(handler)
+    );
+}
+// END GENERATED TYPED ROUTE OVERLOADS: WEBAPPLICATION
 
 private void ValidateEndpointBuilder(EndpointBuilder self)
 {
@@ -2960,6 +3873,920 @@ public EndpointBuilder RouteGroup.MapMethods(
         GroupPattern(self.Prefix, pattern), methods, handler
     );
 }
+
+// BEGIN GENERATED TYPED ROUTE OVERLOADS: ROUTEGROUP
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, StringRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, IntRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, LongRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, BoolRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, RequestStringRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, RequestIntRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, RequestLongRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, RequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncStringRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncIntRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncLongRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncBoolRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPost(
+    RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapPost(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, StringRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, IntRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, LongRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, BoolRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, RequestStringRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, RequestIntRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, RequestLongRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, RequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncStringRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncIntRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncLongRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncBoolRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPut(
+    RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapPut(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, StringRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, IntRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, LongRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, BoolRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, RequestStringRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, RequestIntRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, RequestLongRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, RequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncStringRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncIntRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncLongRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncBoolRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapPatch(
+    RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapPatch(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, StringRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, IntRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, LongRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, BoolRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, RequestStringRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, RequestIntRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, RequestLongRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, RequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncStringRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncIntRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncLongRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncBoolRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapDelete(
+    RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapDelete(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, StringRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, IntRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, LongRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, BoolRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, RequestStringRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, RequestIntRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, RequestLongRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, RequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncStringRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncIntRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncLongRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncBoolRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapHead(
+    RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapHead(
+        GroupPattern(self.Prefix, pattern), handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    StringRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    IntRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    LongRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    BoolRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    RequestStringRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    RequestIntRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    RequestLongRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    RequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncStringRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncIntRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncLongRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncBoolRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncRequestStringRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncRequestIntRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncRequestLongRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+
+public EndpointBuilder RouteGroup.MapMethods(
+    RouteGroup self,
+    string pattern,
+    List<string> methods,
+    AsyncRequestBoolRouteHandler handler
+)
+{
+    return self.Application.MapMethods(
+        GroupPattern(self.Prefix, pattern), methods, handler
+    );
+}
+// END GENERATED TYPED ROUTE OVERLOADS: ROUTEGROUP
 
 private Html ApplyHtml(
     List<HtmlMiddleware> middleware,
