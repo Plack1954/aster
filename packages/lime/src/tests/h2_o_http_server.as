@@ -75,7 +75,7 @@ private Response Hello(Request request)
     {
         case Option.Some(value): { name = value; }
         case Option.None: {
-            return Results.InternalError(<p>missing route value</p>);
+            return Results.InternalServerError(<p>missing route value</p>);
         }
     }
     Response response = Results.Html(<p>{name}:{source}</p>);
@@ -83,7 +83,7 @@ private Response Hello(Request request)
     {
         case Result.Ok(header): { response.AddHeader(header); }
         case Result.Err(error): {
-            return Results.InternalError(<p>{error}</p>);
+            return Results.InternalServerError(<p>{error}</p>);
         }
     }
     return response;

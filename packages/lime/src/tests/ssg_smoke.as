@@ -42,7 +42,7 @@ private Response ArticlePage(Request request)
             return Results.Html(<article><h1>{slug}</h1></article>);
         }
         case Option.None: {
-            return Results.InternalError(<p>missing route value</p>);
+            return Results.InternalServerError(<p>missing route value</p>);
         }
     }
 }

@@ -132,7 +132,7 @@ switch (request.RouteValue("slug"))
         return Results.Html(<article>{slug}</article>);
     }
     case Option.None: {
-        return Results.InternalError(<h1>Missing route value</h1>);
+        return Results.InternalServerError(<h1>Missing route value</h1>);
     }
 }
 ```
@@ -172,10 +172,21 @@ return Results.SeeOther("/articles");
 return Results.Problem(ProblemDetails.Create(409, "Conflict"));
 ```
 
+Conventional bodyless results use the real empty-body representation:
+
+```aster
+return Results.Ok();
+return Results.Accepted("/jobs/42");
+return Results.Created("/articles/aster");
+return Results.BadRequest();
+return Results.InternalServerError();
+return Results.StatusCode(418);
+```
+
 `Results.Redirect` is 302. `SeeOther`, `PermanentRedirect`,
 `TemporaryRedirectPreserveMethod`, and `PermanentRedirectPreserveMethod`
-provide 303, 301, 307, and 308 explicitly. `StatusCodes` contains named HTTP
-status values.
+provide 303, 301, 307, and 308 explicitly. Redirects have an empty body and a
+validated `Location` header. `StatusCodes` contains named HTTP status values.
 
 Responses can also carry validated headers and cookies, CSS, typed assets,
 files, and bounded streams. Adapters own framing fields such as

@@ -291,7 +291,7 @@ private Response post(Blog blog, Request request)
             return PostResponse(blog.posts, slug, blog);
         }
         case Option.None: {
-            return Results.InternalError(<p>missing route value</p>);
+            return Results.InternalServerError(<p>missing route value</p>);
         }
     }
 }

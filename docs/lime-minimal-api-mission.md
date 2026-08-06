@@ -147,6 +147,8 @@ worktree:
   `MapDelete`, `MapHead`, and `MapMethods`; the old verb spellings were removed.
 - `Results` now constructs `Response` values, redirects have explicit 301,
   302, 303, 307, and 308 names, and `StatusCodes` supplies named values.
+  Conventional bodyless results share one validated empty-response path;
+  redirects carry a true empty body rather than pretending to be empty text.
 - `Request.RouteValue` returns `Option<string>`; the empty-string sentinel and
   old `request.param` API were removed.
 - request and form-file metadata now use C#-shaped properties.
@@ -469,6 +471,8 @@ The public factories should settle around one conventional `Results` surface:
 Results.Html(page);
 Results.Text(text);
 Results.Json(json);
+Results.Ok();
+Results.Accepted(location);
 Results.Created(location, body);
 Results.NoContent();
 Results.BadRequest(body);
@@ -478,6 +482,7 @@ Results.Redirect(location);
 Results.File(path, contentType);
 Results.Stream(stream, contentType);
 Results.Problem(problem);
+Results.StatusCode(status);
 ```
 
 `StatusCodes` supplies named constants. Application examples should not spread
@@ -623,7 +628,8 @@ It must not distort production HTTP semantics.
 
 ### Stage 5: results, links, and metadata
 
-- Consolidate result construction under `Results` and `StatusCodes`.
+- Keep the implemented `Results` and `StatusCodes` surface coherent as typed
+  result metadata is added; bodyless results already share one constructor.
 - Keep the implemented endpoint names and borrowed `LinkGenerator` on the one
   application graph when the linear endpoint scan becomes a compiled matcher.
 - Expose metadata sufficient for tests and future OpenAPI generation without

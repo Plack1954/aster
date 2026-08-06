@@ -76,7 +76,7 @@ private Response article(Request request)
     {
         case Option.Some(value): { slug = value; }
         case Option.None: {
-            return Results.InternalError(<p>missing route value</p>);
+            return Results.InternalServerError(<p>missing route value</p>);
         }
     }
     Response response = Results.Html(<article>{slug}:{source}</article>);
@@ -86,7 +86,7 @@ private Response article(Request request)
             response.AddHeader(header);
         }
         case Result.Err(error): {
-            return Results.InternalError(<p>{error}</p>);
+            return Results.InternalServerError(<p>{error}</p>);
         }
     }
     return response;
@@ -174,7 +174,7 @@ private Response CookieValue(Request request)
                     return response;
                 }
                 case Result.Err(error): {
-                    return Results.InternalError(<p>{error}</p>);
+                    return Results.InternalServerError(<p>{error}</p>);
                 }
             }
         }
@@ -218,7 +218,7 @@ private Response ConfiguredCookie(Request request)
             return response;
         }
         case Result.Err(error): {
-            return Results.InternalError(<p>{error}</p>);
+            return Results.InternalServerError(<p>{error}</p>);
         }
     }
 }
@@ -233,7 +233,7 @@ private Response DeletedCookie(Request request)
             return response;
         }
         case Result.Err(error): {
-            return Results.InternalError(<p>{error}</p>);
+            return Results.InternalServerError(<p>{error}</p>);
         }
     }
 }
@@ -275,7 +275,7 @@ private Response StreamedAsset(Request request)
     {
         case Result.Ok(header): { response.AddHeader(header); }
         case Result.Err(error): {
-            return Results.InternalError(<p>{error}</p>);
+            return Results.InternalServerError(<p>{error}</p>);
         }
     }
     return response;

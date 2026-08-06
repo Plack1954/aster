@@ -193,6 +193,58 @@ private Response HtmlResponse(int status, Html page)
     };
 }
 
+private Response EmptyResponse(int status)
+{
+    if (status < 100 || status > 599)
+    {
+        throw new ArgumentException(
+            "response status must be between 100 and 599"
+        );
+    }
+    List<ResponseHeader> headers = new();
+    return new()
+    {
+        status = status,
+        body = ResponseBody.Empty,
+        headers = headers
+    };
+}
+
+private Response EmptyResponseWithLocation(int status, string location)
+{
+    if (location.Length == 0)
+    {
+        throw new ArgumentException("response location cannot be empty");
+    }
+    Response response = EmptyResponse(status);
+    response.AddHeader(LimeResultOrThrow(
+        ResponseHeader("Location", location)
+    ));
+    return response;
+}
+
+public Response Results.StatusCode(int status)
+{
+    return EmptyResponse(status);
+}
+
+public Response Results.Ok()
+{
+    return EmptyResponse(StatusCodes.Status200OK);
+}
+
+public Response Results.Accepted()
+{
+    return EmptyResponse(StatusCodes.Status202Accepted);
+}
+
+public Response Results.Accepted(string location)
+{
+    return EmptyResponseWithLocation(
+        StatusCodes.Status202Accepted, location
+    );
+}
+
 public Response Results.Html(int status, Html page)
 {
     return HtmlResponse(status, page);
@@ -394,21 +446,7 @@ public Response Results.File(string path, AssetKind kind)
 
 private Response RedirectResponse(int status, string location)
 {
-    if (location.Length == 0)
-    {
-        throw new ArgumentException("redirect location cannot be empty");
-    }
-    List<ResponseHeader> headers = new();
-    ResponseHeader redirect = LimeResultOrThrow(
-        ResponseHeader("Location", location)
-    );
-    headers.Add(redirect);
-    return new()
-    {
-        status = status,
-        body = ResponseBody.Text(""),
-        headers = headers
-    };
+    return EmptyResponseWithLocation(status, location);
 }
 
 public Response Results.Redirect(string location)
@@ -438,13 +476,14 @@ public Response Results.PermanentRedirectPreserveMethod(string location)
 
 public Response Results.NoContent()
 {
-    List<ResponseHeader> headers = new();
-    return new()
-    {
-        status = StatusCodes.Status204NoContent,
-        body = ResponseBody.Empty,
-        headers = headers
-    };
+    return EmptyResponse(StatusCodes.Status204NoContent);
+}
+
+public Response Results.Created(string location)
+{
+    return EmptyResponseWithLocation(
+        StatusCodes.Status201Created, location
+    );
 }
 
 public Response Results.Created(string location, Html page)
@@ -461,9 +500,19 @@ public Response Results.BadRequest(Html page)
     return HtmlResponse(400, page);
 }
 
+public Response Results.BadRequest()
+{
+    return EmptyResponse(StatusCodes.Status400BadRequest);
+}
+
 public Response Results.NotFound(Html page)
 {
     return HtmlResponse(404, page);
+}
+
+public Response Results.NotFound()
+{
+    return EmptyResponse(StatusCodes.Status404NotFound);
 }
 
 public Response Results.Unauthorized(Html page)
@@ -471,9 +520,19 @@ public Response Results.Unauthorized(Html page)
     return HtmlResponse(StatusCodes.Status401Unauthorized, page);
 }
 
+public Response Results.Unauthorized()
+{
+    return EmptyResponse(StatusCodes.Status401Unauthorized);
+}
+
 public Response Results.Forbid(Html page)
 {
     return HtmlResponse(StatusCodes.Status403Forbidden, page);
+}
+
+public Response Results.Forbid()
+{
+    return EmptyResponse(StatusCodes.Status403Forbidden);
 }
 
 public Response Results.Conflict(Html page)
@@ -481,14 +540,39 @@ public Response Results.Conflict(Html page)
     return HtmlResponse(StatusCodes.Status409Conflict, page);
 }
 
+public Response Results.Conflict()
+{
+    return EmptyResponse(StatusCodes.Status409Conflict);
+}
+
+public Response Results.UnprocessableEntity()
+{
+    return EmptyResponse(StatusCodes.Status422UnprocessableEntity);
+}
+
+public Response Results.TooManyRequests()
+{
+    return EmptyResponse(StatusCodes.Status429TooManyRequests);
+}
+
 public Response Results.MethodNotAllowed(Html page)
 {
     return HtmlResponse(405, page);
 }
 
-public Response Results.InternalError(Html page)
+public Response Results.InternalServerError(Html page)
 {
-    return HtmlResponse(500, page);
+    return HtmlResponse(StatusCodes.Status500InternalServerError, page);
+}
+
+public Response Results.InternalServerError()
+{
+    return EmptyResponse(StatusCodes.Status500InternalServerError);
+}
+
+public Response Results.ServiceUnavailable()
+{
+    return EmptyResponse(StatusCodes.Status503ServiceUnavailable);
 }
 
 public delegate Response Handler(Request request);
@@ -715,7 +799,7 @@ public Result<string, string> LinkGenerator.GetPathByName(
 private Response DefaultExceptionResponse(Exception error)
 {
     Console.Error.WriteLine(error.Message);
-    return Results.InternalError(<h1>Internal server error</h1>);
+    return Results.InternalServerError(<h1>Internal server error</h1>);
 }
 
 private Response DefaultNotFound(Request request)

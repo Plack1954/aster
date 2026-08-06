@@ -43,7 +43,7 @@ private Response article(Request request)
             return Results.Html(<article>{slug}</article>);
         }
         case Option.None: {
-            return Results.InternalError(<p>missing route value</p>);
+            return Results.InternalServerError(<p>missing route value</p>);
         }
     }
 }
@@ -682,9 +682,9 @@ private bool PrintRedirect(Response response)
     }
     switch (body)
     {
-        case ResponseBody.Text(text): { return true; }
-        case ResponseBody.Empty: { return false; }
+        case ResponseBody.Empty: { return true; }
         case ResponseBody.Html(page): { return false; }
+        case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
         case ResponseBody.Stream(stream): { return false; }
@@ -838,6 +838,92 @@ private bool EmptyResponseEquals(Response response, int expectedStatus)
         case ResponseBody.Asset(asset): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
+    }
+}
+
+private bool LocationEquals(Response response, string expected)
+{
+    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
+    foreach (ResponseHeader header in headers)
+    {
+        if (header.Name == "Location")
+        {
+            return header.Value == expected;
+        }
+    }
+    return false;
+}
+
+private bool ConventionalResultsWork()
+{
+    if (!EmptyResponseEquals(Results.Ok(), StatusCodes.Status200OK) ||
+        !EmptyResponseEquals(
+            Results.Accepted(), StatusCodes.Status202Accepted
+        ) ||
+        !EmptyResponseEquals(
+            Results.BadRequest(), StatusCodes.Status400BadRequest
+        ) ||
+        !EmptyResponseEquals(
+            Results.Unauthorized(), StatusCodes.Status401Unauthorized
+        ) ||
+        !EmptyResponseEquals(
+            Results.Forbid(), StatusCodes.Status403Forbidden
+        ) ||
+        !EmptyResponseEquals(
+            Results.NotFound(), StatusCodes.Status404NotFound
+        ) ||
+        !EmptyResponseEquals(
+            Results.Conflict(), StatusCodes.Status409Conflict
+        ) ||
+        !EmptyResponseEquals(
+            Results.UnprocessableEntity(),
+            StatusCodes.Status422UnprocessableEntity
+        ) ||
+        !EmptyResponseEquals(
+            Results.TooManyRequests(),
+            StatusCodes.Status429TooManyRequests
+        ) ||
+        !EmptyResponseEquals(
+            Results.InternalServerError(),
+            StatusCodes.Status500InternalServerError
+        ) ||
+        !EmptyResponseEquals(
+            Results.ServiceUnavailable(),
+            StatusCodes.Status503ServiceUnavailable
+        ) ||
+        !EmptyResponseEquals(Results.StatusCode(418), 418))
+    {
+        return false;
+    }
+
+    Response accepted = Results.Accepted("/jobs/42");
+    Response created = Results.Created("/articles/aster");
+    Response redirect = Results.Redirect("/new-location");
+    if (!LocationEquals(accepted, "/jobs/42") ||
+        !LocationEquals(created, "/articles/aster") ||
+        !LocationEquals(redirect, "/new-location") ||
+        !EmptyResponseEquals(redirect, StatusCodes.Status302Found))
+    {
+        return false;
+    }
+
+    try
+    {
+        Response invalid = Results.StatusCode(99);
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        if (error.Message.Length == 0) { return false; }
+    }
+    try
+    {
+        Response invalid = Results.Accepted("");
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        return error.Message.Length > 0;
     }
 }
 
@@ -1184,6 +1270,10 @@ int main()
         return 1;
     }
     if (!StructuralRoutingWorks())
+    {
+        return 1;
+    }
+    if (!ConventionalResultsWork())
     {
         return 1;
     }
