@@ -1,8 +1,38 @@
 namespace Lime.Forms;
 
 using Lime;
+using Aster.Memory;
 using System.IO;
 using System.Text;
+
+public struct FormOptions
+{
+    long MemoryBufferThreshold;
+    long MultipartBodyLengthLimit;
+    long MultipartFileLengthLimit;
+    long ValueLengthLimit;
+    long MultipartHeadersLengthLimit;
+    int MaxPartCount;
+    int MaxFileCount;
+    int MaxFieldCount;
+    string TemporaryDirectory;
+}
+
+public FormOptions FormOptions()
+{
+    return new()
+    {
+        MemoryBufferThreshold = 65536,
+        MultipartBodyLengthLimit = 134217728,
+        MultipartFileLengthLimit = 134217728,
+        ValueLengthLimit = 1048576,
+        MultipartHeadersLengthLimit = 16384,
+        MaxPartCount = 1024,
+        MaxFileCount = 128,
+        MaxFieldCount = 1024,
+        TemporaryDirectory = "."
+    };
+}
 
 public struct FormField
 {
@@ -16,11 +46,14 @@ public struct FormFile
     string fileName;
     string contentType;
     string bytes;
+    NativeHandle? temporaryFile;
+    long length;
 
     public string Name => name;
     public string FileName => fileName;
     public string ContentType => contentType;
-    public long Length => (long)this.bytes.Length;
+    public long Length => this.length;
+    public bool IsBuffered => this.temporaryFile == null;
 }
 
 public struct FormCollection
@@ -31,12 +64,18 @@ public struct FormCollection
 
 public MemoryStream FormFile.OpenReadStream(FormFile self)
 {
-    List<byte> bytes = new();
-    for (nuint index = 0; index < self.bytes.Length; index += 1)
+    switch (self.temporaryFile)
     {
-        bytes.Add(StringByteAt(self.bytes, index));
+        case Option.Some(file): {
+            return File.OpenRead(NativeFileTemporaryPath(file));
+        }
+        case Option.None: {
+            MemoryStream stream = MemoryStream.Create();
+            stream.Write(StringAsByteSlice(self.bytes));
+            stream.Seek(0, SeekOrigin.Begin);
+            return stream;
+        }
     }
-    return MemoryStream.Create(bytes);
 }
 
 public Option<string> FormCollection.Get(FormCollection self, string name)
@@ -76,29 +115,6 @@ public Option<FormFile> FormCollection.GetFile(
 public List<FormFile> FormCollection.Files(FormCollection self)
 {
     return self.files;
-}
-
-private Option<nuint> FindBytes(string source, string value, nuint start)
-{
-    if (value.Length == 0 || value.Length > source.Length)
-    {
-        return Option.None;
-    }
-    nuint last = source.Length - value.Length;
-    nuint index = start;
-    while (index <= last)
-    {
-        nuint offset = 0;
-        while (offset < value.Length &&
-            StringByteAt(source, index + offset) ==
-                StringByteAt(value, offset))
-        {
-            offset += 1;
-        }
-        if (offset == value.Length) { return Option.Some(index); }
-        index += 1;
-    }
-    return Option.None;
 }
 
 private byte FormAsciiLower(byte value)
@@ -335,11 +351,139 @@ private FormCollection ParseUrlEncodedForm(string body)
     return new() { fields = fields, files = files };
 }
 
-private FormCollection ParseMultipartForm(
-    string body,
-    string contentType
+private void ValidateFormOptions(FormOptions options)
+{
+    if (options.MemoryBufferThreshold < 0 ||
+        options.MultipartBodyLengthLimit < 0 ||
+        options.MultipartFileLengthLimit < 0 ||
+        options.ValueLengthLimit < 0 ||
+        options.MultipartHeadersLengthLimit < 0 ||
+        options.MaxPartCount < 0 || options.MaxFileCount < 0 ||
+        options.MaxFieldCount < 0 || options.TemporaryDirectory.Length == 0)
+    {
+        throw new ArgumentException("FormOptions limits are invalid.");
+    }
+}
+
+private Option<nuint> FindMultipartBytes(
+    ReadOnlySpan<byte> source,
+    string value,
+    nuint start
 )
 {
+    nuint sourceLength = ByteSliceLen(source);
+    if (value.Length == 0 || value.Length > sourceLength ||
+        start > sourceLength - value.Length)
+    {
+        return Option.None;
+    }
+    nuint last = sourceLength - value.Length;
+    for (nuint index = start; index <= last; index += 1)
+    {
+        nuint offset = 0;
+        while (offset < value.Length &&
+            ByteSliceAt(source, index + offset) ==
+                StringByteAt(value, offset))
+        {
+            offset += 1;
+        }
+        if (offset == value.Length) { return Option.Some(index); }
+    }
+    return Option.None;
+}
+
+private Option<nuint> FindMultipartBoundary(
+    ReadOnlySpan<byte> source,
+    string marker,
+    nuint start
+)
+{
+    nuint cursor = start;
+    nuint sourceLength = ByteSliceLen(source);
+    while (cursor < sourceLength)
+    {
+        switch (FindMultipartBytes(source, marker, cursor))
+        {
+            case Option.None: { return Option.None; }
+            case Option.Some(found): {
+                nuint after = found + marker.Length;
+                if (after + 1 < sourceLength &&
+                    ((ByteSliceAt(source, after) == 45 &&
+                      ByteSliceAt(source, after + 1) == 45) ||
+                     (ByteSliceAt(source, after) == 13 &&
+                      ByteSliceAt(source, after + 1) == 10)))
+                {
+                    return Option.Some(found);
+                }
+                cursor = found + 1;
+            }
+        }
+    }
+    return Option.None;
+}
+
+private string MultipartString(
+    ReadOnlySpan<byte> source,
+    nuint start,
+    nuint end
+)
+{
+    switch (ByteSliceToString(source, start, end))
+    {
+        case Result.Ok(value): { return value; }
+        case Result.Err(error): { throw new FormatException(error); }
+    }
+}
+
+private NativeHandle SpillMultipartFile(
+    ReadOnlySpan<byte> body,
+    nuint start,
+    nuint end,
+    string directory
+)
+{
+    switch (NativeFileCreateTemporary(directory))
+    {
+        case Result.Ok(temporary): {
+            FileStream output = File.Create(
+                NativeFileTemporaryPath(temporary)
+            );
+            try
+            {
+                nuint cursor = start;
+                while (cursor < end)
+                {
+                    nuint count = end - cursor;
+                    if (count > 65536) { count = 65536; }
+                    output.Write(ByteSliceRange(body, cursor, count));
+                    cursor += count;
+                }
+                output.Flush();
+            }
+            finally
+            {
+                output.Close();
+            }
+            return temporary;
+        }
+        case Result.Err(error): { throw new IOException(error); }
+    }
+}
+
+private FormCollection ParseMultipartForm(
+    ReadOnlySpan<byte> body,
+    string contentType,
+    FormOptions options
+)
+{
+    ValidateFormOptions(options);
+    nuint bodyLength = ByteSliceLen(body);
+    if ((long)bodyLength > options.MultipartBodyLengthLimit)
+    {
+        throw new InvalidOperationException(
+            "Multipart body exceeds the configured limit."
+        );
+    }
     string boundary = "";
     switch (HeaderParameter(contentType, "boundary"))
     {
@@ -355,47 +499,69 @@ private FormCollection ParseMultipartForm(
 
     string marker = $"--{boundary}";
     string nextMarker = $"\r\n--{boundary}";
-    if (body.Length < marker.Length ||
-        body.Substring(0, marker.Length) != marker)
+    if (bodyLength < marker.Length)
     {
         throw new FormatException("Multipart body is missing its boundary.");
+    }
+    for (nuint index = 0; index < marker.Length; index += 1)
+    {
+        if (ByteSliceAt(body, index) != StringByteAt(marker, index))
+        {
+            throw new FormatException(
+                "Multipart body is missing its boundary."
+            );
+        }
     }
 
     List<FormField> fields = new();
     List<FormFile> files = new();
     nuint cursor = marker.Length;
     int partCount = 0;
+    int fileCount = 0;
+    int fieldCount = 0;
     bool complete = false;
     while (!complete)
     {
-        if (cursor + 1 < body.Length &&
-            StringByteAt(body, cursor) == 45 &&
-            StringByteAt(body, cursor + 1) == 45)
+        if (cursor + 1 < bodyLength &&
+            ByteSliceAt(body, cursor) == 45 &&
+            ByteSliceAt(body, cursor + 1) == 45)
         {
             complete = true;
             continue;
         }
-        if (cursor + 1 >= body.Length ||
-            StringByteAt(body, cursor) != 13 ||
-            StringByteAt(body, cursor + 1) != 10)
+        partCount += 1;
+        if (partCount > options.MaxPartCount)
+        {
+            throw new InvalidOperationException(
+                "Multipart form contains too many parts."
+            );
+        }
+        if (cursor + 1 >= bodyLength ||
+            ByteSliceAt(body, cursor) != 13 ||
+            ByteSliceAt(body, cursor + 1) != 10)
         {
             throw new FormatException("Malformed multipart boundary.");
         }
         cursor += 2;
         nuint headerEnd = 0;
-        switch (FindBytes(body, "\r\n\r\n", cursor))
+        switch (FindMultipartBytes(body, "\r\n\r\n", cursor))
         {
             case Option.Some(value): { headerEnd = value; }
             case Option.None: {
                 throw new FormatException("Multipart headers are incomplete.");
             }
         }
-        string headers = body.Substring(
-            cursor, headerEnd - cursor
-        );
+        if ((long)(headerEnd - cursor) >
+            options.MultipartHeadersLengthLimit)
+        {
+            throw new InvalidOperationException(
+                "Multipart headers exceed the configured limit."
+            );
+        }
+        string headers = MultipartString(body, cursor, headerEnd);
         nuint contentStart = headerEnd + 4;
         nuint contentEnd = 0;
-        switch (FindBytes(body, nextMarker, contentStart))
+        switch (FindMultipartBoundary(body, nextMarker, contentStart))
         {
             case Option.Some(value): { contentEnd = value; }
             case Option.None: {
@@ -427,36 +593,67 @@ private FormCollection ParseMultipartForm(
                 throw new FormatException("Multipart part name is missing.");
             }
         }
-        string bytes = body.Substring(
-            contentStart, contentEnd - contentStart
-        );
+        nuint contentLength = contentEnd - contentStart;
         switch (HeaderParameter(disposition, "filename"))
         {
             case Option.Some(fileName): {
+                fileCount += 1;
+                if (fileCount > options.MaxFileCount ||
+                    (long)contentLength >
+                        options.MultipartFileLengthLimit)
+                {
+                    throw new InvalidOperationException(
+                        "Multipart file exceeds the configured limits."
+                    );
+                }
                 string partContentType = "application/octet-stream";
                 switch (PartHeader(headers, "Content-Type"))
                 {
                     case Option.Some(value): { partContentType = value; }
                     case Option.None: {}
                 }
+                string bytes = "";
+                NativeHandle? temporaryFile = null;
+                if ((long)contentLength <= options.MemoryBufferThreshold)
+                {
+                    bytes = MultipartString(
+                        body, contentStart, contentEnd
+                    );
+                }
+                else
+                {
+                    temporaryFile = SpillMultipartFile(
+                        body, contentStart, contentEnd,
+                        options.TemporaryDirectory
+                    );
+                }
                 files.Add(new()
                 {
                     name = name,
                     fileName = fileName,
                     contentType = partContentType,
-                    bytes = bytes
+                    bytes = bytes,
+                    temporaryFile = temporaryFile,
+                    length = (long)contentLength
                 });
             }
             case Option.None: {
-                fields.Add(new() { name = name, value = bytes });
+                fieldCount += 1;
+                if (fieldCount > options.MaxFieldCount ||
+                    (long)contentLength > options.ValueLengthLimit)
+                {
+                    throw new InvalidOperationException(
+                        "Multipart field exceeds the configured limits."
+                    );
+                }
+                fields.Add(new()
+                {
+                    name = name,
+                    value = MultipartString(
+                        body, contentStart, contentEnd
+                    )
+                });
             }
-        }
-        partCount += 1;
-        if (partCount > 1024)
-        {
-            throw new InvalidOperationException(
-                "Multipart form contains too many parts."
-            );
         }
         cursor = contentEnd + 2 + marker.Length;
     }
@@ -464,6 +661,11 @@ private FormCollection ParseMultipartForm(
 }
 
 public FormCollection Request.ReadForm(Request self)
+{
+    return self.ReadForm(FormOptions());
+}
+
+public FormCollection Request.ReadForm(Request self, FormOptions options)
 {
     string contentType = self.ContentType;
     string body = self.Body;
@@ -473,7 +675,7 @@ public FormCollection Request.ReadForm(Request self)
     }
     if (FormMediaTypeIs(contentType, "multipart/form-data"))
     {
-        return ParseMultipartForm(body, contentType);
+        return ParseMultipartForm(self.BodyBytes(), contentType, options);
     }
     throw new InvalidOperationException(
         "The request does not contain form data."

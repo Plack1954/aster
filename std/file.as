@@ -18,6 +18,14 @@ public extern Result<NativeHandle, IoError> NativeFileOpen(
     string mode
 );
 
+// The returned shared handle owns the temporary path. Its final release
+// removes the file.
+public extern Result<NativeHandle, IoError> NativeFileCreateTemporary(
+    string directory
+);
+
+public extern string NativeFileTemporaryPath(NativeHandle file);
+
 public extern Result<string, IoError> NativeFileReadAll(
     NativeHandle file
 );

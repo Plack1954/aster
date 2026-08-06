@@ -9,6 +9,7 @@ using Lime.Markdown;
 using Lime.Static;
 using Aster.Memory;
 using Aster.Html;
+using System.IO;
 using System.Text;
 
 struct ApplicationOwner
@@ -711,9 +712,54 @@ private bool MultipartFormsWork()
     switch (form.GetFile("image"))
     {
         case Option.Some(file): {
-            return file.FileName == "mark.svg" &&
-                file.ContentType == "image/svg+xml" &&
-                file.Length == 22;
+            if (file.FileName != "mark.svg" ||
+                file.ContentType != "image/svg+xml" ||
+                file.Length != 22 || !file.IsBuffered)
+            {
+                return false;
+            }
+        }
+        case Option.None: { return false; }
+    }
+
+    FormOptions options = FormOptions();
+    options.MemoryBufferThreshold = 4;
+    FormCollection spilled = upload.ReadForm(options);
+    switch (spilled.GetFile("image"))
+    {
+        case Option.Some(file): {
+            if (file.FileName != "mark.svg" ||
+                file.ContentType != "image/svg+xml" ||
+                file.Length != 22 || file.IsBuffered)
+            {
+                return false;
+            }
+            Stream stream = file.OpenReadStream();
+            StringBuilder read = new();
+            try
+            {
+                List<byte> bytes = stream.Read(64);
+                foreach (byte value in bytes) { read.AppendByte(value); }
+            }
+            finally
+            {
+                stream.Close();
+            }
+            if (read.ToString() != "<svg>binary-safe</svg>")
+            {
+                return false;
+            }
+            FormOptions limited = FormOptions();
+            limited.MultipartFileLengthLimit = 21;
+            try
+            {
+                FormCollection rejected = upload.ReadForm(limited);
+            }
+            catch (Exception error)
+            {
+                return true;
+            }
+            return false;
         }
         case Option.None: { return false; }
     }

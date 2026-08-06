@@ -572,6 +572,9 @@ Implemented DOM slice:
   getters, `Clone`, and `GetRawText`;
 - bounded `JsonSerializer.Serialize` overloads for strings, nullable strings,
   Boolean and numeric scalars, and `JsonElement`;
+- `JsonWriter`, an Aster-owned forward-only text writer with structural
+  object/array validation, property names, escaped strings, Boolean/null and
+  numeric values, and validated `JsonElement` insertion;
 - strict JSON grammar, UTF-8 validation, escape decoding, and a depth limit;
 - cheap immutable element views over the reference-counted source string,
   shared by the VM and generated-C paths.
@@ -583,9 +586,11 @@ and returns `JsonValueKind.Undefined` through the output for a missing member.
 Generic typed serialization remains deliberately unimplemented until its
 non-reflection strategy is settled.
 
-`Utf8JsonWriter` remains pending a real `Stream` or `IBufferWriter<byte>`
-destination. The .NET writer is forward-only and destination-backed; Aster
-will not replace that contract with a made-up `ToString()` or result getter.
+`JsonWriter` deliberately owns a `StringBuilder` and returns one completed JSON
+string; it is the bounded intermediate needed by Lime today. The distinct
+`Utf8JsonWriter` name remains pending a byte destination such as `Stream` or
+`IBufferWriter<byte>` so that Aster does not misrepresent .NET's
+destination-backed contract.
 
 ## 8. Aster-native and non-BCL libraries
 

@@ -279,7 +279,21 @@ the application before deleting any service object borrowed by its handlers.
 
 ## Optional modules
 
-- `Lime.Forms` parses URL-encoded and multipart forms.
+- `Lime.Forms` parses URL-encoded and multipart forms. Multipart parsing walks
+  the borrowed request bytes incrementally, enforces configurable body,
+  header, field, file, and part-count limits, and spills files beyond
+  `MemoryBufferThreshold` to RAII-owned temporary files:
+
+  ```aster
+  FormOptions options = FormOptions();
+  options.MemoryBufferThreshold = 64 * 1024;
+  options.MultipartFileLengthLimit = 16 * 1024 * 1024;
+  FormCollection form = request.ReadForm(options);
+  ```
+
+  `FormFile.OpenReadStream()` has the same API for buffered and spilled files.
+  Copies share temporary-file ownership; the final owner release removes the
+  spill file.
 - `Lime.Sessions` provides explicit server-side sessions.
 - `Lime.Static` mounts safe static-file roots.
 - `Lime.Browser` adds optional browser/Wasm assets and hydration support.

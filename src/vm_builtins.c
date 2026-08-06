@@ -11,9 +11,13 @@
 
 #if defined(_WIN32)
 #include <direct.h>
+#include <fcntl.h>
+#include <io.h>
+#include <process.h>
 #include <sys/stat.h>
 #else
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -235,9 +239,22 @@ typedef struct NativeFile {
     FILE *stream;
 } NativeFile;
 
+typedef struct NativeTemporaryFile {
+    char *path;
+} NativeTemporaryFile;
+
 static void native_file_drop(void *handle) {
     NativeFile *file = handle;
     if (file->stream != NULL) (void)fclose(file->stream);
+    free(file);
+}
+
+static void native_temporary_file_drop(void *handle) {
+    NativeTemporaryFile *file = handle;
+    if (file->path != NULL) {
+        (void)remove(file->path);
+        free(file->path);
+    }
     free(file);
 }
 
@@ -1071,6 +1088,89 @@ static LangNativeResult native_file_open_value(
         };
     }
     return (LangNativeResult){true, tagged, NULL};
+}
+
+static LangNativeResult native_file_create_temporary_value(
+    LangVM *vm, const LangValue *args, size_t arg_count) {
+    char directory[4096];
+    if (arg_count != 1U ||
+        !native_path_string(&args[0], directory, sizeof(directory)))
+        return native_result_error(
+            vm, "temporary-file directory is invalid");
+
+    size_t directory_length = strlen(directory);
+    bool has_separator = native_path_separator(
+        (unsigned char)directory[directory_length - 1U]);
+    char path[4096];
+    for (unsigned attempt = 0U; attempt < 128U; ++attempt) {
+        uint64_t token = (uint64_t)time(NULL) ^
+#if defined(_WIN32)
+            ((uint64_t)(unsigned)_getpid() << 32U) ^
+#else
+            ((uint64_t)(unsigned)getpid() << 32U) ^
+#endif
+            ((uint64_t)attempt * UINT64_C(0x9e3779b97f4a7c15));
+        int length = snprintf(
+            path, sizeof(path), "%s%s.aster-upload-%016" PRIx64 ".tmp",
+#if defined(_WIN32)
+            directory, has_separator ? "" : "\\", token);
+#else
+            directory, has_separator ? "" : "/", token);
+#endif
+        if (length <= 0 || (size_t)length >= sizeof(path))
+            return native_result_error(
+                vm, "temporary-file path is too long");
+#if defined(_WIN32)
+        int descriptor = _open(
+            path, _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY,
+            _S_IREAD | _S_IWRITE);
+        if (descriptor >= 0) (void)_close(descriptor);
+#else
+        int descriptor = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+        if (descriptor >= 0) (void)close(descriptor);
+#endif
+        if (descriptor < 0) {
+            if (errno == EEXIST) continue;
+            return native_result_error(
+                vm, "could not create temporary file");
+        }
+
+        NativeTemporaryFile *file = vm_allocate(1U, sizeof(*file));
+        file->path = vm_allocate((size_t)length + 1U, 1U);
+        memcpy(file->path, path, (size_t)length + 1U);
+        LangValue handle;
+        if (!lang_native_handle_value(
+                vm, file, native_temporary_file_drop, &handle)) {
+            native_temporary_file_drop(file);
+            return (LangNativeResult){
+                false, {.tag=LANG_VALUE_UNIT},
+                "could not wrap temporary-file handle"
+            };
+        }
+        LangValue tagged;
+        if (!lang_result_ok_value(vm, handle, &tagged)) {
+            lang_value_drop(vm, &handle);
+            return (LangNativeResult){
+                false, {.tag=LANG_VALUE_UNIT},
+                "could not construct temporary-file Result"
+            };
+        }
+        return (LangNativeResult){true, tagged, NULL};
+    }
+    return native_result_error(
+        vm, "could not allocate a unique temporary file");
+}
+
+static LangNativeResult native_file_temporary_path_value(
+    LangVM *vm, const LangValue *args, size_t arg_count) {
+    NativeTemporaryFile *file = arg_count == 1U
+        ? lang_native_handle_data(&args[0]) : NULL;
+    if (file == NULL || file->path == NULL)
+        return (LangNativeResult){
+            false, {.tag=LANG_VALUE_UNIT},
+            "temporary-file path expects one live handle"
+        };
+    return native_path_string_result(vm, file->path, strlen(file->path));
 }
 
 static LangNativeResult native_file_read_all_value(
@@ -1994,6 +2094,10 @@ void lang_vm_register_builtins(LangVM *vm) {
                                native_checked_value, 1U);
     (void)lang_register_native(vm, "NativeFileOpen",
                                native_file_open_value, 2U);
+    (void)lang_register_native(vm, "NativeFileCreateTemporary",
+                               native_file_create_temporary_value, 1U);
+    (void)lang_register_native(vm, "NativeFileTemporaryPath",
+                               native_file_temporary_path_value, 1U);
     (void)lang_register_native(vm, "NativeFileReadAll",
                                native_file_read_all_value, 1U);
     (void)lang_register_native(vm, "NativeFileWrite",

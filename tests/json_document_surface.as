@@ -13,6 +13,21 @@ private bool Rejects(string json)
     return false;
 }
 
+private bool JsonWriterRejectsInvalidOrder()
+{
+    try
+    {
+        JsonWriter writer = JsonWriter.Create();
+        writer.WriteStartObject();
+        writer.WriteStringValue("missing-name");
+    }
+    catch (Exception error)
+    {
+        return true;
+    }
+    return false;
+}
+
 int main()
 {
     string source = "{\"name\":\"Aster\\nLang\",\"count\":42,\"large\":9223372036854775807,\"ratio\":1.25e2,\"ready\":true,\"missing\":null,\"items\":[1,{\"ok\":false},3],\"escaped\":\"\\u0041\\uD83D\\uDE00\",\"duplicate\":1,\"duplicate\":2}";
@@ -87,5 +102,25 @@ int main()
     if (JsonSerializer.Serialize(root.GetProperty("items")) !=
         "[1,{\"ok\":false},3]")
         { return 32; }
+
+    JsonWriter writer = JsonWriter.Create();
+    writer.WriteStartObject();
+    writer.WritePropertyName("message");
+    writer.WriteStringValue("A\n\"<&'😀");
+    writer.WritePropertyName("items");
+    writer.WriteStartArray();
+    writer.WriteNumberValue(42);
+    writer.WriteBooleanValue(true);
+    writer.WriteNullValue();
+    writer.WriteValue(JsonElement.Parse("{\"nested\":1}"));
+    writer.WriteEndArray();
+    writer.WriteEndObject();
+    string written = writer.ToString();
+    if (written !=
+        "{\"message\":\"A\\n\\\"\\u003C\\u0026\\u0027\\uD83D\\uDE00\",\"items\":[42,true,null,{\"nested\":1}]}"
+    ) { return 35; }
+    if (JsonDocument.Parse(written).RootElement.GetProperty("items")
+        .GetArrayLength() != 4) { return 36; }
+    if (!JsonWriterRejectsInvalidOrder()) { return 37; }
     return 0;
 }

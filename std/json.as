@@ -31,6 +31,38 @@ public struct JsonDocument
 
 public struct JsonSerializer {}
 
+enum JsonWriterContainer
+{
+    Object,
+    Array,
+}
+
+struct JsonWriterFrame
+{
+    JsonWriterContainer Container;
+    int ValueCount;
+    bool ExpectsValue;
+}
+
+// A forward-only structural writer. It owns its output and rejects invalid
+// object/array transitions instead of emitting malformed JSON.
+public struct JsonWriter
+{
+    StringBuilder Output;
+    List<JsonWriterFrame> Frames;
+    bool RootWritten;
+}
+
+public JsonWriter JsonWriter.Create()
+{
+    return new()
+    {
+        Output = new(),
+        Frames = new(),
+        RootWritten = false
+    };
+}
+
 struct JsonParser
 {
     string Source;
@@ -617,6 +649,194 @@ private string JsonValidateNumberText(string value)
     JsonElement parsed = JsonParseComplete(value);
     if (parsed.ValueKind != JsonValueKind.Number) { JsonFail(); }
     return value;
+}
+
+private void JsonWriterBeforeValue(ref JsonWriter writer)
+{
+    if (writer.Frames.Count == 0)
+    {
+        if (writer.RootWritten)
+        {
+            throw new InvalidOperationException(
+                "A JSON writer can contain only one root value."
+            );
+        }
+        writer.RootWritten = true;
+        return;
+    }
+
+    nuint index = writer.Frames.Count - 1;
+    JsonWriterFrame frame = writer.Frames[index];
+    switch (frame.Container)
+    {
+        case JsonWriterContainer.Array: {
+            if (frame.ValueCount != 0) { writer.Output.Append(","); }
+            frame.ValueCount += 1;
+        }
+        case JsonWriterContainer.Object: {
+            if (!frame.ExpectsValue)
+            {
+                throw new InvalidOperationException(
+                    "WritePropertyName must precede an object value."
+                );
+            }
+            frame.ExpectsValue = false;
+            frame.ValueCount += 1;
+        }
+    }
+    writer.Frames.Set(index, frame);
+}
+
+public void JsonWriter.WriteStartObject(ref JsonWriter self)
+{
+    JsonWriterBeforeValue(ref self);
+    self.Output.Append("{");
+    self.Frames.Add(new()
+    {
+        Container = JsonWriterContainer.Object,
+        ValueCount = 0,
+        ExpectsValue = false
+    });
+}
+
+public void JsonWriter.WriteEndObject(ref JsonWriter self)
+{
+    if (self.Frames.Count == 0)
+    {
+        throw new InvalidOperationException("No JSON object is open.");
+    }
+    nuint index = self.Frames.Count - 1;
+    JsonWriterFrame frame = self.Frames[index];
+    if (frame.Container != JsonWriterContainer.Object || frame.ExpectsValue)
+    {
+        throw new InvalidOperationException(
+            "The current JSON object is incomplete."
+        );
+    }
+    self.Frames.RemoveAt(index);
+    self.Output.Append("}");
+}
+
+public void JsonWriter.WriteStartArray(ref JsonWriter self)
+{
+    JsonWriterBeforeValue(ref self);
+    self.Output.Append("[");
+    self.Frames.Add(new()
+    {
+        Container = JsonWriterContainer.Array,
+        ValueCount = 0,
+        ExpectsValue = false
+    });
+}
+
+public void JsonWriter.WriteEndArray(ref JsonWriter self)
+{
+    if (self.Frames.Count == 0)
+    {
+        throw new InvalidOperationException("No JSON array is open.");
+    }
+    nuint index = self.Frames.Count - 1;
+    JsonWriterFrame frame = self.Frames[index];
+    if (frame.Container != JsonWriterContainer.Array)
+    {
+        throw new InvalidOperationException(
+            "The current JSON container is not an array."
+        );
+    }
+    self.Frames.RemoveAt(index);
+    self.Output.Append("]");
+}
+
+public void JsonWriter.WritePropertyName(
+    ref JsonWriter self,
+    string name
+)
+{
+    if (self.Frames.Count == 0)
+    {
+        throw new InvalidOperationException(
+            "JSON properties require an open object."
+        );
+    }
+    nuint index = self.Frames.Count - 1;
+    JsonWriterFrame frame = self.Frames[index];
+    if (frame.Container != JsonWriterContainer.Object || frame.ExpectsValue)
+    {
+        throw new InvalidOperationException(
+            "The JSON object is not ready for a property name."
+        );
+    }
+    if (frame.ValueCount != 0) { self.Output.Append(","); }
+    JsonAppendEscapedString(ref self.Output, name);
+    self.Output.Append(":");
+    frame.ExpectsValue = true;
+    self.Frames.Set(index, frame);
+}
+
+private void JsonWriterWriteText(
+    ref JsonWriter writer,
+    string value
+)
+{
+    JsonWriterBeforeValue(ref writer);
+    writer.Output.Append(value);
+}
+
+public void JsonWriter.WriteStringValue(ref JsonWriter self, string value)
+{
+    JsonWriterBeforeValue(ref self);
+    JsonAppendEscapedString(ref self.Output, value);
+}
+
+public void JsonWriter.WriteBooleanValue(ref JsonWriter self, bool value)
+{
+    JsonWriterWriteText(ref self, value ? "true" : "false");
+}
+
+public void JsonWriter.WriteNullValue(ref JsonWriter self)
+{
+    JsonWriterWriteText(ref self, "null");
+}
+
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, sbyte value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, short value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, int value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, long value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, byte value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, ushort value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, uint value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, ulong value)
+{ JsonWriterWriteText(ref self, value.ToString()); }
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, float value)
+{
+    JsonWriterWriteText(ref self, JsonValidateNumberText(value.ToString()));
+}
+public void JsonWriter.WriteNumberValue(ref JsonWriter self, double value)
+{
+    JsonWriterWriteText(ref self, JsonValidateNumberText(value.ToString()));
+}
+
+public void JsonWriter.WriteValue(ref JsonWriter self, JsonElement value)
+{
+    JsonWriterWriteText(ref self, value.GetRawText());
+}
+
+public string JsonWriter.ToString(JsonWriter self)
+{
+    if (!self.RootWritten || self.Frames.Count != 0)
+    {
+        throw new InvalidOperationException(
+            "The JSON writer does not contain one complete value."
+        );
+    }
+    return self.Output.ToString();
 }
 
 public string JsonSerializer.Serialize(string value)

@@ -1,5 +1,21 @@
 using System.IO;
 
+private string CreateScopedTemporaryFile(string directory)
+{
+    switch (NativeFileCreateTemporary(directory))
+    {
+        case Result.Ok(file): {
+            string path = NativeFileTemporaryPath(file);
+            if (!File.Exists(path))
+            {
+                throw new IOException("temporary file was not created");
+            }
+            return path;
+        }
+        case Result.Err(error): { throw new IOException(error); }
+    }
+}
+
 int main()
 {
     if (Path.Combine("/srv", "aster") != "/srv/aster") { return 11; }
@@ -53,6 +69,8 @@ int main()
     Directory.CreateDirectory(directory);
     if (!Directory.Exists(directory)) { return 1; }
     if (File.Exists(directory)) { return 2; }
+    string temporaryPath = CreateScopedTemporaryFile(directory);
+    if (File.Exists(temporaryPath)) { return 43; }
 
     string originalDirectory = Directory.GetCurrentDirectory();
     Directory.SetCurrentDirectory(directory);

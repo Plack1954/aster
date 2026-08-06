@@ -177,6 +177,12 @@ worktree:
   body, including embedded zero bytes. `WebApplication` defaults to a 1 MiB
   body policy and rejects larger bodies with 413 before filters or handlers;
   adapter limits remain responsible for bounding pre-dispatch buffering.
+- Multipart form parsing consumes that borrowed span with a forward byte
+  cursor. It materializes field/header strings only as needed, streams file
+  ranges beyond a configurable memory threshold into 64 KiB writes, and
+  enforces explicit body, header, value, file, file-count, field-count, and
+  part-count limits. Spill paths are owned by shared native handles and are
+  deleted on final release.
 - `WebApplication.MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapHead`, and
   `MapMethods` accept either `Response` or `Task<Response>` handlers under the
   same names. `DispatchAsync` executes both shapes, preserves selected route
@@ -237,7 +243,9 @@ application architecture is not yet the target design:
    bound service methods when their delegate is asynchronous. H2O's current
    `ServeAsync` loop awaits one handler at a time;
    its event loop is not yet integrated with Aster's executor.
-7. Request bodies remain transport-buffered before dispatch. The core owns the
+7. Request bodies remain transport-buffered before dispatch. Multipart
+   consumption is incremental over that buffer and can spill uploaded files,
+   but it is not socket-level request streaming. The core owns the
    binary-capable storage and exposes both the compatibility `Body` string and
    a borrowed `BodyBytes` span. CurrentHttp reads the declared body completely
    during native request parsing, and H2O exposes its already-buffered request
