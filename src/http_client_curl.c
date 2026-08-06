@@ -23,7 +23,21 @@ typedef struct CurlHttpResponse {
     bool header_limit_exceeded;
 } CurlHttpResponse;
 
+typedef struct CurlHttpRequest {
+    CURL *easy;
+    struct curl_slist *headers;
+    char *method;
+    char *url;
+    unsigned char *body;
+    CurlHttpResponse *response;
+    CURLcode result;
+    char error[CURL_ERROR_SIZE];
+    bool pending;
+    bool completed;
+} CurlHttpRequest;
+
 static bool curl_initialized = false;
+static CURLM *curl_multi = NULL;
 
 static void curl_http_response_drop(void *data) {
     CurlHttpResponse *response = data;
@@ -32,6 +46,32 @@ static void curl_http_response_drop(void *data) {
     free(response->headers);
     free(response->effective_url);
     free(response);
+}
+
+static void curl_http_request_cleanup_transfer(CurlHttpRequest *request) {
+    if (request->easy != NULL) {
+        if (request->pending && curl_multi != NULL)
+            (void)curl_multi_remove_handle(curl_multi, request->easy);
+        curl_easy_cleanup(request->easy);
+        request->easy = NULL;
+    }
+    request->pending = false;
+    curl_slist_free_all(request->headers);
+    request->headers = NULL;
+    free(request->method);
+    request->method = NULL;
+    free(request->url);
+    request->url = NULL;
+    free(request->body);
+    request->body = NULL;
+}
+
+static void curl_http_request_drop(void *data) {
+    CurlHttpRequest *request = data;
+    if (request == NULL) return;
+    curl_http_request_cleanup_transfer(request);
+    curl_http_response_drop(request->response);
+    free(request);
 }
 
 static bool curl_append(
@@ -265,6 +305,203 @@ static LangNativeResult native_http_client_send(
     return curl_typed_success(vm, handle);
 }
 
+static void curl_complete_request(CurlHttpRequest *request, CURLcode result) {
+    if (request == NULL || !request->pending) return;
+    request->pending = false;
+    request->result = result;
+    if (result == CURLE_OK)
+        request->result = curl_easy_getinfo(
+            request->easy, CURLINFO_RESPONSE_CODE,
+            &request->response->status_code);
+    char *effective = NULL;
+    if (request->result == CURLE_OK)
+        request->result = curl_easy_getinfo(
+            request->easy, CURLINFO_EFFECTIVE_URL, &effective);
+    if (request->result == CURLE_OK && effective != NULL) {
+        size_t length = strlen(effective);
+        request->response->effective_url = malloc(length + 1U);
+        if (request->response->effective_url == NULL)
+            request->result = CURLE_OUT_OF_MEMORY;
+        else
+            memcpy(request->response->effective_url, effective, length + 1U);
+    }
+    (void)curl_multi_remove_handle(curl_multi, request->easy);
+    curl_http_request_cleanup_transfer(request);
+    request->completed = true;
+}
+
+static void curl_multi_drain(void) {
+    int remaining = 0;
+    CURLMsg *message;
+    while ((message = curl_multi_info_read(curl_multi, &remaining)) != NULL) {
+        if (message->msg != CURLMSG_DONE) continue;
+        CurlHttpRequest *request = NULL;
+        (void)curl_easy_getinfo(
+            message->easy_handle, CURLINFO_PRIVATE, &request);
+        curl_complete_request(request, message->data.result);
+    }
+}
+
+static LangNativeResult native_http_client_start(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    LangStringView method;
+    LangStringView url;
+    LangStringView request_headers;
+    LangByteSlice body;
+    if (count != 7U ||
+        !lang_value_string_view(&args[0], &method) ||
+        !lang_value_string_view(&args[1], &url) ||
+        !lang_value_string_view(&args[2], &request_headers) ||
+        !lang_value_byte_slice(&args[3], &body) ||
+        args[4].tag != LANG_VALUE_I64 || args[4].as.i64 < 0 ||
+        args[5].tag != LANG_VALUE_I64 || args[5].as.i64 < 0 ||
+        args[6].tag != LANG_VALUE_BOOL)
+        return lang_native_result_error(
+            "NativeHttpClientStart received invalid arguments");
+    if (!curl_initialized || curl_multi == NULL)
+        return curl_typed_error(vm, "libcurl initialization failed");
+    if ((uint64_t)args[5].as.i64 > (uint64_t)SIZE_MAX ||
+        body.length > (size_t)INT64_MAX)
+        return curl_typed_error(vm, "HTTP request or response limit is too large");
+
+    CurlHttpRequest *request = calloc(1U, sizeof(*request));
+    if (request != NULL) {
+        request->easy = curl_easy_init();
+        request->response = calloc(1U, sizeof(*request->response));
+        request->method = curl_copy_text(method);
+        request->url = curl_copy_text(url);
+        if (body.length != 0U) {
+            request->body = malloc(body.length);
+            if (request->body != NULL)
+                memcpy(request->body, body.data, body.length);
+        }
+    }
+    if (request == NULL || request->easy == NULL ||
+        request->response == NULL || request->method == NULL ||
+        request->url == NULL || (body.length != 0U && request->body == NULL) ||
+        !curl_add_headers(request_headers, &request->headers)) {
+        curl_http_request_drop(request);
+        return curl_typed_error(vm, "could not allocate asynchronous HTTP request");
+    }
+    request->response->maximum_body_length = (size_t)args[5].as.i64;
+    (void)curl_easy_setopt(request->easy, CURLOPT_ERRORBUFFER, request->error);
+    (void)curl_easy_setopt(request->easy, CURLOPT_URL, request->url);
+    (void)curl_easy_setopt(request->easy, CURLOPT_CUSTOMREQUEST, request->method);
+    (void)curl_easy_setopt(request->easy, CURLOPT_NOSIGNAL, 1L);
+    (void)curl_easy_setopt(request->easy, CURLOPT_TIMEOUT_MS, args[4].as.i64);
+    (void)curl_easy_setopt(request->easy, CURLOPT_FOLLOWLOCATION,
+                           args[6].as.boolean ? 1L : 0L);
+    (void)curl_easy_setopt(request->easy, CURLOPT_MAXREDIRS, 10L);
+#if LIBCURL_VERSION_NUM >= 0x075500
+    (void)curl_easy_setopt(request->easy, CURLOPT_PROTOCOLS_STR, "http,https");
+    (void)curl_easy_setopt(request->easy, CURLOPT_REDIR_PROTOCOLS_STR,
+                           "http,https");
+#else
+    (void)curl_easy_setopt(request->easy, CURLOPT_PROTOCOLS,
+                           CURLPROTO_HTTP | CURLPROTO_HTTPS);
+    (void)curl_easy_setopt(request->easy, CURLOPT_REDIR_PROTOCOLS,
+                           CURLPROTO_HTTP | CURLPROTO_HTTPS);
+#endif
+    (void)curl_easy_setopt(request->easy, CURLOPT_USERAGENT, "Aster/0.1");
+    (void)curl_easy_setopt(request->easy, CURLOPT_WRITEFUNCTION, curl_body_write);
+    (void)curl_easy_setopt(request->easy, CURLOPT_WRITEDATA, request->response);
+    (void)curl_easy_setopt(request->easy, CURLOPT_HEADERFUNCTION,
+                           curl_header_write);
+    (void)curl_easy_setopt(request->easy, CURLOPT_HEADERDATA, request->response);
+    (void)curl_easy_setopt(request->easy, CURLOPT_PRIVATE, request);
+    if (request->headers != NULL)
+        (void)curl_easy_setopt(request->easy, CURLOPT_HTTPHEADER,
+                               request->headers);
+    if (body.length != 0U) {
+        (void)curl_easy_setopt(request->easy, CURLOPT_POSTFIELDS, request->body);
+        (void)curl_easy_setopt(request->easy, CURLOPT_POSTFIELDSIZE_LARGE,
+                               (curl_off_t)body.length);
+    }
+    CURLMcode added = curl_multi_add_handle(curl_multi, request->easy);
+    if (added != CURLM_OK) {
+        const char *message = curl_multi_strerror(added);
+        curl_http_request_drop(request);
+        return curl_typed_error(vm, message);
+    }
+    request->pending = true;
+    LangValue handle;
+    if (!lang_native_handle_value(vm, request, curl_http_request_drop, &handle)) {
+        curl_http_request_drop(request);
+        return curl_typed_error(vm, "could not allocate HTTP request handle");
+    }
+    return curl_typed_success(vm, handle);
+}
+
+static CurlHttpRequest *curl_request(const LangValue *args, size_t count) {
+    return count == 1U ? lang_native_handle_data(&args[0]) : NULL;
+}
+
+static LangNativeResult native_http_client_poll(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    (void)vm;
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL)
+        return lang_native_result_error("invalid HTTP request handle");
+    if (request->pending) {
+        int running = 0;
+        CURLMcode result = curl_multi_perform(curl_multi, &running);
+        if (result != CURLM_OK) {
+            request->result = CURLE_FAILED_INIT;
+            (void)snprintf(request->error, sizeof(request->error), "%s",
+                           curl_multi_strerror(result));
+            curl_complete_request(request, request->result);
+        } else {
+            curl_multi_drain();
+        }
+    }
+    return (LangNativeResult){true,
+        {.tag=LANG_VALUE_I64, .as.i64=request->completed ? 1 : 0}, NULL};
+}
+
+static LangNativeResult native_http_client_cancel(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    (void)vm;
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL)
+        return lang_native_result_error("invalid HTTP request handle");
+    if (request->pending) {
+        request->result = CURLE_ABORTED_BY_CALLBACK;
+        (void)snprintf(request->error, sizeof(request->error),
+                       "HTTP request was canceled");
+        curl_complete_request(request, request->result);
+    }
+    return (LangNativeResult){true, {.tag=LANG_VALUE_UNIT}, NULL};
+}
+
+static LangNativeResult native_http_client_take_response(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL || !request->completed)
+        return curl_typed_error(vm, "HTTP request has not completed");
+    if (request->result != CURLE_OK) {
+        const char *message = request->response->body_limit_exceeded
+            ? "HTTP response exceeded its configured body limit"
+            : request->response->header_limit_exceeded
+                ? "HTTP response headers exceeded 1 MiB"
+                : request->error[0] != '\0' ? request->error
+                : curl_easy_strerror(request->result);
+        return curl_typed_error(vm, message);
+    }
+    CurlHttpResponse *response = request->response;
+    request->response = NULL;
+    LangValue handle;
+    if (!lang_native_handle_value(vm, response, curl_http_response_drop,
+                                  &handle)) {
+        curl_http_response_drop(response);
+        return curl_typed_error(vm, "could not allocate HTTP response handle");
+    }
+    return curl_typed_success(vm, handle);
+}
+
 static CurlHttpResponse *curl_response(
     const LangValue *args, size_t count
 ) {
@@ -341,8 +578,11 @@ static LangNativeResult native_http_response_copy_body(
 }
 
 void lang_register_http_client_natives(LangVM *vm) {
-    if (!curl_initialized)
+    if (!curl_initialized) {
         curl_initialized = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+        if (curl_initialized) curl_multi = curl_multi_init();
+        if (curl_multi == NULL) curl_initialized = false;
+    }
     (void)lang_register_native(
         vm, "NativeHttpClientSend", native_http_client_send, 7U);
     (void)lang_register_native(
@@ -357,6 +597,15 @@ void lang_register_http_client_natives(LangVM *vm) {
     (void)lang_register_native(
         vm, "NativeHttpClientResponseCopyBody",
         native_http_response_copy_body, 2U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStart", native_http_client_start, 7U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientPoll", native_http_client_poll, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientCancel", native_http_client_cancel, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientTakeResponse",
+        native_http_client_take_response, 1U);
 }
 
 #else
@@ -403,6 +652,14 @@ void lang_register_http_client_natives(LangVM *vm) {
         vm, "NativeHttpClientResponseBodyLength", curl_unavailable_direct, 1U);
     (void)lang_register_native(
         vm, "NativeHttpClientResponseCopyBody", curl_unavailable, 2U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStart", curl_unavailable, 7U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientPoll", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientCancel", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientTakeResponse", curl_unavailable, 1U);
 }
 
 #endif

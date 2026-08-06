@@ -12,7 +12,7 @@ private string TestOrigin()
     }
 }
 
-int main()
+async Task<int> main()
 {
     string origin = TestOrigin();
     HttpClient client = new HttpClient();
@@ -61,5 +61,32 @@ int main()
         limited = error.Message.Contains("body limit");
     }
     if (!limited) { return 5; }
+
+    Task<HttpResponseMessage> first = client.GetAsync($"{origin}/slow");
+    Task<HttpResponseMessage> second = client.GetAsync($"{origin}/slow");
+    HttpResponseMessage firstResponse = await first;
+    HttpResponseMessage secondResponse = await second;
+    if (firstResponse.Content.ReadAsString() != "slow" ||
+        secondResponse.Content.ReadAsString() != "slow")
+    {
+        return 6;
+    }
+
+    CancellationTokenSource source = new();
+    CancellationToken token = source.Token;
+    Task<HttpResponseMessage> canceled = client.GetAsync(
+        $"{origin}/slow", token
+    );
+    source.Cancel();
+    bool observedCancellation = false;
+    try
+    {
+        HttpResponseMessage ignoredCancellation = await canceled;
+    }
+    catch (OperationCanceledException error)
+    {
+        observedCancellation = error.Message.Contains("canceled");
+    }
+    if (!observedCancellation) { return 7; }
     return 0;
 }

@@ -138,9 +138,9 @@ The C#-shaped front end, typed IR, VM, and generated-C backend implement
 cleanup, and cooperative `CancellationToken` behavior. Continue
 `docs/async.md`:
 
-- integrate the implemented synchronous libcurl `HttpClient` foundation with
-  the executor through libcurl multi handles and expose `SendAsync`/`GetAsync`;
-- make asynchronous I/O cancellation-aware;
+- replace the implemented timer-driven libcurl-multi polling bridge with native
+  socket-readiness registration if profiling justifies the added executor API;
+- add streaming HTTP request/response bodies on top of the async transport;
 - add cancellation registrations and linked-token sources when real code needs
   them;
 - keep Lime's implemented `Task<Response>` handler and `DispatchAsync` paths

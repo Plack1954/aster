@@ -11,6 +11,21 @@ private extern Result<NativeHandle, string> NativeHttpClientSend(
     long maximumResponseBodyBytes,
     bool followRedirects
 );
+private extern Result<NativeHandle, string> NativeHttpClientStart(
+    string method,
+    string requestUri,
+    string headers,
+    ReadOnlySpan<byte> body,
+    long timeoutMilliseconds,
+    long maximumResponseBodyBytes,
+    bool followRedirects
+);
+private extern long NativeHttpClientPoll(NativeHandle request);
+private extern void NativeHttpClientCancel(NativeHandle request);
+private extern Result<NativeHandle, string> NativeHttpClientTakeResponse(
+    NativeHandle request
+);
+private extern Task Task.Delay(int milliseconds);
 
 private extern long NativeHttpClientResponseStatus(NativeHandle response);
 private extern string NativeHttpClientResponseHeaders(NativeHandle response);
@@ -121,12 +136,10 @@ private nuint HttpCountOrThrow(Result<nuint, string> result)
     }
 }
 
-public HttpResponseMessage HttpClient.Send(
-    HttpClient self,
+private void ValidateHttpRequest(
+    HttpClient client,
     string method,
-    string requestUri,
-    string headers,
-    ReadOnlySpan<byte> body
+    string requestUri
 )
 {
     if (method.Length == 0) { throw new ArgumentException("method is empty"); }
@@ -134,28 +147,22 @@ public HttpResponseMessage HttpClient.Send(
     {
         throw new ArgumentException("requestUri is empty");
     }
-    if (self.TimeoutMilliseconds < 0)
+    if (client.TimeoutMilliseconds < 0)
     {
         throw new ArgumentException("TimeoutMilliseconds cannot be negative");
     }
-    if (self.MaximumResponseBodyBytes < 0)
+    if (client.MaximumResponseBodyBytes < 0)
     {
         throw new ArgumentException(
             "MaximumResponseBodyBytes cannot be negative"
         );
     }
+}
 
-    NativeHandle nativeResponse = HttpResultOrThrow(
-        NativeHttpClientSend(
-            method,
-            requestUri,
-            headers,
-            body,
-            self.TimeoutMilliseconds,
-            self.MaximumResponseBodyBytes,
-            self.FollowRedirects
-        )
-    );
+private HttpResponseMessage MaterializeHttpResponse(
+    NativeHandle nativeResponse
+)
+{
     long bodyLength = NativeHttpClientResponseBodyLength(nativeResponse);
     Buffer data = Buffer.allocate(bodyLength);
     unsafe
@@ -178,6 +185,79 @@ public HttpResponseMessage HttpClient.Send(
     };
 }
 
+public HttpResponseMessage HttpClient.Send(
+    HttpClient self,
+    string method,
+    string requestUri,
+    string headers,
+    ReadOnlySpan<byte> body
+)
+{
+    ValidateHttpRequest(self, method, requestUri);
+
+    NativeHandle nativeResponse = HttpResultOrThrow(
+        NativeHttpClientSend(
+            method,
+            requestUri,
+            headers,
+            body,
+            self.TimeoutMilliseconds,
+            self.MaximumResponseBodyBytes,
+            self.FollowRedirects
+        )
+    );
+    return MaterializeHttpResponse(nativeResponse);
+}
+
+public async Task<HttpResponseMessage> HttpClient.SendAsync(
+    HttpClient self,
+    string method,
+    string requestUri,
+    string headers,
+    ReadOnlySpan<byte> body,
+    CancellationToken cancellationToken
+)
+{
+    ValidateHttpRequest(self, method, requestUri);
+    cancellationToken.ThrowIfCancellationRequested();
+    NativeHandle request = HttpResultOrThrow(
+        NativeHttpClientStart(
+            method,
+            requestUri,
+            headers,
+            body,
+            self.TimeoutMilliseconds,
+            self.MaximumResponseBodyBytes,
+            self.FollowRedirects
+        )
+    );
+    while (NativeHttpClientPoll(request) == 0)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            NativeHttpClientCancel(request);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        await Task.Delay(1);
+    }
+    return MaterializeHttpResponse(
+        HttpResultOrThrow(NativeHttpClientTakeResponse(request))
+    );
+}
+
+public async Task<HttpResponseMessage> HttpClient.SendAsync(
+    HttpClient self,
+    string method,
+    string requestUri,
+    string headers,
+    ReadOnlySpan<byte> body
+)
+{
+    return await self.SendAsync(
+        method, requestUri, headers, body, CancellationToken.None
+    );
+}
+
 private HttpResponseMessage HttpClient.SendWithoutBody(
     HttpClient self,
     string method,
@@ -195,6 +275,29 @@ private HttpResponseMessage HttpClient.SendWithoutBody(
 public HttpResponseMessage HttpClient.Get(HttpClient self, string requestUri)
 {
     return self.SendWithoutBody("GET", requestUri, "");
+}
+
+public async Task<HttpResponseMessage> HttpClient.GetAsync(
+    HttpClient self,
+    string requestUri,
+    CancellationToken cancellationToken
+)
+{
+    Buffer empty = Buffer.allocate(0);
+    unsafe
+    {
+        return await self.SendAsync(
+            "GET", requestUri, "", BufferAsSlice(empty), cancellationToken
+        );
+    }
+}
+
+public async Task<HttpResponseMessage> HttpClient.GetAsync(
+    HttpClient self,
+    string requestUri
+)
+{
+    return await self.GetAsync(requestUri, CancellationToken.None);
 }
 
 public HttpResponseMessage HttpClient.Delete(

@@ -65,7 +65,7 @@ features exist:
 | `out` parameters or an approved alternative | Numeric `TryParse` | Aster has `ref`, but `ref` is not the same contract as C# `out`. |
 | Static members on primitive aliases | `int.Parse`, `string.Join` | Static-call syntax exists, but primitive-owner support needs confirmation. |
 | Generic comparison/equality capability | collection search, sorting, dictionaries | Current generic constraints and comparer abstractions are incomplete. |
-| Native asynchronous I/O completion | `HttpClient`, streams | Async state machines and timers are implemented; externally completed native tasks and executor readiness polling remain pending. |
+| Native asynchronous I/O completion | `HttpClient`, streams | `HttpClient` uses shared libcurl-multi transfers driven by nonblocking executor-timer polls; generic native readiness registration and async streams remain pending. |
 
 The standard library should not compensate for these gaps with permanent
 names such as `StringLen` or `ListGet`. Implement the prerequisite or record a
@@ -548,28 +548,34 @@ real.
 
 ## 7. Native HTTP client
 
-`System.Net.Http` has a bounded synchronous native foundation backed by the
+`System.Net.Http` has a bounded native foundation backed by the
 optional libcurl component:
 
 - `new HttpClient()` with configurable `TimeoutMilliseconds`,
   `MaximumResponseBodyBytes`, and `FollowRedirects`;
 - `Get`, `Delete`, general `Send`, and byte/string `Post`;
+- `GetAsync` and general `SendAsync`, with optional cooperative
+  `CancellationToken`;
 - `HttpResponseMessage.StatusCode`, raw `Headers`, final `RequestUri`,
   `IsSuccessStatusCode`, and `EnsureSuccessStatusCode`;
 - owned `HttpContent` with `Length`, borrowed `ReadAsBytes`, and copied
   `ReadAsString`;
 - HTTP/HTTPS-only redirects, a ten-redirect ceiling, one-MiB response-header
   limit, bounded response bodies, and deterministic native-handle cleanup;
-- matching VM and generated-C behavior against a local binary/redirect/POST
-  fixture.
+- asynchronous transfers share a libcurl multi handle for concurrency and
+  connection reuse; request bytes are copied before the first suspension;
+- matching VM and generated-C behavior against a local
+  binary/redirect/POST/concurrency/cancellation fixture.
 
 `ASTER_ENABLE_CURL=OFF` builds typed unavailable native stubs instead of
 requiring libcurl. This is an implementation dependency of native
 `System.Net.Http`, not a language dependency. The current `Headers` spelling is
 a raw response-header block and request headers use a bounded raw block; typed
-header collections remain pending. `SendAsync`/`GetAsync`, streaming response
-consumption, cancellation, connection policy objects, cookies, proxies, and
-libcurl-multi executor integration are not yet implemented.
+header collections remain pending. Streaming response consumption, async
+uploads, connection policy objects, cookies, and proxies are not yet
+implemented. Multi transfers currently use a one-millisecond nonblocking poll
+through the existing timer executor; socket-readiness registration is a future
+efficiency refinement, not a semantic dependency.
 
 ## 8. JSON
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import time
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -24,6 +25,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(302, b"", (("Location", "/hello"),))
         elif self.path == "/large":
             self.send_bytes(200, b"0123456789abcdef")
+        elif self.path == "/slow":
+            time.sleep(0.15)
+            self.send_bytes(200, b"slow")
         else:
             self.send_bytes(404, b"missing")
 

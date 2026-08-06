@@ -68,7 +68,8 @@ cmake -S . -B build-no-curl -DASTER_ENABLE_CURL=OFF
 Libcurl is an optional standard-library transport dependency, not part of the
 Aster language semantics. Generated programs that use `System.Net.Http` link
 the Aster native runtime and libcurl; programs that do not reach that module do
-not require its API.
+not require its API. The native client provides synchronous calls plus
+libcurl-multi-backed `SendAsync`/`GetAsync` with cooperative cancellation.
 
 Run a source file:
 

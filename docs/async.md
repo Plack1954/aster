@@ -78,17 +78,21 @@ permission to destroy a running frame at an arbitrary instruction.
 3. VM task frames, executor, completion, exception, and cancellation behavior.
 4. Equivalent generated-C runtime and cleanup paths.
 5. Timers and `Task.Delay`.
-6. Libcurl-backed `HttpClient`: the bounded synchronous easy-handle foundation
-   is implemented; multi-handle executor integration remains pending.
+6. Libcurl-backed `HttpClient`: synchronous easy-handle calls and asynchronous
+   multi-handle transfers driven by executor timers are implemented.
 7. Lime handlers returning `Task<Response>` are implemented through the same
    `Map*` APIs and execute through `DispatchAsync`.
 8. Streaming and a controlled worker pool for genuinely blocking operations.
 
-Stages 1 through 5 and stage 7 are implemented. The optional native
-`System.Net.Http` component now provides synchronous GET/POST/general Send,
+Stages 1 through 7 are implemented. The optional native
+`System.Net.Http` component now provides synchronous GET/POST/general Send and
+asynchronous `SendAsync`/`GetAsync`,
 byte request and owned response bodies, headers, redirects, timeouts, response
-limits, and deterministic easy-handle cleanup in both backends. Libcurl-multi
-executor integration and the broader blocking-I/O strategy remain pending.
+limits, cancellation, shared libcurl-multi connection reuse, and deterministic
+handle cleanup in both backends. Pending multi transfers are advanced by short
+nonblocking executor-timer polls; native socket-readiness registration can
+later replace that bounded bridge without changing the public API. The broader
+blocking-I/O strategy remains pending.
 Typed IR records the
 public task
 return type, coroutine completion type, and explicit `await` instructions.
@@ -96,7 +100,8 @@ Generated C lowers async functions to state machines. The VM stores suspended
 locals, operand stack, and instruction pointer in heap-backed frames. Both
 executors support multiple pending timer tasks, continuation registration,
 immediate completion, fault capture/rethrow at `await`, and deterministic
-cleanup of a suspended frame.
+cleanup of a suspended frame. Async HTTP copies the request body into native
+request storage before suspension, so a borrowed caller span never escapes.
 
 `Task.FromResult` and `Task.CompletedTask()` are ordinary standard-library
 async functions. The language now supports C#-style static properties, so the
@@ -108,8 +113,8 @@ including strings, structs, lists, HTML, and response-shaped aggregates. A task
 retains one owned result, clones it for each successful `await`, and invokes a
 generated type-specific destructor when its final reference is released. VM
 tasks carry the corresponding normal `LangValue` results. Remaining 0.1 work
-includes executor integration for real asynchronous I/O, cancellation-aware
-I/O operations, registrations, and linked-token sources.
+includes native socket-readiness registration, cancellation registrations,
+linked-token sources, and async stream I/O.
 
 `Task.WhenAll` and `Task.WhenAny` accept `List<Task<T>>`; `WhenAll` also accepts
 `List<Task>`. `WhenAll` waits for every participating task, preserves input
