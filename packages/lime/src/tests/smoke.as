@@ -998,6 +998,9 @@ private bool StructuralRoutingWorks()
     reverse.MapGet("/compiled/fixed", LiteralRoute);
     reverse.MapGet("/compiled/{value:int}", ConstrainedRoute);
     reverse.MapGet("/compiled/{value}", ParameterRoute);
+    reverse.MapGet("/CASE/Current", LiteralRoute);
+    reverse.MapGet("/KNOWN/other", LiteralRoute);
+    reverse.MapGet("/{section}/fallback", HeadRoute);
     if (!TextResponseEquals(
             reverse.Dispatch(request("GET", "/compiled/fixed")),
             200, "literal"
@@ -1009,6 +1012,14 @@ private bool StructuralRoutingWorks()
         !TextResponseEquals(
             reverse.Dispatch(request("GET", "/compiled/aster")),
             200, "parameter"
+        ) ||
+        !TextResponseEquals(
+            reverse.Dispatch(request("GET", "/case/current")),
+            200, "literal"
+        ) ||
+        !TextResponseEquals(
+            reverse.Dispatch(request("GET", "/known/fallback")),
+            200, "head"
         ))
     {
         return false;

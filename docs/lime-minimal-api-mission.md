@@ -208,11 +208,13 @@ application architecture is not yet the target design:
 2. This first binding slice returns 400 when conversion fails after endpoint
    selection. Explicit query/header/body/form binding sources do not yet
    exist.
-3. Registration compiles routes into method-specific, precedence-ordered
-   buckets. Normal dispatch no longer scans endpoints for unrelated methods or
-   recomputes precedence. Matching within one method bucket remains a linear
-   candidate scan rather than a segment trie; the canonical endpoint graph is
-   still used for metadata, links, 405/`Allow`, and automatic OPTIONS.
+3. Registration compiles routes by HTTP method and first literal segment, with
+   precedence-ordered literal families and a dynamic-first fallback. Normal
+   dispatch no longer scans unrelated methods or literal path families and
+   does not recompute precedence. Matching deeper segments within the selected
+   family remains a linear candidate scan rather than a complete segment trie;
+   the canonical endpoint graph is still used for metadata, links,
+   405/`Allow`, and automatic OPTIONS.
 4. `UseFilter` is only a before-handler short circuit and `AfterHtml` transforms
    only HTML. Together they do not form general continuation middleware.
 5. Endpoint builders store names and descriptive metadata. `app.Links`

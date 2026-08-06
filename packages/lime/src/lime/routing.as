@@ -146,6 +146,24 @@ public struct RoutePattern
         }
     }
 
+    public Option<string> FirstLiteralSegment
+    {
+        get
+        {
+            if (this.segments.Count == 0)
+            {
+                return Option.None;
+            }
+            RouteSegment first = this.segments[0];
+            if (first.kind != RouteSegmentKind.Literal)
+            {
+                return Option.None;
+            }
+            Option<string> literal = Option.Some(first.value);
+            return literal;
+        }
+    }
+
     public readonly Option<string> SingleParameter(string path)
     {
         if (this.ParameterCount != 1 || !this.IsMatch(path))

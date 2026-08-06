@@ -675,15 +675,89 @@ class Route
     }
 }
 
+private List<Route> InsertRouteByPrecedence(
+    List<Route> routes,
+    Route route
+)
+{
+    nuint index = 0;
+    while (index < routes.Count)
+    {
+        Route current = routes[index];
+        if (route.pattern.ComparePrecedence(current.pattern) < 0)
+        {
+            break;
+        }
+        index += 1;
+    }
+    routes.Insert(index, route);
+    return routes;
+}
+
+private Option<Route> MatchOrderedRoutes(
+    List<Route> routes,
+    string path
+)
+{
+    foreach (Route route in routes)
+    {
+        if (route.pattern.IsMatch(path))
+        {
+            return Option.Some(route);
+        }
+    }
+    return Option.None;
+}
+
+private string FirstPathSegment(string path)
+{
+    if (path.Length <= 1) { return ""; }
+    nuint end = 1;
+    while (end < path.Length && path[end] != 47)
+    {
+        end += 1;
+    }
+    return StringSlice(path, 1, end);
+}
+
+class RouteLiteralBucket
+{
+    private string Literal;
+    private List<Route> Routes;
+
+    public RouteLiteralBucket(string literal)
+    {
+        Literal = literal;
+        Routes = new();
+    }
+
+    public bool Handles(string literal)
+    {
+        return AsciiEqualIgnoringCase(Literal, literal);
+    }
+
+    public void Add(Route route)
+    {
+        Routes = InsertRouteByPrecedence(Routes, route);
+    }
+
+    public Option<Route> Match(string path)
+    {
+        return MatchOrderedRoutes(Routes, path);
+    }
+}
+
 class RouteMethodBucket
 {
     private string Method;
-    private List<Route> Routes;
+    private List<Route> DynamicRoutes;
+    private List<RouteLiteralBucket> LiteralBuckets;
 
     public RouteMethodBucket(string method)
     {
         Method = method;
-        Routes = new();
+        DynamicRoutes = new();
+        LiteralBuckets = new();
     }
 
     public bool Handles(string method)
@@ -693,31 +767,56 @@ class RouteMethodBucket
 
     public void Add(Route route)
     {
-        List<Route> routes = Routes;
-        nuint index = 0;
-        while (index < routes.Count)
+        switch (route.pattern.FirstLiteralSegment)
         {
-            Route current = routes[index];
-            if (route.pattern.ComparePrecedence(current.pattern) < 0)
-            {
-                break;
+            case Option.Some(literal): {
+                foreach (RouteLiteralBucket bucket in LiteralBuckets)
+                {
+                    if (bucket.Handles(literal))
+                    {
+                        bucket.Add(route);
+                        return;
+                    }
+                }
+                RouteLiteralBucket bucket = new RouteLiteralBucket(literal);
+                bucket.Add(route);
+                List<RouteLiteralBucket> buckets = LiteralBuckets;
+                buckets.Add(bucket);
+                LiteralBuckets = buckets;
             }
-            index += 1;
+            case Option.None: {
+                DynamicRoutes = InsertRouteByPrecedence(
+                    DynamicRoutes, route
+                );
+            }
         }
-        routes.Insert(index, route);
-        Routes = routes;
     }
 
     public Option<Route> Match(string path)
     {
-        foreach (Route route in Routes)
+        string literal = FirstPathSegment(path);
+        foreach (RouteLiteralBucket bucket in LiteralBuckets)
         {
-            if (route.pattern.IsMatch(path))
+            if (bucket.Handles(literal))
             {
-                return Option.Some(route);
+                switch (bucket.Match(path))
+                {
+                    case Option.Some(route): { return Option.Some(route); }
+                    case Option.None: {
+                        return MatchOrderedRoutes(DynamicRoutes, path);
+                    }
+                }
             }
         }
-        return Option.None;
+        return MatchOrderedRoutes(DynamicRoutes, path);
+    }
+
+    ~RouteMethodBucket()
+    {
+        foreach (RouteLiteralBucket bucket in LiteralBuckets)
+        {
+            delete bucket;
+        }
     }
 }
 
