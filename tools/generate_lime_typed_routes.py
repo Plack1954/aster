@@ -77,8 +77,10 @@ def route_group_overloads():
     RouteGroup self, string pattern, {delegate} handler
 )
 {{
-    return self.Application.{method}(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.{method}(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }}"""
             )
@@ -91,8 +93,10 @@ def route_group_overloads():
     {delegate} handler
 )
 {{
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }}"""
         )

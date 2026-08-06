@@ -1296,6 +1296,54 @@ private bool EndpointMetadataWorks()
     return true;
 }
 
+private bool GroupMetadataWorks()
+{
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    RouteGroup api = app.MapGroup("/api").WithTag("api");
+    RouteGroup articles = api.MapGroup("/articles")
+        .WithDescription("Article endpoints");
+
+    articles.MapGet("/{slug}", TypedString).WithTag("specific");
+    articles.WithTag("articles");
+    api.WithTag("public");
+    articles.MapPost("/", LiteralRoute);
+
+    EndpointDataSource endpoints = app.Endpoints;
+    if (endpoints.Count != 2) { return false; }
+    RouteEndpoint first = endpoints.GetEndpoint(0);
+    if (first.Pattern != "/api/articles/{slug}" ||
+        first.TagCount != 4 || first.GetTag(0) != "api" ||
+        first.GetTag(1) != "specific" ||
+        first.GetTag(2) != "articles" ||
+        first.GetTag(3) != "public")
+    {
+        return false;
+    }
+    switch (first.Description)
+    {
+        case Option.Some(description): {
+            if (description != "Article endpoints") { return false; }
+        }
+        case Option.None: { return false; }
+    }
+
+    RouteEndpoint second = endpoints.GetEndpoint(1);
+    if (second.Pattern != "/api/articles/" || second.TagCount != 3 ||
+        second.GetTag(0) != "api" || second.GetTag(1) != "public" ||
+        second.GetTag(2) != "articles")
+    {
+        return false;
+    }
+    switch (second.Description)
+    {
+        case Option.Some(description): {
+            return description == "Article endpoints";
+        }
+        case Option.None: { return false; }
+    }
+}
+
 private bool LinkGenerationWorks()
 {
     ApplicationOwner appOwner = NewApplication();
@@ -1431,6 +1479,10 @@ int main()
         return 1;
     }
     if (!EndpointMetadataWorks())
+    {
+        return 1;
+    }
+    if (!GroupMetadataWorks())
     {
         return 1;
     }

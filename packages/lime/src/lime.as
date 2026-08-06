@@ -792,6 +792,24 @@ class EndpointMetadata
     }
 }
 
+class RouteGroupState
+{
+    public string Prefix;
+    public RouteGroupState Parent;
+    public Option<string> Description;
+    public List<string> Tags;
+    public List<EndpointMetadata> Endpoints;
+
+    public RouteGroupState(string prefix, RouteGroupState parent)
+    {
+        Prefix = prefix;
+        Parent = parent;
+        Description = Option.None;
+        Tags = new();
+        Endpoints = new();
+    }
+}
+
 public struct BuildPage
 {
     string path;
@@ -959,6 +977,7 @@ public class WebApplication
 {
     public List<Route> routes;
     public RouteTable routeTable;
+    public List<RouteGroupState> routeGroups;
     public List<BuildPage> pages;
     public List<RequestFilter> filters;
     public List<HtmlMiddleware> htmlMiddleware;
@@ -974,6 +993,7 @@ public class WebApplication
     {
         routes = new();
         routeTable = new RouteTable();
+        routeGroups = new();
         pages = new();
         filters = new();
         htmlMiddleware = new();
@@ -991,6 +1011,10 @@ public class WebApplication
     ~WebApplication()
     {
         delete routeTable;
+        foreach (RouteGroupState group in routeGroups)
+        {
+            delete group;
+        }
         foreach (Route route in routes)
         {
             delete route;
@@ -1007,7 +1031,20 @@ public struct EndpointBuilder
 public struct RouteGroup
 {
     WebApplication Application;
-    string Prefix;
+    RouteGroupState State;
+
+    public string Prefix
+    {
+        get
+        {
+            if (State == null)
+            {
+                throw new InvalidOperationException("route group is invalid");
+            }
+            RouteGroupState state = State;
+            return state.Prefix;
+        }
+    }
 }
 
 public Result<string, string> LinkGenerator.GetPathByName(
@@ -3666,6 +3703,15 @@ public EndpointBuilder EndpointBuilder.WithDescription(
     return self;
 }
 
+private void AddMetadataTag(EndpointMetadata metadata, string tag)
+{
+    foreach (string existing in metadata.Tags)
+    {
+        if (existing == tag) { return; }
+    }
+    metadata.Tags.Add(tag);
+}
+
 public EndpointBuilder EndpointBuilder.WithTag(
     EndpointBuilder self,
     string tag
@@ -3677,7 +3723,7 @@ public EndpointBuilder EndpointBuilder.WithTag(
     }
     ValidateEndpointBuilder(self);
     EndpointMetadata metadata = self.Metadata;
-    metadata.Tags.Add(tag);
+    AddMetadataTag(metadata, tag);
     return self;
 }
 
@@ -3699,6 +3745,94 @@ public EndpointBuilder EndpointBuilder.Produces(
         if (existing == statusCode) { return self; }
     }
     metadata.ProducedStatuses.Add(statusCode);
+    return self;
+}
+
+private RouteGroupState ValidateRouteGroup(RouteGroup self)
+{
+    if (self.Application == null || self.State == null)
+    {
+        throw new InvalidOperationException("route group is invalid");
+    }
+    return self.State;
+}
+
+private void ApplyRouteGroupState(
+    RouteGroupState state,
+    EndpointMetadata endpoint
+)
+{
+    if (state.Parent != null)
+    {
+        ApplyRouteGroupState(state.Parent, endpoint);
+    }
+    switch (state.Description)
+    {
+        case Option.Some(description): {
+            Option<string> configured = Option.Some(description);
+            endpoint.Description = configured;
+        }
+        case Option.None: { }
+    }
+    foreach (string tag in state.Tags)
+    {
+        AddMetadataTag(endpoint, tag);
+    }
+    List<EndpointMetadata> endpoints = state.Endpoints;
+    endpoints.Add(endpoint);
+    state.Endpoints = endpoints;
+}
+
+private EndpointBuilder RouteGroup.TrackEndpoint(
+    RouteGroup self,
+    EndpointBuilder endpoint
+)
+{
+    RouteGroupState state = ValidateRouteGroup(self);
+    ValidateEndpointBuilder(endpoint);
+    if (endpoint.Application != self.Application)
+    {
+        throw new InvalidOperationException(
+            "route group cannot track another application's endpoint"
+        );
+    }
+    ApplyRouteGroupState(state, endpoint.Metadata);
+    return endpoint;
+}
+
+public RouteGroup RouteGroup.WithDescription(
+    RouteGroup self,
+    string description
+)
+{
+    RouteGroupState state = ValidateRouteGroup(self);
+    Option<string> configured = Option.Some(description);
+    state.Description = configured;
+    foreach (EndpointMetadata endpoint in state.Endpoints)
+    {
+        endpoint.Description = configured;
+    }
+    return self;
+}
+
+public RouteGroup RouteGroup.WithTag(RouteGroup self, string tag)
+{
+    if (tag.Length == 0)
+    {
+        throw new ArgumentException("endpoint tag cannot be empty");
+    }
+    RouteGroupState state = ValidateRouteGroup(self);
+    foreach (string existing in state.Tags)
+    {
+        if (existing == tag) { return self; }
+    }
+    List<string> tags = state.Tags;
+    tags.Add(tag);
+    state.Tags = tags;
+    foreach (EndpointMetadata endpoint in state.Endpoints)
+    {
+        AddMetadataTag(endpoint, tag);
+    }
     return self;
 }
 
@@ -3727,16 +3861,28 @@ public RouteGroup WebApplication.MapGroup(
         throw new ArgumentException("route group prefix must not end with `/`");
     }
     RoutePattern ignored = ParseRoutePattern(prefix);
+    RouteGroupState state = new RouteGroupState(prefix, null);
+    List<RouteGroupState> groups = self.routeGroups;
+    groups.Add(state);
+    self.routeGroups = groups;
     return new()
     {
         Application = self,
-        Prefix = prefix
+        State = state
     };
 }
 
 public RouteGroup RouteGroup.MapGroup(RouteGroup self, string prefix)
 {
-    return self.Application.MapGroup(GroupPattern(self.Prefix, prefix));
+    RouteGroupState parent = ValidateRouteGroup(self);
+    string combined = GroupPattern(self.Prefix, prefix);
+    RoutePattern ignored = ParseRoutePattern(combined);
+    RouteGroupState state = new RouteGroupState(combined, parent);
+    WebApplication application = self.Application;
+    List<RouteGroupState> groups = application.routeGroups;
+    groups.Add(state);
+    application.routeGroups = groups;
+    return new() { Application = application, State = state };
 }
 
 public EndpointBuilder RouteGroup.MapGet(
@@ -3745,8 +3891,10 @@ public EndpointBuilder RouteGroup.MapGet(
     Handler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3756,8 +3904,10 @@ public EndpointBuilder RouteGroup.MapGet(
     AsyncHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3765,8 +3915,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, StringRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3774,8 +3926,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, IntRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3783,8 +3937,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, LongRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3792,8 +3948,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, BoolRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3801,8 +3959,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, RequestStringRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3810,8 +3970,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, RequestIntRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3819,8 +3981,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, RequestLongRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3828,8 +3992,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, RequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3837,8 +4003,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, AsyncStringRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3846,8 +4014,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, AsyncIntRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3855,8 +4025,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, AsyncLongRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3864,8 +4036,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, AsyncBoolRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3874,8 +4048,10 @@ public EndpointBuilder RouteGroup.MapGet(
     AsyncRequestStringRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3883,8 +4059,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3892,8 +4070,10 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3901,59 +4081,81 @@ public EndpointBuilder RouteGroup.MapGet(
     RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapGet(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapGet(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
 public EndpointBuilder RouteGroup.MapPost(RouteGroup self, string pattern, Handler handler)
 {
-    return self.Application.MapPost(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapPost(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapPost(RouteGroup self, string pattern, AsyncHandler handler)
 {
-    return self.Application.MapPost(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapPost(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapPut(RouteGroup self, string pattern, Handler handler)
 {
-    return self.Application.MapPut(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapPut(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapPut(RouteGroup self, string pattern, AsyncHandler handler)
 {
-    return self.Application.MapPut(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapPut(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapPatch(RouteGroup self, string pattern, Handler handler)
 {
-    return self.Application.MapPatch(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapPatch(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapPatch(RouteGroup self, string pattern, AsyncHandler handler)
 {
-    return self.Application.MapPatch(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapPatch(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapDelete(RouteGroup self, string pattern, Handler handler)
 {
-    return self.Application.MapDelete(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapDelete(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapDelete(RouteGroup self, string pattern, AsyncHandler handler)
 {
-    return self.Application.MapDelete(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapDelete(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapHead(RouteGroup self, string pattern, Handler handler)
 {
-    return self.Application.MapHead(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapHead(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapHead(RouteGroup self, string pattern, AsyncHandler handler)
 {
-    return self.Application.MapHead(GroupPattern(self.Prefix, pattern), handler);
+    return self.TrackEndpoint(
+        self.Application.MapHead(GroupPattern(self.Prefix, pattern), handler)
+    );
 }
 
 public EndpointBuilder RouteGroup.MapMethods(
@@ -3963,8 +4165,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     Handler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -3975,8 +4179,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -3985,8 +4191,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, StringRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -3994,8 +4202,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, IntRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4003,8 +4213,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, LongRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4012,8 +4224,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, BoolRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4021,8 +4235,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, RequestStringRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4030,8 +4246,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, RequestIntRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4039,8 +4257,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, RequestLongRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4048,8 +4268,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, RequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4057,8 +4279,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncStringRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4066,8 +4290,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncIntRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4075,8 +4301,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncLongRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4084,8 +4312,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncBoolRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4093,8 +4323,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4102,8 +4334,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4111,8 +4345,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4120,8 +4356,10 @@ public EndpointBuilder RouteGroup.MapPost(
     RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapPost(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPost(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4129,8 +4367,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, StringRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4138,8 +4378,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, IntRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4147,8 +4389,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, LongRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4156,8 +4400,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, BoolRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4165,8 +4411,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, RequestStringRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4174,8 +4422,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, RequestIntRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4183,8 +4433,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, RequestLongRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4192,8 +4444,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, RequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4201,8 +4455,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncStringRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4210,8 +4466,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncIntRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4219,8 +4477,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncLongRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4228,8 +4488,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncBoolRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4237,8 +4499,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4246,8 +4510,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4255,8 +4521,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4264,8 +4532,10 @@ public EndpointBuilder RouteGroup.MapPut(
     RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapPut(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPut(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4273,8 +4543,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, StringRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4282,8 +4554,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, IntRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4291,8 +4565,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, LongRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4300,8 +4576,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, BoolRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4309,8 +4587,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, RequestStringRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4318,8 +4598,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, RequestIntRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4327,8 +4609,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, RequestLongRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4336,8 +4620,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, RequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4345,8 +4631,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncStringRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4354,8 +4642,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncIntRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4363,8 +4653,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncLongRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4372,8 +4664,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncBoolRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4381,8 +4675,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4390,8 +4686,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4399,8 +4697,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4408,8 +4708,10 @@ public EndpointBuilder RouteGroup.MapPatch(
     RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapPatch(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapPatch(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4417,8 +4719,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, StringRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4426,8 +4730,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, IntRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4435,8 +4741,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, LongRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4444,8 +4752,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, BoolRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4453,8 +4763,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, RequestStringRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4462,8 +4774,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, RequestIntRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4471,8 +4785,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, RequestLongRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4480,8 +4796,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, RequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4489,8 +4807,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncStringRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4498,8 +4818,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncIntRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4507,8 +4829,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncLongRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4516,8 +4840,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncBoolRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4525,8 +4851,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4534,8 +4862,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4543,8 +4873,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4552,8 +4884,10 @@ public EndpointBuilder RouteGroup.MapDelete(
     RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapDelete(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapDelete(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4561,8 +4895,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, StringRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4570,8 +4906,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, IntRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4579,8 +4917,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, LongRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4588,8 +4928,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, BoolRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4597,8 +4939,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, RequestStringRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4606,8 +4950,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, RequestIntRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4615,8 +4961,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, RequestLongRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4624,8 +4972,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, RequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4633,8 +4983,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncStringRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4642,8 +4994,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncIntRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4651,8 +5005,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncLongRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4660,8 +5016,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncBoolRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4669,8 +5027,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncRequestStringRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4678,8 +5038,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncRequestIntRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4687,8 +5049,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncRequestLongRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4696,8 +5060,10 @@ public EndpointBuilder RouteGroup.MapHead(
     RouteGroup self, string pattern, AsyncRequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapHead(
-        GroupPattern(self.Prefix, pattern), handler
+    return self.TrackEndpoint(
+        self.Application.MapHead(
+            GroupPattern(self.Prefix, pattern), handler
+        )
     );
 }
 
@@ -4708,8 +5074,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     StringRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4720,8 +5088,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     IntRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4732,8 +5102,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     LongRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4744,8 +5116,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     BoolRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4756,8 +5130,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     RequestStringRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4768,8 +5144,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     RequestIntRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4780,8 +5158,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     RequestLongRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4792,8 +5172,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     RequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4804,8 +5186,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncStringRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4816,8 +5200,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncIntRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4828,8 +5214,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncLongRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4840,8 +5228,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncBoolRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4852,8 +5242,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncRequestStringRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4864,8 +5256,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncRequestIntRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4876,8 +5270,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncRequestLongRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 
@@ -4888,8 +5284,10 @@ public EndpointBuilder RouteGroup.MapMethods(
     AsyncRequestBoolRouteHandler handler
 )
 {
-    return self.Application.MapMethods(
-        GroupPattern(self.Prefix, pattern), methods, handler
+    return self.TrackEndpoint(
+        self.Application.MapMethods(
+            GroupPattern(self.Prefix, pattern), methods, handler
+        )
     );
 }
 // END GENERATED TYPED ROUTE OVERLOADS: ROUTEGROUP

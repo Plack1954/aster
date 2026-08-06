@@ -92,13 +92,20 @@ Groups contribute a prefix while registering into the same endpoint graph.
 They can be nested and expose the same `Map*` family:
 
 ```aster
-RouteGroup api = app.MapGroup("/api");
-RouteGroup articles = api.MapGroup("/articles");
+RouteGroup api = app.MapGroup("/api").WithTag("api");
+RouteGroup articles = api.MapGroup("/articles")
+    .WithDescription("Article endpoints");
 
 articles.MapGet("/", ListArticles);
 articles.MapGet("/{slug}", Article);
 articles.MapPost("/", CreateArticle);
 ```
+
+`WithTag` and `WithDescription` apply group metadata to existing and future
+endpoints, including endpoints in nested groups. Parent tags are inherited,
+duplicate tags are suppressed, and endpoint-builder calls can add or replace
+metadata afterward. Route groups remain borrowed handles: the application owns
+their policy state and must outlive them.
 
 The same `Map*` names accept synchronous `Response` handlers and asynchronous
 `Task<Response>` handlers. Async applications dispatch with `DispatchAsync`;

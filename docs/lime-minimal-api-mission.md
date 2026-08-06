@@ -219,7 +219,9 @@ application architecture is not yet the target design:
    generates validated, encoded paths from named endpoints using the same
    parsed patterns as inbound routing. `app.Endpoints` exposes borrowed,
    stable route descriptors with patterns, methods, names, descriptions, tags,
-   and produced statuses. Endpoint/group filters do not exist.
+   and produced statuses. Route groups propagate tags and descriptions to
+   existing, future, and nested endpoints through application-owned policy
+   state. Endpoint/group filters do not exist.
 6. Asynchronous handlers participate in the real endpoint graph, including
    bound service methods when their delegate is asynchronous. H2O's current
    `ServeAsync` loop awaits one handler at a time;
@@ -643,6 +645,8 @@ It must not distort production HTTP semantics.
 - Extend the implemented borrowed `EndpointDataSource` only when real tooling
   proves that additional metadata is necessary; do not couple Lime's core to
   an OpenAPI implementation.
+- Keep group metadata conventions on the same endpoint objects; do not create
+  a parallel group router or copy endpoint graphs.
 
 ### Stage 6: async HTTP and lifecycle
 
