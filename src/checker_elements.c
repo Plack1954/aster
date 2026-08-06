@@ -130,7 +130,17 @@ static const Type *web_handler_completion_type(const Type *type) {
     return type != NULL && type->kind == TYPE_TASK ? type->element : type;
 }
 
+static bool web_handler_keyed_remove_type(const Type *type) {
+    return type->kind == TYPE_NAMED && type->declaration != NULL &&
+           type->declaration->kind == DECL_STRUCT &&
+           type->declaration->module_name != NULL &&
+           strcmp(type->declaration->module_name, "Aster::Html") == 0 &&
+           strcmp(type->declaration->as.structure.name, "KeyedRemove") == 0;
+}
+
 static char web_handler_type_code(const Type *type) {
+    if (web_handler_keyed_remove_type(type))
+        return 'r';
     if (type->kind == TYPE_BOOL)
         return 'b';
     if (type->kind == TYPE_UNIT)

@@ -87,9 +87,9 @@ public string SubmitName(string name)
     return $"Thanks, {name}.";
 }
 
-public string RemoveTodo(string key)
+public KeyedRemove RemoveTodo(string key)
 {
-    return key;
+    return RemoveKey(key);
 }
 
 private Html TodoItem(int id, string title)

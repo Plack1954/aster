@@ -314,7 +314,8 @@ export async function hydrateAster({wasmUrl, root = document}) {
         });
         const aggregatePrefix =
             `aster_export_${handlerName}_result_`;
-        const aggregateFields = resultType === "a"
+        const aggregateResult = resultType === "a" || resultType === "r";
+        const aggregateFields = aggregateResult
             ? Object.entries(instance.exports).flatMap(([name, accessor]) => {
                 if (!name.startsWith(aggregatePrefix) ||
                     name.endsWith("_drop"))
@@ -327,7 +328,7 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 }];
             })
             : [];
-        const aggregateDrop = resultType === "a"
+        const aggregateDrop = aggregateResult
             ? instance.exports[`${aggregatePrefix}drop`]
             : null;
         const taskResult = asyncResult
@@ -341,6 +342,10 @@ export async function hydrateAster({wasmUrl, root = document}) {
         if (resultType === "a")
             validateAggregateProjections(
                 source, initialScope, handlerName, aggregateFields
+            );
+        if (resultType === "r" && controlledTarget(source) === null)
+            throw new Error(
+                `Aster keyed removal target is missing: ${handlerName}`
             );
         collectionFor(source, stateFor(initialScope));
 
@@ -380,10 +385,13 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 const message = decodeOwnedString(
                     Number(result), instance.exports, memory
                 );
-                if (eventName === "submit" && form !== null)
+                if (eventName === "submit" && form !== null) {
                     updateSubmission(form, message);
-                else
-                    removeControlledKey(source, state, message);
+                } else if (parameters.length !== 0 &&
+                           parameters[0][0] === "s") {
+                    const [, name] = parameters[0];
+                    updateText(scope, name, message);
+                }
             } else if (resultType === "h") {
                 const stringHandle = Number(
                     instance.exports.aster_export_html_render(
@@ -407,6 +415,28 @@ export async function hydrateAster({wasmUrl, root = document}) {
                     source, scope, state, instance.exports, memory,
                     hydrateWithin
                 );
+            } else if (resultType === "r") {
+                if (typeof aggregateDrop !== "function")
+                    throw new Error(
+                        `Aster keyed removal drop export is missing: ${handlerName}`
+                    );
+                const keyField = aggregateFields.find(
+                    (field) => field.type === "o" && field.name === "key"
+                );
+                if (keyField === undefined)
+                    throw new Error(
+                        `Aster keyed removal export is incomplete: ${handlerName}`
+                    );
+                const handle = Number(result);
+                try {
+                    const key = decodeOwnedString(
+                        Number(keyField.accessor(handle)),
+                        instance.exports, memory
+                    );
+                    removeControlledKey(source, state, key);
+                } finally {
+                    aggregateDrop(handle);
+                }
             } else if (resultType === "b") {
                 const accepted = result !== 0;
                 if (eventName === "submit" && form !== null)

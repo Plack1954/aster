@@ -24,8 +24,8 @@ public bool ToggleDetails(bool expanded) {
     return !expanded;
 }
 
-public string RemoveTodo(string removeKey) {
-    return removeKey;
+public KeyedRemove RemoveTodo(string removeKey) {
+    return RemoveKey(removeKey);
 }
 
 public bool ValidateName(string name) {

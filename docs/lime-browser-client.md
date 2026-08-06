@@ -166,8 +166,8 @@ named target removes duplicate patch fields. This is sufficient evidence to
 continue improving statically known projections; it is not evidence that a
 runtime signal graph is needed. Extending the same typed Boolean projection to
 a named button also handles derived enabled/disabled state without handler-side
-DOM code. The trial currently produces about 11.2 KB of optimized Wasm and
-16.3 KB of unminified generic JavaScript (about 5.3 KB and 3.7 KB respectively
+DOM code. The trial currently produces about 11.4 KB of optimized Wasm and
+17.7 KB of unminified generic JavaScript (about 5.4 KB and 3.9 KB respectively
 when gzipped), so the JavaScript projection runtime—not reactive Wasm state—is the
 larger raw artifact to watch as capabilities grow. Hydration now also rejects
 a misspelled or absent aggregate projection with the handler and field name,
@@ -218,10 +218,13 @@ safe HTML for one item while the runtime preserves the collection and
 unaffected children. A todo trial now exercises removal of SSR content,
 insertion of a Wasm-rendered item, hydration of that item's remove handler, and
 its later removal while retaining the list node. No tree reconciliation or
-signal graph was needed. The weak point is API shape: an owned string result is
-overloaded as a removal key and `aria-controls` identifies the collection.
-Before adding general reactivity, Lime should replace that convention with an
-explicit typed keyed-operation result.
+signal graph was needed. Removal now returns the explicit
+`Aster.Html.KeyedRemove` transition result rather than overloading every owned
+string result as a command. This makes intent and ownership visible in Aster
+and reserves a typed protocol for future keyed operations. `aria-controls`
+still identifies the collection, and compiler recognition of one nominal
+standard type is intentionally narrower than a general user-extensible patch
+protocol.
 
 ### Virtual DOM control
 

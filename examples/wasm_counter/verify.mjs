@@ -82,7 +82,7 @@ for (let iteration = 0; iteration < 100; ++iteration) {
         const html = takeString(Number(renderHtml(Number(todoItem(aggregate)))));
         if (!html.includes(`id="todo-${iteration + 2}"`) ||
             !html.includes("A&amp;B &lt;native&gt;") ||
-            !html.includes("click|RemoveTodo|o|s:removeKey"))
+            !html.includes("click|RemoveTodo|r|s:removeKey"))
             throw new Error("aggregate native Html field was incorrect");
     } finally {
         todoDrop(aggregate);

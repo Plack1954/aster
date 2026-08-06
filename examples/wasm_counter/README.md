@@ -53,7 +53,9 @@ drop export cleans whatever remains. The runtime renders the transferred
 `Html`, keys collection children by their ordinary `id`, updates only the
 matching child, and hydrates event bindings inside newly inserted HTML. The
 keyed map is initialized from SSR children and then persists independently of
-the DOM projection.
+the DOM projection. `RemoveTodo` returns the explicit owning
+`Aster.Html.KeyedRemove` protocol value; generated accessors transfer its key
+and the runtime applies the typed removal to the controlled collection.
 
 `build.sh` exercises the normal web-project workflow:
 
@@ -88,5 +90,6 @@ add/remove cycles, and confirms the original list node survives throughout.
 The example covers synchronous scalar and Boolean results, borrowed UTF-8
 inputs, owned String and direct Html results, supported patch structs,
 persistent island state, and keyed collection updates. Its forms retain normal
-action and method attributes for progressive enhancement. Async handlers and
-general nested aggregate ABI generation are deliberately outside Browser 0.1.
+action and method attributes for progressive enhancement. Async handlers using
+`Task.Delay` are covered by the Lime browser fixture; Fetch and general nested
+aggregate ABI generation remain outside Browser 0.1.

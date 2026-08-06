@@ -4,6 +4,18 @@ public Html doctype() {
     return Html.UnsafeRaw("<!doctype html>");
 }
 
+// A typed browser transition requesting removal of one child from the
+// collection identified by the event source's aria-controls relationship.
+public struct KeyedRemove
+{
+    string key;
+}
+
+public KeyedRemove RemoveKey(string key)
+{
+    return new() { key = key };
+}
+
 // Document metadata.
 
 public element Html html {
