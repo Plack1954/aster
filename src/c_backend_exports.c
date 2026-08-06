@@ -271,6 +271,54 @@ void c_backend_emit_public_export_wrapper(
     fputs("}\n\n", emitter->output);
 }
 
+void c_backend_emit_public_async_result_accessor(
+    CEmitter *emitter, size_t function_index) {
+    const IrFunction *function =
+        &emitter->ir->functions[function_index];
+    if (!function->is_async) return;
+    IrTypeId result_type_id = function->async_result_type;
+    const IrType *result = &emitter->ir->types[result_type_id];
+    c_backend_emit_type(emitter, result_type_id);
+    if (result->shape == IR_TYPE_STRUCT) fputs(" *", emitter->output);
+    fputs(" aster_export_", emitter->output);
+    emit_web_identifier(
+        emitter->output, web_function_basename(function));
+    fputs("_task_result(aster_task *task);\n", emitter->output);
+    c_backend_emit_type(emitter, result_type_id);
+    if (result->shape == IR_TYPE_STRUCT) fputs(" *", emitter->output);
+    fputs(" aster_export_", emitter->output);
+    emit_web_identifier(
+        emitter->output, web_function_basename(function));
+    fputs("_task_result(aster_task *task) {\n"
+          "    if (task == NULL || task->state != ASTER_TASK_SUCCEEDED ||\n"
+          "        task->result == NULL || task->result_size != sizeof(",
+          emitter->output);
+    c_backend_emit_type(emitter, result_type_id);
+    fputs("))\n        aster_trap(\"browser Task result is unavailable\");\n",
+          emitter->output);
+    if (result->shape == IR_TYPE_STRUCT) {
+        fputs("    ", emitter->output);
+        c_backend_emit_type(emitter, result_type_id);
+        fputs(" *value = aster_allocate(sizeof(*value));\n"
+              "    *value = ", emitter->output);
+    } else {
+        fputs("    return ", emitter->output);
+    }
+    if (c_backend_type_needs_drop(emitter, result_type_id))
+        fprintf(emitter->output, "aster_clone_%" PRIu32 "(*(",
+                result_type_id);
+    else
+        fputs("*(", emitter->output);
+    c_backend_emit_type(emitter, result_type_id);
+    fputs(" *)task->result", emitter->output);
+    if (c_backend_type_needs_drop(emitter, result_type_id))
+        fputc(')', emitter->output);
+    fputs(";\n", emitter->output);
+    if (result->shape == IR_TYPE_STRUCT)
+        fputs("    return value;\n", emitter->output);
+    fputs("}\n\n", emitter->output);
+}
+
 static char web_ir_type_code(const IrType *type) {
     if (type->shape == IR_TYPE_BOOL) return 'b';
     if (type->shape == IR_TYPE_SIGNED_INT ||
@@ -300,8 +348,9 @@ void c_backend_emit_public_aggregate_accessors(
     CEmitter *emitter, size_t function_index) {
     const IrFunction *function =
         &emitter->ir->functions[function_index];
-    const IrType *result =
-        &emitter->ir->types[function->return_type];
+    IrTypeId result_type = function->is_async
+        ? function->async_result_type : function->return_type;
+    const IrType *result = &emitter->ir->types[result_type];
     if (result->shape != IR_TYPE_STRUCT) return;
     for (size_t field = 0U; field < result->field_count; ++field) {
         IrTypeId field_type_id = result->field_types[field];
@@ -318,14 +367,14 @@ void c_backend_emit_public_aggregate_accessors(
         emit_aggregate_accessor_name(
             emitter, function, code, result->field_names[field]);
         fputc('(', emitter->output);
-        c_backend_emit_type(emitter, function->return_type);
+        c_backend_emit_type(emitter, result_type);
         fputs(" *value);\n", emitter->output);
         c_backend_emit_type(emitter, field_type_id);
         fputc(' ', emitter->output);
         emit_aggregate_accessor_name(
             emitter, function, code, result->field_names[field]);
         fputc('(', emitter->output);
-        c_backend_emit_type(emitter, function->return_type);
+        c_backend_emit_type(emitter, result_type);
         fputs(" *value) {\n    ", emitter->output);
         if (code == 'o' || code == 'h') {
             c_backend_emit_type(emitter, field_type_id);
@@ -344,17 +393,17 @@ void c_backend_emit_public_aggregate_accessors(
     emit_web_identifier(
         emitter->output, web_function_basename(function));
     fputs("_result_drop(", emitter->output);
-    c_backend_emit_type(emitter, function->return_type);
+    c_backend_emit_type(emitter, result_type);
     fputs(" *value);\nvoid aster_export_", emitter->output);
     emit_web_identifier(
         emitter->output, web_function_basename(function));
     fputs("_result_drop(", emitter->output);
-    c_backend_emit_type(emitter, function->return_type);
+    c_backend_emit_type(emitter, result_type);
     fputs(" *value) {\n    if (value == NULL) return;\n", emitter->output);
-    if (c_backend_type_needs_drop(emitter, function->return_type))
+    if (c_backend_type_needs_drop(emitter, result_type))
         fprintf(emitter->output,
                 "    aster_drop_%" PRIu32 "(value);\n",
-                function->return_type);
+                result_type);
     fputs("    free(value);\n}\n\n", emitter->output);
 }
 
@@ -366,8 +415,9 @@ bool c_backend_web_exports_use_strings(
                 ir, function, entry))
             continue;
         const IrFunction *candidate = &ir->functions[function];
-        const IrType *result =
-            &ir->types[candidate->return_type];
+        if (candidate->is_async) return true;
+        IrTypeId result_type = candidate->return_type;
+        const IrType *result = &ir->types[result_type];
         if (result->shape == IR_TYPE_BUILTIN_OBJECT &&
             (strcmp(result->name, "string") == 0 ||
              strcmp(result->name, "Html") == 0))
@@ -388,6 +438,17 @@ bool c_backend_web_exports_use_strings(
                     &ir->types[candidate->parameters[parameter].type]))
                 return true;
     }
+    return false;
+}
+
+bool c_backend_web_exports_use_tasks(
+    const IrModule *ir, size_t entry) {
+    for (size_t function = 0U;
+         function < ir->function_count; ++function)
+        if (c_backend_function_is_entry_module_export(
+                ir, function, entry) &&
+            ir->functions[function].is_async)
+            return true;
     return false;
 }
 
@@ -426,8 +487,10 @@ bool c_backend_web_exports_use_html_result(
          function < ir->function_count; ++function) {
         if (!c_backend_function_is_entry_module_export(ir, function, entry))
             continue;
-        const IrType *result =
-            &ir->types[ir->functions[function].return_type];
+        IrTypeId result_type = ir->functions[function].is_async
+            ? ir->functions[function].async_result_type
+            : ir->functions[function].return_type;
+        const IrType *result = &ir->types[result_type];
         if (result->shape == IR_TYPE_BUILTIN_OBJECT &&
             strcmp(result->name, "Html") == 0)
             return true;
@@ -441,6 +504,30 @@ bool c_backend_web_exports_use_html_result(
         }
     }
     return false;
+}
+
+void c_backend_emit_web_task_abi(FILE *output) {
+    fputs(
+        "int aster_export_task_status(aster_task *task);\n"
+        "aster_string *aster_export_task_error(aster_task *task);\n"
+        "void aster_export_task_drop(aster_task *task);\n"
+        "int aster_export_task_status(aster_task *task) {\n"
+        "    (void)aster_task_run_until;\n"
+        "    (void)aster_task_restore_fault;\n"
+        "    if (task == NULL) aster_trap(\"browser Task is null\");\n"
+        "    (void)aster_task_process_timers();\n"
+        "    return (int)task->state;\n"
+        "}\n"
+        "aster_string *aster_export_task_error(aster_task *task) {\n"
+        "    if (task == NULL || (task->state != ASTER_TASK_FAULTED &&\n"
+        "        task->state != ASTER_TASK_CANCELED))\n"
+        "        aster_trap(\"browser Task error is unavailable\");\n"
+        "    return aster_string_clone(task->exception_message);\n"
+        "}\n"
+        "void aster_export_task_drop(aster_task *task) {\n"
+        "    aster_task_drop(task);\n"
+        "}\n\n",
+        output);
 }
 
 void c_backend_emit_web_html_abi(FILE *output) {

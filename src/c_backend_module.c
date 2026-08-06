@@ -289,6 +289,7 @@ static void emit_delegate_adapter(
 ) {
     const IrFunction *function = &emitter->ir->functions[index];
     size_t first_parameter = bound ? 1U : 0U;
+    fputs("static ", emitter->output);
     c_backend_emit_type(emitter, function->return_type);
     fprintf(
         emitter->output, " aster_delegate_%s_%zu(void *receiver",
@@ -1429,10 +1430,13 @@ static bool c_emit_module(const IrModule *ir,
                 ir, function, entry))
         {
             c_backend_emit_public_export_wrapper(&emitter, function);
+            c_backend_emit_public_async_result_accessor(&emitter, function);
             c_backend_emit_public_aggregate_accessors(&emitter, function);
         }
     if (c_backend_web_exports_use_strings(ir, entry))
         c_backend_emit_web_string_abi(output);
+    if (c_backend_web_exports_use_tasks(ir, entry))
+        c_backend_emit_web_task_abi(output);
     if (c_backend_web_exports_use_html_result(ir, entry))
         c_backend_emit_web_html_abi(output);
     if (ir->functions[entry].is_async) {
@@ -1486,6 +1490,9 @@ static bool c_emit_module(const IrModule *ir,
                 "    aster_vm = lang_vm_new();\n"
                 "    if (aster_vm == NULL) return 2;\n",
                 output);
+        if (needs_async)
+            fputs("    (void)aster_task_run_until;\n"
+                  "    (void)aster_task_restore_fault;\n", output);
         if (emitter.needs_http_client_runtime)
             fputs("    lang_configure_http_client_registrar("
                   "lang_register_http_client_natives);\n", output);
@@ -1511,9 +1518,12 @@ static bool c_emit_module(const IrModule *ir,
                 "    return status;\n"
                 "}\n",
                 entry);
-    } else
+    } else {
+        fputs("int main(void) {\n", output);
+        if (needs_async)
+            fputs("    (void)aster_task_run_until;\n"
+                  "    (void)aster_task_restore_fault;\n", output);
         fprintf(output,
-                "int main(void) {\n"
                 "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"
                 "    if (aster_exception_pending) {\n"
                 "        fputs(\"unhandled Aster Exception: \", stderr);\n"
@@ -1528,6 +1538,7 @@ static bool c_emit_module(const IrModule *ir,
                 "    return status;\n"
                 "}\n",
                 entry);
+    }
     bool ok = !emitter.failed && ferror(output) == 0;
     free(emitter.reachable_functions);
     free(emitter.used_types);

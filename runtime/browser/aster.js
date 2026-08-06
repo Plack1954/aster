@@ -220,6 +220,28 @@ function applyAggregateResult(
     }
 }
 
+async function awaitBrowserTask(
+    task, resultAccessor, exports, memory
+) {
+    if (task === 0) throw new Error("Aster returned a null Task");
+    try {
+        for (;;) {
+            const status = exports.aster_export_task_status(task);
+            if (status === 0) {
+                await new Promise((resolve) => setTimeout(resolve, 1));
+                continue;
+            }
+            if (status === 1) return resultAccessor(task);
+            const error = decodeOwnedString(
+                Number(exports.aster_export_task_error(task)), exports, memory
+            );
+            throw new Error(error);
+        }
+    } finally {
+        exports.aster_export_task_drop(task);
+    }
+}
+
 function updateSubmission(form, message) {
     const accepted = message.length !== 0;
     const success = document.getElementById(`${form.id}-success`);
@@ -238,6 +260,9 @@ export async function hydrateAster({wasmUrl, root = document}) {
             trap(pointer, length) {
                 const bytes = new Uint8Array(memory.buffer, pointer, length);
                 throw new Error(decoder.decode(bytes));
+            },
+            now_ms() {
+                return BigInt(Math.trunc(performance.now()));
             }
         }
     };
@@ -248,8 +273,10 @@ export async function hydrateAster({wasmUrl, root = document}) {
     function hydrateWithin(container) {
       for (const source of container.querySelectorAll("[data-aster-event]")) {
         if (hydratedSources.has(source)) continue;
-        const [eventName, handlerName, resultType, ...parameterBindings] =
-            source.dataset.asterEvent.split("|");
+        const [eventName, handlerName, encodedResultType,
+            ...parameterBindings] = source.dataset.asterEvent.split("|");
+        const asyncResult = encodedResultType !== encodedResultType.toLowerCase();
+        const resultType = encodedResultType.toLowerCase();
         const handler = instance.exports[`aster_export_${handlerName}`];
         if (typeof handler !== "function")
             throw new Error(`Aster Wasm export is missing: ${handlerName}`);
@@ -275,11 +302,18 @@ export async function hydrateAster({wasmUrl, root = document}) {
         const aggregateDrop = resultType === "a"
             ? instance.exports[`${aggregatePrefix}drop`]
             : null;
+        const taskResult = asyncResult
+            ? instance.exports[`aster_export_${handlerName}_task_result`]
+            : null;
+        if (asyncResult && typeof taskResult !== "function")
+            throw new Error(
+                `Aster Task result export is missing: ${handlerName}`
+            );
         collectionFor(
             source, stateFor(eventScope(source, root))
         );
 
-        source.addEventListener(eventName, (event) => {
+        source.addEventListener(eventName, async (event) => {
             const form = source.closest("form");
             const scope = eventScope(source, root);
             const state = stateFor(scope);
@@ -293,10 +327,24 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 for (const pointer of marshalled.allocations)
                     instance.exports.aster_export_memory_free(pointer);
             }
-            // Keep ordinary form submission as the failure path. The default
-            // is cancelled only after the synchronous Aster transition
-            // returns successfully.
+            // Synchronous forms retain ordinary submission when the Aster
+            // transition traps before returning. An asynchronous transition
+            // must reserve the event before its first suspension.
             if (eventName === "submit") event.preventDefault();
+            if (asyncResult) {
+                source.setAttribute("aria-busy", "true");
+                const disables = "disabled" in source;
+                const wasDisabled = disables ? source.disabled : false;
+                if (disables) source.disabled = true;
+                try {
+                    result = await awaitBrowserTask(
+                        Number(result), taskResult, instance.exports, memory
+                    );
+                } finally {
+                    source.removeAttribute("aria-busy");
+                    if (disables) source.disabled = wasDisabled;
+                }
+            }
             if (resultType === "o") {
                 const message = decodeOwnedString(
                     Number(result), instance.exports, memory

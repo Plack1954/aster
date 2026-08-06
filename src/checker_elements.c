@@ -126,6 +126,10 @@ static bool web_handler_result_type(const Type *type) {
             type->declaration->kind == DECL_STRUCT);
 }
 
+static const Type *web_handler_completion_type(const Type *type) {
+    return type != NULL && type->kind == TYPE_TASK ? type->element : type;
+}
+
 static char web_handler_type_code(const Type *type) {
     if (type->kind == TYPE_BOOL)
         return 'b';
@@ -159,9 +163,16 @@ static void check_html_event_handler(
                   "event handler `%s` must be public",
                   handler->as.function.name);
     handler->as.function.is_web_handler = true;
-    if (!web_handler_result_type(handler_type->element))
+    const Type *completion =
+        web_handler_completion_type(handler_type->element);
+    if (handler_type->element->kind == TYPE_TASK &&
+        !handler->as.function.is_async)
         lang_diag(checker->diagnostics, property->value->span,
-                  "event handler `%s` must return a scalar, `String`, `Html`, struct, or `void`",
+                  "Task-returning event handler `%s` must be declared `async`",
+                  handler->as.function.name);
+    if (!web_handler_result_type(completion))
+        lang_diag(checker->diagnostics, property->value->span,
+                  "event handler `%s` must return a scalar, `String`, `Html`, struct, `void`, or `Task` of one of those types",
                   handler->as.function.name);
     for (size_t argument = 0U;
          argument < handler_type->argument_count; ++argument)
@@ -182,10 +193,14 @@ static void check_html_event_handler(
         length += strlen(handler->as.function.params[parameter].name) + 3U;
     char *binding = lang_arena_alloc(
         &checker->module->arena, length + 1U);
+    char result_code = completion->kind == TYPE_STRING
+        ? 'o' : web_handler_type_code(completion);
+    if (handler_type->element->kind == TYPE_TASK &&
+        result_code >= 'a' && result_code <= 'z')
+        result_code = (char)(result_code - ('a' - 'A'));
     size_t offset = (size_t)snprintf(
         binding, length + 1U, "%s|%s|%c", event_name, handler_name,
-        handler_type->element->kind == TYPE_STRING
-            ? 'o' : web_handler_type_code(handler_type->element));
+        result_code);
     for (size_t parameter = 0U;
          parameter < handler->as.function.param_count; ++parameter)
         offset += (size_t)snprintf(

@@ -54,15 +54,20 @@ or export adapter. Supported experiments cover:
 - keyed collection insertion, replacement, and removal;
 - preserving the collection node and unaffected child identity;
 - hydrating handlers inside newly inserted Aster HTML;
-- normal form actions and methods as progressive fallbacks.
+- normal form actions and methods as progressive fallbacks;
+- asynchronous event handlers suspended by `Task.Delay`, with JavaScript host
+  clock polling, typed task results, fault transport, and deterministic task
+  release.
 
 The retained state is independent of the current DOM projection. Tests
 intentionally corrupt rendered values and prove that later transitions use the
 stored typed value and repair the DOM.
 
-Current explicit gaps include asynchronous handlers, Fetch-backed HTTP,
-general nested aggregate ABI generation, broad browser APIs, navigation and
-history policy, and evidence from a substantial interactive application.
+The first asynchronous slice proves real Wasm suspension and resumption with
+`Task.Delay`; it does not yet provide browser I/O. Current explicit gaps include
+Fetch-backed HTTP, cancellation driven by the browser host, general nested
+aggregate ABI generation, broad browser APIs, navigation and history policy,
+and evidence from a substantial interactive application.
 
 ## Why a virtual DOM is not the starting point
 
@@ -254,7 +259,7 @@ source-aware diagnostic before linking.
 Before selecting a general reactive model, the retained-DOM foundation should
 be tested with practical missing capabilities:
 
-- asynchronous handlers;
+- asynchronous handlers beyond the initial `Task.Delay` executor slice;
 - Fetch-backed `System.Net.Http` or another typed browser HTTP boundary;
 - cancellation and stale-response handling;
 - loading, success, and error projections;

@@ -21,8 +21,10 @@ bool c_backend_async_function_supported(
 
 void c_backend_emit_async_runtime(FILE *output) {
     fputs(
+        "#if !defined(__wasm32__)\n"
         "#include <threads.h>\n"
-        "#include <time.h>\n\n"
+        "#include <time.h>\n"
+        "#endif\n\n"
         "typedef enum aster_task_state {\n"
         "    ASTER_TASK_PENDING,\n"
         "    ASTER_TASK_SUCCEEDED,\n"
@@ -314,6 +316,13 @@ void c_backend_emit_async_runtime(FILE *output) {
         "}\n",
         output);
     fputs(
+        "#if defined(__wasm32__)\n"
+        "__attribute__((import_module(\"aster\"), import_name(\"now_ms\")))\n"
+        "int64_t aster_browser_now_ms(void);\n"
+        "static int64_t aster_task_now_ms(void) {\n"
+        "    return aster_browser_now_ms();\n"
+        "}\n"
+        "#else\n"
         "static int64_t aster_task_now_ms(void) {\n"
         "    struct timespec now;\n"
         "    if (timespec_get(&now, TIME_UTC) != TIME_UTC)\n"
@@ -321,6 +330,7 @@ void c_backend_emit_async_runtime(FILE *output) {
         "    return (int64_t)now.tv_sec * INT64_C(1000) +\n"
         "           (int64_t)now.tv_nsec / INT64_C(1000000);\n"
         "}\n"
+        "#endif\n"
         "static aster_task *aster_task_delay(\n"
         "        int64_t milliseconds,\n"
         "        aster_cancellation_state *cancellation) {\n"
@@ -381,6 +391,10 @@ void c_backend_emit_async_runtime(FILE *output) {
         "    (void)aster_task_delay;\n"
         "    (void)aster_when_all_start;\n"
         "    (void)aster_when_any_start;\n"
+        "#if defined(__wasm32__)\n"
+        "    if (task->state == ASTER_TASK_PENDING)\n"
+        "        aster_trap(\"browser Task must be awaited by the host\");\n"
+        "#else\n"
         "    while (task->state == ASTER_TASK_PENDING) {\n"
         "        if (aster_task_process_timers()) continue;\n"
         "        if (aster_task_timers == NULL)\n"
@@ -400,6 +414,7 @@ void c_backend_emit_async_runtime(FILE *output) {
         "        };\n"
         "        (void)thrd_sleep(&duration, NULL);\n"
         "    }\n"
+        "#endif\n"
         "}\n\n",
         output);
 }

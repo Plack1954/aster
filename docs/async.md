@@ -48,9 +48,13 @@ observable completion handle. Allocation and reference-count costs must be
 measured, and the compiler may elide storage when completion is synchronous or
 the task does not escape. Those optimizations may not change source semantics.
 
-There is no initial synchronization-context equivalent. Server continuations
-resume on the owning Aster executor. A later browser executor may resume on
-the browser's DOM thread without changing the task API.
+There is no synchronization-context equivalent. Server continuations resume
+on the owning Aster executor. The initial browser executor resumes generated-C
+Wasm continuations on the browser's DOM thread: JavaScript polls the exported
+Task boundary, supplies the monotonic-enough wall-clock value used by
+`Task.Delay`, and applies the typed result after completion. Fetch and other
+browser-hosted asynchronous operations remain later work and do not change the
+public task API.
 
 ## Exceptions and cancellation
 

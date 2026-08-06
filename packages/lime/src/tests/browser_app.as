@@ -9,9 +9,23 @@ public struct TodoPatch
     Html item;
 }
 
+private extern Task Task.Delay(int milliseconds);
+
 public int Increment(int count)
 {
     return count + 1;
+}
+
+public async Task<int> IncrementLater(int count)
+{
+    await Task.Delay(25);
+    return count + 1;
+}
+
+public async Task<int> FailLater(int count)
+{
+    await Task.Delay(1);
+    throw new Exception("browser async failure");
 }
 
 public bool ValidateName(string name)
@@ -53,6 +67,12 @@ public Html BrowserPage(Html browserLoader)
         <section id="counter-island">
             <output name="count">1</output>
             <button type="button" onclick=Increment>Increment</button>
+            <button type="button" onclick=IncrementLater>
+                Increment later
+            </button>
+            <button type="button" hidden=true onclick=FailLater>
+                Fail later
+            </button>
         </section>
         <form
             id="contact"

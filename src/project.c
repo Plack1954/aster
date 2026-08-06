@@ -999,7 +999,8 @@ int lang_project_build_web(const char *manifest_path,
             loader_ok = fprintf(
                 application_loader,
                 "import { hydrateAster } from \"./aster.js\";\n"
-                "await hydrateAster({ wasmUrl: \"./%s.wasm\" });\n",
+                "await hydrateAster({ wasmUrl: "
+                "new URL(\"./%s.wasm\", import.meta.url) });\n",
                 target->name) >= 0;
         if (application_loader != NULL &&
             fclose(application_loader) != 0)

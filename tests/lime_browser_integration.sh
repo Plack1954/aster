@@ -54,16 +54,18 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 port=$(head -n 1 "$port_file")
 
-curl -fsS "http://127.0.0.1:${port}/" |
-    grep -q 'data-aster-event="click|Increment|l|l:count"'
+page=$(curl -fsS "http://127.0.0.1:${port}/")
+grep -q 'data-aster-event="click|Increment|l|l:count"' <<<"$page"
+grep -q 'data-aster-event="click|IncrementLater|L|l:count"' <<<"$page"
 test "$(curl -fsS \
     "http://127.0.0.1:${port}/browser/browser_http_server.wasm" |
     wc -c)" -gt 0
 curl -fsS "http://127.0.0.1:${port}/browser/aster.js" |
     grep -q 'hydrateAster'
-curl -fsS \
-    "http://127.0.0.1:${port}/browser/browser_http_server.js" |
-    grep -q 'browser_http_server.wasm'
+loader=$(curl -fsS \
+    "http://127.0.0.1:${port}/browser/browser_http_server.js")
+grep -q 'browser_http_server.wasm' <<<"$loader"
+grep -q 'new URL' <<<"$loader"
 curl -fsS -X POST \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data 'name=Brandon' \

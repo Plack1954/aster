@@ -975,6 +975,16 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
         PASS_REGULAR_EXPRESSION
             "wasm islands verified: typed exports, SSR counter, and two forms"
     )
+    add_test(NAME lime_browser_async_wasm
+        COMMAND bash tests/lime_browser_async_wasm.sh
+            $<TARGET_FILE:lang>
+            ${ASTER_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_BINARY_DIR}/lime-browser-async)
+    set_tests_properties(lime_browser_async_wasm PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION
+            "Lime browser async Task.Delay transition verified"
+        TIMEOUT 60)
 endif()
 if(ASTER_ENABLE_SQLITE_TESTS AND UNIX AND ASTER_WASM_CLANG AND
    ASTER_WASM_LINKER AND ASTER_WASM_OPTIMIZER AND
