@@ -679,8 +679,11 @@ It must not distort production HTTP semantics.
 - Keep the implemented endpoint names and borrowed `LinkGenerator` on the one
   application graph when the linear endpoint scan becomes a compiled matcher.
 - Extend the implemented borrowed `EndpointDataSource` only when real tooling
-  proves that additional metadata is necessary; do not couple Lime's core to
-  an OpenAPI implementation.
+  proves that additional metadata is necessary. The bounded `Lime.OpenApi`
+  generator now consumes its paths, methods, names, descriptions, tags,
+  path-parameter names, and produced statuses without reflection. Schema and
+  content metadata remain explicit future extensions rather than inferred
+  runtime machinery.
 - Keep group metadata conventions on the same endpoint objects; do not create
   a parallel group router or copy endpoint graphs.
 

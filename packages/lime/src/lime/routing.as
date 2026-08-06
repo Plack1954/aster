@@ -159,6 +159,48 @@ public struct RoutePattern
         return false;
     }
 
+    public readonly string GetParameterName(nuint index)
+    {
+        nuint current = 0;
+        foreach (RouteSegment segment in segments)
+        {
+            if (segment.kind != RouteSegmentKind.Literal)
+            {
+                if (current == index) { return segment.value; }
+                current += 1;
+            }
+        }
+        throw new ArgumentException("route parameter index is out of range");
+    }
+
+    public readonly string ToOpenApiPath()
+    {
+        if (this.segments.Count == 0) { return "/"; }
+        StringBuilder result = new();
+        foreach (RouteSegment segment in segments)
+        {
+            result.Append("/");
+            if (segment.kind == RouteSegmentKind.Literal)
+            {
+                result.Append(segment.value);
+            }
+            else
+            {
+                if (segment.optional)
+                {
+                    throw new InvalidOperationException(
+                        "OpenAPI cannot represent an optional path parameter"
+                    );
+                }
+                result.Append("{");
+                result.Append(segment.value);
+                result.Append("}");
+            }
+        }
+        if (this.trailingSlash) { result.Append("/"); }
+        return result.ToString();
+    }
+
     public Option<string> FirstLiteralSegment
     {
         get

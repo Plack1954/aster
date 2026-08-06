@@ -1219,6 +1219,21 @@ public struct RouteEndpoint
         }
     }
 
+    public nuint ParameterCount
+    {
+        get { return this.Validate().pattern.ParameterCount; }
+    }
+
+    public string GetParameterName(nuint index)
+    {
+        return this.Validate().pattern.GetParameterName(index);
+    }
+
+    public string OpenApiPath
+    {
+        get { return this.Validate().pattern.ToOpenApiPath(); }
+    }
+
     public int GetProducedStatus(nuint index)
     {
         EndpointMetadata metadata = this.Validate().metadata;

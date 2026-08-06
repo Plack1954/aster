@@ -14,6 +14,10 @@ entry = "Lime.CurrentHttp"
 kind = "lib"
 entry = "Lime.H2O"
 
+[target.openapi]
+kind = "lib"
+entry = "Lime.OpenApi"
+
 [target.forms]
 kind = "lib"
 entry = "Lime.Forms"
@@ -49,6 +53,10 @@ entry = "Tests.Smoke"
 [target.routing_patterns]
 kind = "test"
 entry = "Tests.RoutingPatterns"
+
+[target.openapi_smoke]
+kind = "test"
+entry = "Tests.OpenApiSmoke"
 
 [target.sessions_smoke]
 kind = "test"

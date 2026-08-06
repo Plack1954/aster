@@ -83,10 +83,32 @@ Console.WriteLine(endpoint.GetMethod(0));
 ```
 
 `RouteEndpoint` exposes the optional name and description plus indexed methods,
-tags, and produced statuses. The data source and its endpoints are borrowed
-views; the application owns the stable registered endpoint objects and must
-outlive every view. This surface is sufficient for tests and future tooling
-without coupling Lime itself to OpenAPI.
+tags, produced statuses, and route-parameter names. The data source and its
+endpoints are borrowed views; the application owns the stable registered
+endpoint objects and must outlive every view.
+
+The optional `Lime.OpenApi` module generates a bounded OpenAPI 3.1 document
+directly from that graph:
+
+```aster
+using Lime.OpenApi;
+
+string document = GenerateOpenApi(
+    app.Endpoints,
+    OpenApiInfo("Articles API", "1.0.0")
+);
+```
+
+It maps paths and methods, endpoint names to `operationId`, descriptions, tags,
+path parameters, and declared `.Produces(...)` statuses. When no produced
+status is declared it documents a default 200 response. Route constraints are
+removed from OpenAPI templates (`{id:int}` becomes `{id}`), while optional path
+parameters are rejected because OpenAPI requires every templated path parameter
+to be required. Routes that collapse to the same OpenAPI path and method are
+also rejected, as are custom HTTP methods outside OpenAPI's fixed operation
+names. The first version deliberately does not invent request-body,
+query/header, response-content, or component schemas that Lime's endpoint
+metadata cannot yet describe.
 
 Groups contribute a prefix while registering into the same endpoint graph.
 They can be nested and expose the same `Map*` family:
