@@ -1266,6 +1266,9 @@ static bool c_emit_module(const IrModule *ir,
         if (emitter.needs_http_client_runtime)
             fputs("    lang_configure_http_client_registrar("
                   "lang_register_http_client_natives);\n", output);
+        if (emitter.needs_crypto_runtime)
+            fputs("    lang_configure_crypto_registrar("
+                  "lang_register_crypto_natives);\n", output);
         if (emitter.needs_native_runtime)
             fputs("    lang_vm_register_builtins(aster_vm);\n", output);
         fprintf(output,
@@ -1306,6 +1309,9 @@ static bool c_emit_module(const IrModule *ir,
         if (emitter.needs_http_client_runtime)
             fputs("    lang_configure_http_client_registrar("
                   "lang_register_http_client_natives);\n", output);
+        if (emitter.needs_crypto_runtime)
+            fputs("    lang_configure_crypto_registrar("
+                  "lang_register_crypto_natives);\n", output);
         fprintf(output,
                 "    lang_vm_register_builtins(aster_vm);\n"
                 "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"

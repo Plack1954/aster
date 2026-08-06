@@ -2,6 +2,7 @@ namespace Lime.Sessions;
 
 using Lime;
 using Aster.Data.Sqlite;
+using System.Security.Cryptography;
 
 public struct SessionOptions
 {
@@ -74,18 +75,9 @@ public SessionStore SessionStore.Create(
     return new() { database = database, options = options };
 }
 
-private string CreateSessionId(Database database)
+private string CreateSessionId()
 {
-    Statement random = database.Prepare(
-        "SELECT lower(hex(randomblob(32)))"
-    );
-    if (!random.Read())
-    {
-        throw new InvalidOperationException(
-            "SQLite did not generate a session identifier."
-        );
-    }
-    return random.CurrentRow().GetString(0);
+    return RandomNumberGenerator.GetHexString(32);
 }
 
 private bool SessionExists(Database database, string id)
@@ -135,7 +127,7 @@ public Session SessionStore.Open(
     }
     if (isNew)
     {
-        id = CreateSessionId(self.database);
+        id = CreateSessionId();
         Statement insert = self.database.Prepare(
             "INSERT INTO LimeSessions (Id, ExpiresAt) VALUES (@id, unixepoch() + @timeout)"
         );

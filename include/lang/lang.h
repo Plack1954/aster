@@ -276,6 +276,9 @@ void lang_configure_http_client_registrar(LangNativeRegistrar registrar);
 void lang_register_configured_http_client_natives(LangVM *vm);
 /* Registrar supplied by the separately linked libcurl component. */
 void lang_register_http_client_natives(LangVM *vm);
+void lang_configure_crypto_registrar(LangNativeRegistrar registrar);
+void lang_register_configured_crypto_natives(LangVM *vm);
+void lang_register_crypto_natives(LangVM *vm);
 void lang_register_h2o_natives(LangVM *vm);
 /* Registers the optional SQLite adapter, or typed unavailable stubs. */
 void lang_register_sqlite_natives(LangVM *vm);

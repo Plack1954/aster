@@ -97,6 +97,9 @@ void c_backend_mark_function(CEmitter *emitter,
                     strncmp(instruction->symbol,
                             "NativeHttpClient", 16U) == 0)
                     emitter->needs_http_client_runtime = true;
+                if (instruction->symbol != NULL &&
+                    strncmp(instruction->symbol, "NativeCrypto", 12U) == 0)
+                    emitter->needs_crypto_runtime = true;
             }
         }
 }

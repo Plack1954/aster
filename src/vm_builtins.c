@@ -24,6 +24,7 @@
 #endif
 
 static LangNativeRegistrar http_client_registrar = NULL;
+static LangNativeRegistrar crypto_registrar = NULL;
 
 void lang_configure_http_client_registrar(LangNativeRegistrar registrar) {
     http_client_registrar = registrar;
@@ -31,6 +32,14 @@ void lang_configure_http_client_registrar(LangNativeRegistrar registrar) {
 
 void lang_register_configured_http_client_natives(LangVM *vm) {
     if (http_client_registrar != NULL) http_client_registrar(vm);
+}
+
+void lang_configure_crypto_registrar(LangNativeRegistrar registrar) {
+    crypto_registrar = registrar;
+}
+
+void lang_register_configured_crypto_natives(LangVM *vm) {
+    if (crypto_registrar != NULL) crypto_registrar(vm);
 }
 
 static LangNativeResult native_add(LangVM *vm, const LangValue *args,
@@ -2249,6 +2258,7 @@ void lang_vm_register_builtins(LangVM *vm) {
                                native_remove_directory_value, 1U);
     lang_register_http_natives(vm);
     lang_register_configured_http_client_natives(vm);
+    lang_register_configured_crypto_natives(vm);
     lang_register_h2o_natives(vm);
     lang_register_sqlite_natives(vm);
 }

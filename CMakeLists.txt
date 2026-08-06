@@ -11,6 +11,8 @@ option(ASTER_ENABLE_SQLITE_TESTS
     "Enable the slow SQLite and issue-tracker integration tests" OFF)
 option(ASTER_ENABLE_CURL
     "Enable the optional libcurl-backed native HTTP client" ON)
+option(ASTER_ENABLE_CRYPTO
+    "Enable OpenSSL-backed SHA-256 and HMAC-SHA256" ON)
 set(ASTER_GENERATED_C_TEST_LANES 2 CACHE STRING
     "Maximum number of generated-C test compilers run concurrently")
 option(LANG_VM_COMPUTED_GOTO
@@ -102,6 +104,20 @@ if(ASTER_ENABLE_CURL)
 else()
     message(STATUS "System.Net.Http native transport disabled")
 endif()
+add_library(aster_crypto STATIC src/crypto_native.c)
+target_include_directories(aster_crypto PUBLIC include)
+lang_enable_warnings(aster_crypto)
+if(WIN32)
+    target_link_libraries(aster_crypto PUBLIC bcrypt)
+endif()
+if(ASTER_ENABLE_CRYPTO)
+    find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+    target_compile_definitions(aster_crypto PRIVATE LANG_HAVE_OPENSSL=1)
+    target_link_libraries(aster_crypto PUBLIC OpenSSL::Crypto)
+    message(STATUS "System.Security.Cryptography enabled with OpenSSL")
+else()
+    message(STATUS "OpenSSL hashing disabled; OS randomness remains enabled")
+endif()
 set(LANG_HAVE_H2O OFF)
 if(ASTER_H2O_SOURCE_ROOT OR ASTER_H2O_BUILD_ROOT)
     if(NOT ASTER_H2O_SOURCE_ROOT OR NOT ASTER_H2O_BUILD_ROOT)
@@ -147,7 +163,7 @@ if(LANG_SANITIZE AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 add_executable(lang src/main.c)
-target_link_libraries(lang PRIVATE langlib aster_http_curl)
+target_link_libraries(lang PRIVATE langlib aster_http_curl aster_crypto)
 lang_enable_warnings(lang)
 
 install(TARGETS lang RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -920,6 +936,20 @@ if(ASTER_ENABLE_CURL AND UNIX AND ASTER_PYTHON_EXECUTABLE)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         TIMEOUT 60)
 endif()
+if(ASTER_ENABLE_CRYPTO AND UNIX)
+    add_test(NAME cryptography_vm_and_generated_c_integration
+        COMMAND bash tests/cryptography_integration.sh
+            $<TARGET_FILE:lang>
+            ${CMAKE_C_COMPILER}
+            $<TARGET_FILE:langlib>
+            $<TARGET_FILE:aster_crypto>
+            "${SQLite3_LIBRARIES}"
+            "${OPENSSL_CRYPTO_LIBRARY}"
+            ${CMAKE_CURRENT_BINARY_DIR}/cryptography)
+    set_tests_properties(cryptography_vm_and_generated_c_integration PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        TIMEOUT 60)
+endif()
 if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
    ASTER_WASM_OPTIMIZER AND ASTER_NODE_EXECUTABLE)
     add_test(NAME wasm_counter_trial
@@ -1678,7 +1708,9 @@ set_tests_properties(project_test_targets PROPERTIES
 add_aster_generated_project_test(
     lime_sessions_c_backend
     ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
-    sessions_smoke)
+    sessions_smoke
+    -DCRYPTO_LIBRARY=$<TARGET_FILE:aster_crypto>
+    -DOPENSSL_CRYPTO_LINK_LIBRARY=${OPENSSL_CRYPTO_LIBRARY})
 set_tests_properties(lime_sessions_c_backend PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

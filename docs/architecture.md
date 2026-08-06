@@ -99,6 +99,12 @@ libcurl pauses whenever the producer has not supplied the next chunk.
 typed unavailable stubs. Browser/Wasm does not use this component and will use
 Fetch.
 
+`System.Security.Cryptography` uses the same optional-component boundary.
+Random bytes come directly from the operating system (`getrandom`, system CNG,
+or the platform secure random facility); SHA-256, HMAC-SHA256, and the native
+constant-time comparison delegate to OpenSSL when enabled. The compiler and
+core runtime contain no cryptographic algorithms and do not link OpenSSL.
+
 Differential coverage compares generated C and VM output, cleanup, traps, and
 exit status.
 

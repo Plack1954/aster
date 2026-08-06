@@ -104,6 +104,9 @@ The current implementation supports:
   libcurl HTTP-client, and bounded
   HTTP natives, including `Result` conversion, request views, response-body
   consumption, and exactly-once server/request-handle cleanup;
+- reachability-gated registration for the separately linked `aster_crypto`
+  component, which supplies OS randomness and optional OpenSSL hashing without
+  adding either dependency to the core runtime;
 - allocation-free HTTP route matching and path-parameter views;
 - integrated generated-C execution of configuration parsing, buffered file
   input, validation, SQLite models, typed routing, and HTML rendering in the

@@ -19,6 +19,7 @@ typedef struct CEmitter {
     size_t *direct_local_tag_lengths;
     bool needs_native_runtime;
     bool needs_http_client_runtime;
+    bool needs_crypto_runtime;
     size_t async_function_index;
     size_t async_await_index;
     bool failed;

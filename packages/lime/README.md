@@ -294,7 +294,9 @@ the application before deleting any service object borrowed by its handlers.
   `FormFile.OpenReadStream()` has the same API for buffered and spilled files.
   Copies share temporary-file ownership; the final owner release removes the
   spill file.
-- `Lime.Sessions` provides explicit server-side sessions.
+- `Lime.Sessions` provides explicit server-side sessions. Session identifiers
+  use 256 bits from the operating-system cryptographic random source; SQLite
+  stores sessions but is no longer their RNG.
 - `Lime.Static` mounts safe static-file roots.
 - `Lime.Browser` adds optional browser/Wasm assets and hydration support.
 - `Lime.Ssg` executes the real GET endpoint graph to produce static output.

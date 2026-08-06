@@ -371,6 +371,7 @@ bool c_backend_registry_native_symbol(const char *symbol) {
             strcmp(symbol, "NativeRemoveDirectory") == 0 ||
             strncmp(symbol, "NativeSqlite", 12U) == 0 ||
             strncmp(symbol, "NativeHttpClient", 16U) == 0 ||
+            strncmp(symbol, "NativeCrypto", 12U) == 0 ||
             strncmp(symbol, "H2O", 3U) == 0 ||
             strcmp(symbol, "NativeProcessEnvironment") == 0 ||
             strcmp(symbol, "NativeProcessArg") == 0 ||

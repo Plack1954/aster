@@ -65,6 +65,11 @@ ctest --test-dir build --output-on-failure
 cmake -S . -B build-no-curl -DASTER_ENABLE_CURL=OFF
 ```
 
+OpenSSL-backed SHA-256 and HMAC-SHA256 are enabled by default and can be
+omitted with `-DASTER_ENABLE_CRYPTO=OFF`. Secure randomness still uses the
+operating system directly in that configuration; it never falls back to a
+non-cryptographic PRNG.
+
 Libcurl is an optional standard-library transport dependency, not part of the
 Aster language semantics. Generated programs that use `System.Net.Http` link
 the Aster native runtime and libcurl; programs that do not reach that module do
