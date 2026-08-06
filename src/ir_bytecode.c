@@ -1602,10 +1602,20 @@ static void lower_instruction(IrBytecodeBuilder *builder,
             store_result(builder, instruction);
             return;
         case IR_OP_VALUE_DISCARD:
-            move_value(
-                builder, instruction->operands[0], instruction->span);
-            (void)emit_instruction(
-                builder, OP_POP, 0, 0, instruction->span);
+            if (instruction->auxiliary == 1U) {
+                int32_t slot;
+                if (as_i32(builder,
+                           value_slot(builder, instruction->operands[0]),
+                           instruction->span, &slot))
+                    (void)emit_instruction(
+                        builder, OP_INVALIDATE_LOCAL, slot, 0,
+                        instruction->span);
+            } else {
+                move_value(
+                    builder, instruction->operands[0], instruction->span);
+                (void)emit_instruction(
+                    builder, OP_POP, 0, 0, instruction->span);
+            }
             return;
         case IR_OP_ADD_CHECKED: case IR_OP_SUB_CHECKED:
         case IR_OP_MUL_CHECKED: case IR_OP_DIV_CHECKED:
@@ -1849,6 +1859,134 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 instruction->span);
             store_result(builder, instruction);
             return;
+        case IR_OP_ENUM_IS: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            (void)emit_instruction(
+                builder, OP_GET_TAG, 0, 0, instruction->span);
+            const IrType *type = &builder->ir->types[
+                builder->source->value_types[instruction->operands[0]]];
+            int32_t tag = add_enum_metadata(
+                builder, type, instruction->auxiliary,
+                false, instruction->span);
+            if (builder->failed) return;
+            (void)emit_instruction(
+                builder, OP_CONSTANT, tag, 0, instruction->span);
+            (void)emit_instruction(
+                builder, OP_EQ, 0, 0, instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
+        case IR_OP_ENUM_PAYLOAD_BORROW: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            (void)emit_instruction(
+                builder, OP_BORROW_PAYLOAD, 0, 0,
+                instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
+        case IR_OP_COLLECTION_COUNT: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            (void)emit_instruction(
+                builder, OP_COLLECTION_COUNT, 0, 0,
+                instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
+        case IR_OP_LIST_ELEMENT_BORROW: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            move_value(builder, instruction->operands[1],
+                       instruction->span);
+            (void)emit_instruction(
+                builder, OP_LIST_ELEMENT_BORROW, 0, 0,
+                instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
+        case IR_OP_QUEUE_FRONT_BORROW:
+        case IR_OP_STACK_TOP_BORROW: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            (void)emit_instruction(
+                builder,
+                instruction->opcode == IR_OP_QUEUE_FRONT_BORROW
+                    ? OP_QUEUE_FRONT_BORROW
+                    : OP_STACK_TOP_BORROW,
+                0, 0, instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
+        case IR_OP_DICTIONARY_GET_BORROW: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            move_value(builder, instruction->operands[1],
+                       instruction->span);
+            (void)emit_instruction(
+                builder, OP_DICTIONARY_GET_BORROW, 0, 0,
+                instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            move_value(builder, instruction->operands[1],
+                       instruction->span);
+            (void)emit_instruction(
+                builder,
+                instruction->opcode == IR_OP_DICTIONARY_KEY_BORROW
+                    ? OP_DICTIONARY_KEY_BORROW
+                    : OP_DICTIONARY_VALUE_BORROW,
+                0, 0, instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
         case IR_OP_ITERATOR_BEGIN:
             move_value(
                 builder, instruction->operands[0], instruction->span);

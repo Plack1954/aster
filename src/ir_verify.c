@@ -24,7 +24,12 @@ const char *ir_opcode_name(IrOpcode opcode) {
         "local_field_borrow",
         "local_field_set", "index_get",
         "index_set", "local_index_get", "local_index_set",
-        "local_enum_is", "local_enum_payload_move", "iterator_begin",
+        "local_enum_is", "local_enum_payload_move", "enum_is",
+        "enum_payload_borrow", "collection_count", "list_element_borrow",
+        "queue_front_borrow", "stack_top_borrow",
+        "dictionary_get_borrow",
+        "dictionary_key_borrow", "dictionary_value_borrow",
+        "iterator_begin",
         "borrowed_iterator_begin",
         "local_iterator_has_next", "local_iterator_next", "raw_alloc",
         "raw_load", "raw_store", "class_delete", "element_begin",
@@ -146,6 +151,16 @@ static bool operand_count_valid(const IrInstruction *instruction) {
         case IR_OP_EXCEPTION_MATCH:
         case IR_OP_EXCEPTION_TAKE:
             return instruction->operand_count == 0U;
+        case IR_OP_ENUM_IS: case IR_OP_ENUM_PAYLOAD_BORROW:
+        case IR_OP_COLLECTION_COUNT:
+        case IR_OP_QUEUE_FRONT_BORROW:
+        case IR_OP_STACK_TOP_BORROW:
+            return instruction->operand_count == 1U;
+        case IR_OP_LIST_ELEMENT_BORROW:
+        case IR_OP_DICTIONARY_GET_BORROW:
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW:
+            return instruction->operand_count == 2U;
         case IR_OP_BORROWED_ITERATOR_BEGIN:
             return instruction->operand_count <= 1U;
         case IR_OP_LOCAL_STORE: case IR_OP_STATIC_FIELD_STORE:
@@ -237,6 +252,14 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_LOCAL_FIELD_BORROW: case IR_OP_INDEX_GET:
         case IR_OP_LOCAL_INDEX_GET: case IR_OP_LOCAL_ENUM_IS:
         case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
+        case IR_OP_ENUM_IS: case IR_OP_ENUM_PAYLOAD_BORROW:
+        case IR_OP_COLLECTION_COUNT:
+        case IR_OP_LIST_ELEMENT_BORROW:
+        case IR_OP_QUEUE_FRONT_BORROW:
+        case IR_OP_STACK_TOP_BORROW:
+        case IR_OP_DICTIONARY_GET_BORROW:
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW:
         case IR_OP_ITERATOR_BEGIN: case IR_OP_BORROWED_ITERATOR_BEGIN:
         case IR_OP_LOCAL_ITERATOR_HAS_NEXT:
         case IR_OP_LOCAL_ITERATOR_NEXT: case IR_OP_RAW_ALLOC:
@@ -622,6 +645,102 @@ static bool instruction_signature_valid(
             return instruction->operand_count == 0U &&
                    expected != IR_INVALID_ID &&
                    instruction->result_type == expected;
+        }
+        case IR_OP_ENUM_IS: {
+            if (!verify_value(function, instruction->operands[0]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            if (!verify_type(ir, source_id)) return false;
+            const IrType *source = &ir->types[source_id];
+            return source->shape == IR_TYPE_UNION &&
+                   instruction->auxiliary < source->variant_count &&
+                   ir->types[instruction->result_type].shape == IR_TYPE_BOOL;
+        }
+        case IR_OP_ENUM_PAYLOAD_BORROW: {
+            if (!verify_value(function, instruction->operands[0]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            if (!verify_type(ir, source_id)) return false;
+            const IrType *source = &ir->types[source_id];
+            return source->shape == IR_TYPE_UNION &&
+                   instruction->auxiliary < source->variant_count &&
+                   source->variant_payload_types[instruction->auxiliary] !=
+                       IR_INVALID_ID &&
+                   instruction->result_type ==
+                       source->variant_payload_types[instruction->auxiliary];
+        }
+        case IR_OP_COLLECTION_COUNT: {
+            if (!verify_value(function, instruction->operands[0]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            return verify_type(ir, source_id) &&
+                   ir->types[source_id].shape == IR_TYPE_BUILTIN_OBJECT &&
+                   ir->types[instruction->result_type].shape ==
+                       IR_TYPE_UNSIGNED_INT;
+        }
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW: {
+            if (!verify_value(function, instruction->operands[0]) ||
+                !verify_value(function, instruction->operands[1]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            if (!verify_type(ir, source_id)) return false;
+            const IrType *source = &ir->types[source_id];
+            IrTypeId expected = instruction->opcode ==
+                    IR_OP_DICTIONARY_KEY_BORROW
+                ? source->element_type : source->error_type;
+            return source->shape == IR_TYPE_BUILTIN_OBJECT &&
+                   expected != IR_INVALID_ID &&
+                   instruction->result_type == expected &&
+                   ir->types[function->value_types[
+                       instruction->operands[1]]].shape ==
+                       IR_TYPE_UNSIGNED_INT;
+        }
+        case IR_OP_LIST_ELEMENT_BORROW: {
+            if (!verify_value(function, instruction->operands[0]) ||
+                !verify_value(function, instruction->operands[1]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            if (!verify_type(ir, source_id)) return false;
+            const IrType *source = &ir->types[source_id];
+            return source->shape == IR_TYPE_BUILTIN_OBJECT &&
+                   source->element_type != IR_INVALID_ID &&
+                   instruction->result_type == source->element_type &&
+                   ir->types[function->value_types[
+                       instruction->operands[1]]].shape ==
+                       IR_TYPE_UNSIGNED_INT;
+        }
+        case IR_OP_QUEUE_FRONT_BORROW:
+        case IR_OP_STACK_TOP_BORROW: {
+            if (!verify_value(function, instruction->operands[0]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            if (!verify_type(ir, source_id)) return false;
+            const IrType *source = &ir->types[source_id];
+            return source->shape == IR_TYPE_BUILTIN_OBJECT &&
+                   source->element_type != IR_INVALID_ID &&
+                   instruction->result_type == source->element_type;
+        }
+        case IR_OP_DICTIONARY_GET_BORROW: {
+            if (!verify_value(function, instruction->operands[0]) ||
+                !verify_value(function, instruction->operands[1]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            if (!verify_type(ir, source_id)) return false;
+            const IrType *source = &ir->types[source_id];
+            return source->shape == IR_TYPE_BUILTIN_OBJECT &&
+                   source->element_type != IR_INVALID_ID &&
+                   source->error_type != IR_INVALID_ID &&
+                   instruction->result_type == source->error_type &&
+                   value_is_type(function, instruction->operands[1],
+                                 source->element_type);
         }
         case IR_OP_ITERATOR_BEGIN: {
             if (!verify_type(ir, instruction->result_type))

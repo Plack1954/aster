@@ -203,7 +203,14 @@ bool c_backend_value_is_borrowed_projection(
                 (producer->auxiliary == 1U ||
                  producer->auxiliary == 2U)) ||
                (producer->opcode == IR_OP_INDEX_GET &&
-                producer->integer != 0U);
+                producer->integer != 0U) ||
+               producer->opcode == IR_OP_ENUM_PAYLOAD_BORROW ||
+               producer->opcode == IR_OP_LIST_ELEMENT_BORROW ||
+               producer->opcode == IR_OP_QUEUE_FRONT_BORROW ||
+               producer->opcode == IR_OP_STACK_TOP_BORROW ||
+               producer->opcode == IR_OP_DICTIONARY_GET_BORROW ||
+               producer->opcode == IR_OP_DICTIONARY_KEY_BORROW ||
+               producer->opcode == IR_OP_DICTIONARY_VALUE_BORROW;
     return false;
 }
 

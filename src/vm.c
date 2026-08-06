@@ -355,6 +355,14 @@ static LangValue vm_execute_function_core(
         [OP_SET_FIELD_LOCAL]=&&vm_dispatch_set_field_local,
         [OP_GET_TAG]=&&vm_dispatch_get_tag,
         [OP_TAKE_PAYLOAD]=&&vm_dispatch_take_payload,
+        [OP_BORROW_PAYLOAD]=&&vm_dispatch_borrow_payload,
+        [OP_COLLECTION_COUNT]=&&vm_dispatch_collection_count,
+        [OP_DICTIONARY_KEY_BORROW]=&&vm_dispatch_dictionary_key_borrow,
+        [OP_DICTIONARY_VALUE_BORROW]=&&vm_dispatch_dictionary_value_borrow,
+        [OP_LIST_ELEMENT_BORROW]=&&vm_dispatch_list_element_borrow,
+        [OP_QUEUE_FRONT_BORROW]=&&vm_dispatch_queue_front_borrow,
+        [OP_STACK_TOP_BORROW]=&&vm_dispatch_stack_top_borrow,
+        [OP_DICTIONARY_GET_BORROW]=&&vm_dispatch_dictionary_get_borrow,
         [OP_SET_LOCAL]=&&vm_dispatch_set_local,
         [OP_HTML_FRAGMENT]=&&vm_dispatch_html_fragment,
         [OP_HTML_BEGIN]=&&vm_dispatch_html_begin,
@@ -2316,6 +2324,125 @@ vm_switch_integer_binary:
                 PUSH(payload);
                 break;
             }
+            VM_LABEL(borrow_payload)
+            case OP_BORROW_PAYLOAD: {
+                LangValue aggregate = POP();
+                if (aggregate.tag != LANG_VALUE_OBJECT ||
+                    aggregate.as.object == NULL ||
+                    ((Object *)aggregate.as.object)->kind != OBJECT_STRUCT ||
+                    ((Object *)aggregate.as.object)->as.structure.count != 1U) {
+                    runtime_error(vm, instruction,
+                                  "enum payload borrow requires one payload");
+                    goto fail;
+                }
+                PUSH(((Object *)aggregate.as.object)->as.structure.fields[0]);
+                break;
+            }
+            VM_LABEL(collection_count)
+            case OP_COLLECTION_COUNT: {
+                LangValue collection = POP();
+                Object *object = collection.tag == LANG_VALUE_OBJECT
+                    ? collection.as.object : NULL;
+                if (object == NULL || object->kind != OBJECT_DICTIONARY) {
+                    runtime_error(vm, instruction,
+                                  "collection count requires a dictionary");
+                    goto fail;
+                }
+                PUSH(((LangValue){
+                    .tag=LANG_VALUE_U64,
+                    .as.u64=(uint64_t)(object->as.dictionary.count / 2U)
+                }));
+                break;
+            }
+            VM_LABEL(dictionary_key_borrow)
+            case OP_DICTIONARY_KEY_BORROW:
+            VM_LABEL(dictionary_value_borrow)
+            case OP_DICTIONARY_VALUE_BORROW: {
+                LangValue index_value = POP();
+                LangValue collection = POP();
+                Object *object = collection.tag == LANG_VALUE_OBJECT
+                    ? collection.as.object : NULL;
+                if (object == NULL || object->kind != OBJECT_DICTIONARY ||
+                    index_value.tag != LANG_VALUE_U64 ||
+                    index_value.as.u64 > (uint64_t)SIZE_MAX ||
+                    (size_t)index_value.as.u64 >=
+                        object->as.dictionary.count / 2U) {
+                    runtime_error(vm, instruction,
+                                  "dictionary copy index out of bounds");
+                    goto fail;
+                }
+                size_t physical = (size_t)index_value.as.u64 * 2U +
+                    (instruction.op == OP_DICTIONARY_VALUE_BORROW ? 1U : 0U);
+                PUSH(object->as.dictionary.items[physical]);
+                break;
+            }
+            VM_LABEL(list_element_borrow)
+            case OP_LIST_ELEMENT_BORROW: {
+                LangValue index_value = POP();
+                LangValue collection = POP();
+                Object *object = collection.tag == LANG_VALUE_OBJECT
+                    ? collection.as.object : NULL;
+                if (object == NULL || object->kind != OBJECT_VEC ||
+                    index_value.tag != LANG_VALUE_U64 ||
+                    index_value.as.u64 > (uint64_t)SIZE_MAX ||
+                    (size_t)index_value.as.u64 >= object->as.vector.count) {
+                    runtime_error(vm, instruction,
+                                  "List index out of bounds");
+                    goto fail;
+                }
+                PUSH(object->as.vector.items[
+                    (size_t)index_value.as.u64]);
+                break;
+            }
+            VM_LABEL(queue_front_borrow)
+            case OP_QUEUE_FRONT_BORROW: {
+                LangValue collection = POP();
+                Object *object = collection.tag == LANG_VALUE_OBJECT
+                    ? collection.as.object : NULL;
+                if (object == NULL || object->kind != OBJECT_QUEUE ||
+                    object->as.queue.count == 0U) {
+                    runtime_error(vm, instruction, "Queue is empty");
+                    goto fail;
+                }
+                PUSH(object->as.queue.items[object->as.queue.head]);
+                break;
+            }
+            VM_LABEL(stack_top_borrow)
+            case OP_STACK_TOP_BORROW: {
+                LangValue collection = POP();
+                Object *object = collection.tag == LANG_VALUE_OBJECT
+                    ? collection.as.object : NULL;
+                if (object == NULL || object->kind != OBJECT_VEC ||
+                    object->as.vector.count == 0U) {
+                    runtime_error(vm, instruction, "Stack is empty");
+                    goto fail;
+                }
+                PUSH(object->as.vector.items[
+                    object->as.vector.count - 1U]);
+                break;
+            }
+            VM_LABEL(dictionary_get_borrow)
+            case OP_DICTIONARY_GET_BORROW: {
+                LangValue key = POP();
+                LangValue collection = POP();
+                Object *object = collection.tag == LANG_VALUE_OBJECT
+                    ? collection.as.object : NULL;
+                if (object == NULL || object->kind != OBJECT_DICTIONARY) {
+                    vm_value_drop_owned(vm, key);
+                    runtime_error(vm, instruction,
+                                  "Dictionary key not found");
+                    goto fail;
+                }
+                size_t found = vm_dictionary_find(object, key);
+                vm_value_drop_owned(vm, key);
+                if (found == SIZE_MAX) {
+                    runtime_error(vm, instruction,
+                                  "Dictionary key not found");
+                    goto fail;
+                }
+                PUSH(object->as.dictionary.items[found + 1U]);
+                break;
+            }
             VM_LABEL(html_fragment)
             case OP_HTML_FRAGMENT: {
                 Object *html = NULL;
@@ -2916,11 +3043,12 @@ vm_switch_integer_binary:
                 if (iterable == NULL ||
                     (iterable->kind != OBJECT_ARRAY &&
                      iterable->kind != OBJECT_VEC &&
+                     iterable->kind != OBJECT_QUEUE &&
                      iterable->kind != OBJECT_STRING)) {
                     vm_value_drop_owned(vm, value);
                     runtime_error(
                         vm, instruction,
-                        "iteration requires an array or vector");
+                        "iteration requires a supported collection");
                     goto fail;
                 }
                 Object *iterator = vm_allocate(1U, sizeof(*iterator));
@@ -2959,10 +3087,11 @@ vm_switch_integer_binary:
                 if (iterable == NULL ||
                     (iterable->kind != OBJECT_ARRAY &&
                      iterable->kind != OBJECT_VEC &&
+                     iterable->kind != OBJECT_QUEUE &&
                      iterable->kind != OBJECT_STRING)) {
                     runtime_error(
                         vm, instruction,
-                        "borrowed iteration requires an array or vector local");
+                        "borrowed iteration requires a supported collection local");
                     goto fail;
                 }
                 Object *iterator = vm_allocate(1U, sizeof(*iterator));
@@ -2988,6 +3117,8 @@ vm_switch_integer_binary:
                         ? array->as.string.length
                     : array->kind == OBJECT_VEC
                         ? array->as.vector.count
+                    : array->kind == OBJECT_QUEUE
+                        ? array->as.queue.count
                         : array->as.array.count;
                 if (iterator->as.iterator.index >= count) {
                     ip = (size_t)instruction.a;
@@ -3022,6 +3153,16 @@ vm_switch_integer_binary:
                         if (!iterator->as.iterator.borrowed)
                             array->as.vector.items[index] =
                                 (LangValue){.tag=LANG_VALUE_UNIT};
+                    } else if (array->kind == OBJECT_QUEUE) {
+                        size_t physical =
+                            (array->as.queue.head + index) %
+                            array->as.queue.capacity;
+                        LOCAL(slot) = iterator->as.iterator.borrowed
+                            ? array->as.queue.items[physical]
+                            : array->as.queue.items[physical];
+                        if (!iterator->as.iterator.borrowed)
+                            array->as.queue.items[physical] =
+                                (LangValue){.tag=LANG_VALUE_UNIT};
                     } else {
                         LOCAL(slot) = iterator->as.iterator.borrowed
                             ? vm_value_clone(array->as.array.items[index])
@@ -3054,6 +3195,8 @@ vm_switch_integer_binary:
                         ? iterable->as.string.length
                     : iterable->kind == OBJECT_VEC
                         ? iterable->as.vector.count
+                    : iterable->kind == OBJECT_QUEUE
+                        ? iterable->as.queue.count
                         : iterable->as.array.count;
                 PUSH(((LangValue){
                     .tag=LANG_VALUE_BOOL,
@@ -3084,6 +3227,8 @@ vm_switch_integer_binary:
                         ? iterable->as.string.length
                     : iterable->kind == OBJECT_VEC
                         ? iterable->as.vector.count
+                    : iterable->kind == OBJECT_QUEUE
+                        ? iterable->as.queue.count
                         : iterable->as.array.count;
                 if (iterator->as.iterator.index >= count) {
                     runtime_error(
@@ -3118,6 +3263,10 @@ vm_switch_integer_binary:
                 }
                 LangValue *item = iterable->kind == OBJECT_VEC
                     ? &iterable->as.vector.items[index]
+                    : iterable->kind == OBJECT_QUEUE
+                    ? &iterable->as.queue.items[
+                        (iterable->as.queue.head + index) %
+                        iterable->as.queue.capacity]
                     : &iterable->as.array.items[index];
                 if (iterator->as.iterator.borrowed) {
                     PUSH(*item);

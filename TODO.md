@@ -52,6 +52,10 @@ do not reproduce unrelated C++ special-member complexity.
   assignment, value parameters, returns that cannot be elided, field/index
   reads, aggregate copies, collection insertion, iteration, and generic
   instantiation.
+  Direct sites now do so, including self-assignment, returns from `const ref`,
+  deconstruction, `foreach`, and `List.Get`/`Queue.Peek`/`Stack.Peek`/
+  `Dictionary.Get`. The conditional `TryPeek` and `TryGetValue` out-parameter
+  paths still need typed custom-copy lowering.
 - [ ] Check that a custom copy constructor completely initializes its result and
   cannot mutate its immutable source through the reference.
 - [x] Produce one consistent deleted-copy diagnostic that identifies both the
@@ -86,16 +90,25 @@ do not reproduce unrelated C++ special-member complexity.
 ### 6. Prove the semantics
 
 Current recursive-copy coverage: nested user structs, generic user-struct
-instantiations, and fixed-size arrays execute member copy constructors in both
-the VM and generated C. Tagged unions and dynamic collections remain open.
+instantiations, fixed-size arrays, `Option`, `Result`, and payload-bearing user
+unions execute member copy constructors in both the VM and generated C. Tagged
+union lowering borrows and copies only the active payload. `List`, `Stack`, and
+`Queue` copy each element, while `Dictionary` copies entries and rebuilds its
+hash index. Custom-copy dictionary/set keys remain untestable until user value
+types can satisfy the key-equality constraint.
 
-- [ ] Add VM/generated-C differential tests for implicit recursive copying,
-  custom deep copying of a raw allocation, and deleted copying.
-- [ ] Test custom-copy values nested in arrays, structs, unions, `Option`,
-  `Result`, and generic containers.
-- [ ] Test initialization, assignment, self-assignment, parameter passing,
+- [x] Add VM/generated-C differential tests for implicit recursive copying and
+  custom deep copying of a raw allocation, plus checker rejection for deleted
+  copying.
+- [x] Test custom-copy values nested in arrays, structs, unions, `Option`, and
+  `Result` in the VM and generated C.
+- [x] Test custom-copy values in `List`, `Stack`, `Queue`, and `Dictionary`
+  values in the VM and generated C.
+- [ ] Define user value equality/hashing before permitting custom-copy structs
+  as `Dictionary` or `HashSet` keys.
+- [x] Test initialization, assignment, self-assignment, parameter passing,
   return, field/index reads, `foreach`, and collection insertion.
-- [ ] Test destructor counts and independent mutation after copying.
+- [x] Test destructor counts and independent mutation after copying.
 - [ ] Test a throwing/failing copy and prove that the old destination and source
   remain valid and that partial destination state is cleaned exactly once.
 - [ ] Add negative fixtures for invalid signatures, duplicate copy constructors,

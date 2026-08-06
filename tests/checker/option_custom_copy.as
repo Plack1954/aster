@@ -1,9 +1,7 @@
 struct OptionItem {
     long value;
 
-    public OptionItem(const ref OptionItem other) {
-        value = other.value + 1;
-    }
+    private OptionItem(const ref OptionItem other) = delete;
 }
 
 int main() {

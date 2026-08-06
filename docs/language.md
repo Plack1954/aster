@@ -398,13 +398,23 @@ does not use value copy constructors; explicit `new ClassName(existing)` may
 invoke a declared class constructor.
 
 Custom copy operations compose recursively through user structs, generic user
-struct instantiations, and fixed-size arrays. Each enclosing value is rebuilt
-from independently copied fields or elements, so a scalar-only member with a
-custom copy constructor is not mistaken for a trivial representation copy.
-`Option`, `Result`, unions, and dynamically sized collections containing a
-custom-copy value remain temporarily noncopyable while their typed runtime
-copy dispatch is completed. This restriction prevents silent fieldwise or
-elementwise copying from bypassing the custom operation.
+struct instantiations, fixed-size arrays, `Option`, `Result`, and payload-bearing
+user unions. Each enclosing value is rebuilt from independently copied fields,
+elements, or the active union payload, so a scalar-only member with a custom
+copy constructor is not mistaken for a trivial representation copy. Copying a
+tagged union never moves from or changes its source. Dynamically sized `List`,
+`Stack`, and `Queue` collections copy their elements through the same recursive
+policy. `Dictionary` copies keys and values independently and rebuilds its hash
+index from the copied keys. User structs are not currently admissible
+`Dictionary` or `HashSet` keys because those collections require built-in
+equality; consequently a user-defined custom copy constructor can presently
+participate in a dictionary value, but not a set or dictionary key.
+Reads from fields, fixed arrays, `List`, `Queue`, `Stack`, and `Dictionary`
+apply the stored value's copy policy. For a custom-copy value, the runtime
+borrows the selected element long enough to call its copy constructor; the
+source aggregate or collection remains unchanged. Returning a `const ref`
+parameter likewise copies because borrowed parameters are never eligible for
+return-value ownership transfer.
 
 `string` is Aster's single immutable UTF-8 string type. Assignment, argument
 passing, field reads, and returns retain the underlying reference-counted byte

@@ -104,7 +104,19 @@ static bool verify_function_stack(const BytecodeFunction *function) {
             case OP_CANCELLATION_THROW_IF_REQUESTED:
             case OP_GET_FIELD: case OP_GET_FIELD_BORROW:
             case OP_GET_TAG:
-            case OP_TAKE_PAYLOAD: case OP_ITER_INIT:
+            case OP_TAKE_PAYLOAD: case OP_BORROW_PAYLOAD:
+            case OP_COLLECTION_COUNT:
+            case OP_ITER_INIT:
+                required = 1; popped = 1; pushed = 1;
+                break;
+            case OP_DICTIONARY_KEY_BORROW:
+            case OP_DICTIONARY_VALUE_BORROW:
+            case OP_LIST_ELEMENT_BORROW:
+            case OP_DICTIONARY_GET_BORROW:
+                required = 2; popped = 2; pushed = 1;
+                break;
+            case OP_QUEUE_FRONT_BORROW:
+            case OP_STACK_TOP_BORROW:
                 required = 1; popped = 1; pushed = 1;
                 break;
             case OP_TASK_DELAY:

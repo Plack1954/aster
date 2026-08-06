@@ -253,9 +253,13 @@ int main(void) {
     bool has_typed_math = contains_opcode(&ir, IR_OP_MUL_CHECKED);
     bool has_drop = contains_opcode(&ir, IR_OP_LOCAL_DROP);
     bool has_aggregate = contains_opcode(&ir, IR_OP_AGGREGATE_MAKE);
-    bool has_field_get = contains_opcode(&ir, IR_OP_LOCAL_FIELD_GET);
+    bool has_field_get =
+        contains_opcode(&ir, IR_OP_LOCAL_FIELD_GET) ||
+        contains_opcode(&ir, IR_OP_LOCAL_FIELD_BORROW);
     bool has_field_set = contains_opcode(&ir, IR_OP_LOCAL_FIELD_SET);
-    bool has_index_get = contains_opcode(&ir, IR_OP_LOCAL_INDEX_GET);
+    bool has_index_get =
+        contains_opcode(&ir, IR_OP_LOCAL_INDEX_GET) ||
+        contains_opcode(&ir, IR_OP_INDEX_GET);
     bool has_index_set = contains_opcode(&ir, IR_OP_LOCAL_INDEX_SET);
     bool has_enum_test = contains_opcode(&ir, IR_OP_LOCAL_ENUM_IS);
     bool has_payload_move =

@@ -508,7 +508,7 @@ static bool vm_dictionary_set_capacity(Object *dictionary,
     return vm_dictionary_rebuild(dictionary);
 }
 
-static size_t vm_dictionary_find(const Object *dictionary, LangValue key) {
+size_t vm_dictionary_find(const Object *dictionary, LangValue key) {
     if (dictionary->as.dictionary.bucket_count == 0U) return SIZE_MAX;
     size_t mask = dictionary->as.dictionary.bucket_count - 1U;
     size_t bucket = (size_t)vm_dictionary_hash(key) & mask;

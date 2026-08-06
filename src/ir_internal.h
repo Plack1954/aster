@@ -86,6 +86,11 @@ IrInstruction *ir_emit_local_enum_operation(
     LangSpan span);
 IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr);
 void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt);
+bool ir_type_requires_custom_copy(
+    IrBuilder *builder, const Type *value_type);
+IrValueId ir_emit_recursive_copy(
+    IrBuilder *builder, const Type *value_type,
+    IrValueId source, LangSpan span, bool preserve_source);
 IrValueId ir_emit_synthetic_native_call(
     IrBuilder *builder, const char *name, const Type *result_type,
     const IrValueId *operands, size_t operand_count,

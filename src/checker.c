@@ -1467,6 +1467,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
                           "constant array index is out of bounds for length %zu",
                           object->array_length);
             result = object->kind == TYPE_ARRAY ? object->element : &type_error;
+            if (result != &type_error)
+                (void)checker_require_copyable(
+                    checker, result, expr->span);
             break;
         }
         case EXPR_FIELD: {
@@ -1877,6 +1880,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
             } else
                 lang_diag(checker->diagnostics, expr->span,
                           "unknown field `%s` on `%s`", expr->as.field.field, object->name);
+            if (result != &type_error)
+                (void)checker_require_copyable(
+                    checker, result, expr->span);
             break;
         }
         case EXPR_STRUCT: {
@@ -2055,7 +2061,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 (void)check_expr(checker, value_expr);
                 break;
             }
-            Type *aggregate = check_expr(checker, value_expr);
+            Type *aggregate = check_place(checker, value_expr);
             if (aggregate->kind != TYPE_NAMED ||
                 aggregate->declaration == NULL ||
                 aggregate->declaration->kind != DECL_STRUCT) {
@@ -2097,6 +2103,8 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                     checker, stmt->as.destructure.type_syntaxes[field],
                     stmt->as.destructure.type_names[field], stmt->span);
                 stmt->as.destructure.checked_types[field] = expected;
+                (void)checker_require_copyable(
+                    checker, expected, stmt->span);
                 if (!same_type(expected, declared))
                     lang_diag(
                         checker->diagnostics, stmt->span,

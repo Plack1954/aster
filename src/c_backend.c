@@ -966,6 +966,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
             return;
         }
         case IR_OP_VALUE_DISCARD: {
+            if (instruction->auxiliary == 1U) return;
             IrTypeId value_type =
                 function->value_types[instruction->operands[0]];
             if (emitter->ir->types[value_type].requires_cleanup ||
@@ -1631,6 +1632,96 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 fprintf(output,
                         "    l%" PRIu32 "_live = false;\n",
                         instruction->index);
+            return;
+        case IR_OP_ENUM_IS:
+            fprintf(
+                output,
+                "    v%" PRIu32 " = v%" PRIu32
+                ".tag == UINT32_C(%" PRIu32 ");\n",
+                instruction->result, instruction->operands[0],
+                instruction->auxiliary);
+            return;
+        case IR_OP_ENUM_PAYLOAD_BORROW:
+            fprintf(
+                output,
+                "    v%" PRIu32 " = v%" PRIu32
+                ".payload.v%" PRIu32 ";\n",
+                instruction->result, instruction->operands[0],
+                instruction->auxiliary);
+            return;
+        case IR_OP_COLLECTION_COUNT:
+            fprintf(output,
+                    "    v%" PRIu32 " = (uint64_t)v%" PRIu32
+                    "->length;\n",
+                    instruction->result, instruction->operands[0]);
+            return;
+        case IR_OP_LIST_ELEMENT_BORROW:
+            fprintf(output,
+                    "    if (v%" PRIu32 " >= v%" PRIu32
+                    "->length) aster_trap(\"List index out of bounds\");\n"
+                    "    v%" PRIu32 " = v%" PRIu32
+                    "->data[(size_t)v%" PRIu32 "];\n",
+                    instruction->operands[1], instruction->operands[0],
+                    instruction->result, instruction->operands[0],
+                    instruction->operands[1]);
+            return;
+        case IR_OP_QUEUE_FRONT_BORROW:
+            fprintf(output,
+                    "    if (v%" PRIu32
+                    "->length == 0U) aster_trap(\"Queue is empty\");\n"
+                    "    v%" PRIu32 " = v%" PRIu32
+                    "->data[v%" PRIu32 "->head];\n",
+                    instruction->operands[0], instruction->result,
+                    instruction->operands[0], instruction->operands[0]);
+            return;
+        case IR_OP_STACK_TOP_BORROW:
+            fprintf(output,
+                    "    if (v%" PRIu32
+                    "->length == 0U) aster_trap(\"Stack is empty\");\n"
+                    "    v%" PRIu32 " = v%" PRIu32
+                    "->data[v%" PRIu32 "->length - 1U];\n",
+                    instruction->operands[0], instruction->result,
+                    instruction->operands[0], instruction->operands[0]);
+            return;
+        case IR_OP_DICTIONARY_GET_BORROW: {
+            const IrType *dictionary = &emitter->ir->types[
+                function->value_types[instruction->operands[0]]];
+            fprintf(output,
+                    "    size_t dictionary_borrow_match_%" PRIu32
+                    " = SIZE_MAX;\n"
+                    "    for (size_t i = 0U; i < v%" PRIu32
+                    "->length; ++i) {\n"
+                    "        if (",
+                    instruction->result, instruction->operands[0]);
+            emit_dictionary_key_equality(
+                emitter,
+                &emitter->ir->types[dictionary->element_type],
+                instruction->operands[0], "i",
+                instruction->operands[1]);
+            fprintf(output,
+                    ") { dictionary_borrow_match_%" PRIu32
+                    " = i; break; }\n"
+                    "    }\n"
+                    "    if (dictionary_borrow_match_%" PRIu32
+                    " == SIZE_MAX) aster_trap(\"Dictionary key not found\");\n"
+                    "    v%" PRIu32 " = v%" PRIu32
+                    "->values[dictionary_borrow_match_%" PRIu32 "];\n",
+                    instruction->result, instruction->result,
+                    instruction->result, instruction->operands[0],
+                    instruction->result);
+            return;
+        }
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW:
+            fprintf(output,
+                    "    if (v%" PRIu32 " >= v%" PRIu32
+                    "->length) aster_trap(\"dictionary copy index out of bounds\");\n"
+                    "    v%" PRIu32 " = v%" PRIu32 "->%s[v%" PRIu32 "];\n",
+                    instruction->operands[1], instruction->operands[0],
+                    instruction->result, instruction->operands[0],
+                    instruction->opcode == IR_OP_DICTIONARY_KEY_BORROW
+                        ? "keys" : "values",
+                    instruction->operands[1]);
             return;
         case IR_OP_LOCAL_FIELD_MOVE:
             if (emitter->ir->types[function->locals[
@@ -2554,6 +2645,24 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             instruction->result_type,
                             instruction->index);
             }
+            else if (c_backend_type_is_queue(source)) {
+                if (instruction->operand_count == 1U)
+                    fprintf(output,
+                            "    v%" PRIu32
+                            " = (aster_iterator_%" PRIu32
+                            "){v%" PRIu32 ", 0U, true};\n",
+                            instruction->result,
+                            instruction->result_type,
+                            instruction->operands[0]);
+                else
+                    fprintf(output,
+                            "    v%" PRIu32
+                            " = (aster_iterator_%" PRIu32
+                            "){l%" PRIu32 ", 0U, true};\n",
+                            instruction->result,
+                            instruction->result_type,
+                            instruction->index);
+            }
             else if (source->shape == IR_TYPE_ARRAY) {
                 fprintf(output,
                         "    v%" PRIu32
@@ -2585,6 +2694,13 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    v%" PRIu32 " = l%" PRIu32
                         ".vector != NULL && l%" PRIu32
                         ".index < l%" PRIu32 ".vector->length;\n",
+                        instruction->result, instruction->index,
+                        instruction->index, instruction->index);
+            else if (c_backend_type_is_queue(source))
+                fprintf(output,
+                        "    v%" PRIu32 " = l%" PRIu32
+                        ".queue != NULL && l%" PRIu32
+                        ".index < l%" PRIu32 ".queue->length;\n",
                         instruction->result, instruction->index,
                         instruction->index, instruction->index);
             else if (source->shape == IR_TYPE_ARRAY)
@@ -2626,6 +2742,20 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         ".vector->data[l%" PRIu32 ".index++];\n",
                         instruction->index, instruction->index,
                         instruction->index, instruction->result,
+                        instruction->index, instruction->index);
+            else if (c_backend_type_is_queue(source))
+                fprintf(output,
+                        "    if (l%" PRIu32 ".queue == NULL || "
+                        "l%" PRIu32 ".index >= l%" PRIu32
+                        ".queue->length)\n"
+                        "        aster_trap(\"iterator advanced past its end\");\n"
+                        "    v%" PRIu32 " = l%" PRIu32
+                        ".queue->data[(l%" PRIu32 ".queue->head + "
+                        "l%" PRIu32 ".index++) %% l%" PRIu32
+                        ".queue->capacity];\n",
+                        instruction->index, instruction->index,
+                        instruction->index, instruction->result,
+                        instruction->index, instruction->index,
                         instruction->index, instruction->index);
             else if (source->shape == IR_TYPE_ARRAY)
                 fprintf(output,

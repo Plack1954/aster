@@ -19,7 +19,8 @@ The current foundation represents:
 - source spans and host target metadata;
 - monomorphized functions as independent IR functions;
 - arrays, structs, and enum/union construction;
-- explicit local-place and temporary field/index operations;
+- explicit local-place and temporary field/index operations, including
+  non-owning projection operations used as custom-copy sources;
 - enum/union tests and consuming union payload extraction;
 - `switch` and `try` lowered to ordinary control-flow edges;
 - owning iterator state for fixed arrays and vectors;
@@ -74,9 +75,16 @@ moves the next item into the ordinary iteration binding, and drops the owning
 iterator on exhaustion or `break`.
 
 Non-consuming `foreach` emits `borrowed_iterator_begin` against its source
-local. The iterator and its read-only item local never own or free collection
-storage, and no element is cloned. The VM and C iterator representations carry
-this ownership bit explicitly.
+local. The iterator itself never owns or frees collection storage. Each
+ordinary value binding is then constructed from the borrowed element through
+the element type's copy policy; `ref` iteration remains an alias. The VM and C
+iterator representations carry this ownership bit explicitly.
+
+Custom-copy projections use explicit borrow operations for local fields,
+array elements, list elements, queue fronts, stack tops, dictionary values,
+and tagged-union payloads. The borrowed virtual value is not cleanup-owning;
+the following recursive-copy sequence constructs the result before the source
+aggregate can be discarded.
 
 Half-open integer ranges lower differently: both bounds are stored once in
 scalar locals, the counter is compared in the loop header, and the counter is
@@ -156,10 +164,18 @@ the AST or checker types.
 
 Enum and union IR types retain declaration-order member names. Construction
 combines the resolved family and member; tag tests are non-consuming, and union
-payload extraction moves the complete union local exactly once. `Result` and
-`Option` use the union representation. `try` is already ordinary IR CFG, so
+payload extraction moves the complete union local exactly once. Recursive copy
+lowering instead uses a non-owning payload projection, branches on the active
+tag, copies that payload, and reconstructs the same variant without changing
+the source. `Result` and `Option` use the union representation. `try` is already ordinary IR CFG, so
 the adapter needs no privileged try opcode: its error block moves the error,
 reconstructs `Err`, performs explicit reverse cleanup, and returns.
+
+Recursive dynamic-collection copy is also explicit control flow. Sequence
+collections use a borrowed iterator and rebuild a fresh destination one element
+at a time. Dictionary lowering borrows each key and value by logical index,
+applies their independent copy policies, and inserts them into a fresh table so
+the destination recomputes hashes and bucket placement.
 
 Owning iterator locals lower to dedicated VM-local operations: initialization
 consumes the iterable, `has_next` is non-consuming, and `next` moves one item

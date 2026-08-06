@@ -98,6 +98,13 @@ static bool instruction_result_owns_value(
     switch (instruction->opcode) {
         case IR_OP_LOCAL_LOAD:
         case IR_OP_LOCAL_FIELD_BORROW:
+        case IR_OP_ENUM_PAYLOAD_BORROW:
+        case IR_OP_LIST_ELEMENT_BORROW:
+        case IR_OP_QUEUE_FRONT_BORROW:
+        case IR_OP_STACK_TOP_BORROW:
+        case IR_OP_DICTIONARY_GET_BORROW:
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW:
         case IR_OP_LOCAL_ITERATOR_NEXT:
             return false;
         case IR_OP_FIELD_GET:
@@ -895,6 +902,24 @@ static void emit_drop_helper(
                 "        free(value->vector);\n"
                 "    }\n"
                 "    value->vector = NULL;\n",
+                emitter->output);
+        } else if (c_backend_type_is_queue(source)) {
+            if (c_backend_type_needs_drop(emitter, type->element_type))
+                fprintf(
+                    emitter->output,
+                    "    if (value->queue != NULL && !value->borrowed)\n"
+                    "        for (size_t i = value->queue->length;\n"
+                    "             i > value->index; --i)\n"
+                    "            aster_drop_%" PRIu32
+                    "(&value->queue->data[(value->queue->head + i - 1U) %% "
+                    "value->queue->capacity]);\n",
+                    type->element_type);
+            fputs(
+                "    if (value->queue != NULL && !value->borrowed) {\n"
+                "        free(value->queue->data);\n"
+                "        free(value->queue);\n"
+                "    }\n"
+                "    value->queue = NULL;\n",
                 emitter->output);
         } else if (source->shape == IR_TYPE_ARRAY) {
             if (c_backend_type_needs_drop(emitter, type->element_type))

@@ -36,10 +36,15 @@ operations from C++. This design is not derived from Rust and does not add
 borrow checking or lifetime annotations.
 
 User copy constructors propagate through enclosing structs, instantiated
-generic structs, and fixed-size arrays. This propagation is based on the copy
-policy of each field or element, independently of whether that type needs
-destruction. Dynamic collections and tagged unions containing custom-copy
-values are still rejected until their runtime copy dispatch is implemented.
+generic structs, fixed-size arrays, and the active payload of tagged unions,
+including `Option` and `Result`. This propagation is based on the copy policy
+of each field, element, or active payload, independently of whether that type
+needs destruction. `List`, `Stack`, and `Queue` rebuild themselves by copying
+each element. `Dictionary` rebuilds its hash table from copied keys and values,
+so stored hashes describe the destination keys rather than source storage.
+Value-returning reads such as a field projection, fixed-array indexing,
+`List.Get`, `Queue.Peek`, `Stack.Peek`, and `Dictionary.Get` borrow their stored
+value and then apply that same copy policy. They never move from the container.
 
 Scalars copy directly. Immutable UTF-8 `string` values share reference-counted
 storage. `Buffer` and other ordinary owning containers deep-copy their storage.
@@ -50,6 +55,8 @@ similar to a C++ shared resource handle. Structs, arrays, enums, `Option`, and
 These rules describe observable copies, not mandatory temporary work. Fresh
 construction is lowered directly into its receiving value where possible, and
 returning a managed local transfers that local's storage into the return slot.
+An immutable-reference parameter is borrowed storage and therefore cannot use
+that return elision: returning it constructs a copy.
 Consequently a returned `Buffer`, `List`, `Html`, or aggregate does not incur a
 deep copy merely because it crossed a function boundary.
 

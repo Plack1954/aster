@@ -301,12 +301,17 @@ static void lower_for(IrBuilder *builder, const Stmt *stmt) {
     if (next != NULL) {
         IrValueId item = next->result;
         if (stmt->as.for_.borrowed) {
-            IrInstruction *copy = ir_append_instruction(
-                builder, IR_OP_VALUE_CLONE, element_ir,
-                &item, 1U, stmt->span);
-            if (copy != NULL) {
-                copy->auxiliary = 0U;
-                item = copy->result;
+            if (ir_type_requires_custom_copy(builder, element_type)) {
+                item = ir_emit_recursive_copy(
+                    builder, element_type, item, stmt->span, false);
+            } else {
+                IrInstruction *copy = ir_append_instruction(
+                    builder, IR_OP_VALUE_CLONE, element_ir,
+                    &item, 1U, stmt->span);
+                if (copy != NULL) {
+                    copy->auxiliary = 0U;
+                    item = copy->result;
+                }
             }
         }
         IrInstruction *item_store = ir_append_instruction(
@@ -444,8 +449,11 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     stmt->as.destructure.checked_types[field];
                 const char *field_name =
                     structure->as.structure.fields[field].name;
+                bool custom = ir_type_requires_custom_copy(
+                    builder, field_type);
                 IrInstruction *field_value = ir_append_instruction(
-                    builder, IR_OP_LOCAL_FIELD_GET,
+                    builder, custom ? IR_OP_LOCAL_FIELD_BORROW
+                                    : IR_OP_LOCAL_FIELD_GET,
                     ir_intern_type(builder->module, field_type),
                     NULL, 0U, stmt->span);
                 if (field_value == NULL) break;
@@ -457,7 +465,11 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     builder, stmt->as.destructure.names[field],
                     stmt->as.destructure.binding_ids[field],
                     field_type, true);
-                IrValueId value = field_value->result;
+                IrValueId value = custom
+                    ? ir_emit_recursive_copy(
+                          builder, field_type, field_value->result,
+                          stmt->span, false)
+                    : field_value->result;
                 IrInstruction *store = ir_append_instruction(
                     builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
                     &value, 1U, stmt->span);
@@ -556,13 +568,19 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                 returned_local = ir_find_local(
                     builder, return_local_expr->resolved_local_id,
                     return_local_expr->span);
-                IrInstruction *move = ir_append_instruction(
-                    builder, IR_OP_LOCAL_MOVE,
-                    ir_intern_type(builder->module,
-                                   return_local_expr->type),
-                    NULL, 0U, return_local_expr->span);
-                if (move != NULL) move->index = returned_local;
-                value = move != NULL ? move->result : IR_INVALID_ID;
+                if (builder->function->locals[returned_local].borrowed) {
+                    returned_local = IR_INVALID_ID;
+                    value = ir_lower_expr(builder, return_expr);
+                } else {
+                    IrInstruction *move = ir_append_instruction(
+                        builder, IR_OP_LOCAL_MOVE,
+                        ir_intern_type(builder->module,
+                                       return_local_expr->type),
+                        NULL, 0U, return_local_expr->span);
+                    if (move != NULL) move->index = returned_local;
+                    value = move != NULL
+                        ? move->result : IR_INVALID_ID;
+                }
             } else {
                 value = return_expr != NULL
                       ? ir_lower_expr(builder, return_expr)

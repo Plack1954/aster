@@ -199,6 +199,7 @@ static bool type_is_c_supported_inner(
         bool supported =
             type->argument_count == 1U &&
             (c_backend_type_is_vec(&ir->types[type->argument_types[0]]) ||
+             c_backend_type_is_queue(&ir->types[type->argument_types[0]]) ||
              ir->types[type->argument_types[0]].shape ==
                  IR_TYPE_ARRAY ||
              ir->types[type->argument_types[0]].shape ==
@@ -549,6 +550,10 @@ static bool emit_aggregate_type(
             fputs("    ", emitter->output);
             c_backend_emit_type(emitter, type->argument_types[0]);
             fputs(" vector;\n", emitter->output);
+        } else if (c_backend_type_is_queue(source)) {
+            fputs("    ", emitter->output);
+            c_backend_emit_type(emitter, type->argument_types[0]);
+            fputs(" queue;\n", emitter->output);
         } else if (source->shape == IR_TYPE_ARRAY) {
             fputs("    ", emitter->output);
             c_backend_emit_type(emitter, type->argument_types[0]);

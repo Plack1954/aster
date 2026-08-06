@@ -347,27 +347,13 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
             lang_diag(checker->diagnostics, expr->span,
                       "`out` parameter `%s` cannot be read before assignment",
                       local->name);
-        bool copyable = type_is_copyable(checker, local->type);
-        const Decl *copy_constructor = type_copy_constructor(local->type);
-        if (!copyable) {
-            if (copy_constructor != NULL &&
-                copy_constructor->as.function.is_deleted) {
-                LangDiagnostic *diagnostic = lang_diag(
-                    checker->diagnostics, expr->span,
-                    "copy constructor for `%s` is deleted",
-                    local->type->name);
-                lang_diag_secondary(
-                    diagnostic, copy_constructor->span,
-                    "copy constructor deleted here");
-            } else {
-                lang_diag(
-                    checker->diagnostics, expr->span,
-                    "type `%s` is not copyable; pass `%s` with `ref` or a pointer",
-                    local->type->name, local->name);
-            }
-        }
+        (void)checker_require_copyable(
+            checker, local->type, expr->span);
         if (local->type->kind == TYPE_NAMED ||
             local->type->kind == TYPE_ARRAY ||
+            ((local->type->kind == TYPE_OPTION ||
+              local->type->kind == TYPE_RESULT) &&
+             type_uses_custom_copy(checker, local->type)) ||
             local->type->requires_cleanup) {
             Expr *source = lang_arena_alloc(
                 &checker->module->arena, sizeof(*source));
@@ -1868,6 +1854,10 @@ static_call:
         if (dequeue)
             require_mutable_dictionary(
                 checker, expr->as.call.arguments.items[0]);
+        else if (!type_is_copyable(checker, queue->element))
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Queue::Peek` cannot copy noncopyable element type `%s`",
+                      queue->element->name);
         return queue->element;
     }
     if (strcmp(name, "Queue::TryDequeue") == 0 ||
@@ -1895,6 +1885,10 @@ static_call:
         if (dequeue)
             require_mutable_dictionary(
                 checker, expr->as.call.arguments.items[0]);
+        else if (!type_is_copyable(checker, queue->element))
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Queue::TryPeek` cannot copy noncopyable element type `%s`",
+                      queue->element->name);
         return &type_bool;
     }
     if (strcmp(name, "Queue::Count") == 0 ||
@@ -1974,6 +1968,10 @@ static_call:
         if (pop)
             require_mutable_dictionary(
                 checker, expr->as.call.arguments.items[0]);
+        else if (!type_is_copyable(checker, stack->element))
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Stack::Peek` cannot copy noncopyable element type `%s`",
+                      stack->element->name);
         return stack->element;
     }
     if (strcmp(name, "Stack::TryPop") == 0 ||
@@ -2001,6 +1999,10 @@ static_call:
         if (pop)
             require_mutable_dictionary(
                 checker, expr->as.call.arguments.items[0]);
+        else if (!type_is_copyable(checker, stack->element))
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Stack::TryPeek` cannot copy noncopyable element type `%s`",
+                      stack->element->name);
         return &type_bool;
     }
     if (strcmp(name, "Stack::Count") == 0 ||
@@ -2120,6 +2122,10 @@ static_call:
         if (strcmp(name, "Dictionary::Remove") == 0)
             require_mutable_dictionary(
                 checker, expr->as.call.arguments.items[0]);
+        if (get && !type_is_copyable(checker, dictionary->error_type))
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Dictionary::Get` cannot copy noncopyable value type `%s`",
+                      dictionary->error_type->name);
         return get ? dictionary->error_type : &type_bool;
     }
     if (strcmp(name, "Dictionary::TryGetValue") == 0) {
@@ -2150,6 +2156,10 @@ static_call:
                       "Dictionary output expects `%s`, found `%s`",
                       dictionary->error_type->name,
                       expr->as.call.arguments.items[2]->type->name);
+        if (!type_is_copyable(checker, dictionary->error_type))
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Dictionary::TryGetValue` cannot copy noncopyable value type `%s`",
+                      dictionary->error_type->name);
         return &type_bool;
     }
     if (strcmp(name, "Dictionary::ContainsValue") == 0) {
@@ -2597,7 +2607,7 @@ static_call:
                 expr->as.call.arguments.items[1]->span,
                 "`List::Get` index expects `nuint`, found `%s`",
                 expr->as.call.arguments.items[1]->type->name);
-        if (vector->element->requires_cleanup)
+        if (!type_is_copyable(checker, vector->element))
             lang_diag(
                 checker->diagnostics, expr->span,
                 "`List::Get` cannot copy noncopyable element type `%s`",

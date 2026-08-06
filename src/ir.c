@@ -1121,6 +1121,142 @@ static IrValueId lower_try(IrBuilder *builder, const Expr *expr) {
          ? success_payload->result : IR_INVALID_ID;
 }
 
+static IrValueId lower_borrowed_collection_place(
+    IrBuilder *builder, const Expr *expr, bool *borrowed
+) {
+    *borrowed = false;
+    if (expr->kind == EXPR_NAME) {
+        IrInstruction *load = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD,
+            ir_intern_type(builder->module, expr->type),
+            NULL, 0U, expr->span);
+        if (load == NULL) return IR_INVALID_ID;
+        load->index = ir_find_local(
+            builder, expr->resolved_local_id, expr->span);
+        *borrowed = true;
+        return load->result;
+    }
+    if (expr->kind == EXPR_FIELD &&
+        expr->as.field.object->kind == EXPR_NAME) {
+        const Expr *owner = expr->as.field.object;
+        IrInstruction *field = ir_append_instruction(
+            builder, IR_OP_LOCAL_FIELD_BORROW,
+            ir_intern_type(builder->module, expr->type),
+            NULL, 0U, expr->span);
+        if (field == NULL) return IR_INVALID_ID;
+        field->index = ir_find_local(
+            builder, owner->resolved_local_id, owner->span);
+        field->auxiliary = ir_field_index(
+            owner->type, expr->as.field.field);
+        field->symbol = expr->as.field.field;
+        field->symbol_length = strlen(field->symbol);
+        *borrowed = true;
+        return field->result;
+    }
+    return ir_lower_expr(builder, expr);
+}
+
+static bool expression_is_local_place(const Expr *expr) {
+    if (expr == NULL) return false;
+    if (expr->kind == EXPR_NAME)
+        return expr->resolved_local_id != 0U;
+    if (expr->kind == EXPR_FIELD)
+        return !expr->as.field.static_field &&
+               expression_is_local_place(expr->as.field.object);
+    if (expr->kind == EXPR_INDEX)
+        return expression_is_local_place(expr->as.index.object);
+    return false;
+}
+
+static IrValueId lower_local_place_borrow(
+    IrBuilder *builder, const Expr *expr,
+    IrValueId *borrowed_values, size_t *borrowed_count
+) {
+    if (*borrowed_count >= 64U) {
+        lang_diag(builder->diagnostics, expr->span,
+                  "IR place nesting limit exceeded");
+        builder->failed = true;
+        return IR_INVALID_ID;
+    }
+    if (expr->kind == EXPR_NAME) {
+        IrInstruction *load = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD,
+            ir_intern_type(builder->module, expr->type),
+            NULL, 0U, expr->span);
+        if (load == NULL) return IR_INVALID_ID;
+        load->index = ir_find_local(
+            builder, expr->resolved_local_id, expr->span);
+        borrowed_values[(*borrowed_count)++] = load->result;
+        return load->result;
+    }
+    if (expr->kind == EXPR_FIELD) {
+        if (expr->as.field.object->kind == EXPR_NAME) {
+            const Expr *owner = expr->as.field.object;
+            IrInstruction *field = ir_append_instruction(
+                builder, IR_OP_LOCAL_FIELD_BORROW,
+                ir_intern_type(builder->module, expr->type),
+                NULL, 0U, expr->span);
+            if (field == NULL) return IR_INVALID_ID;
+            field->index = ir_find_local(
+                builder, owner->resolved_local_id, owner->span);
+            field->auxiliary = ir_field_index(
+                owner->type, expr->as.field.field);
+            field->symbol = expr->as.field.field;
+            field->symbol_length = strlen(field->symbol);
+            borrowed_values[(*borrowed_count)++] = field->result;
+            return field->result;
+        }
+        IrValueId owner = lower_local_place_borrow(
+            builder, expr->as.field.object,
+            borrowed_values, borrowed_count);
+        if (owner == IR_INVALID_ID) return IR_INVALID_ID;
+        IrInstruction *field = ir_append_instruction(
+            builder, IR_OP_FIELD_GET,
+            ir_intern_type(builder->module, expr->type),
+            &owner, 1U, expr->span);
+        if (field == NULL) return IR_INVALID_ID;
+        field->index = ir_field_index(
+            expr->as.field.object->type, expr->as.field.field);
+        field->auxiliary = 1U;
+        field->symbol = expr->as.field.field;
+        field->symbol_length = strlen(field->symbol);
+        borrowed_values[(*borrowed_count)++] = field->result;
+        return field->result;
+    }
+    if (expr->kind == EXPR_INDEX) {
+        IrValueId aggregate = lower_local_place_borrow(
+            builder, expr->as.index.object,
+            borrowed_values, borrowed_count);
+        if (aggregate == IR_INVALID_ID) return IR_INVALID_ID;
+        IrValueId index = ir_lower_expr(
+            builder, expr->as.index.index);
+        IrValueId operands[2] = {aggregate, index};
+        IrInstruction *item = ir_append_instruction(
+            builder, IR_OP_INDEX_GET,
+            ir_intern_type(builder->module, expr->type),
+            operands, 2U, expr->span);
+        if (item == NULL) return IR_INVALID_ID;
+        item->auxiliary = expr->as.index.unchecked ? 1U : 0U;
+        item->integer = 1U;
+        borrowed_values[(*borrowed_count)++] = item->result;
+        return item->result;
+    }
+    return IR_INVALID_ID;
+}
+
+static void discard_local_place_borrows(
+    IrBuilder *builder, const IrValueId *values,
+    size_t count, LangSpan span
+) {
+    while (count != 0U) {
+        IrValueId value = values[--count];
+        IrInstruction *discard = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &value, 1U, span);
+        if (discard != NULL) discard->auxiliary = 1U;
+    }
+}
+
 static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     const char *callee_name =
         expr->as.call.callee->kind == EXPR_NAME
@@ -1168,6 +1304,89 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
          strcmp(callee_name, "Result::Ok") == 0 ||
          strcmp(callee_name, "Result::Err") == 0))
         return lower_enum_constructor(builder, expr, callee_name);
+    if (callee_name != NULL &&
+        strcmp(callee_name, "List::Get") == 0 &&
+        expr->as.call.arguments.count == 2U &&
+        ir_type_requires_custom_copy(builder, expr->type)) {
+        const Expr *list_expr = expr->as.call.arguments.items[0];
+        bool borrowed_list = false;
+        IrValueId list = lower_borrowed_collection_place(
+            builder, list_expr, &borrowed_list);
+        if (list == IR_INVALID_ID) return IR_INVALID_ID;
+        IrValueId index = ir_lower_expr(
+            builder, expr->as.call.arguments.items[1]);
+        IrValueId operands[2] = {list, index};
+        IrInstruction *element = ir_append_instruction(
+            builder, IR_OP_LIST_ELEMENT_BORROW,
+            ir_intern_type(builder->module, expr->type),
+            operands, 2U, expr->span);
+        if (element == NULL) return IR_INVALID_ID;
+        IrValueId copied = ir_emit_recursive_copy(
+            builder, expr->type, element->result, expr->span, false);
+        IrInstruction *discard = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &list, 1U, expr->span);
+        if (discard != NULL)
+            discard->auxiliary = borrowed_list ? 1U : 0U;
+        return copied;
+    }
+    if (callee_name != NULL &&
+        (strcmp(callee_name, "Queue::Peek") == 0 ||
+         strcmp(callee_name, "Stack::Peek") == 0) &&
+        expr->as.call.arguments.count == 1U &&
+        ir_type_requires_custom_copy(builder, expr->type)) {
+        const Expr *collection_expr =
+            expr->as.call.arguments.items[0];
+        bool borrowed_collection = false;
+        IrValueId collection = lower_borrowed_collection_place(
+            builder, collection_expr, &borrowed_collection);
+        if (collection == IR_INVALID_ID) return IR_INVALID_ID;
+        IrInstruction *element = ir_append_instruction(
+            builder,
+            strcmp(callee_name, "Queue::Peek") == 0
+                ? IR_OP_QUEUE_FRONT_BORROW
+                : IR_OP_STACK_TOP_BORROW,
+            ir_intern_type(builder->module, expr->type),
+            &collection, 1U, expr->span);
+        if (element == NULL) return IR_INVALID_ID;
+        IrValueId copied = ir_emit_recursive_copy(
+            builder, expr->type, element->result,
+            expr->span, false);
+        IrInstruction *discard = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &collection, 1U, expr->span);
+        if (discard != NULL)
+            discard->auxiliary = borrowed_collection ? 1U : 0U;
+        return copied;
+    }
+    if (callee_name != NULL &&
+        strcmp(callee_name, "Dictionary::Get") == 0 &&
+        expr->as.call.arguments.count == 2U &&
+        ir_type_requires_custom_copy(builder, expr->type)) {
+        const Expr *dictionary_expr =
+            expr->as.call.arguments.items[0];
+        bool borrowed_dictionary = false;
+        IrValueId dictionary = lower_borrowed_collection_place(
+            builder, dictionary_expr, &borrowed_dictionary);
+        if (dictionary == IR_INVALID_ID) return IR_INVALID_ID;
+        IrValueId key = ir_lower_expr(
+            builder, expr->as.call.arguments.items[1]);
+        IrValueId operands[2] = {dictionary, key};
+        IrInstruction *mapped = ir_append_instruction(
+            builder, IR_OP_DICTIONARY_GET_BORROW,
+            ir_intern_type(builder->module, expr->type),
+            operands, 2U, expr->span);
+        if (mapped == NULL) return IR_INVALID_ID;
+        IrValueId copied = ir_emit_recursive_copy(
+            builder, expr->type, mapped->result,
+            expr->span, false);
+        IrInstruction *discard = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &dictionary, 1U, expr->span);
+        if (discard != NULL)
+            discard->auxiliary = borrowed_dictionary ? 1U : 0U;
+        return copied;
+    }
     size_t argument_count = expr->as.call.arguments.count;
     bool indirect = expr->as.call.callee->resolved_local_id != 0U;
     size_t operand_count = argument_count + (indirect ? 1U : 0U);
@@ -1707,9 +1926,32 @@ static bool ir_type_requires_custom_copy_inner(
     if (value_type->kind == TYPE_ARRAY)
         return ir_type_requires_custom_copy_inner(
             builder, value_type->element, seen, seen_count);
+    if (value_type->kind == TYPE_VEC ||
+        value_type->kind == TYPE_STACK ||
+        value_type->kind == TYPE_QUEUE)
+        return ir_type_requires_custom_copy_inner(
+            builder, value_type->element, seen, seen_count);
+    if (value_type->kind == TYPE_OPTION)
+        return ir_type_requires_custom_copy_inner(
+            builder, value_type->element, seen, seen_count);
+    if (value_type->kind == TYPE_RESULT)
+        return ir_type_requires_custom_copy_inner(
+                   builder, value_type->element, seen, seen_count) ||
+               ir_type_requires_custom_copy_inner(
+                   builder, value_type->error_type, seen, seen_count);
+    if (value_type->kind == TYPE_DICTIONARY)
+        return ir_type_requires_custom_copy_inner(
+                   builder, value_type->element, seen, seen_count) ||
+               ir_type_requires_custom_copy_inner(
+                   builder, value_type->error_type, seen, seen_count);
+    if (value_type->kind == TYPE_HASH_SET)
+        return ir_type_requires_custom_copy_inner(
+            builder, value_type->element, seen, seen_count);
     if (value_type->kind != TYPE_NAMED ||
         value_type->declaration == NULL ||
-        value_type->declaration->kind != DECL_STRUCT)
+        (value_type->declaration->kind != DECL_STRUCT &&
+         (value_type->declaration->kind != DECL_ENUM ||
+          !value_type->declaration->as.enumeration.is_union)))
         return false;
     for (size_t i = 0U; i < seen_count; ++i)
         if (same_ir_type_identity(seen[i], value_type)) return false;
@@ -1718,8 +1960,9 @@ static bool ir_type_requires_custom_copy_inner(
     for (size_t i = 0U; i < seen_count; ++i)
         next_seen[i] = seen[i];
     next_seen[seen_count++] = value_type;
-    size_t field_count =
-        value_type->declaration->as.structure.field_count;
+    size_t field_count = value_type->declaration->kind == DECL_STRUCT
+        ? value_type->declaration->as.structure.field_count
+        : value_type->declaration->as.enumeration.variant_count;
     for (size_t field = 0U; field < field_count; ++field) {
         Type *field_type = lang_checker_resolve_aggregate_member(
             builder->source, builder->diagnostics,
@@ -1732,7 +1975,7 @@ static bool ir_type_requires_custom_copy_inner(
     return false;
 }
 
-static bool ir_type_requires_custom_copy(
+bool ir_type_requires_custom_copy(
     IrBuilder *builder, const Type *value_type
 ) {
     return ir_type_requires_custom_copy_inner(
@@ -1752,9 +1995,9 @@ static IrValueId emit_plain_clone(
     return clone->result;
 }
 
-static IrValueId emit_recursive_copy(
+IrValueId ir_emit_recursive_copy(
     IrBuilder *builder, const Type *value_type,
-    IrValueId source, LangSpan span
+    IrValueId source, LangSpan span, bool preserve_source
 ) {
     IrTypeId result_type = ir_intern_type(builder->module, value_type);
     const Decl *copy_constructor = type_copy_constructor(value_type);
@@ -1799,12 +2042,12 @@ static IrValueId emit_recursive_copy(
                 free(items);
                 return IR_INVALID_ID;
             }
-            borrow->integer = item + 1U == count ? 2U : 1U;
+            borrow->integer = 1U;
             if (ir_type_requires_custom_copy(
                     builder, value_type->element))
-                items[item] = emit_recursive_copy(
+                items[item] = ir_emit_recursive_copy(
                     builder, value_type->element,
-                    borrow->result, span);
+                    borrow->result, span, false);
             else if (builder->module->types[element_type].copy_policy !=
                      IR_COPY_TRIVIAL)
                 items[item] = emit_plain_clone(
@@ -1821,7 +2064,397 @@ static IrValueId emit_recursive_copy(
         make->symbol = "array";
         make->symbol_length = 5U;
         make->index = (uint32_t)count;
-        return make->result;
+        IrValueId result = make->result;
+        if (!preserve_source) {
+            IrInstruction *discard = ir_append_instruction(
+                builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                &source, 1U, span);
+            if (discard != NULL) discard->auxiliary = 1U;
+        }
+        return result;
+    }
+    if (value_type != NULL &&
+        (value_type->kind == TYPE_VEC ||
+         value_type->kind == TYPE_STACK ||
+         value_type->kind == TYPE_QUEUE)) {
+        const char *new_name = value_type->kind == TYPE_VEC
+            ? "List::New"
+            : value_type->kind == TYPE_STACK
+            ? "Stack::New" : "Queue::New";
+        const char *add_name = value_type->kind == TYPE_VEC
+            ? "List::Add"
+            : value_type->kind == TYPE_STACK
+            ? "Stack::Push" : "Queue::Enqueue";
+        const Type *element_type = value_type->element;
+        IrTypeId element_ir = ir_intern_type(
+            builder->module, element_type);
+        IrTypeId iterator_ir = ir_intern_iterator_type(
+            builder->module, result_type, element_ir);
+
+        IrValueId destination = ir_emit_synthetic_native_call(
+            builder, new_name, value_type,
+            NULL, 0U, false, span);
+        uint32_t destination_local = ir_add_synthetic_local(
+            builder, "<copy-list>", result_type);
+        IrInstruction *destination_store = ir_append_instruction(
+            builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+            &destination, 1U, span);
+        if (destination_store == NULL) return IR_INVALID_ID;
+        destination_store->index = destination_local;
+
+        IrInstruction *begin = ir_append_instruction(
+            builder, IR_OP_BORROWED_ITERATOR_BEGIN,
+            iterator_ir, &source, 1U, span);
+        if (begin == NULL) return IR_INVALID_ID;
+        uint32_t iterator_local = ir_add_synthetic_local(
+            builder, "<copy-iterator>", iterator_ir);
+        IrValueId iterator = begin->result;
+        IrInstruction *iterator_store = ir_append_instruction(
+            builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+            &iterator, 1U, span);
+        if (iterator_store == NULL) return IR_INVALID_ID;
+        iterator_store->index = iterator_local;
+
+        IrBlockId condition = ir_add_block(builder->function);
+        IrBlockId body = ir_add_block(builder->function);
+        IrBlockId finish = ir_add_block(builder->function);
+        ir_set_terminator(
+            builder, IR_TERM_JUMP, IR_INVALID_ID,
+            condition, IR_INVALID_ID, span);
+
+        builder->current = condition;
+        IrInstruction *has_next = ir_append_instruction(
+            builder, IR_OP_LOCAL_ITERATOR_HAS_NEXT,
+            ir_intern_type(builder->module, &ir_bool_type),
+            NULL, 0U, span);
+        if (has_next == NULL) return IR_INVALID_ID;
+        has_next->index = iterator_local;
+        ir_set_terminator(
+            builder, IR_TERM_BRANCH, has_next->result,
+            body, finish, span);
+
+        builder->current = body;
+        IrInstruction *next = ir_append_instruction(
+            builder, IR_OP_LOCAL_ITERATOR_NEXT,
+            element_ir, NULL, 0U, span);
+        if (next == NULL) return IR_INVALID_ID;
+        next->index = iterator_local;
+        IrValueId copied = ir_emit_recursive_copy(
+            builder, element_type, next->result, span, false);
+        IrInstruction *destination_load = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD, result_type,
+            NULL, 0U, span);
+        if (destination_load == NULL) return IR_INVALID_ID;
+        destination_load->index = destination_local;
+        IrValueId add_operands[2] = {
+            destination_load->result, copied
+        };
+        IrValueId added = ir_emit_synthetic_native_call(
+            builder, add_name, &ir_unit_type,
+            add_operands, 2U, true, span);
+        IrInstruction *discard_add = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &added, 1U, span);
+        (void)discard_add;
+        ir_set_terminator(
+            builder, IR_TERM_JUMP, IR_INVALID_ID,
+            condition, IR_INVALID_ID, span);
+
+        builder->current = finish;
+        IrInstruction *drop_iterator = ir_append_instruction(
+            builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
+            NULL, 0U, span);
+        if (drop_iterator != NULL) drop_iterator->index = iterator_local;
+        IrInstruction *result = ir_append_instruction(
+            builder, IR_OP_LOCAL_MOVE, result_type,
+            NULL, 0U, span);
+        if (result == NULL) return IR_INVALID_ID;
+        result->index = destination_local;
+        if (!preserve_source) {
+            IrInstruction *discard = ir_append_instruction(
+                builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                &source, 1U, span);
+            if (discard != NULL) discard->auxiliary = 1U;
+        }
+        return result->result;
+    }
+    if (value_type != NULL &&
+        (value_type->kind == TYPE_DICTIONARY ||
+         value_type->kind == TYPE_HASH_SET)) {
+        bool is_set = value_type->kind == TYPE_HASH_SET;
+        const Type *key_type = value_type->element;
+        const Type *mapped_type = value_type->error_type;
+        IrTypeId key_ir = ir_intern_type(builder->module, key_type);
+        IrTypeId mapped_ir = ir_intern_type(builder->module, mapped_type);
+        IrTypeId usize_ir = ir_intern_type(
+            builder->module, &ir_usize_type);
+
+        IrValueId destination = ir_emit_synthetic_native_call(
+            builder, "Dictionary::New", value_type,
+            NULL, 0U, false, span);
+        uint32_t destination_local = ir_add_synthetic_local(
+            builder, "<copy-dictionary>", result_type);
+        IrInstruction *destination_store = ir_append_instruction(
+            builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+            &destination, 1U, span);
+        if (destination_store == NULL) return IR_INVALID_ID;
+        destination_store->index = destination_local;
+
+        IrInstruction *zero = ir_append_instruction(
+            builder, IR_OP_CONST_INT, usize_ir, NULL, 0U, span);
+        if (zero == NULL) return IR_INVALID_ID;
+        zero->integer = 0U;
+        uint32_t index_local = ir_add_synthetic_local(
+            builder, "<copy-index>", usize_ir);
+        IrValueId zero_value = zero->result;
+        IrInstruction *index_store = ir_append_instruction(
+            builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+            &zero_value, 1U, span);
+        if (index_store == NULL) return IR_INVALID_ID;
+        index_store->index = index_local;
+
+        IrBlockId condition = ir_add_block(builder->function);
+        IrBlockId body = ir_add_block(builder->function);
+        IrBlockId finish = ir_add_block(builder->function);
+        ir_set_terminator(
+            builder, IR_TERM_JUMP, IR_INVALID_ID,
+            condition, IR_INVALID_ID, span);
+
+        builder->current = condition;
+        IrInstruction *condition_index = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD, usize_ir,
+            NULL, 0U, span);
+        if (condition_index == NULL) return IR_INVALID_ID;
+        condition_index->index = index_local;
+        IrInstruction *count = ir_append_instruction(
+            builder, IR_OP_COLLECTION_COUNT, usize_ir,
+            &source, 1U, span);
+        if (count == NULL) return IR_INVALID_ID;
+        IrValueId less_operands[2] = {
+            condition_index->result, count->result
+        };
+        IrInstruction *less = ir_append_instruction(
+            builder, IR_OP_LESS,
+            ir_intern_type(builder->module, &ir_bool_type),
+            less_operands, 2U, span);
+        if (less == NULL) return IR_INVALID_ID;
+        ir_set_terminator(
+            builder, IR_TERM_BRANCH, less->result,
+            body, finish, span);
+
+        builder->current = body;
+        IrInstruction *key_index = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD, usize_ir,
+            NULL, 0U, span);
+        if (key_index == NULL) return IR_INVALID_ID;
+        key_index->index = index_local;
+        IrValueId key_operands[2] = {
+            source, key_index->result
+        };
+        IrInstruction *key_borrow = ir_append_instruction(
+            builder, IR_OP_DICTIONARY_KEY_BORROW,
+            key_ir, key_operands, 2U, span);
+        if (key_borrow == NULL) return IR_INVALID_ID;
+        IrValueId key = ir_type_requires_custom_copy(builder, key_type)
+            ? ir_emit_recursive_copy(
+                builder, key_type, key_borrow->result, span, false)
+            : builder->module->types[key_ir].copy_policy != IR_COPY_TRIVIAL
+            ? emit_plain_clone(
+                builder, key_type, key_borrow->result, span)
+            : key_borrow->result;
+
+        IrValueId mapped;
+        if (is_set) {
+            IrInstruction *present = ir_append_instruction(
+                builder, IR_OP_CONST_BOOL,
+                ir_intern_type(builder->module, &ir_bool_type),
+                NULL, 0U, span);
+            if (present == NULL) return IR_INVALID_ID;
+            present->integer = 1U;
+            mapped = present->result;
+        } else {
+            IrInstruction *mapped_index = ir_append_instruction(
+                builder, IR_OP_LOCAL_LOAD, usize_ir,
+                NULL, 0U, span);
+            if (mapped_index == NULL) return IR_INVALID_ID;
+            mapped_index->index = index_local;
+            IrValueId mapped_operands[2] = {
+                source, mapped_index->result
+            };
+            IrInstruction *mapped_borrow = ir_append_instruction(
+                builder, IR_OP_DICTIONARY_VALUE_BORROW,
+                mapped_ir, mapped_operands, 2U, span);
+            if (mapped_borrow == NULL) return IR_INVALID_ID;
+            mapped = ir_type_requires_custom_copy(builder, mapped_type)
+                ? ir_emit_recursive_copy(
+                    builder, mapped_type,
+                    mapped_borrow->result, span, false)
+                : builder->module->types[mapped_ir].copy_policy !=
+                      IR_COPY_TRIVIAL
+                ? emit_plain_clone(
+                    builder, mapped_type,
+                    mapped_borrow->result, span)
+                : mapped_borrow->result;
+        }
+
+        IrInstruction *destination_load = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD, result_type,
+            NULL, 0U, span);
+        if (destination_load == NULL) return IR_INVALID_ID;
+        destination_load->index = destination_local;
+        IrValueId add_operands[3] = {
+            destination_load->result, key, mapped
+        };
+        IrValueId added = ir_emit_synthetic_native_call(
+            builder,
+            is_set ? "Dictionary::TryAdd" : "Dictionary::Add",
+            is_set ? &ir_bool_type : &ir_unit_type,
+            add_operands, 3U, true, span);
+        IrInstruction *discard_add = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &added, 1U, span);
+        (void)discard_add;
+
+        IrInstruction *increment_index = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD, usize_ir,
+            NULL, 0U, span);
+        if (increment_index == NULL) return IR_INVALID_ID;
+        increment_index->index = index_local;
+        IrInstruction *one = ir_append_instruction(
+            builder, IR_OP_CONST_INT, usize_ir, NULL, 0U, span);
+        if (one == NULL) return IR_INVALID_ID;
+        one->integer = 1U;
+        IrValueId increment_operands[2] = {
+            increment_index->result, one->result
+        };
+        IrInstruction *increment = ir_append_instruction(
+            builder, IR_OP_ADD_CHECKED, usize_ir,
+            increment_operands, 2U, span);
+        if (increment == NULL) return IR_INVALID_ID;
+        IrValueId incremented = increment->result;
+        IrInstruction *increment_store = ir_append_instruction(
+            builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+            &incremented, 1U, span);
+        if (increment_store == NULL) return IR_INVALID_ID;
+        increment_store->index = index_local;
+        ir_set_terminator(
+            builder, IR_TERM_JUMP, IR_INVALID_ID,
+            condition, IR_INVALID_ID, span);
+
+        builder->current = finish;
+        IrInstruction *result = ir_append_instruction(
+            builder, IR_OP_LOCAL_MOVE, result_type,
+            NULL, 0U, span);
+        if (result == NULL) return IR_INVALID_ID;
+        result->index = destination_local;
+        if (!preserve_source) {
+            IrInstruction *discard = ir_append_instruction(
+                builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                &source, 1U, span);
+            if (discard != NULL) discard->auxiliary = 1U;
+        }
+        return result->result;
+    }
+    bool tagged_union = value_type != NULL &&
+        (value_type->kind == TYPE_OPTION ||
+         value_type->kind == TYPE_RESULT ||
+         (value_type->kind == TYPE_NAMED &&
+          value_type->declaration != NULL &&
+          value_type->declaration->kind == DECL_ENUM &&
+          value_type->declaration->as.enumeration.is_union));
+    if (tagged_union) {
+        size_t variant_count =
+            builder->module->types[result_type].variant_count;
+        uint32_t result_local = ir_add_synthetic_local(
+            builder, "<copy-result>", result_type);
+        IrBlockId merge = ir_add_block(builder->function);
+        for (size_t variant = 0U;
+             variant < variant_count; ++variant) {
+            const char *variant_name =
+                builder->module->types[result_type].variant_names[variant];
+            IrInstruction *is_variant = ir_append_instruction(
+                builder, IR_OP_ENUM_IS,
+                ir_intern_type(builder->module, &ir_bool_type),
+                &source, 1U, span);
+            if (is_variant == NULL) return IR_INVALID_ID;
+            is_variant->auxiliary = (uint32_t)variant;
+            is_variant->symbol = variant_name;
+            is_variant->symbol_length = strlen(is_variant->symbol);
+            IrBlockId copy_block = ir_add_block(builder->function);
+            IrBlockId next_block = ir_add_block(builder->function);
+            ir_set_terminator(
+                builder, IR_TERM_BRANCH, is_variant->result,
+                copy_block, next_block, span);
+
+            builder->current = copy_block;
+            IrValueId payload = IR_INVALID_ID;
+            IrTypeId payload_ir_type = builder->module->types[result_type]
+                .variant_payload_types[variant];
+            if (payload_ir_type != IR_INVALID_ID) {
+                Type *payload_type = value_type->kind == TYPE_OPTION
+                    ? value_type->element
+                    : value_type->kind == TYPE_RESULT
+                    ? (variant == 0U
+                        ? value_type->element : value_type->error_type)
+                    : lang_checker_resolve_aggregate_member(
+                        builder->source, builder->diagnostics,
+                        value_type, variant);
+                if (payload_type == NULL) {
+                    lang_diag(builder->diagnostics, span,
+                              "could not resolve `%s` payload while lowering a copy",
+                              variant_name);
+                    builder->failed = true;
+                    return IR_INVALID_ID;
+                }
+                IrInstruction *borrow = ir_append_instruction(
+                    builder, IR_OP_ENUM_PAYLOAD_BORROW,
+                    payload_ir_type, &source, 1U, span);
+                if (borrow == NULL) return IR_INVALID_ID;
+                borrow->auxiliary = (uint32_t)variant;
+                borrow->symbol = variant_name;
+                borrow->symbol_length = strlen(borrow->symbol);
+                if (ir_type_requires_custom_copy(builder, payload_type))
+                    payload = ir_emit_recursive_copy(
+                        builder, payload_type, borrow->result, span, false);
+                else if (builder->module->types[payload_ir_type].copy_policy !=
+                         IR_COPY_TRIVIAL)
+                    payload = emit_plain_clone(
+                        builder, payload_type, borrow->result, span);
+                else
+                    payload = borrow->result;
+            }
+            IrInstruction *make = ir_append_instruction(
+                builder, IR_OP_AGGREGATE_MAKE, result_type,
+                payload_ir_type == IR_INVALID_ID ? NULL : &payload,
+                payload_ir_type == IR_INVALID_ID ? 0U : 1U, span);
+            if (make == NULL) return IR_INVALID_ID;
+            make->index = (uint32_t)variant;
+            make->symbol = variant_name;
+            make->symbol_length = strlen(make->symbol);
+            IrValueId made = make->result;
+            IrInstruction *store = ir_append_instruction(
+                builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+                &made, 1U, span);
+            if (store == NULL) return IR_INVALID_ID;
+            store->index = result_local;
+            ir_set_terminator(
+                builder, IR_TERM_JUMP, IR_INVALID_ID,
+                merge, IR_INVALID_ID, span);
+            builder->current = next_block;
+        }
+        ir_set_terminator(
+            builder, IR_TERM_TRAP, IR_INVALID_ID,
+            IR_INVALID_ID, IR_INVALID_ID, span);
+        builder->current = merge;
+        IrValueId result = load_conditional_result(
+            builder, result_local, result_type, span);
+        if (!preserve_source) {
+            IrInstruction *discard = ir_append_instruction(
+                builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                &source, 1U, span);
+            if (discard != NULL) discard->auxiliary = 1U;
+        }
+        return result;
     }
     if (value_type == NULL || value_type->kind != TYPE_NAMED ||
         value_type->declaration == NULL ||
@@ -1870,12 +2503,12 @@ static IrValueId emit_recursive_copy(
         /* A borrowed projection never destroys its aggregate. The final
          * projection may invalidate the temporary VM slot after all sibling
          * fields have been read. */
-        borrow->auxiliary = field + 1U == field_count ? 2U : 1U;
+        borrow->auxiliary = 1U;
         borrow->symbol = member->name;
         borrow->symbol_length = strlen(member->name);
         if (ir_type_requires_custom_copy(builder, field_type))
-            fields[field] = emit_recursive_copy(
-                builder, field_type, borrow->result, member->span);
+            fields[field] = ir_emit_recursive_copy(
+                builder, field_type, borrow->result, member->span, false);
         else if (builder->module->types[field_ir_type].copy_policy !=
                  IR_COPY_TRIVIAL)
             fields[field] = emit_plain_clone(
@@ -1897,7 +2530,14 @@ static IrValueId emit_recursive_copy(
     make->symbol = declaration->as.structure.name;
     make->symbol_length = strlen(make->symbol);
     make->index = (uint32_t)field_count;
-    return make->result;
+    IrValueId result = make->result;
+    if (!preserve_source) {
+        IrInstruction *discard = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &source, 1U, span);
+        if (discard != NULL) discard->auxiliary = 1U;
+    }
+    return result;
 }
 
 IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
@@ -2338,14 +2978,14 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 operand = ir_lower_expr(builder, source);
             }
             if (ir_type_requires_custom_copy(builder, expr->type)) {
-                IrValueId copied = emit_recursive_copy(
-                    builder, expr->type, operand, expr->span);
-                if (source->kind != EXPR_NAME) {
-                    IrInstruction *discard = ir_append_instruction(
-                        builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
-                        &operand, 1U, expr->span);
-                    (void)discard;
-                }
+                IrValueId copied = ir_emit_recursive_copy(
+                    builder, expr->type, operand, expr->span, true);
+                IrInstruction *discard = ir_append_instruction(
+                    builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                    &operand, 1U, expr->span);
+                if (discard != NULL)
+                    discard->auxiliary =
+                        source->kind == EXPR_NAME ? 1U : 0U;
                 return copied;
             } else {
                 instruction = ir_append_instruction(
@@ -2420,6 +3060,47 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             break;
         }
         case EXPR_INDEX: {
+            if (expression_is_local_place(expr)) {
+                IrValueId borrowed_values[64];
+                size_t borrowed_count = 0U;
+                IrValueId borrowed = lower_local_place_borrow(
+                    builder, expr, borrowed_values, &borrowed_count);
+                if (borrowed == IR_INVALID_ID) return IR_INVALID_ID;
+                IrValueId copied;
+                if (ir_type_requires_custom_copy(builder, expr->type))
+                    copied = ir_emit_recursive_copy(
+                        builder, expr->type, borrowed,
+                        expr->span, true);
+                else
+                    copied = emit_plain_clone(
+                        builder, expr->type, borrowed, expr->span);
+                discard_local_place_borrows(
+                    builder, borrowed_values,
+                    borrowed_count, expr->span);
+                return copied;
+            }
+            if (ir_type_requires_custom_copy(builder, expr->type)) {
+                IrValueId index = ir_lower_expr(
+                    builder, expr->as.index.index);
+                IrValueId aggregate = ir_lower_expr(
+                    builder, expr->as.index.object);
+                IrValueId operands[2] = {aggregate, index};
+                IrInstruction *borrow = ir_append_instruction(
+                    builder, IR_OP_INDEX_GET, type,
+                    operands, 2U, expr->span);
+                if (borrow == NULL) return IR_INVALID_ID;
+                borrow->auxiliary =
+                    expr->as.index.unchecked ? 1U : 0U;
+                borrow->integer = 1U;
+                IrValueId copied = ir_emit_recursive_copy(
+                    builder, expr->type, borrow->result,
+                    expr->span, false);
+                IrInstruction *discard = ir_append_instruction(
+                    builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                    &aggregate, 1U, expr->span);
+                (void)discard;
+                return copied;
+            }
             if (expr->as.index.object->kind == EXPR_NAME) {
                 IrValueId index = ir_lower_expr(
                     builder, expr->as.index.index);
@@ -2509,8 +3190,69 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                     local, object->type, "Option::Some", expr->span);
                 break;
             }
+            if (expression_is_local_place(expr)) {
+                IrValueId borrowed_values[64];
+                size_t borrowed_count = 0U;
+                IrValueId borrowed = lower_local_place_borrow(
+                    builder, expr, borrowed_values, &borrowed_count);
+                if (borrowed == IR_INVALID_ID) return IR_INVALID_ID;
+                IrValueId copied;
+                if (ir_type_requires_custom_copy(builder, expr->type))
+                    copied = ir_emit_recursive_copy(
+                        builder, expr->type, borrowed,
+                        expr->span, true);
+                else
+                    copied = emit_plain_clone(
+                        builder, expr->type, borrowed, expr->span);
+                discard_local_place_borrows(
+                    builder, borrowed_values,
+                    borrowed_count, expr->span);
+                return copied;
+            }
             uint32_t field = ir_field_index(
                 object->type, expr->as.field.field);
+            if (ir_type_requires_custom_copy(builder, expr->type)) {
+                IrValueId borrowed;
+                IrValueId owner = IR_INVALID_ID;
+                bool owns_owner = false;
+                if (object->kind == EXPR_NAME) {
+                    IrInstruction *projection = ir_append_instruction(
+                        builder, IR_OP_LOCAL_FIELD_BORROW, type,
+                        NULL, 0U, expr->span);
+                    if (projection == NULL) return IR_INVALID_ID;
+                    projection->index = ir_find_local(
+                        builder, object->resolved_local_id,
+                        object->span);
+                    projection->auxiliary = field;
+                    projection->symbol = expr->as.field.field;
+                    projection->symbol_length =
+                        strlen(projection->symbol);
+                    borrowed = projection->result;
+                } else {
+                    owner = ir_lower_expr(builder, object);
+                    IrInstruction *projection = ir_append_instruction(
+                        builder, IR_OP_FIELD_GET, type,
+                        &owner, 1U, expr->span);
+                    if (projection == NULL) return IR_INVALID_ID;
+                    projection->index = field;
+                    projection->auxiliary = 1U;
+                    projection->symbol = expr->as.field.field;
+                    projection->symbol_length =
+                        strlen(projection->symbol);
+                    borrowed = projection->result;
+                    owns_owner = true;
+                }
+                IrValueId copied = ir_emit_recursive_copy(
+                    builder, expr->type, borrowed,
+                    expr->span, false);
+                if (owns_owner) {
+                    IrInstruction *discard = ir_append_instruction(
+                        builder, IR_OP_VALUE_DISCARD,
+                        IR_INVALID_ID, &owner, 1U, expr->span);
+                    (void)discard;
+                }
+                return copied;
+            }
             if (object->kind == EXPR_NAME) {
                 instruction = ir_append_instruction(
                     builder, IR_OP_LOCAL_FIELD_GET, type,

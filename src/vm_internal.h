@@ -254,6 +254,7 @@ bool vm_string_builder_append_value(Object *builder, LangValue value);
 bool vm_call_builtin(LangVM *vm, int32_t index, LangValue *arguments,
                      size_t argument_count, LangValue *result,
                      LangSpan instruction_span);
+size_t vm_dictionary_find(const Object *dictionary, LangValue key);
 bool vm_value_is_string_builder(const LangValue *value);
 int64_t *vm_native_drop_log(LangVM *vm);
 size_t vm_process_argument_count(const LangVM *vm);

@@ -1729,24 +1729,31 @@ static bool type_is_copyable_inner(Checker *checker, Type *type,
             allow_custom_copy);
     if (type->kind == TYPE_OPTION)
         return type_is_copyable_inner(
-            checker, type->element, seen, seen_count, false);
+            checker, type->element, seen, seen_count,
+            allow_custom_copy);
     if (type->kind == TYPE_VEC || type->kind == TYPE_QUEUE ||
         type->kind == TYPE_STACK)
         return type_is_copyable_inner(
-            checker, type->element, seen, seen_count, false);
+            checker, type->element, seen, seen_count,
+            allow_custom_copy);
     if (type->kind == TYPE_DICTIONARY)
         return type_is_copyable_inner(
-                   checker, type->element, seen, seen_count, false) &&
+                   checker, type->element, seen, seen_count,
+                   allow_custom_copy) &&
                type_is_copyable_inner(
-                   checker, type->error_type, seen, seen_count, false);
+                   checker, type->error_type, seen, seen_count,
+                   allow_custom_copy);
     if (type->kind == TYPE_HASH_SET)
         return type_is_copyable_inner(
-            checker, type->element, seen, seen_count, false);
+            checker, type->element, seen, seen_count,
+            allow_custom_copy);
     if (type->kind == TYPE_RESULT)
         return type_is_copyable_inner(
-                   checker, type->element, seen, seen_count, false) &&
+                   checker, type->element, seen, seen_count,
+                   allow_custom_copy) &&
                type_is_copyable_inner(
-                   checker, type->error_type, seen, seen_count, false);
+                   checker, type->error_type, seen, seen_count,
+                   allow_custom_copy);
     if (type->kind == TYPE_CLASS) return true;
     if (type->kind != TYPE_NAMED) return true;
     const Decl *type_decl = type->declaration;
@@ -1771,8 +1778,10 @@ static bool type_is_copyable_inner(Checker *checker, Type *type,
     }
     if (fields == NULL) return false;
     bool copyable = true;
-    bool allow_member_custom =
-        allow_custom_copy && type_decl->kind == DECL_STRUCT;
+    bool allow_member_custom = allow_custom_copy &&
+        (type_decl->kind == DECL_STRUCT ||
+         (type_decl->kind == DECL_ENUM &&
+          type_decl->as.enumeration.is_union));
     for (size_t field = 0U; field < field_count; ++field) {
         Type *field_type = resolve_type_syntax_in_applied_declaration(
             checker, type, fields[field].type_syntax,
@@ -1790,4 +1799,82 @@ static bool type_is_copyable_inner(Checker *checker, Type *type,
 
 bool type_is_copyable(Checker *checker, Type *type) {
     return type_is_copyable_inner(checker, type, NULL, 0U, true);
+}
+
+static bool type_uses_custom_copy_inner(
+    Checker *checker, Type *type, const Type **seen, size_t seen_count
+) {
+    if (type == NULL) return false;
+    if (type_copy_constructor(type) != NULL) return true;
+    if (type->kind == TYPE_ARRAY || type->kind == TYPE_OPTION)
+        return type_uses_custom_copy_inner(
+            checker, type->element, seen, seen_count);
+    if (type->kind == TYPE_VEC || type->kind == TYPE_QUEUE ||
+        type->kind == TYPE_STACK)
+        return type_uses_custom_copy_inner(
+            checker, type->element, seen, seen_count);
+    if (type->kind == TYPE_RESULT)
+        return type_uses_custom_copy_inner(
+                   checker, type->element, seen, seen_count) ||
+               type_uses_custom_copy_inner(
+                   checker, type->error_type, seen, seen_count);
+    if (type->kind == TYPE_DICTIONARY)
+        return type_uses_custom_copy_inner(
+                   checker, type->element, seen, seen_count) ||
+               type_uses_custom_copy_inner(
+                   checker, type->error_type, seen, seen_count);
+    if (type->kind == TYPE_HASH_SET)
+        return type_uses_custom_copy_inner(
+            checker, type->element, seen, seen_count);
+    if (type->kind != TYPE_NAMED || type->declaration == NULL ||
+        (type->declaration->kind != DECL_STRUCT &&
+         (type->declaration->kind != DECL_ENUM ||
+          !type->declaration->as.enumeration.is_union)))
+        return false;
+    for (size_t i = 0U; i < seen_count; ++i)
+        if (same_type(seen[i], type)) return false;
+    if (seen_count >= 64U) return false;
+    const Type *next_seen[64];
+    for (size_t i = 0U; i < seen_count; ++i) next_seen[i] = seen[i];
+    next_seen[seen_count++] = type;
+    FieldDecl *members = type->declaration->kind == DECL_STRUCT
+        ? type->declaration->as.structure.fields
+        : type->declaration->as.enumeration.variants;
+    size_t member_count = type->declaration->kind == DECL_STRUCT
+        ? type->declaration->as.structure.field_count
+        : type->declaration->as.enumeration.variant_count;
+    for (size_t member = 0U; member < member_count; ++member) {
+        Type *member_type = resolve_type_syntax_in_applied_declaration(
+            checker, type, members[member].type_syntax,
+            members[member].type_name, members[member].span);
+        if (type_uses_custom_copy_inner(
+                checker, member_type, next_seen, seen_count))
+            return true;
+    }
+    return false;
+}
+
+bool type_uses_custom_copy(Checker *checker, Type *type) {
+    return type_uses_custom_copy_inner(checker, type, NULL, 0U);
+}
+
+bool checker_require_copyable(
+    Checker *checker, Type *type, LangSpan copy_span
+) {
+    if (type_is_copyable(checker, type)) return true;
+    const Decl *copy_constructor = type_copy_constructor(type);
+    if (copy_constructor != NULL &&
+        copy_constructor->as.function.is_deleted) {
+        LangDiagnostic *diagnostic = lang_diag(
+            checker->diagnostics, copy_span,
+            "copy constructor for `%s` is deleted", type->name);
+        lang_diag_secondary(
+            diagnostic, copy_constructor->span,
+            "copy constructor deleted here");
+    } else {
+        lang_diag(
+            checker->diagnostics, copy_span,
+            "type `%s` is not copyable", type->name);
+    }
+    return false;
 }

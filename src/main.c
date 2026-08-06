@@ -72,6 +72,9 @@ static int run_tests(void) {
         , "examples/generic_types.as"
         , "tests/reference_counted_string.as"
         , "tests/checker/list_get_value_copy.as"
+        , "tests/custom_copy_sites.as"
+        , "tests/custom_copy_raw_allocation.as"
+        , "tests/custom_copy_site_cleanup.as"
         , "tests/checker/copy_owning_result.as"
         , "tests/checker/generic_value_copy.as"
         , "tests/checker/buffer_value_copy.as"
@@ -91,6 +94,12 @@ static int run_tests(void) {
         , "tests/nested_custom_copy_cleanup.as"
         , "tests/array_custom_copy.as"
         , "tests/generic_wrapper_custom_copy.as"
+        , "tests/tagged_union_custom_copy.as"
+        , "tests/tagged_union_custom_copy_cleanup.as"
+        , "tests/list_custom_copy.as"
+        , "tests/list_custom_copy_cleanup.as"
+        , "tests/sequential_collection_custom_copy.as"
+        , "tests/associative_collection_custom_copy.as"
     };
     static const char *negative[] = {
         "tests/parser/mismatched_element.as",
@@ -103,6 +112,8 @@ static int run_tests(void) {
         , "tests/checker/custom_copy_mutates_source.as"
         , "tests/checker/nested_deleted_copy.as"
         , "tests/checker/option_custom_copy.as"
+        , "tests/checker/list_deleted_copy.as"
+        , "tests/checker/projection_deleted_copy.as"
         , "tests/checker/component_missing_property.as"
         , "tests/checker/non_exhaustive_match.as"
         , "tests/checker/payloadless_enum_call.as"
