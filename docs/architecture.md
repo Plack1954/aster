@@ -85,6 +85,12 @@ mechanisms, trap reporting, established libraries, and backend storage
 mechanisms may remain in C. Application policy and reusable APIs should move
 into Aster when real programs show that doing so improves the design.
 
+Process spawning follows this split: the POSIX fork/exec, pipe, wait, and
+signal mechanisms live in `process_native.c`, while `ProcessStartInfo`, list
+iteration, validation, and the `System.Diagnostics.Process` facade are Aster
+library code. Arguments are staged individually and never flattened into an
+implicit shell command.
+
 Native `System.Net.Http` follows that boundary. Its Aster request/response and
 owned-content API is transport-facing library code; the optional
 `http_client_curl.c` component delegates HTTP/TLS protocol machinery to

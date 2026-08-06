@@ -282,6 +282,7 @@ void lang_register_crypto_natives(LangVM *vm);
 void lang_register_h2o_natives(LangVM *vm);
 /* Registers the optional SQLite adapter, or typed unavailable stubs. */
 void lang_register_sqlite_natives(LangVM *vm);
+void lang_register_process_spawn_natives(LangVM *vm);
 
 /* Emits the reusable runtime used with ASTER_EXTERNAL_RUNTIME C output. */
 bool lang_c_emit_runtime(FILE *output);

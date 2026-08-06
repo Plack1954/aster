@@ -2203,6 +2203,7 @@ void lang_vm_register_builtins(LangVM *vm) {
                                native_process_argument_value, 1U);
     (void)lang_register_native(vm, "NativeProcessEnvironment",
                                native_process_environment_value, 1U);
+    lang_register_process_spawn_natives(vm);
     (void)lang_register_native(vm, "I64ToString",
                                native_i64_to_string_value, 1U);
     (void)lang_register_native(vm, "U64ToString",

@@ -195,6 +195,7 @@ static const char *standard_module_file(const char *module_path) {
         {"aster/net/http", "http"},
         {"system/net/http", "http_client"},
         {"system/security/cryptography", "cryptography"},
+        {"system/diagnostics", "diagnostics_process"},
         {"aster/web/http_app", "http_app"},
         {"aster/web/middleware", "middleware"},
         {"aster/web/router", "router"},

@@ -373,9 +373,7 @@ bool c_backend_registry_native_symbol(const char *symbol) {
             strncmp(symbol, "NativeHttpClient", 16U) == 0 ||
             strncmp(symbol, "NativeCrypto", 12U) == 0 ||
             strncmp(symbol, "H2O", 3U) == 0 ||
-            strcmp(symbol, "NativeProcessEnvironment") == 0 ||
-            strcmp(symbol, "NativeProcessArg") == 0 ||
-            strcmp(symbol, "NativeProcessArgCount") == 0 ||
+            strncmp(symbol, "NativeProcess", 13U) == 0 ||
             strcmp(symbol, "NativeEnvironmentNewLine") == 0 ||
             strcmp(symbol, "NativeHandleOpenId") == 0 ||
             strcmp(symbol, "NativeFailHandle") == 0 ||

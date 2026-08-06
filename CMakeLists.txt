@@ -74,9 +74,14 @@ add_library(langlib
     src/http.c
     src/h2o_adapter.c
     src/sqlite.c
+    src/process_native.c
     src/project.c
     src/layout.c
 )
+if(NOT WIN32)
+    set_source_files_properties(src/process_native.c PROPERTIES
+        COMPILE_DEFINITIONS _POSIX_C_SOURCE=200809L)
+endif()
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     set_source_files_properties(src/vm.c PROPERTIES
         COMPILE_OPTIONS "$<$<CONFIG:Release>:-O2>")
@@ -235,6 +240,17 @@ endfunction()
 
 add_test(NAME language_tests COMMAND lang test)
 set_tests_properties(language_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+if(UNIX)
+    add_test(NAME process_spawn_surface_vm
+        COMMAND lang run tests/process_spawn_surface.as)
+    set_tests_properties(process_spawn_surface_vm PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        TIMEOUT 30)
+    add_aster_generated_c_test(
+        process_spawn_surface_generated_c
+        tests/process_spawn_surface.as
+        process_spawn_surface)
+endif()
 add_test(NAME readonly_span_mutation_rejected
     COMMAND lang check tests/checker/readonly_span_mutation.as)
 set_tests_properties(readonly_span_mutation_rejected PROPERTIES

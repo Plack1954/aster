@@ -146,6 +146,9 @@ cleanup, and cooperative `CancellationToken` behavior. Continue
   them;
 - keep Lime's implemented `Task<Response>` handler and `DispatchAsync` paths
   covered while the transport layer becomes cancellation-aware.
+- add async process waiting and concurrent standard-stream draining only after
+  the executor has a general native-readiness registration path; the bounded
+  synchronous POSIX `Process` API is implemented.
 
 ## Remaining bounded-overload extension
 

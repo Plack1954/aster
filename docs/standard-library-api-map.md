@@ -492,10 +492,22 @@ responses without making text encoding part of the transport contract.
 | --- | --- | --- | --- |
 | `NativeProcessEnvironment(name)` | `Environment.GetEnvironmentVariable(name)` | Low-level + missing facade | Public return should be `string?` for absence. |
 | `NativeProcessArgCount/Arg` | `Environment.GetCommandLineArgs()` | Decision | .NET includes the executable; Aster currently exposes only application arguments. |
-| no execution facade | `Process.Start` / `ProcessStartInfo` | Missing | Deterministic native process handle; no async family. |
+| `System.Diagnostics.Process` / `ProcessStartInfo` | `Process.Start` / `ProcessStartInfo` | Bounded POSIX implementation | Structured arguments, working directory, environment overrides, redirected standard streams, wait, status query, and termination; no implicit shell or async family. |
 
 `CliArgument` parsing is Aster policy, not a .NET BCL equivalent. It may stay
 in a separate CLI package but should consume the approved argument API.
+
+`Process.Start` passes `FileName` and every `Arguments` entry directly to
+`execvp`; it never concatenates a shell command. A shell remains available only
+when the program explicitly starts one. `ProcessEnvironmentVariable` entries
+override inherited variables, while an empty `WorkingDirectory` inherits the
+current directory. Standard I/O methods operate on caller-provided byte spans.
+When stdout and stderr are both redirected, callers must drain both often
+enough to avoid ordinary pipe backpressure; async/concurrent draining is a
+future executor integration. Dropping the final owning handle terminates and
+reaps an unfinished child, making cleanup deterministic. The current spawning
+backend is POSIX; Windows returns a typed unavailable error until a
+`CreateProcessW` implementation lands.
 
 ## 6. Date and time
 
