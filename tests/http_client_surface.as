@@ -88,5 +88,89 @@ async Task<int> main()
         observedCancellation = error.Message.Contains("canceled");
     }
     if (!observedCancellation) { return 7; }
+
+    client.MaximumResponseBodyBytes = 300000;
+    HttpResponseStream stream = await client.GetStreamAsync(
+        $"{origin}/stream"
+    );
+    if (stream.StatusCode != 200 || !stream.IsSuccessStatusCode() ||
+        !stream.Headers.Contains("X-Stream: yes") ||
+        stream.RequestUri != $"{origin}/stream")
+    {
+        return 8;
+    }
+    Buffer chunk = Buffer.allocate(4096);
+    nuint total = 0;
+    byte firstByte = 255;
+    byte lastByte = 255;
+    while (true)
+    {
+        bool finished = false;
+        unsafe
+        {
+            Span<byte> destination = BufferAsMutSlice(chunk);
+            nuint count = await stream.ReadAsync(destination);
+            if (count == 0) { finished = true; }
+            else
+            {
+                if (total == 0) { firstByte = ByteSliceAt(destination, 0); }
+                lastByte = ByteSliceAt(destination, count - 1);
+                total += count;
+            }
+        }
+        if (finished) { break; }
+    }
+    stream.Close();
+    if (total != 200000 || firstByte != 0 || lastByte != 203)
+    {
+        return 9;
+    }
+
+    client.MaximumResponseBodyBytes = 4;
+    HttpResponseStream limitedStream = await client.GetStreamAsync(
+        $"{origin}/large"
+    );
+    bool streamLimited = false;
+    try
+    {
+        unsafe
+        {
+            Span<byte> destination = BufferAsMutSlice(chunk);
+            nuint ignoredLimitedRead = await limitedStream.ReadAsync(
+                destination
+            );
+        }
+    }
+    catch (IOException error)
+    {
+        streamLimited = error.Message.Contains("body limit");
+    }
+    limitedStream.Close();
+    if (!streamLimited) { return 10; }
+
+    client.MaximumResponseBodyBytes = 3000000;
+    HttpResponseStream abandoned = await client.GetStreamAsync(
+        $"{origin}/endless"
+    );
+    CancellationTokenSource readSource = new();
+    CancellationToken readToken = readSource.Token;
+    readSource.Cancel();
+    bool readCanceled = false;
+    try
+    {
+        unsafe
+        {
+            Span<byte> destination = BufferAsMutSlice(chunk);
+            nuint ignoredRead = await abandoned.ReadAsync(
+                destination, readToken
+            );
+        }
+    }
+    catch (OperationCanceledException error)
+    {
+        readCanceled = error.Message.Contains("canceled");
+    }
+    abandoned.Close();
+    if (!readCanceled) { return 11; }
     return 0;
 }

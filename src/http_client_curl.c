@@ -32,6 +32,15 @@ typedef struct CurlHttpRequest {
     CurlHttpResponse *response;
     CURLcode result;
     char error[CURL_ERROR_SIZE];
+    unsigned char *stream_data;
+    size_t stream_length;
+    size_t stream_capacity;
+    size_t stream_total;
+    bool streaming;
+    bool follow_redirects;
+    bool stream_ready;
+    bool stream_paused;
+    bool closed;
     bool pending;
     bool completed;
 } CurlHttpRequest;
@@ -71,6 +80,7 @@ static void curl_http_request_drop(void *data) {
     if (request == NULL) return;
     curl_http_request_cleanup_transfer(request);
     curl_http_response_drop(request->response);
+    free(request->stream_data);
     free(request);
 }
 
@@ -135,6 +145,51 @@ static size_t curl_header_write(
     return count;
 }
 
+static size_t curl_stream_write(
+    char *data, size_t size, size_t members, void *context
+) {
+    CurlHttpRequest *request = context;
+    if (members != 0U && size > SIZE_MAX / members) return 0U;
+    size_t count = size * members;
+    CurlHttpResponse *response = request->response;
+    if (count > response->maximum_body_length - request->stream_total) {
+        response->body_limit_exceeded = true;
+        return 0U;
+    }
+    const size_t maximum_buffer = 64U * 1024U;
+    if (count > maximum_buffer - request->stream_length) {
+        request->stream_paused = true;
+        return CURL_WRITEFUNC_PAUSE;
+    }
+    if (!curl_append(
+            &request->stream_data, &request->stream_length,
+            &request->stream_capacity, (const unsigned char *)data,
+            count, maximum_buffer))
+        return 0U;
+    request->stream_total += count;
+    request->stream_ready = true;
+    return count;
+}
+
+static size_t curl_stream_header_write(
+    char *data, size_t size, size_t members, void *context
+) {
+    CurlHttpRequest *request = context;
+    size_t written = curl_header_write(
+        data, size, members, request->response);
+    if (written == size * members &&
+        ((written == 2U && data[0] == '\r' && data[1] == '\n') ||
+         (written == 1U && data[0] == '\n'))) {
+        long status = 0L;
+        (void)curl_easy_getinfo(request->easy, CURLINFO_RESPONSE_CODE, &status);
+        bool redirect = status == 301L || status == 302L || status == 303L ||
+                        status == 307L || status == 308L;
+        if (!redirect || !request->follow_redirects)
+            request->stream_ready = true;
+    }
+    return written;
+}
+
 static char *curl_copy_text(LangStringView value) {
     if (memchr(value.data, '\0', value.length) != NULL) return NULL;
     char *copy = malloc(value.length + 1U);
@@ -191,6 +246,10 @@ static LangNativeResult curl_typed_success(
     }
     return (LangNativeResult){true, result, NULL};
 }
+
+static LangNativeResult curl_response_text(
+    LangVM *vm, const char *data, size_t length
+);
 
 static LangNativeResult native_http_client_send(
     LangVM *vm, const LangValue *args, size_t count
@@ -342,8 +401,8 @@ static void curl_multi_drain(void) {
     }
 }
 
-static LangNativeResult native_http_client_start(
-    LangVM *vm, const LangValue *args, size_t count
+static LangNativeResult native_http_client_start_mode(
+    LangVM *vm, const LangValue *args, size_t count, bool streaming
 ) {
     LangStringView method;
     LangStringView url;
@@ -385,6 +444,8 @@ static LangNativeResult native_http_client_start(
         return curl_typed_error(vm, "could not allocate asynchronous HTTP request");
     }
     request->response->maximum_body_length = (size_t)args[5].as.i64;
+    request->streaming = streaming;
+    request->follow_redirects = args[6].as.boolean;
     (void)curl_easy_setopt(request->easy, CURLOPT_ERRORBUFFER, request->error);
     (void)curl_easy_setopt(request->easy, CURLOPT_URL, request->url);
     (void)curl_easy_setopt(request->easy, CURLOPT_CUSTOMREQUEST, request->method);
@@ -404,11 +465,17 @@ static LangNativeResult native_http_client_start(
                            CURLPROTO_HTTP | CURLPROTO_HTTPS);
 #endif
     (void)curl_easy_setopt(request->easy, CURLOPT_USERAGENT, "Aster/0.1");
-    (void)curl_easy_setopt(request->easy, CURLOPT_WRITEFUNCTION, curl_body_write);
-    (void)curl_easy_setopt(request->easy, CURLOPT_WRITEDATA, request->response);
+    (void)curl_easy_setopt(request->easy, CURLOPT_WRITEFUNCTION,
+                           streaming ? curl_stream_write : curl_body_write);
+    (void)curl_easy_setopt(request->easy, CURLOPT_WRITEDATA,
+                           streaming ? (void *)request
+                                     : (void *)request->response);
     (void)curl_easy_setopt(request->easy, CURLOPT_HEADERFUNCTION,
-                           curl_header_write);
-    (void)curl_easy_setopt(request->easy, CURLOPT_HEADERDATA, request->response);
+                           streaming ? curl_stream_header_write
+                                     : curl_header_write);
+    (void)curl_easy_setopt(request->easy, CURLOPT_HEADERDATA,
+                           streaming ? (void *)request
+                                     : (void *)request->response);
     (void)curl_easy_setopt(request->easy, CURLOPT_PRIVATE, request);
     if (request->headers != NULL)
         (void)curl_easy_setopt(request->easy, CURLOPT_HTTPHEADER,
@@ -431,6 +498,18 @@ static LangNativeResult native_http_client_start(
         return curl_typed_error(vm, "could not allocate HTTP request handle");
     }
     return curl_typed_success(vm, handle);
+}
+
+static LangNativeResult native_http_client_start(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    return native_http_client_start_mode(vm, args, count, false);
+}
+
+static LangNativeResult native_http_client_start_stream(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    return native_http_client_start_mode(vm, args, count, true);
 }
 
 static CurlHttpRequest *curl_request(const LangValue *args, size_t count) {
@@ -500,6 +579,129 @@ static LangNativeResult native_http_client_take_response(
         return curl_typed_error(vm, "could not allocate HTTP response handle");
     }
     return curl_typed_success(vm, handle);
+}
+
+static LangNativeResult native_http_client_stream_poll(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL || !request->streaming || request->closed)
+        return lang_native_result_error("invalid HTTP response stream handle");
+    LangNativeResult polled = native_http_client_poll(vm, args, count);
+    if (!polled.ok) return polled;
+    polled.value.as.i64 = request->stream_ready || request->completed ? 1 : 0;
+    return polled;
+}
+
+static LangNativeResult native_http_client_stream_read(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    CurlHttpRequest *request = count == 2U
+        ? lang_native_handle_data(&args[0]) : NULL;
+    LangByteSlice destination;
+    if (request == NULL || !request->streaming || request->closed ||
+        !lang_value_byte_slice(&args[1], &destination))
+        return curl_typed_error(vm, "invalid HTTP response stream read");
+    if (request->completed && request->result != CURLE_OK &&
+        request->stream_length == 0U) {
+        const char *message = request->response->body_limit_exceeded
+            ? "HTTP response exceeded its configured body limit"
+            : request->response->header_limit_exceeded
+                ? "HTTP response headers exceeded 1 MiB"
+                : request->error[0] != '\0' ? request->error
+                : curl_easy_strerror(request->result);
+        return curl_typed_error(vm, message);
+    }
+    size_t copied = request->stream_length < destination.length
+        ? request->stream_length : destination.length;
+    if (copied != 0U) {
+        memcpy(destination.data, request->stream_data, copied);
+        request->stream_length -= copied;
+        if (request->stream_length != 0U)
+            memmove(request->stream_data, request->stream_data + copied,
+                    request->stream_length);
+    }
+    request->stream_ready = request->stream_length != 0U;
+    if (request->stream_paused && request->easy != NULL &&
+        request->stream_length <= 48U * 1024U) {
+        request->stream_paused = false;
+        CURLcode resumed = curl_easy_pause(request->easy, CURLPAUSE_CONT);
+        if (resumed != CURLE_OK) {
+            request->result = resumed;
+            curl_complete_request(request, resumed);
+        }
+    }
+    return curl_typed_success(vm, (LangValue){
+        .tag=LANG_VALUE_U64, .as.u64=(uint64_t)copied});
+}
+
+static LangNativeResult native_http_client_stream_status(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    (void)vm;
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL || !request->streaming || request->closed)
+        return lang_native_result_error("invalid HTTP response stream handle");
+    long status = request->response->status_code;
+    if (request->easy != NULL)
+        (void)curl_easy_getinfo(request->easy, CURLINFO_RESPONSE_CODE, &status);
+    return (LangNativeResult){true,
+        {.tag=LANG_VALUE_I64, .as.i64=status}, NULL};
+}
+
+static LangNativeResult native_http_client_stream_headers(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL || !request->streaming || request->closed)
+        return lang_native_result_error("invalid HTTP response stream handle");
+    return curl_response_text(vm, request->response->headers,
+                              request->response->headers_length);
+}
+
+static LangNativeResult native_http_client_stream_url(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL || !request->streaming || request->closed)
+        return lang_native_result_error("invalid HTTP response stream handle");
+    const char *url = request->response->effective_url;
+    if (url == NULL && request->easy != NULL)
+        (void)curl_easy_getinfo(request->easy, CURLINFO_EFFECTIVE_URL, &url);
+    if (url == NULL) url = "";
+    return curl_response_text(vm, url, strlen(url));
+}
+
+static LangNativeResult native_http_client_stream_finished(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    (void)vm;
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL || !request->streaming || request->closed)
+        return lang_native_result_error("invalid HTTP response stream handle");
+    return (LangNativeResult){true, {.tag=LANG_VALUE_BOOL,
+        .as.boolean=request->completed && request->stream_length == 0U}, NULL};
+}
+
+static LangNativeResult native_http_client_stream_close(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    (void)vm;
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL)
+        return lang_native_result_error("invalid HTTP response stream handle");
+    if (!request->closed) {
+        if (request->pending) {
+            request->result = CURLE_ABORTED_BY_CALLBACK;
+            curl_complete_request(request, request->result);
+        }
+        request->closed = true;
+        free(request->stream_data);
+        request->stream_data = NULL;
+        request->stream_length = 0U;
+        request->stream_capacity = 0U;
+    }
+    return (LangNativeResult){true, {.tag=LANG_VALUE_UNIT}, NULL};
 }
 
 static CurlHttpResponse *curl_response(
@@ -606,6 +808,30 @@ void lang_register_http_client_natives(LangVM *vm) {
     (void)lang_register_native(
         vm, "NativeHttpClientTakeResponse",
         native_http_client_take_response, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStartStream",
+        native_http_client_start_stream, 7U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamPoll",
+        native_http_client_stream_poll, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamRead",
+        native_http_client_stream_read, 2U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamFinished",
+        native_http_client_stream_finished, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamStatus",
+        native_http_client_stream_status, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamHeaders",
+        native_http_client_stream_headers, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamUrl",
+        native_http_client_stream_url, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamClose",
+        native_http_client_stream_close, 1U);
 }
 
 #else
@@ -660,6 +886,22 @@ void lang_register_http_client_natives(LangVM *vm) {
         vm, "NativeHttpClientCancel", curl_unavailable_direct, 1U);
     (void)lang_register_native(
         vm, "NativeHttpClientTakeResponse", curl_unavailable, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStartStream", curl_unavailable, 7U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamPoll", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamRead", curl_unavailable, 2U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamFinished", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamStatus", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamHeaders", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamUrl", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStreamClose", curl_unavailable_direct, 1U);
 }
 
 #endif

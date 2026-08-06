@@ -140,7 +140,7 @@ cleanup, and cooperative `CancellationToken` behavior. Continue
 
 - replace the implemented timer-driven libcurl-multi polling bridge with native
   socket-readiness registration if profiling justifies the added executor API;
-- add streaming HTTP request/response bodies on top of the async transport;
+- add streaming HTTP upload sources on top of the implemented response stream;
 - add cancellation registrations and linked-token sources when real code needs
   them;
 - keep Lime's implemented `Task<Response>` handler and `DispatchAsync` paths

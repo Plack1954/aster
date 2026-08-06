@@ -91,7 +91,9 @@ owned-content API is transport-facing library code; the optional
 libcurl. Synchronous calls use easy handles; asynchronous calls share a multi
 handle and advance it through nonblocking executor-timer polls, allowing
 concurrent transfers, cancellation, and connection reuse in both native
-backends. `ASTER_ENABLE_CURL=OFF` retains the compiler and core runtime with
+backends. Streaming responses pause libcurl when their bounded native queue is
+full and resume as the Aster caller drains it into borrowed spans.
+`ASTER_ENABLE_CURL=OFF` retains the compiler and core runtime with
 typed unavailable stubs. Browser/Wasm does not use this component and will use
 Fetch.
 

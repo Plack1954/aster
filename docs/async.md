@@ -89,7 +89,9 @@ Stages 1 through 7 are implemented. The optional native
 asynchronous `SendAsync`/`GetAsync`,
 byte request and owned response bodies, headers, redirects, timeouts, response
 limits, cancellation, shared libcurl-multi connection reuse, and deterministic
-handle cleanup in both backends. Pending multi transfers are advanced by short
+handle cleanup in both backends. `GetStreamAsync` returns after final response
+headers and feeds caller-provided spans through a bounded 64-KiB queue with
+libcurl pause/resume backpressure. Pending multi transfers are advanced by short
 nonblocking executor-timer polls; native socket-readiness registration can
 later replace that bounded bridge without changing the public API. The broader
 blocking-I/O strategy remains pending.
@@ -100,8 +102,9 @@ Generated C lowers async functions to state machines. The VM stores suspended
 locals, operand stack, and instruction pointer in heap-backed frames. Both
 executors support multiple pending timer tasks, continuation registration,
 immediate completion, fault capture/rethrow at `await`, and deterministic
-cleanup of a suspended frame. Async HTTP copies the request body into native
-request storage before suspension, so a borrowed caller span never escapes.
+cleanup of a suspended frame. Buffered async HTTP copies the request body into
+native request storage before suspension, so a borrowed caller span never
+escapes. Streaming uploads remain future work.
 
 `Task.FromResult` and `Task.CompletedTask()` are ordinary standard-library
 async functions. The language now supports C#-style static properties, so the

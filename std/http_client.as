@@ -25,6 +25,25 @@ private extern void NativeHttpClientCancel(NativeHandle request);
 private extern Result<NativeHandle, string> NativeHttpClientTakeResponse(
     NativeHandle request
 );
+private extern Result<NativeHandle, string> NativeHttpClientStartStream(
+    string method,
+    string requestUri,
+    string headers,
+    ReadOnlySpan<byte> body,
+    long timeoutMilliseconds,
+    long maximumResponseBodyBytes,
+    bool followRedirects
+);
+private extern long NativeHttpClientStreamPoll(NativeHandle stream);
+private extern Result<nuint, string> NativeHttpClientStreamRead(
+    NativeHandle stream,
+    Span<byte> destination
+);
+private extern bool NativeHttpClientStreamFinished(NativeHandle stream);
+private extern long NativeHttpClientStreamStatus(NativeHandle stream);
+private extern string NativeHttpClientStreamHeaders(NativeHandle stream);
+private extern string NativeHttpClientStreamUrl(NativeHandle stream);
+private extern void NativeHttpClientStreamClose(NativeHandle stream);
 private extern Task Task.Delay(int milliseconds);
 
 private extern long NativeHttpClientResponseStatus(NativeHandle response);
@@ -81,6 +100,64 @@ public struct HttpResponseMessage
     string Headers;
     string RequestUri;
     HttpContent Content;
+}
+
+// An owned native response stream. Close cancels an unfinished transfer;
+// otherwise deterministic NativeHandle cleanup closes it when it leaves scope.
+public struct HttpResponseStream
+{
+    NativeHandle Handle;
+    int StatusCode;
+    string Headers;
+    string RequestUri;
+}
+
+public bool HttpResponseStream.IsSuccessStatusCode(
+    const ref HttpResponseStream self
+)
+{
+    return self.StatusCode >= 200 && self.StatusCode <= 299;
+}
+
+public async Task<nuint> HttpResponseStream.ReadAsync(
+    HttpResponseStream self,
+    Span<byte> destination,
+    CancellationToken cancellationToken
+)
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    if (ByteSliceLen(destination) == 0) { return 0; }
+    while (true)
+    {
+        nuint count = HttpCountOrThrow(
+            NativeHttpClientStreamRead(self.Handle, destination)
+        );
+        if (count != 0 || NativeHttpClientStreamFinished(self.Handle))
+        {
+            return count;
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            NativeHttpClientCancel(self.Handle);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        long ready = NativeHttpClientStreamPoll(self.Handle);
+        if (ready == 0) { await Task.Delay(1); }
+    }
+    return 0;
+}
+
+public async Task<nuint> HttpResponseStream.ReadAsync(
+    HttpResponseStream self,
+    Span<byte> destination
+)
+{
+    return await self.ReadAsync(destination, CancellationToken.None);
+}
+
+public void HttpResponseStream.Close(HttpResponseStream self)
+{
+    NativeHttpClientStreamClose(self.Handle);
 }
 
 public bool HttpResponseMessage.IsSuccessStatusCode(
@@ -183,6 +260,28 @@ private HttpResponseMessage MaterializeHttpResponse(
         RequestUri = NativeHttpClientResponseUrl(nativeResponse),
         Content = new() { Data = data }
     };
+}
+
+private NativeHandle StartEmptyHttpStream(
+    HttpClient client,
+    string requestUri
+)
+{
+    Buffer empty = Buffer.allocate(0);
+    unsafe
+    {
+        return HttpResultOrThrow(
+            NativeHttpClientStartStream(
+                "GET",
+                requestUri,
+                "",
+                BufferAsSlice(empty),
+                client.TimeoutMilliseconds,
+                client.MaximumResponseBodyBytes,
+                client.FollowRedirects
+            )
+        );
+    }
 }
 
 public HttpResponseMessage HttpClient.Send(
@@ -290,6 +389,41 @@ public async Task<HttpResponseMessage> HttpClient.GetAsync(
             "GET", requestUri, "", BufferAsSlice(empty), cancellationToken
         );
     }
+}
+
+public async Task<HttpResponseStream> HttpClient.GetStreamAsync(
+    HttpClient self,
+    string requestUri,
+    CancellationToken cancellationToken
+)
+{
+    ValidateHttpRequest(self, "GET", requestUri);
+    cancellationToken.ThrowIfCancellationRequested();
+    NativeHandle stream = StartEmptyHttpStream(self, requestUri);
+    while (NativeHttpClientStreamPoll(stream) == 0)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            NativeHttpClientCancel(stream);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        await Task.Delay(1);
+    }
+    return new()
+    {
+        Handle = stream,
+        StatusCode = (int)NativeHttpClientStreamStatus(stream),
+        Headers = NativeHttpClientStreamHeaders(stream),
+        RequestUri = NativeHttpClientStreamUrl(stream)
+    };
+}
+
+public async Task<HttpResponseStream> HttpClient.GetStreamAsync(
+    HttpClient self,
+    string requestUri
+)
+{
+    return await self.GetStreamAsync(requestUri, CancellationToken.None);
 }
 
 public async Task<HttpResponseMessage> HttpClient.GetAsync(

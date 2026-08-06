@@ -28,6 +28,21 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/slow":
             time.sleep(0.15)
             self.send_bytes(200, b"slow")
+        elif self.path == "/stream":
+            body = bytes((index % 251 for index in range(200000)))
+            self.send_bytes(200, body, (("X-Stream", "yes"),))
+        elif self.path == "/endless":
+            self.send_response(200)
+            self.send_header("Content-Length", "1000000")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            try:
+                for _ in range(100):
+                    self.wfile.write(b"x" * 10000)
+                    self.wfile.flush()
+                    time.sleep(0.01)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
         else:
             self.send_bytes(404, b"missing")
 
