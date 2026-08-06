@@ -296,7 +296,10 @@ the application before deleting any service object borrowed by its handlers.
   spill file.
 - `Lime.Sessions` provides explicit server-side sessions. Session identifiers
   use 256 bits from the operating-system cryptographic random source; SQLite
-  stores sessions but is no longer their RNG.
+  stores sessions but is no longer their RNG. `Session.Rotate()` atomically
+  replaces an identifier while preserving values, `Destroy()` revokes it and
+  emits a deletion cookie on `Commit()`, and expiry cleanup is amortized by
+  `SessionOptions.cleanupInterval` or explicit `SessionStore.SweepExpired()`.
 - `Lime.Static` mounts safe static-file roots.
 - `Lime.Browser` adds optional browser/Wasm assets and hydration support.
 - `Lime.Ssg` executes the real GET endpoint graph to produce static output.

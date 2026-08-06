@@ -604,7 +604,9 @@ The component is isolated from `langlib`. `ASTER_ENABLE_CRYPTO=OFF` removes the
 OpenSSL dependency and leaves hashing as typed-unavailable operations while OS
 randomness, UUIDs, and the constant-time fallback remain available. Lime
 sessions now obtain 256-bit identifiers through `GetHexString(32)` instead of
-asking SQLite for `randomblob`.
+asking SQLite for `randomblob`. Lime also supports atomic session-ID rotation,
+server-side destruction with deletion cookies, and amortized or explicit
+expired-session sweeping.
 
 ## 9. JSON
 

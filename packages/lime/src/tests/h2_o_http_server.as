@@ -22,6 +22,7 @@ class TestState
     {
         SessionStore sessions = Sessions;
         Session session = sessions.Open(request);
+        Sessions = sessions;
         string value = "";
         if (session.IsNew())
         {
