@@ -49,11 +49,14 @@ bool c_backend_web_exports_use_strings(
     const IrModule *ir, size_t entry);
 bool c_backend_web_exports_use_tasks(
     const IrModule *ir, size_t entry);
+bool c_backend_web_exports_use_projection_batches(
+    const IrModule *ir, size_t entry);
 void c_backend_emit_web_string_abi(FILE *output);
 bool c_backend_web_exports_use_html_result(
     const IrModule *ir, size_t entry);
 void c_backend_emit_web_html_abi(FILE *output);
 void c_backend_emit_web_task_abi(FILE *output);
+void c_backend_emit_web_projection_batch_abi(FILE *output);
 bool c_backend_function_needs_render_into_variant(
     const CEmitter *emitter, size_t function_index);
 

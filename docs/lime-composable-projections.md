@@ -30,7 +30,8 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 8.8 KB gzip versus 41.9 KB for the compared Vue client;
+- 9.4 KB gzip versus 41.9 KB for the compared Vue client after adding the
+  experimental batch decoder;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
 
@@ -409,6 +410,36 @@ Required proof:
 
 Only after these prototypes should Lime select source syntax and make a public
 API commitment.
+
+## Implemented prototype status
+
+The first prototype now exists behind deliberately experimental conventions:
+
+- a state struct name ends in `ProjectionState`;
+- `project_text`, `project_disabled`, and `project_class` are checked native
+  HTML properties whose values must be direct fields of that state;
+- synchronous handlers returning the state are lowered to one owned packed
+  batch instead of flat aggregate accessors;
+- JavaScript validates the complete batch before mutating text, `disabled`, or
+  `class` parts;
+- one drop export handles success and discarded results.
+
+The Lime browser fixture updates all three projection kinds and proves in Chrome
+that every projected DOM node retains identity. Its Node integration verifies
+that four state fields arrive in one batch and that no per-field result exports
+exist.
+
+This validates the batch and retained-part architecture, not the temporary
+source syntax. Current prototype limits are intentional: projection handlers
+are synchronous, state fields are flat Boolean/integer/string values, text
+initialization is still written as an ordinary child expression, and the
+`ProjectionState` suffix is a marker rather than a final region declaration.
+Async batches, keyed item-local parts, recursive transition composition, and a
+final explicit state-boundary spelling remain to be designed.
+
+The generic decoder increased the comparison client from 8.8 KB to 9.4 KB
+gzip. A future production implementation should tree-shake the decoder from
+applications without projection-state handlers.
 
 ## Stop criteria
 

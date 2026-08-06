@@ -1423,6 +1423,8 @@ static bool c_emit_module(const IrModule *ir,
     }
     emit_clone_helpers(&emitter);
     emit_drop_helpers(&emitter);
+    if (c_backend_web_exports_use_projection_batches(ir, entry))
+        c_backend_emit_web_projection_batch_abi(output);
     for (size_t function = 0U;
          function < ir->function_count; ++function)
         if (emitter.reachable_functions[function] &&

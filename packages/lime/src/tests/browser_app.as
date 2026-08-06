@@ -25,6 +25,14 @@ public struct QueryProjection
     string preview;
 }
 
+public struct CounterProjectionState
+{
+    int count;
+    bool disabled;
+    string summary;
+    string className;
+}
+
 private extern Task Task.Delay(int milliseconds);
 
 public int Increment(int count)
@@ -87,6 +95,27 @@ public async Task<QueryProjection> ProjectQueryLater(string query)
     return QueryProjectionFor(query);
 }
 
+private CounterProjectionState CounterProjection(int count)
+{
+    return new()
+    {
+        count = count,
+        disabled = count <= 0,
+        summary = $"Projected count: {count}",
+        className = count == 0 ? "at-zero" : "positive"
+    };
+}
+
+public CounterProjectionState IncreaseProjected(int count)
+{
+    return CounterProjection(count + 1);
+}
+
+public CounterProjectionState DecreaseProjected(int count)
+{
+    return CounterProjection(count - 1);
+}
+
 public bool ValidateName(string name)
 {
     return name.Length >= 2;
@@ -135,6 +164,7 @@ public Html ReplaceMessage(string message)
 public Html BrowserPage(Html browserLoader)
 {
     QueryProjection initialQuery = ProjectQuery("");
+    CounterProjectionState initialCounter = CounterProjection(1);
     return <main>
         <h1>Lime Browser 0.1</h1>
         <section id="counter-island">
@@ -164,6 +194,26 @@ public Html BrowserPage(Html browserLoader)
             >
                 Decrease
             </button>
+        </section>
+        <section id="compiled-projection-trial">
+            <h2>Compiled projection batch trial</h2>
+            <output project_text=initialCounter.count>
+                {initialCounter.count}
+            </output>
+            <output project_text=initialCounter.summary>
+                {initialCounter.summary}
+            </output>
+            <p project_class=initialCounter.className>
+                State class projection
+            </p>
+            <button type="button" onclick=IncreaseProjected>
+                Increase projected
+            </button>
+            <button
+                type="button"
+                project_disabled=initialCounter.disabled
+                onclick=DecreaseProjected
+            >Decrease projected</button>
         </section>
         <form
             id="reactive-query"

@@ -523,6 +523,38 @@ IrValueId ir_lower_element_with_parent(
         const ElementProperty *property =
             &expr->as.element.properties[i];
         if (property->css_custom_property) continue;
+        if (property->projection_binding != NULL) {
+            IrInstruction *binding = ir_append_instruction(
+                builder, IR_OP_CONST_STRING,
+                ir_intern_type(builder->module, &ir_str_type),
+                NULL, 0U, property->span);
+            if (binding != NULL) {
+                binding->symbol = property->projection_binding;
+                binding->symbol_length = strlen(property->projection_binding);
+                IrValueId marker = binding->result;
+                IrInstruction *set = ir_append_instruction(
+                    builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+                    IR_INVALID_ID, &marker, 1U, property->span);
+                if (set != NULL) {
+                    set->index = local;
+                    set->symbol = "data-aster-project";
+                    set->symbol_length = strlen(set->symbol);
+                }
+            }
+            if (property->projection_binding[0] != 't') {
+                IrValueId value = ir_lower_expr(builder, property->value);
+                IrInstruction *set = ir_append_instruction(
+                    builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+                    IR_INVALID_ID, &value, 1U, property->span);
+                if (set != NULL) {
+                    set->index = local;
+                    set->symbol = property->projection_binding[0] == 'c'
+                                ? "class" : "disabled";
+                    set->symbol_length = strlen(set->symbol);
+                }
+            }
+            continue;
+        }
         if (property->event_binding != NULL) {
             IrInstruction *binding = ir_append_instruction(
                 builder, IR_OP_CONST_STRING,

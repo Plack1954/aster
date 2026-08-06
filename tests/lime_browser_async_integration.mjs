@@ -72,4 +72,51 @@ try {
     drop(failedTask);
 }
 
-console.log("Lime browser async Task.Delay transition verified");
+const project = instance.exports.aster_export_IncreaseProjected;
+const batchData = instance.exports.aster_export_projection_batch_data;
+const batchLength = instance.exports.aster_export_projection_batch_length;
+const batchCount = instance.exports.aster_export_projection_batch_count;
+const batchDrop = instance.exports.aster_export_projection_batch_drop;
+if (typeof project !== "function" || typeof batchData !== "function" ||
+    typeof batchDrop !== "function")
+    throw new Error("compiled projection batch exports are incomplete");
+const batch = Number(project(0n));
+try {
+    const pointer = Number(batchData(batch));
+    const length = Number(batchLength(batch));
+    const count = Number(batchCount(batch));
+    const view = new DataView(memory.buffer, pointer, length);
+    const bytes = new Uint8Array(memory.buffer, pointer, length);
+    const records = new Map();
+    let offset = 0;
+    for (let record = 0; record < count; ++record) {
+        const type = String.fromCharCode(bytes[offset]);
+        const nameLength = bytes[offset + 1];
+        const payloadLength = view.getUint32(offset + 4, true);
+        offset += 8;
+        const name = new TextDecoder().decode(
+            bytes.subarray(offset, offset + nameLength)
+        );
+        offset += nameLength;
+        let value;
+        if (type === "b") value = bytes[offset] !== 0;
+        else if (type === "l") value = view.getBigInt64(offset, true);
+        else value = new TextDecoder().decode(
+            bytes.subarray(offset, offset + payloadLength)
+        );
+        offset += payloadLength;
+        records.set(name, value);
+    }
+    if (offset !== length || records.get("count") !== 1n ||
+        records.get("disabled") !== false ||
+        records.get("summary") !== "Projected count: 1" ||
+        records.get("className") !== "positive")
+        throw new Error("compiled projection batch contents are wrong");
+} finally {
+    batchDrop(batch);
+}
+if (Object.keys(instance.exports).some(
+    (name) => name.startsWith("aster_export_IncreaseProjected_result_")))
+    throw new Error("projection state leaked flat aggregate accessors");
+
+console.log("Lime browser async and compiled projection transitions verified");

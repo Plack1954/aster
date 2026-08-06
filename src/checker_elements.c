@@ -130,6 +130,19 @@ static const Type *web_handler_completion_type(const Type *type) {
     return type != NULL && type->kind == TYPE_TASK ? type->element : type;
 }
 
+static bool projection_state_type(const Type *type) {
+    if (type == NULL || type->kind != TYPE_NAMED ||
+        type->declaration == NULL ||
+        type->declaration->kind != DECL_STRUCT)
+        return false;
+    const char *name = type->declaration->as.structure.name;
+    const char *suffix = "ProjectionState";
+    size_t name_length = strlen(name);
+    size_t suffix_length = strlen(suffix);
+    return name_length >= suffix_length &&
+           strcmp(name + name_length - suffix_length, suffix) == 0;
+}
+
 static bool web_handler_standard_html_type(
     const Type *type, const char *name) {
     return type->kind == TYPE_NAMED && type->declaration != NULL &&
@@ -140,6 +153,8 @@ static bool web_handler_standard_html_type(
 }
 
 static char web_handler_type_code(const Type *type) {
+    if (projection_state_type(type))
+        return 'p';
     if (web_handler_standard_html_type(type, "KeyedRemove"))
         return 'r';
     if (web_handler_standard_html_type(type, "KeyedClear"))
@@ -160,6 +175,51 @@ static char web_handler_type_code(const Type *type) {
         type->declaration->kind == DECL_STRUCT)
         return 'a';
     return '?';
+}
+
+static bool projection_property(const char *name) {
+    return element_property_names_equal(name, "project_text") ||
+           element_property_names_equal(name, "project_disabled") ||
+           element_property_names_equal(name, "project_class");
+}
+
+static void check_projection_property(
+    Checker *checker, ElementProperty *property) {
+    Type *value = check_expr(checker, property->value);
+    Expr *expression = property->value;
+    if (expression->kind != EXPR_FIELD ||
+        !projection_state_type(expression->as.field.object->type)) {
+        lang_diag(checker->diagnostics, expression->span,
+                  "projection `%s` requires a direct field of a `*ProjectionState` struct",
+                  property->name);
+        return;
+    }
+    bool valid = false;
+    char kind = '?';
+    if (element_property_names_equal(property->name, "project_text")) {
+        valid = value->kind == TYPE_STRING || value->kind == TYPE_BOOL ||
+                is_signed_integer(value) || is_unsigned_integer(value);
+        kind = 't';
+    } else if (element_property_names_equal(
+                   property->name, "project_disabled")) {
+        valid = value->kind == TYPE_BOOL;
+        kind = 'd';
+    } else if (element_property_names_equal(
+                   property->name, "project_class")) {
+        valid = value->kind == TYPE_STRING;
+        kind = 'c';
+    }
+    if (!valid) {
+        lang_diag(checker->diagnostics, expression->span,
+                  "projection `%s` has unsupported type `%s`",
+                  property->name, type_display_name(checker, value));
+        return;
+    }
+    const char *field = expression->as.field.field;
+    size_t length = strlen(field) + 3U;
+    char *binding = lang_arena_alloc(&checker->module->arena, length);
+    (void)snprintf(binding, length, "%c:%s", kind, field);
+    property->projection_binding = binding;
 }
 
 static void check_html_event_handler(
@@ -189,6 +249,27 @@ static void check_html_event_handler(
         lang_diag(checker->diagnostics, property->value->span,
                   "event handler `%s` must return a scalar, `String`, `Html`, struct, `void`, or `Task` of one of those types",
                   handler->as.function.name);
+    if (projection_state_type(completion)) {
+        if (handler_type->element->kind == TYPE_TASK)
+            lang_diag(checker->diagnostics, property->value->span,
+                      "projection-state handlers are synchronous in the experimental prototype");
+        const Decl *state = completion->declaration;
+        for (size_t field = 0U;
+             field < state->as.structure.field_count; ++field) {
+            const FieldDecl *field_decl = &state->as.structure.fields[field];
+            Type *field_type = resolve_declared_type_in_module(
+                checker, field_decl->type_syntax, field_decl->type_name,
+                field_decl->span, state->module_name);
+            if (!(field_type->kind == TYPE_BOOL ||
+                  is_signed_integer(field_type) ||
+                  is_unsigned_integer(field_type) ||
+                  field_type->kind == TYPE_STRING))
+                lang_diag(checker->diagnostics,
+                          state->as.structure.fields[field].span,
+                          "projection-state field `%s` must be Boolean, integer, or `string`",
+                          state->as.structure.fields[field].name);
+        }
+    }
     for (size_t argument = 0U;
          argument < handler_type->argument_count; ++argument)
         if (!web_handler_parameter_type(
@@ -600,6 +681,10 @@ Type *check_element(Checker *checker, Expr *expr) {
                         expr->as.element.properties[prior].name))
                     lang_diag(checker->diagnostics, property->span,
                               "duplicate property `%s`", property->name);
+            if (projection_property(property->name)) {
+                check_projection_property(checker, property);
+                continue;
+            }
             FieldDecl *declared = NULL;
             for (size_t p = 0U;
                  p < descriptor->as.element.property_count; ++p)

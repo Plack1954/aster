@@ -255,6 +255,7 @@ typedef struct ElementProperty {
     bool borrow_interpolated_string;
     bool css_custom_property;
     const char *event_binding; /* Generated `event|handler|result|type:name...`. */
+    const char *projection_binding; /* Experimental generated `kind:field`. */
 } ElementProperty;
 
 typedef struct ElementBodyItem {

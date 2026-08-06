@@ -983,7 +983,7 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
     set_tests_properties(lime_browser_async_wasm PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
-            "Lime browser async Task.Delay transition verified"
+            "Lime browser async and compiled projection transitions verified"
         TIMEOUT 60)
     add_test(NAME browser_compare_wasm
         COMMAND bash tests/browser_compare_wasm.sh

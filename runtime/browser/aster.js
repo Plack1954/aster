@@ -8,7 +8,13 @@ function targetsFor(scope, name) {
 }
 
 function targetFor(scope, name) {
-    return targetsFor(scope, name)[0] ?? null;
+    const named = targetsFor(scope, name)[0];
+    if (named !== undefined) return named;
+    for (const target of scope.querySelectorAll("[data-aster-project]")) {
+        const [, field] = target.dataset.asterProject.split(":");
+        if (field === name) return target;
+    }
+    return null;
 }
 
 function targetValue(source, scope, type, name) {
@@ -251,6 +257,98 @@ function aggregateString(
     return decodeOwnedString(Number(field.accessor(handle)), exports, memory);
 }
 
+function applyProjectionBatch(
+    handle, scope, state, exports, memory
+) {
+    if (handle === 0) throw new Error("Aster projection batch is null");
+    try {
+        const pointer = Number(
+            exports.aster_export_projection_batch_data(handle)
+        );
+        const length = Number(
+            exports.aster_export_projection_batch_length(handle)
+        );
+        const count = Number(
+            exports.aster_export_projection_batch_count(handle)
+        );
+        const bytes = new Uint8Array(memory.buffer, pointer, length);
+        const view = new DataView(memory.buffer, pointer, length);
+        const records = [];
+        let offset = 0;
+        for (let record = 0; record < count; ++record) {
+            if (offset + 8 > length)
+                throw new Error("Aster projection batch header is truncated");
+            const type = String.fromCharCode(bytes[offset]);
+            const nameLength = bytes[offset + 1];
+            const payloadLength = view.getUint32(offset + 4, true);
+            offset += 8;
+            if (offset + nameLength + payloadLength > length)
+                throw new Error("Aster projection batch record is truncated");
+            const name = decoder.decode(
+                bytes.subarray(offset, offset + nameLength)
+            );
+            offset += nameLength;
+            let value;
+            if (type === "b") {
+                if (payloadLength !== 1)
+                    throw new Error("Aster Boolean projection is malformed");
+                value = bytes[offset] !== 0;
+            } else if (type === "l") {
+                if (payloadLength !== 8)
+                    throw new Error("Aster integer projection is malformed");
+                value = view.getBigInt64(offset, true);
+            } else if (type === "o") {
+                value = decoder.decode(
+                    bytes.subarray(offset, offset + payloadLength)
+                );
+            } else {
+                throw new Error(`Aster projection type is unknown: ${type}`);
+            }
+            offset += payloadLength;
+            records.push({type, name, value});
+        }
+        if (offset !== length)
+            throw new Error("Aster projection batch has trailing data");
+
+        const targets = [...scope.querySelectorAll("[data-aster-project]")];
+        const recordsByName = new Map(
+            records.map((record) => [record.name, record])
+        );
+        for (const target of targets) {
+            const descriptor = target.dataset.asterProject.split(":");
+            if (descriptor.length !== 2)
+                throw new Error("Aster projection marker is malformed");
+            const [kind, field] = descriptor;
+            const record = recordsByName.get(field);
+            if (record === undefined)
+                throw new Error(`Aster projection state field is missing: ${field}`);
+            if ((kind === "d" && record.type !== "b") ||
+                (kind === "c" && record.type !== "o") ||
+                !["t", "d", "c"].includes(kind))
+                throw new Error(`Aster projection type mismatch: ${kind}:${field}`);
+        }
+        for (const {type, name, value} of records) {
+            state.set(stateKey(type, name), value);
+            for (const target of targets) {
+                const [kind, field] = target.dataset.asterProject.split(":");
+                if (field !== name) continue;
+                if (kind === "t")
+                    target.textContent = String(value);
+                else if (kind === "d")
+                    target.disabled = Boolean(value);
+                else if (kind === "c")
+                    target.className = String(value);
+                else
+                    throw new Error(
+                        `Aster projection kind is unknown: ${kind}`
+                    );
+            }
+        }
+    } finally {
+        exports.aster_export_projection_batch_drop(handle);
+    }
+}
+
 function applyAggregateResult(
     handle, fields, drop, source, scope, state, exports, memory,
     hydrateWithin
@@ -317,6 +415,8 @@ function dropUnusedResult(result, resultType, aggregateDrop, exports) {
         exports.aster_export_string_drop(rendered);
     } else if (["a", "r", "c", "w"].includes(resultType)) {
         aggregateDrop(Number(result));
+    } else if (resultType === "p") {
+        exports.aster_export_projection_batch_drop(Number(result));
     }
 }
 
@@ -462,7 +562,11 @@ export async function hydrateAster({wasmUrl, root = document}) {
                     return;
                 }
             }
-            if (resultType === "o") {
+            if (resultType === "p") {
+                applyProjectionBatch(
+                    Number(result), scope, state, instance.exports, memory
+                );
+            } else if (resultType === "o") {
                 const message = decodeOwnedString(
                     Number(result), instance.exports, memory
                 );
