@@ -9,6 +9,14 @@ public struct TodoPatch
     Html item;
 }
 
+public struct ReactiveCounterPatch
+{
+    int value;
+    int doubled;
+    bool positive;
+    string summary;
+}
+
 private extern Task Task.Delay(int milliseconds);
 
 public int Increment(int count)
@@ -26,6 +34,27 @@ public async Task<int> FailLater(int count)
 {
     await Task.Delay(1);
     throw new Exception("browser async failure");
+}
+
+private ReactiveCounterPatch ReactiveCounter(int value)
+{
+    return new()
+    {
+        value = value,
+        doubled = value * 2,
+        positive = value > 0,
+        summary = $"Value {value}; doubled {value * 2}"
+    };
+}
+
+public ReactiveCounterPatch IncreaseReactive(int value)
+{
+    return ReactiveCounter(value + 1);
+}
+
+public ReactiveCounterPatch DecreaseReactive(int value)
+{
+    return ReactiveCounter(value - 1);
 }
 
 public bool ValidateName(string name)
@@ -73,6 +102,25 @@ public Html BrowserPage(Html browserLoader)
             <button type="button" hidden=true onclick=FailLater>
                 Fail later
             </button>
+        </section>
+        <section id="reactive-counter">
+            <h2>Reactive projection trial</h2>
+            <output name="value">1</output>
+            <output name="doubled">2</output>
+            <output name="summary">Value 1; doubled 2</output>
+            <p id="positive-message">The value is positive.</p>
+            <button
+                type="button"
+                aria-positive="true"
+                aria-controls="positive-message"
+                onclick=IncreaseReactive
+            >Increase</button>
+            <button
+                type="button"
+                aria-positive="true"
+                aria-controls="positive-message"
+                onclick=DecreaseReactive
+            >Decrease</button>
         </section>
         <form
             id="contact"
