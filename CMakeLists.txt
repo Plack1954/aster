@@ -2290,6 +2290,16 @@ add_executable(ffi_registration_test tests/ffi_registration.c)
 target_link_libraries(ffi_registration_test PRIVATE langlib)
 lang_enable_warnings(ffi_registration_test)
 add_test(NAME ffi_registration COMMAND ffi_registration_test)
+add_test(NAME c_callback_surface_check
+    COMMAND lang check tests/c_callback_surface.as)
+set_tests_properties(c_callback_surface_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(c_callback_integration_test tests/c_callback_integration.c)
+target_link_libraries(c_callback_integration_test PRIVATE langlib)
+lang_enable_warnings(c_callback_integration_test)
+add_test(NAME c_callback_integration COMMAND c_callback_integration_test)
+set_tests_properties(c_callback_integration PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(ast_shape_test tests/ast_shape.c)
 target_include_directories(ast_shape_test PRIVATE src)

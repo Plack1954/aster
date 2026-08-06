@@ -69,6 +69,15 @@ typedef struct LangDiagnostics {
     size_t capacity;
 } LangDiagnostics;
 
+typedef struct LangValue LangValue;
+typedef struct LangNativeResult LangNativeResult;
+typedef bool (*LangFunctionInvokeFn)(
+    void *context,
+    const LangValue *args,
+    size_t arg_count,
+    LangNativeResult *out_result
+);
+
 typedef enum LangValueTag {
     LANG_VALUE_UNIT,
     LANG_VALUE_BOOL,
@@ -81,6 +90,7 @@ typedef enum LangValueTag {
     LANG_VALUE_RAW_POINTER,
     LANG_VALUE_FUNCTION,
     LANG_VALUE_BOUND_FUNCTION,
+    LANG_VALUE_NATIVE_FUNCTION,
     /* Reserved for diagnostics owned by a failed LangNativeResult. */
     LANG_VALUE_NATIVE_ERROR
 } LangValueTag;
@@ -99,7 +109,7 @@ typedef struct LangByteSlice {
     size_t length;
 } LangByteSlice;
 
-typedef struct LangValue {
+struct LangValue {
     LangValueTag tag;
     union {
         bool boolean;
@@ -115,17 +125,21 @@ typedef struct LangValue {
             size_t function;
             void *receiver;
         } bound_function;
+        struct {
+            LangFunctionInvokeFn invoke;
+            void *context;
+        } native_function;
     } as;
-} LangValue;
+};
 
 typedef struct LangVM LangVM;
 
-typedef struct LangNativeResult {
+struct LangNativeResult {
     bool ok;
     LangValue value;
     /* Optional static-lifetime diagnostic; dynamic text uses the constructor. */
     const char *error;
-} LangNativeResult;
+};
 
 /*
  * `vm` and `args` are borrowed for this call. The callback must not retain
@@ -233,6 +247,15 @@ void lang_native_result_drop(LangNativeResult *result);
 bool lang_vm_call_native(LangVM *vm, const char *name, const LangValue *args,
                          size_t arg_count, LangNativeResult *out_result);
 /*
+ * Invokes a call-scoped Aster function value received by native code.
+ * `function`, `args`, and any borrowed views reachable through them remain
+ * owned by the Aster caller. Native code must not retain them after its
+ * registered callback returns.
+ */
+bool lang_vm_call_function(LangVM *vm, const LangValue *function,
+                           const LangValue *args, size_t arg_count,
+                           LangNativeResult *out_result);
+/*
  * On success, transfers caller's opaque `handle` to `out_value` and retains
  * `destructor` for exactly-once cleanup. On failure, caller still owns it.
  */
@@ -268,6 +291,12 @@ bool lang_result_take(LangVM *vm, LangValue *result, bool *out_is_ok,
                       LangValue *out_payload);
 /* Registers the standard file, directory, process, HTTP, and SQLite natives. */
 void lang_vm_register_builtins(LangVM *vm);
+/*
+ * Installs an application registrar for subsequently initialized VMs.
+ * Passing NULL clears it. This is process-global setup, normally performed
+ * before running Aster code.
+ */
+void lang_configure_application_registrar(LangNativeRegistrar registrar);
 /* `vm` is borrowed; registered names are copied into its registry. */
 void lang_register_http_natives(LangVM *vm);
 /* Installs an optional HTTP-client registrar for subsequently initialized VMs. */

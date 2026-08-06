@@ -25,6 +25,11 @@
 
 static LangNativeRegistrar http_client_registrar = NULL;
 static LangNativeRegistrar crypto_registrar = NULL;
+static LangNativeRegistrar application_registrar = NULL;
+
+void lang_configure_application_registrar(LangNativeRegistrar registrar) {
+    application_registrar = registrar;
+}
 
 void lang_configure_http_client_registrar(LangNativeRegistrar registrar) {
     http_client_registrar = registrar;
@@ -2262,4 +2267,5 @@ void lang_vm_register_builtins(LangVM *vm) {
     lang_register_configured_crypto_natives(vm);
     lang_register_h2o_natives(vm);
     lang_register_sqlite_natives(vm);
+    if (application_registrar != NULL) application_registrar(vm);
 }

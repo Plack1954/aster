@@ -45,6 +45,34 @@ Embedders can invoke a registered callback through `lang_vm_call_native`; this
 performs name and arity lookup and returns the callback's typed result. Duplicate
 registrations are rejected.
 
+An extern function may accept an Aster delegate. This first C-callback boundary
+is deliberately call-scoped:
+
+```aster
+delegate long Transform(long value);
+
+private extern long NativeApply(long value, Transform callback);
+
+private long AddTwo(long value) { return value + 2; }
+
+long answer = NativeApply(40, AddTwo);
+```
+
+The registered C implementation receives the delegate as a `LangValue` and
+invokes it with `lang_vm_call_function`. Arguments and results use the same
+tagged scalar representation as other registered natives. The callback value,
+its receiver, and borrowed arguments are valid only until the surrounding
+registered native call returns; C must not retain them. A native wrapper can
+pass explicit `void *user_data` to a synchronous C library internally, but
+there is no hidden ownership or lifetime extension.
+
+Generated C emits typed call-scoped trampolines for value-mode `Unit`, Boolean,
+integer, floating-point, character, and raw-pointer callback parameters and
+results. Reference parameters and managed callback signature types are rejected
+by that backend for now. Applications install their native functions before
+execution with `lang_configure_application_registrar`; passing `NULL` clears
+the process-global configuration.
+
 Opaque resources are created with `lang_native_handle_value`, inspected in a
 callback with `lang_native_handle_data`, and released deterministically through
 their registered C destructor. `NativeHandle` is cleanup-managed and cannot be
@@ -113,7 +141,8 @@ embedded null bytes are rejected. Queries distinguish a missing path from
 other host errors. Removal is split between files and empty directories, so
 the API does not hide recursive deletion.
 
-Dynamic library loading and automatic C ABI binding are not implemented.
+Dynamic library loading, automatic C ABI binding, raw one-word function
+pointers, and callbacks retained by C after an extern call are not implemented.
 
 The optional SQLite adapter follows the same registration model. Database and
 prepared-statement pointers are wrapped in tagged cleanup-managed native handles;

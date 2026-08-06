@@ -90,8 +90,20 @@ void c_backend_mark_function(CEmitter *emitter,
                             emitter, emitter->ir->interface_dispatches[entry]
                                 .target_function);
             }
+            bool callback_native = false;
+            if (instruction->opcode == IR_OP_CALL_NATIVE)
+                for (size_t operand = 0U;
+                     operand < instruction->operand_count; ++operand) {
+                    IrValueId value = instruction->operands[operand];
+                    callback_native = callback_native ||
+                        (value < function->value_count &&
+                        emitter->ir->types[
+                            function->value_types[value]].shape ==
+                            IR_TYPE_FUNCTION);
+                }
             if (instruction->opcode == IR_OP_CALL_NATIVE &&
-                c_backend_registry_native_symbol(instruction->symbol)) {
+                (c_backend_registry_native_symbol(instruction->symbol) ||
+                 callback_native)) {
                 emitter->needs_native_runtime = true;
                 if (instruction->symbol != NULL &&
                     strncmp(instruction->symbol,

@@ -17,7 +17,9 @@ Function values occupy two pointer-sized ABI slots: an invocation target and
 an optional borrowed receiver. An unbound function leaves the receiver empty.
 A bound class-method delegate stores the class reference without retaining or
 owning it. This is an internal language ABI, not an extern C function-pointer
-ABI.
+ABI. Registered extern calls can receive a call-scoped tagged callback bridge;
+this does not turn the delegate into a raw C function pointer or permit C to
+retain it.
 
 Every class object begins with a compiler-owned runtime type identifier.
 Generated C uses it for virtual dispatch, virtual method delegate binding, and

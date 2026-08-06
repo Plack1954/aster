@@ -213,6 +213,9 @@ static void print_value(FILE *stream, LangValue value) {
             fprintf(stream, "<bound-fn:%zu>",
                     value.as.bound_function.function);
             break;
+        case LANG_VALUE_NATIVE_FUNCTION:
+            fputs("<native-fn>", stream);
+            break;
         case LANG_VALUE_NATIVE_ERROR:
             fputs("<native-error>", stream);
             break;

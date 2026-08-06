@@ -417,8 +417,9 @@ bool c_backend_registry_native_symbol(const char *symbol) {
 static void emit_native_argument(CEmitter *emitter,
                                  const IrFunction *function,
                                  IrValueId value) {
+    IrTypeId type_id = function->value_types[value];
     const IrType *type =
-        &emitter->ir->types[function->value_types[value]];
+        &emitter->ir->types[type_id];
     if (type->shape == IR_TYPE_STRING_VIEW)
         fprintf(emitter->output,
                 "(LangValue){.tag=LANG_VALUE_STRING_VIEW,"
@@ -448,6 +449,12 @@ static void emit_native_argument(CEmitter *emitter,
         fprintf(emitter->output,
                 "(LangValue){.tag=LANG_VALUE_F64,"
                 ".as.f64=(double)v%" PRIu32 "}", value);
+    else if (type->shape == IR_TYPE_FUNCTION)
+        fprintf(emitter->output,
+                "(LangValue){.tag=LANG_VALUE_NATIVE_FUNCTION,"
+                ".as.native_function={aster_native_callback_%" PRIu32
+                ",(void *)&v%" PRIu32 "}}",
+                type_id, value);
     else if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
              strcmp(type->name, "string") == 0)
         fprintf(emitter->output,
@@ -637,7 +644,13 @@ static void emit_native_argument_cleanup(
 static bool emit_registry_native_call(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction) {
-    if (!c_backend_registry_native_symbol(instruction->symbol))
+    bool callback_argument = false;
+    for (size_t i = 0U; i < instruction->operand_count; ++i)
+        callback_argument = callback_argument ||
+            emitter->ir->types[function->value_types[
+                instruction->operands[i]]].shape == IR_TYPE_FUNCTION;
+    if (!c_backend_registry_native_symbol(instruction->symbol) &&
+        !callback_argument)
         return false;
     const IrType *result_type =
         &emitter->ir->types[instruction->result_type];

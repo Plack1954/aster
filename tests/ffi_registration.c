@@ -41,6 +41,21 @@ static LangNativeResult native_identity(LangVM *vm, const LangValue *args,
     return (LangNativeResult){true, args[0], NULL};
 }
 
+static bool native_function_invoke(void *context, const LangValue *args,
+                                   size_t arg_count,
+                                   LangNativeResult *out_result) {
+    int64_t offset = *(const int64_t *)context;
+    if (arg_count != 1U || args == NULL || out_result == NULL ||
+        args[0].tag != LANG_VALUE_I64)
+        return false;
+    *out_result = (LangNativeResult){
+        true,
+        {.tag=LANG_VALUE_I64, .as.i64=args[0].as.i64 + offset},
+        NULL
+    };
+    return true;
+}
+
 static void drop_test_handle(void *handle) {
     free(handle);
 }
@@ -60,6 +75,17 @@ int main(void) {
         {.tag=LANG_VALUE_I64, .as.i64=22}
     };
     LangNativeResult result;
+    int64_t callback_offset = 2;
+    LangValue callback = {
+        .tag=LANG_VALUE_NATIVE_FUNCTION,
+        .as.native_function={native_function_invoke, &callback_offset}
+    };
+    LangValue callback_argument = {.tag=LANG_VALUE_I64, .as.i64=40};
+    if (!lang_vm_call_function(
+            vm, &callback, &callback_argument, 1U, &result) ||
+        !result.ok || result.value.tag != LANG_VALUE_I64 ||
+        result.value.as.i64 != 42)
+        return 13;
     if (!lang_vm_call_native(vm, "test::sum", args, 2U, &result) ||
         !result.ok || result.value.tag != LANG_VALUE_I64 ||
         result.value.as.i64 != 42)

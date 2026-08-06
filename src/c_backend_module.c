@@ -7,6 +7,35 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool native_callback_scalar(const IrType *type) {
+    return type->shape == IR_TYPE_UNIT ||
+           type->shape == IR_TYPE_BOOL ||
+           type->shape == IR_TYPE_SIGNED_INT ||
+           type->shape == IR_TYPE_UNSIGNED_INT ||
+           type->shape == IR_TYPE_CHAR ||
+           type->shape == IR_TYPE_FLOAT ||
+           type->shape == IR_TYPE_RAW_POINTER;
+}
+
+static bool native_callback_type_supported(
+    const IrModule *ir, IrTypeId type_id
+) {
+    if (type_id >= ir->type_count) return false;
+    const IrType *type = &ir->types[type_id];
+    if (type->shape != IR_TYPE_FUNCTION ||
+        !native_callback_scalar(&ir->types[type->element_type]))
+        return false;
+    for (size_t argument = 0U;
+         argument < type->argument_count; ++argument)
+        if (!native_callback_scalar(
+                &ir->types[type->argument_types[argument]]) ||
+            (type->parameter_modes != NULL &&
+             parameter_mode_is_reference(
+                 type->parameter_modes[argument])))
+            return false;
+    return true;
+}
+
 static bool function_supported(CEmitter *emitter,
                                const IrFunction *function) {
     LangSpan span = function->span;
@@ -53,6 +82,21 @@ static bool function_supported(CEmitter *emitter,
                     "copying a cleanup-managed value without a lowered copy function");
                 return false;
             }
+            if (instruction->opcode == IR_OP_CALL_NATIVE)
+                for (size_t operand = 0U;
+                     operand < instruction->operand_count; ++operand) {
+                    IrValueId value = instruction->operands[operand];
+                    IrTypeId type_id = function->value_types[value];
+                    if (emitter->ir->types[type_id].shape ==
+                            IR_TYPE_FUNCTION &&
+                        !native_callback_type_supported(
+                            emitter->ir, type_id)) {
+                        c_backend_unsupported(
+                            emitter, instruction->span,
+                            "a native callback signature other than value-mode scalars and raw pointers");
+                        return false;
+                    }
+                }
         }
     }
     return true;
@@ -330,6 +374,113 @@ static void emit_delegate_adapters(CEmitter *emitter) {
     }
     free(unbound);
     free(bound);
+}
+
+static void emit_native_callback_value(
+    CEmitter *emitter, IrTypeId type_id, const char *expression
+) {
+    const IrType *type = &emitter->ir->types[type_id];
+    if (type->shape == IR_TYPE_UNIT)
+        fputs("(LangValue){.tag=LANG_VALUE_UNIT}", emitter->output);
+    else if (type->shape == IR_TYPE_BOOL)
+        fprintf(emitter->output,
+                "(LangValue){.tag=LANG_VALUE_BOOL,.as.boolean=%s}",
+                expression);
+    else if (type->shape == IR_TYPE_SIGNED_INT)
+        fprintf(emitter->output,
+                "(LangValue){.tag=LANG_VALUE_I64,.as.i64=(int64_t)%s}",
+                expression);
+    else if (type->shape == IR_TYPE_UNSIGNED_INT ||
+             type->shape == IR_TYPE_CHAR)
+        fprintf(emitter->output,
+                "(LangValue){.tag=LANG_VALUE_U64,.as.u64=(uint64_t)%s}",
+                expression);
+    else if (type->shape == IR_TYPE_FLOAT)
+        fprintf(emitter->output,
+                "(LangValue){.tag=LANG_VALUE_F64,.as.f64=(double)%s}",
+                expression);
+    else
+        fprintf(emitter->output,
+                "(LangValue){.tag=LANG_VALUE_RAW_POINTER,.as.pointer=(void *)%s}",
+                expression);
+}
+
+static void emit_native_callback_adapters(CEmitter *emitter) {
+    for (size_t type_id = 0U;
+         type_id < emitter->ir->type_count; ++type_id) {
+        const IrType *type = &emitter->ir->types[type_id];
+        if (!native_callback_type_supported(
+                emitter->ir, (IrTypeId)type_id))
+            continue;
+        fprintf(emitter->output,
+                "static bool aster_native_callback_%zu(\n"
+                "    void *context, const LangValue *args, size_t arg_count,\n"
+                "    LangNativeResult *out_result) {\n"
+                "    if (context == NULL || out_result == NULL || "
+                "arg_count != %zuU || (%zuU != 0U && args == NULL)) "
+                "return false;\n"
+                "    aster_type_%zu callback = "
+                "*(aster_type_%zu *)context;\n"
+                "    if (callback.invoke == NULL) return false;\n",
+                type_id, type->argument_count,
+                type->argument_count, type_id, type_id);
+        for (size_t argument = 0U;
+             argument < type->argument_count; ++argument) {
+            const IrType *argument_type = &emitter->ir->types[
+                type->argument_types[argument]];
+            const char *tag = argument_type->shape == IR_TYPE_BOOL
+                ? "LANG_VALUE_BOOL"
+                : argument_type->shape == IR_TYPE_SIGNED_INT
+                ? "LANG_VALUE_I64"
+                : argument_type->shape == IR_TYPE_UNSIGNED_INT ||
+                  argument_type->shape == IR_TYPE_CHAR
+                ? "LANG_VALUE_U64"
+                : argument_type->shape == IR_TYPE_FLOAT
+                ? "LANG_VALUE_F64"
+                : argument_type->shape == IR_TYPE_RAW_POINTER
+                ? "LANG_VALUE_RAW_POINTER"
+                : "LANG_VALUE_UNIT";
+            fprintf(emitter->output,
+                    "    if (args[%zu].tag != %s) return false;\n",
+                    argument, tag);
+        }
+        const IrType *result = &emitter->ir->types[type->element_type];
+        if (result->shape != IR_TYPE_UNIT) {
+            fputs("    ", emitter->output);
+            c_backend_emit_type(emitter, type->element_type);
+            fputs(" value = callback.invoke(callback.receiver",
+                  emitter->output);
+        } else {
+            fputs("    callback.invoke(callback.receiver",
+                  emitter->output);
+        }
+        for (size_t argument = 0U;
+             argument < type->argument_count; ++argument) {
+            const IrType *argument_type = &emitter->ir->types[
+                type->argument_types[argument]];
+            const char *member = argument_type->shape == IR_TYPE_BOOL
+                ? "boolean"
+                : argument_type->shape == IR_TYPE_SIGNED_INT
+                ? "i64"
+                : argument_type->shape == IR_TYPE_UNSIGNED_INT ||
+                  argument_type->shape == IR_TYPE_CHAR
+                ? "u64"
+                : argument_type->shape == IR_TYPE_FLOAT
+                ? "f64" : "pointer";
+            fputs(", (", emitter->output);
+            c_backend_emit_type(
+                emitter, type->argument_types[argument]);
+            fprintf(emitter->output, ")args[%zu].as.%s",
+                    argument, member);
+        }
+        fputs(");\n    *out_result = (LangNativeResult){"
+              ".ok=true,.value=", emitter->output);
+        emit_native_callback_value(
+            emitter, type->element_type,
+            result->shape == IR_TYPE_UNIT ? "0" : "value");
+        fputs(",.error=NULL};\n    return true;\n}\n\n",
+              emitter->output);
+    }
 }
 
 static void emit_render_function_signature(
@@ -1211,6 +1362,7 @@ static bool c_emit_module(const IrModule *ir,
             }
         }
     emit_delegate_adapters(&emitter);
+    emit_native_callback_adapters(&emitter);
     emit_clone_helper_prototypes(&emitter);
     emit_drop_helper_prototypes(&emitter);
     fputc('\n', output);

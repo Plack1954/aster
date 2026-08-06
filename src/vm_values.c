@@ -269,6 +269,36 @@ bool lang_vm_call_native(LangVM *vm, const char *name, const LangValue *args,
     return false;
 }
 
+bool lang_vm_call_function(LangVM *vm, const LangValue *function,
+                           const LangValue *args, size_t arg_count,
+                           LangNativeResult *out_result) {
+    if (vm == NULL || function == NULL || out_result == NULL ||
+        (arg_count != 0U && args == NULL))
+        return false;
+    if (function->tag == LANG_VALUE_NATIVE_FUNCTION) {
+        if (function->as.native_function.invoke == NULL) return false;
+        return function->as.native_function.invoke(
+            function->as.native_function.context,
+            args, arg_count, out_result);
+    }
+    if (function->tag != LANG_VALUE_FUNCTION &&
+        function->tag != LANG_VALUE_BOUND_FUNCTION)
+        return false;
+    if (vm->module == NULL) return false;
+    vm->trapped = false;
+    LangValue result = vm_invoke_function_value(
+        vm, *function, args, arg_count, (LangSpan){0});
+    if (vm->trapped) {
+        *out_result = lang_native_result_error(
+            "Aster callback execution failed");
+        return true;
+    }
+    *out_result = (LangNativeResult){
+        .ok=true, .value=result, .error=NULL
+    };
+    return true;
+}
+
 bool lang_native_handle_value(LangVM *vm, void *handle,
                               LangNativeHandleDropFn destructor,
                               LangValue *out_value) {

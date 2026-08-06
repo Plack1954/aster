@@ -171,8 +171,10 @@ results, canonicalize specializations across modules, and compile independent
 typed bytecode bodies, including recursive specializations. Copyable function
 values and bound class-method delegates have exact static signatures and
 verified indirect calls; imported functions and generic higher-order functions
-are covered. Bound delegates borrow their manually managed receiver and do not
-provide general closure capture.
+are covered. Non-capturing delegates cross registered extern calls as
+call-scoped callbacks through `lang_vm_call_function`; generated C supports
+value-mode scalar and raw-pointer callback signatures. Bound delegates borrow
+their manually managed receiver and do not provide general closure capture.
 
 Classes now support stateless single inheritance, abstract methods and
 properties, virtual/override dispatch, sealed overrides and sealed classes,
