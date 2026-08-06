@@ -660,6 +660,7 @@ typedef struct IrNativeCallDescriptor {
     IrCallingConvention calling_convention;
     bool may_propagate_exception;
     bool compiler_generated;
+    bool registry_dispatch;
 } IrNativeCallDescriptor;
 
 typedef enum IrOpcode {

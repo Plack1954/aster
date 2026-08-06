@@ -82,7 +82,8 @@ static bool function_supported(CEmitter *emitter,
                     "copying a cleanup-managed value without a lowered copy function");
                 return false;
             }
-            if (instruction->opcode == IR_OP_CALL_NATIVE)
+            if (instruction->opcode == IR_OP_CALL_NATIVE &&
+                c_backend_registry_native_call(instruction))
                 for (size_t operand = 0U;
                      operand < instruction->operand_count; ++operand) {
                     IrValueId value = instruction->operands[operand];
@@ -428,7 +429,9 @@ static void emit_native_callback_adapters(CEmitter *emitter) {
                     const IrInstruction *instruction =
                         &function->blocks[block]
                             .instructions[instruction_index];
-                    if (instruction->opcode != IR_OP_CALL_NATIVE) continue;
+                    if (instruction->opcode != IR_OP_CALL_NATIVE ||
+                        !c_backend_registry_native_call(instruction))
+                        continue;
                     for (size_t operand = 0U;
                          operand < instruction->operand_count; ++operand)
                         if (function->value_types[

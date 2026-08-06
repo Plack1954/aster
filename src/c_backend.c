@@ -414,6 +414,13 @@ bool c_backend_registry_native_symbol(const char *symbol) {
             strcmp(symbol, "UnicodeDecodeScalar") == 0);
 }
 
+bool c_backend_registry_native_call(const IrInstruction *instruction) {
+    return instruction != NULL &&
+           (c_backend_registry_native_symbol(instruction->symbol) ||
+            (instruction->native_call != NULL &&
+             instruction->native_call->registry_dispatch));
+}
+
 static void emit_native_argument(CEmitter *emitter,
                                  const IrFunction *function,
                                  IrValueId value) {
@@ -644,16 +651,7 @@ static void emit_native_argument_cleanup(
 static bool emit_registry_native_call(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction) {
-    bool callback_argument = false;
-    for (size_t i = 0U; i < instruction->operand_count; ++i)
-        callback_argument = callback_argument ||
-            emitter->ir->types[function->value_types[
-                instruction->operands[i]]].shape == IR_TYPE_FUNCTION;
-    bool extern_value_wrapper = function->name != NULL &&
-        strncmp(function->name, "<extern-value:", 14U) == 0;
-    if (!c_backend_registry_native_symbol(instruction->symbol) &&
-        !callback_argument && !extern_value_wrapper)
-        return false;
+    if (!c_backend_registry_native_call(instruction)) return false;
     const IrType *result_type =
         &emitter->ir->types[instruction->result_type];
     size_t ok_variant = result_type->variant_count;
@@ -3009,7 +3007,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
             if (emit_registry_native_call(
                     emitter, function, instruction))
                 return;
-            if (c_backend_registry_native_symbol(instruction->symbol)) {
+            if (c_backend_registry_native_call(instruction)) {
                 c_backend_unsupported(
                     emitter, instruction->span,
                     "this registered native signature");

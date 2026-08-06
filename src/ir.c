@@ -812,7 +812,8 @@ static IrValueId emit_plain_clone(
     IrValueId source, LangSpan span);
 
 static void ir_set_native_call_descriptor(
-    IrBuilder *builder, IrInstruction *call, bool compiler_generated
+    IrBuilder *builder, IrInstruction *call, bool compiler_generated,
+    bool registry_dispatch
 ) {
     call->native_call = ir_resize(NULL, 1U, sizeof(*call->native_call));
     memset(call->native_call, 0, sizeof(*call->native_call));
@@ -822,6 +823,7 @@ static void ir_set_native_call_descriptor(
     call->native_call->calling_convention = IR_CALLING_CONVENTION_NATIVE;
     call->native_call->may_propagate_exception = true;
     call->native_call->compiler_generated = compiler_generated;
+    call->native_call->registry_dispatch = registry_dispatch;
     if (call->operand_count == 0U) return;
     call->native_call->parameter_types = ir_resize(
         NULL, call->operand_count,
@@ -1868,8 +1870,22 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         call->symbol = expr->as.call.callee->as.name;
         call->symbol_length = strlen(call->symbol);
     }
-    if (native)
-        ir_set_native_call_descriptor(builder, call, false);
+    if (native) {
+        bool registry_dispatch = false;
+        if (target != NULL && target->kind == DECL_FUNCTION &&
+            target->as.function.is_extern) {
+            registry_dispatch = builder->function->name != NULL &&
+                strncmp(builder->function->name,
+                        "<extern-value:", 14U) == 0;
+            for (size_t i = 0U;
+                 !registry_dispatch && i < operand_count; ++i)
+                registry_dispatch = builder->module->types[
+                    builder->function->value_types[call->operands[i]]].shape ==
+                    IR_TYPE_FUNCTION;
+        }
+        ir_set_native_call_descriptor(
+            builder, call, false, registry_dispatch);
+    }
     IrValueId result = call->result;
     for (size_t i = borrowed_temporary_count; i > 0U; --i) {
         IrInstruction *drop = ir_append_instruction(
@@ -2127,7 +2143,7 @@ IrValueId ir_emit_synthetic_native_call(
                 ? PARAMETER_MODE_IMMUTABLE_REFERENCE
                 : PARAMETER_MODE_VALUE;
     }
-    ir_set_native_call_descriptor(builder, call, true);
+    ir_set_native_call_descriptor(builder, call, true, false);
     return call->result;
 }
 

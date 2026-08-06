@@ -1013,7 +1013,7 @@ public Result<nuint, IoError> ForEachLineBuffered(
     if (bufferSize <= 0) {
         return Result.Err("buffer size must be positive");
     }
-    NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "rb"));
+    NativeHandle file = try NativeFileOpen(path, "rb");
     Buffer buffer = Buffer.allocate(bufferSize);
     StringBuilder line = new();
     nuint lineLength = 0;
@@ -1024,7 +1024,7 @@ public Result<nuint, IoError> ForEachLineBuffered(
     while (reading) {
         unsafe {
             Span<byte> bytes = BufferAsMutSlice(buffer);
-            nuint count = FileResultOrThrow(NativeFileReadInto(file, bytes));
+            nuint count = try NativeFileReadInto(file, bytes);
             if (count == 0) {
                 reading = false;
             } else {
@@ -1043,17 +1043,16 @@ public Result<nuint, IoError> ForEachLineBuffered(
                     byte current = ByteSliceAt(bytes, cursor);
                     if (current == 10 || current == 13) {
                         string segment =
-                            FileResultOrThrow(ByteSliceToString(
+                            try ByteSliceToString(
                                 bytes,
                                 segmentStart,
                                 cursor,
-                            ));
+                            );
                         line.Append(segment);
                         string completed =
                             line.ToString();
                         lineCount = lineCount + 1;
-                        bool keepReading =
-                            FileResultOrThrow(handler(completed));
+                        bool keepReading = try handler(completed);
                         if (!keepReading) {
                             return Result.Ok(lineCount);
                         }
@@ -1077,11 +1076,11 @@ public Result<nuint, IoError> ForEachLineBuffered(
                 }
                 if (segmentStart < count) {
                     string segment =
-                        FileResultOrThrow(ByteSliceToString(
+                        try ByteSliceToString(
                             bytes,
                             segmentStart,
                             count,
-                        ));
+                        );
                     line.Append(segment);
                     lineLength =
                         lineLength + (count - segmentStart);
@@ -1093,8 +1092,7 @@ public Result<nuint, IoError> ForEachLineBuffered(
         string completed =
             line.ToString();
         lineCount = lineCount + 1;
-        bool ignored =
-            FileResultOrThrow(handler(completed));
+        bool ignored = try handler(completed);
     }
     return Result.Ok(lineCount);
 }

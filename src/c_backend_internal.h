@@ -30,6 +30,7 @@ void c_backend_unsupported(CEmitter *emitter, LangSpan span,
                            const char *what);
 bool c_backend_function_has_render_root(const IrFunction *function);
 bool c_backend_registry_native_symbol(const char *symbol);
+bool c_backend_registry_native_call(const IrInstruction *instruction);
 const IrInstruction *c_backend_find_direct_render_consumer(
     const IrFunction *function, IrValueId value);
 void c_backend_mark_function(CEmitter *emitter,
