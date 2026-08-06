@@ -1,9 +1,10 @@
 # Aster retained DOM versus Vue
 
 This is a deliberately narrow, reproducible client comparison. Both clients
-create 1,000 keyed table rows, append 1,000 rows, and delete one middle row in
-headless Chrome. The rows and controls are equivalent. It is not a claim that
-this is a complete framework benchmark.
+create 1,000 keyed table rows, update every tenth row, swap two rows, append
+1,000 rows, delete one middle row, and clear the collection in headless Chrome.
+The rows and controls are equivalent. It is not a claim that this is a complete
+framework benchmark.
 
 Run:
 
@@ -15,16 +16,20 @@ A representative local run after fixing the failures exposed by this example:
 
 | operation | Aster retained DOM | Vue 3.5 runtime |
 |---|---:|---:|
-| create 1,000 keyed rows | 10.8 ms | 11.1 ms |
-| append 1,000 keyed rows | 10.6 ms | 9.0 ms |
-| delete one middle row | 0.5 ms | 5.3 ms |
-| client code, raw | 26.8 KB | 111.1 KB |
-| client code, gzip | 8.1 KB | 41.8 KB |
+| create 1,000 keyed rows | 11.0 ms | **9.1 ms** |
+| update every tenth row | **2.1 ms** | 4.7 ms |
+| swap two rows | **0.4 ms** | 2.7 ms |
+| append 1,000 keyed rows | 14.8 ms | **8.0 ms** |
+| delete one middle row | **0.4 ms** | 4.0 ms |
+| clear 1,999 rows | **4.0 ms** | 6.7 ms |
+| client code, raw | **30.3 KB** | 111.9 KB |
+| client code, gzip | **8.8 KB** | 41.9 KB |
 
 Treat timings as local smoke measurements, not universal benchmark results.
 The useful result is that the retained implementation is in the same range for
-bulk creation, much faster for direct deletion, and substantially smaller. It
-is **not consistently faster than Vue**: Vue won the append measurement.
+bulk creation, faster for direct update/swap/delete/clear, and substantially
+smaller. It is **not consistently faster than Vue**: Vue won both bulk create
+and append in this run.
 
 ## Capability status
 
@@ -32,7 +37,7 @@ Working and exercised:
 
 - SSR HTML retained during hydration;
 - bulk keyed creation and append;
-- direct keyed deletion;
+- sparse keyed replacement, direct deletion, clear, and two-key swap;
 - handlers in dynamically inserted rows;
 - scalar, text, visibility, checkbox, and button-property projections;
 - focus/caret-preserving input updates;
@@ -40,10 +45,9 @@ Working and exercised:
 
 Not currently supported at Vue-equivalent capability:
 
-- clearing a keyed collection in one transition;
-- keyed reordering or swapping;
 - arbitrary class/style/attribute bindings;
-- efficient partial updates to many existing rows without replacing them;
+- sparse updates that preserve the identity and browser-owned state of every
+  updated row rather than replacing those rows;
 - nested/composable patch operations;
 - client routing, transitions, or general component lifecycle;
 - Fetch and host cancellation.
@@ -57,5 +61,10 @@ state for every inserted row made creation take about 140 ms. Lazy collection
 initialization reduced it to roughly 11 ms.
 
 The retained DOM model therefore works for the operations listed above. It is
-not yet a Vue-capability replacement, and unsupported operations should be
-implemented and measured here rather than inferred from counters.
+not yet a Vue-capability replacement. Clear and swap fit as small explicit
+keyed operations, but selection exposes the current design boundary: changing
+a selected class while also persisting the selected key requires either another
+one-off command type or composable/nested patches, which the flat result ABI
+does not support. Adding more nominal command types is not an elegant path.
+The next design step must be composable typed projections or a checked patch
+list; until that exists, arbitrary Vue-style bindings remain unsupported.

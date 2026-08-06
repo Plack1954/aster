@@ -16,6 +16,27 @@ public KeyedRemove RemoveKey(string key)
     return new() { key = key };
 }
 
+public struct KeyedClear
+{
+    bool clear;
+}
+
+public KeyedClear ClearKeys()
+{
+    return new() { clear = true };
+}
+
+public struct KeyedSwap
+{
+    string first;
+    string second;
+}
+
+public KeyedSwap SwapKeys(string first, string second)
+{
+    return new() { first = first, second = second };
+}
+
 // Document metadata.
 
 public element Html html {

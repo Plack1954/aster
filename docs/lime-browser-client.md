@@ -176,10 +176,8 @@ named target removes duplicate patch fields. This is sufficient evidence to
 continue improving statically known projections; it is not evidence that a
 runtime signal graph is needed. Extending the same typed Boolean projection to
 a named button also handles derived enabled/disabled state without handler-side
-DOM code. The trial currently produces about 12.7 KB of optimized Wasm and
-18.7 KB of unminified generic JavaScript (about 5.8 KB and 4.1 KB respectively
-when gzipped), so the JavaScript projection runtime—not reactive Wasm state—is the
-larger raw artifact to watch as capabilities grow. Hydration now also rejects
+DOM code. Artifact size is now tracked by the reproducible Vue comparison
+below rather than copied from this changing fixture. Hydration also rejects
 a misspelled or absent aggregate projection with the handler and field name,
 rather than silently retaining state that never reaches the DOM. This improves
 feedback but remains runtime validation; complete compile-time validation is
@@ -323,16 +321,18 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed table rows in about 10.8 ms versus Vue's 11.1 ms, appended
-1,000 in 10.6 ms versus Vue's 9.0 ms, and directly deleted one row in 0.5 ms
-versus Vue's 5.3 ms. Aster's benchmark client was 8.1 KB gzip versus Vue's 41.8
-KB gzip. These are smoke measurements, not universal benchmark claims: Aster
-was not consistently faster, because Vue won append.
+created 1,000 keyed rows in 11.0 ms versus Vue's 9.1 ms, updated every tenth row
+in 2.1 ms versus 4.7 ms, swapped two rows in 0.4 ms versus 2.7 ms, appended
+1,000 rows in 14.8 ms versus 8.0 ms, deleted one row in 0.4 ms versus 4.0 ms,
+and cleared 1,999 rows in 4.0 ms versus 6.7 ms. Aster's benchmark client was
+8.8 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
+universal benchmark claims: Aster was not consistently faster, because Vue won
+bulk create and append.
 
-The comparison also gives a hard capability boundary. Aster currently handles
-bulk keyed creation, append, and direct removal. It does not yet provide one
-transition for clear, keyed reorder/swap, arbitrary class/style/attribute
-bindings, efficient sparse updates across many existing rows, or nested patch
+The comparison also gives a hard capability boundary. Aster now handles bulk
+keyed creation, append, sparse replacement, removal, clear, and two-key swap.
+It does not yet provide arbitrary class/style/attribute bindings, sparse update
+while preserving every updated row's browser-owned state, or nested patch
 composition. Vue supports those operations today. The retained model is proven
 for its listed operations, not as a general Vue replacement.
 
@@ -342,6 +342,14 @@ eager per-row collection initialization made creation take roughly 140 ms.
 Contextual fragment parsing, a growable 16 MB maximum, and lazy collection
 initialization brought creation down to roughly 11 ms without increasing the
 initial Wasm allocation.
+
+Clear and swap remain small, explicit keyed operations. Selection revealed a
+less elegant boundary: changing classes while persisting the selected key needs
+multiple composed effects, but the browser ABI currently returns one flat
+scalar, aggregate, or operation. Adding a nominal command type for every DOM
+effect would become an ad-hoc command language. Work should stop at that point
+and design composable checked patches or statically compiled bindings instead;
+the current model must not claim arbitrary Vue-style binding support.
 
 ## Means-testing applications
 

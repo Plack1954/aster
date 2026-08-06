@@ -27,14 +27,24 @@ operation_script = """
 ([selector, expected]) => new Promise((resolve, reject) => {
     const rows = document.querySelector("#row-list");
     const start = performance.now();
+    const complete = () => {
+        if (typeof expected === "number")
+            return rows.children.length === expected;
+        if (expected === "updated")
+            return document.querySelector("#row-0 td:nth-child(2)")
+                ?.textContent.endsWith("!!!") ?? false;
+        if (expected === "swapped")
+            return rows.children[1]?.id === "row-998";
+        return false;
+    };
     const done = () => {
-        if (rows.children.length === expected) {
+        if (complete()) {
             observer.disconnect();
             resolve(performance.now() - start);
         }
     };
     const observer = new MutationObserver(done);
-    observer.observe(rows, {childList: true});
+    observer.observe(rows, {childList: true, subtree: true, characterData: true});
     document.querySelector(selector).click();
     done();
     setTimeout(() => reject(new Error(
@@ -51,12 +61,18 @@ try:
             args=["--no-sandbox"]
         )
         cases = [
-            ("Aster", "aster.html", "[name=createAction]",
-             "[name=appendAction]"),
-            ("Vue", "vue.html", "#create", "#append")
+            ("Aster", "aster.html", [
+                "[name=createAction]", "[name=updateAction]",
+                "[name=swapAction]", "[name=appendAction]",
+                "#row-500 button", "[name=clearAction]"
+            ]),
+            ("Vue", "vue.html", [
+                "#create", "#update", "#swap", "#append",
+                "#row-500 button", "#clear"
+            ])
         ]
-        for label, page_name, create, append in cases:
-            measurements = [[], [], []]
+        for label, page_name, selectors in cases:
+            measurements = [[], [], [], [], [], []]
             for _ in range(7):
                 page = browser.new_page()
                 errors = []
@@ -67,22 +83,22 @@ try:
                 )
                 if label == "Aster":
                     page.wait_for_timeout(50)
-                measurements[0].append(page.evaluate(
-                    operation_script, [create, 1000]
-                ))
-                measurements[1].append(page.evaluate(
-                    operation_script, [append, 2000]
-                ))
-                measurements[2].append(page.evaluate(
-                    operation_script, ["#row-500 button", 1999]
-                ))
+                expectations = [
+                    1000, "updated", "swapped", 2000, 1999, 0
+                ]
+                for index, selector in enumerate(selectors):
+                    measurements[index].append(page.evaluate(
+                        operation_script, [selector, expectations[index]]
+                    ))
                 if errors:
                     raise RuntimeError(f"{label} browser errors: {errors}")
                 page.close()
             medians = [statistics.median(values) for values in measurements]
             print(
                 f"{label}: create={medians[0]:.2f}ms "
-                f"append={medians[1]:.2f}ms delete={medians[2]:.2f}ms"
+                f"update={medians[1]:.2f}ms swap={medians[2]:.2f}ms "
+                f"append={medians[3]:.2f}ms delete={medians[4]:.2f}ms "
+                f"clear={medians[5]:.2f}ms"
             )
         browser.close()
 finally:

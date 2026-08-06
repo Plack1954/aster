@@ -216,6 +216,41 @@ function removeControlledKey(source, state, key) {
     return true;
 }
 
+function clearControlledKeys(source, state) {
+    const controlled = controlledTarget(source);
+    if (controlled === null) return false;
+    controlled.replaceChildren();
+    const collection = state.get(`collection:${controlled.id}`);
+    if (collection !== undefined) collection.clear();
+    return true;
+}
+
+function swapControlledKeys(source, firstKey, secondKey) {
+    const controlled = controlledTarget(source);
+    if (controlled === null || firstKey === secondKey) return false;
+    const first = document.getElementById(firstKey);
+    const second = document.getElementById(secondKey);
+    if (first === null || second === null ||
+        first.parentElement !== controlled || second.parentElement !== controlled)
+        return false;
+    const marker = document.createTextNode("");
+    first.replaceWith(marker);
+    second.replaceWith(first);
+    marker.replaceWith(second);
+    return true;
+}
+
+function aggregateString(
+    handle, fields, name, exports, memory
+) {
+    const field = fields.find(
+        (candidate) => candidate.type === "o" && candidate.name === name
+    );
+    if (field === undefined)
+        throw new Error(`Aster keyed operation field is missing: ${name}`);
+    return decodeOwnedString(Number(field.accessor(handle)), exports, memory);
+}
+
 function applyAggregateResult(
     handle, fields, drop, source, scope, state, exports, memory,
     hydrateWithin
@@ -280,7 +315,7 @@ function dropUnusedResult(result, resultType, aggregateDrop, exports) {
             exports.aster_export_html_render(Number(result))
         );
         exports.aster_export_string_drop(rendered);
-    } else if (resultType === "a" || resultType === "r") {
+    } else if (["a", "r", "c", "w"].includes(resultType)) {
         aggregateDrop(Number(result));
     }
 }
@@ -336,7 +371,8 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 ];
             });
             const aggregatePrefix = `aster_export_${handlerName}_result_`;
-            const aggregateResult = resultType === "a" || resultType === "r";
+            const aggregateResult =
+                ["a", "r", "c", "w"].includes(resultType);
             const aggregateFields = aggregateResult
                 ? Object.entries(instance.exports).flatMap(([name, accessor]) => {
                     if (!name.startsWith(aggregatePrefix) ||
@@ -375,7 +411,7 @@ export async function hydrateAster({wasmUrl, root = document}) {
             validateAggregateProjections(
                 source, initialScope, handlerName, aggregateFields
             );
-        if (resultType === "r" &&
+        if (["r", "c", "w"].includes(resultType) &&
             source.getAttribute("aria-controls") === null)
             throw new Error(
                 `Aster keyed removal target is missing: ${handlerName}`
@@ -465,20 +501,45 @@ export async function hydrateAster({wasmUrl, root = document}) {
                     throw new Error(
                         `Aster keyed removal drop export is missing: ${handlerName}`
                     );
-                const keyField = aggregateFields.find(
-                    (field) => field.type === "o" && field.name === "key"
-                );
-                if (keyField === undefined)
+                const handle = Number(result);
+                try {
+                    removeControlledKey(
+                        source, state,
+                        aggregateString(
+                            handle, aggregateFields, "key",
+                            instance.exports, memory
+                        )
+                    );
+                } finally {
+                    aggregateDrop(handle);
+                }
+            } else if (resultType === "c") {
+                if (typeof aggregateDrop !== "function")
                     throw new Error(
-                        `Aster keyed removal export is incomplete: ${handlerName}`
+                        `Aster keyed clear drop export is missing: ${handlerName}`
                     );
                 const handle = Number(result);
                 try {
-                    const key = decodeOwnedString(
-                        Number(keyField.accessor(handle)),
+                    clearControlledKeys(source, state);
+                } finally {
+                    aggregateDrop(handle);
+                }
+            } else if (resultType === "w") {
+                if (typeof aggregateDrop !== "function")
+                    throw new Error(
+                        `Aster keyed swap drop export is missing: ${handlerName}`
+                    );
+                const handle = Number(result);
+                try {
+                    const first = aggregateString(
+                        handle, aggregateFields, "first",
                         instance.exports, memory
                     );
-                    removeControlledKey(source, state, key);
+                    const second = aggregateString(
+                        handle, aggregateFields, "second",
+                        instance.exports, memory
+                    );
+                    swapControlledKeys(source, first, second);
                 } finally {
                     aggregateDrop(handle);
                 }

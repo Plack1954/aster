@@ -13,12 +13,13 @@ public KeyedRemove RemoveRow(string key)
     return RemoveKey(key);
 }
 
-private Html Row(int id)
+private Html Row(int id, bool updated)
 {
     string key = $"row-{id}";
+    string label = updated ? $"row {id} !!!" : $"row {id}";
     return <tr id=key>
         <td>{id}</td>
-        <td>row {id}</td>
+        <td>{label}</td>
         <td>
             <button
                 type="button"
@@ -36,7 +37,7 @@ private RowsPatch MakeRows(int nextId, int count)
     List<Html> rows = new();
     for (int offset = 0; offset < count; offset++)
     {
-        rows.Add(Row(nextId + offset));
+        rows.Add(Row(nextId + offset, false));
     }
     return new()
     {
@@ -53,6 +54,26 @@ public RowsPatch Create1000(int nextId)
 public RowsPatch Append1000(int nextId)
 {
     return MakeRows(nextId, 1000);
+}
+
+public Html UpdateEvery10th()
+{
+    List<Html> rows = new();
+    for (int id = 0; id < 1000; id += 10)
+    {
+        rows.Add(Row(id, true));
+    }
+    return <>{rows}</>;
+}
+
+public KeyedSwap SwapRows()
+{
+    return SwapKeys("row-1", "row-998");
+}
+
+public KeyedClear ClearRows()
+{
+    return ClearKeys();
 }
 
 private Html Page()
@@ -72,6 +93,24 @@ private Html Page()
             aria-controls="row-list"
             onclick=Append1000
         >Append 1,000</button>
+        <button
+            type="button"
+            name="updateAction"
+            aria-controls="row-list"
+            onclick=UpdateEvery10th
+        >Update every 10th</button>
+        <button
+            type="button"
+            name="swapAction"
+            aria-controls="row-list"
+            onclick=SwapRows
+        >Swap rows</button>
+        <button
+            type="button"
+            name="clearAction"
+            aria-controls="row-list"
+            onclick=ClearRows
+        >Clear</button>
         <table><tbody id="row-list"></tbody></table>
     </main>;
 }

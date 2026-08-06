@@ -993,7 +993,7 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
     set_tests_properties(browser_compare_wasm PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
-            "browser comparison Wasm rendered 1,000 keyed rows"
+            "browser comparison Wasm rendered and mutated 1,000 keyed rows"
         TIMEOUT 60)
 endif()
 if(ASTER_ENABLE_SQLITE_TESTS AND UNIX AND ASTER_WASM_CLANG AND
