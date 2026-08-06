@@ -497,6 +497,12 @@ at end of file. `NativeFileWriteBytes` writes exactly the requested prefix
 or returns an error. `CopyFileBuffered` is an Aster-written loop that owns
 both RAII file handles and one reusable `Buffer`; it never allocates storage
 proportional to the input file.
+The public `Stream` facade exposes the same byte-native path through
+`ReadInto(Span<byte>)` and `Write(ReadOnlySpan<byte>)` for both file-backed and
+memory-backed streams. Byte spans also provide bounded non-owning ranges,
+overlap-safe copying, try-copying, fill/clear, equality, byte search, and
+prefix/suffix tests. A returned range does not extend its source storage's
+lifetime.
 `ReadLinesBuffered` assembles LF-delimited strings in Aster and
 supports lines larger than its reusable input buffer. Empty interior lines are
 retained; a final unterminated line is returned; a trailing LF does not create

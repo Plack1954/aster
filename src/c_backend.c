@@ -399,8 +399,7 @@ bool c_backend_registry_native_symbol(const char *symbol) {
             strcmp(symbol, "HttpStreamBeginHeaders") == 0 ||
             strcmp(symbol, "HttpStreamChunk") == 0 ||
             strcmp(symbol, "HttpStreamFinish") == 0 ||
-            strcmp(symbol, "ByteSliceToString") == 0 ||
-            strcmp(symbol, "ByteSliceSet") == 0 ||
+            strncmp(symbol, "ByteSlice", 9U) == 0 ||
             strcmp(symbol, "UnicodeToUpper") == 0 ||
             strcmp(symbol, "UnicodeToLower") == 0 ||
             strcmp(symbol, "UnicodeSpecialUpper") == 0 ||
@@ -539,7 +538,7 @@ static bool emit_native_payload(
 }
 
 static bool emit_native_direct_result(
-    CEmitter *emitter, const IrType *type,
+    CEmitter *emitter, IrTypeId type_id, const IrType *type,
     IrValueId result, const char *value) {
     FILE *output = emitter->output;
     if (type->shape == IR_TYPE_UNIT) {
@@ -580,6 +579,14 @@ static bool emit_native_direct_result(
                 "(const unsigned char *)native_view_%" PRIu32 ".data,"
                 "native_view_%" PRIu32 ".length};\n",
                 result, value, result, result, result, result);
+    } else if (type->shape == IR_TYPE_SLICE) {
+        fprintf(output,
+                "        if (%s.tag != LANG_VALUE_BYTE_SLICE) "
+                "aster_trap(\"invalid native byte-slice result\");\n"
+                "        v%" PRIu32 " = (aster_slice_%" PRIu32 "){"
+                "%s.as.bytes.data,%s.as.bytes.length};\n",
+                value, result, type_id,
+                value, value);
     } else if (c_backend_type_is_native_handle(type)) {
         fprintf(output,
                 "        if (%s.tag != LANG_VALUE_OBJECT) "
@@ -699,7 +706,8 @@ static bool emit_registry_native_call(
             "native_result_%" PRIu32 ".value",
             instruction->result);
         if (!emit_native_direct_result(
-                emitter, result_type, instruction->result,
+                emitter, instruction->result_type, result_type,
+                instruction->result,
                 direct_value))
             return false;
         fputs("        }\n", output);

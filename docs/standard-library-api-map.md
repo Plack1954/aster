@@ -471,7 +471,10 @@ shape while retaining deterministic native handles beneath it:
 - `NativeFile*`, `NativeDirectory*`, and `NativePath*`: low-level ABI surface.
 
 `Stream`, `FileStream`, and `MemoryStream` now provide byte reads and writes,
-position and length, seeking, flushing, closing, and buffered `CopyTo`.
+including allocation-free `ReadInto(Span<byte>)` and
+`Write(ReadOnlySpan<byte>)`, position and length, seeking, flushing, closing,
+and buffered `CopyTo`. The byte-span layer provides bounded ranges,
+overlap-safe copy/try-copy, fill/clear, equality, search, and edge tests.
 `BinaryReader` and `BinaryWriter` provide little-endian primitive and UTF-8
 string I/O. Native handles remain behind the stream facade. `DirectoryStream`
 is still the low-level directory handle pending a lazy enumeration API.

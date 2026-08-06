@@ -1088,6 +1088,14 @@ add_aster_generated_c_test(
     streams_binary_surface_generated_c
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/streams_binary_surface.as
     aster_streams_binary_surface)
+add_test(NAME byte_native_streams_vm
+    COMMAND lang run tests/byte_native_streams.as)
+set_tests_properties(byte_native_streams_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_aster_generated_c_test(
+    byte_native_streams_generated_c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/byte_native_streams.as
+    aster_byte_native_streams)
 add_test(NAME http_binary_surface_vm
     COMMAND lang run tests/http_binary_surface.as)
 set_tests_properties(http_binary_surface_vm PROPERTIES

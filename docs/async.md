@@ -79,11 +79,13 @@ permission to destroy a running frame at an arbitrary instruction.
 4. Equivalent generated-C runtime and cleanup paths.
 5. Timers and `Task.Delay`.
 6. Libcurl-multi-backed `HttpClient` asynchronous operations.
-7. Lime handlers returning `Task<Response>`.
+7. Lime handlers returning `Task<Response>` are implemented through the same
+   `Map*` APIs and execute through `DispatchAsync`.
 8. Streaming and a controlled worker pool for genuinely blocking operations.
 
-Stages 1, 2, 4, and the non-cancellation parts of stage 3 are implemented.
-Stage 5 is implemented for `Task.Delay(int)`. Typed IR records the public task
+Stages 1 through 5 and stage 7 are implemented; libcurl executor integration
+and the broader blocking-I/O strategy remain pending. Typed IR records the
+public task
 return type, coroutine completion type, and explicit `await` instructions.
 Generated C lowers async functions to state machines. The VM stores suspended
 locals, operand stack, and instruction pointer in heap-backed frames. Both

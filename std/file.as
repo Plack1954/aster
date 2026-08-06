@@ -246,6 +246,44 @@ public List<byte> Stream.Read(ref Stream self, int count)
     return result;
 }
 
+// Reads directly into caller-owned storage and returns the number of bytes
+// written. The span is borrowed only for the duration of this call.
+public nuint Stream.ReadInto(ref Stream self, Span<byte> destination)
+{
+    self.EnsureOpen();
+    if (!self.readable)
+    {
+        throw new InvalidOperationException("Stream does not support reading.");
+    }
+    if (self.kind == 2)
+    {
+        nuint capacity = ByteSliceLen(destination);
+        long available = (long)self.memory.Count - self.position;
+        if (available <= 0 || capacity == 0) { return 0; }
+        nuint amount = available < (long)capacity
+            ? (nuint)available : capacity;
+        for (nuint index = 0; index < amount; index += 1)
+        {
+            ByteSliceSet(
+                destination,
+                index,
+                self.memory[(nuint)self.position + index]
+            );
+        }
+        self.position += (long)amount;
+        return amount;
+    }
+    if (self.file == null)
+    {
+        throw new InvalidOperationException("Stream has no file handle.");
+    }
+    nuint amount = FileResultOrThrow(
+        NativeFileReadInto(self.file.Value, destination)
+    );
+    self.position += (long)amount;
+    return amount;
+}
+
 public int Stream.ReadByte(ref Stream self)
 {
     List<byte> bytes = self.Read(1);
@@ -292,6 +330,43 @@ public void Stream.Write(ref Stream self, List<byte> bytes)
         );
         self.position += (long)written;
     }
+}
+
+// Writes directly from caller-owned storage. The span is borrowed only for
+// the duration of this call.
+public void Stream.Write(ref Stream self, ReadOnlySpan<byte> bytes)
+{
+    self.EnsureOpen();
+    if (!self.writable)
+    {
+        throw new InvalidOperationException("Stream does not support writing.");
+    }
+    nuint count = ByteSliceLen(bytes);
+    if (self.kind == 2)
+    {
+        for (nuint index = 0; index < count; index += 1)
+        {
+            byte value = ByteSliceAt(bytes, index);
+            if (self.position < (long)self.memory.Count)
+            {
+                self.memory.Set((nuint)self.position, value);
+            }
+            else
+            {
+                self.memory.Add(value);
+            }
+            self.position += 1;
+        }
+        return;
+    }
+    if (self.file == null)
+    {
+        throw new InvalidOperationException("Stream has no file handle.");
+    }
+    nuint written = FileResultOrThrow(
+        NativeFileWriteBytes(self.file.Value, bytes, count)
+    );
+    self.position += (long)written;
 }
 
 public void Stream.WriteByte(ref Stream self, byte value)

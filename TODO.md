@@ -142,7 +142,8 @@ cleanup, and cooperative `CancellationToken` behavior. Continue
 - make asynchronous I/O cancellation-aware;
 - add cancellation registrations and linked-token sources when real code needs
   them;
-- accept `Task<Response>` handlers in Lime.
+- keep Lime's implemented `Task<Response>` handler and `DispatchAsync` paths
+  covered while the transport layer becomes cancellation-aware.
 
 ## Remaining bounded-overload extension
 
