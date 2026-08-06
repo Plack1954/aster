@@ -103,7 +103,10 @@ void c_backend_mark_function(CEmitter *emitter,
                 }
             if (instruction->opcode == IR_OP_CALL_NATIVE &&
                 (c_backend_registry_native_symbol(instruction->symbol) ||
-                 callback_native)) {
+                 callback_native ||
+                 (function->name != NULL &&
+                  strncmp(function->name,
+                          "<extern-value:", 14U) == 0))) {
                 emitter->needs_native_runtime = true;
                 if (instruction->symbol != NULL &&
                     strncmp(instruction->symbol,

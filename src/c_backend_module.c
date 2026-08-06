@@ -412,6 +412,31 @@ static void emit_native_callback_adapters(CEmitter *emitter) {
         if (!native_callback_type_supported(
                 emitter->ir, (IrTypeId)type_id))
             continue;
+        bool used = false;
+        for (size_t function_index = 0U;
+             function_index < emitter->ir->function_count;
+             ++function_index) {
+            if (!emitter->reachable_functions[function_index]) continue;
+            const IrFunction *function =
+                &emitter->ir->functions[function_index];
+            for (size_t block = 0U;
+                 block < function->block_count; ++block)
+                for (size_t instruction_index = 0U;
+                     instruction_index < function->blocks[block]
+                         .instruction_count;
+                     ++instruction_index) {
+                    const IrInstruction *instruction =
+                        &function->blocks[block]
+                            .instructions[instruction_index];
+                    if (instruction->opcode != IR_OP_CALL_NATIVE) continue;
+                    for (size_t operand = 0U;
+                         operand < instruction->operand_count; ++operand)
+                        if (function->value_types[
+                                instruction->operands[operand]] == type_id)
+                            used = true;
+                }
+        }
+        if (!used) continue;
         fprintf(emitter->output,
                 "static bool aster_native_callback_%zu(\n"
                 "    void *context, const LangValue *args, size_t arg_count,\n"

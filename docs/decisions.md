@@ -368,7 +368,9 @@ representation.
 
 Consequences: `B(A)` signatures are checked exactly and indirect calls
 have verifier/runtime guards. Imported language functions are valid values.
-Extern function values, arbitrary captures, and owned closure environments are
+Registered extern functions become values through compiler-generated language
+wrappers, preserving the delegate ABI and registry call path. Arbitrary
+captures, raw C function-pointer values, and owned closure environments are
 deferred.
 
 Evolution: class instance methods may now form a two-word delegate containing

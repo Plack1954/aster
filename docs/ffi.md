@@ -73,6 +73,21 @@ by that backend for now. Applications install their native functions before
 execution with `lang_configure_application_registrar`; passing `NULL` clears
 the process-global configuration.
 
+Registered extern functions can also be assigned to an exact Aster delegate:
+
+```aster
+private extern long NativeIncrement(long value);
+
+Transform increment = NativeIncrement;
+long answer = increment(41);
+```
+
+The compiler lowers this to a non-capturing language wrapper around the
+registered native call. It therefore keeps the normal two-word Aster delegate
+representation and checked indirect-call semantics instead of pretending the
+registry entry is a raw C address. When extern overloads share a name, the
+target delegate selects the one exact parameter/result signature.
+
 Opaque resources are created with `lang_native_handle_value`, inspected in a
 callback with `lang_native_handle_data`, and released deterministically through
 their registered C destructor. `NativeHandle` is cleanup-managed and cannot be

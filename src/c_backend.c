@@ -649,8 +649,10 @@ static bool emit_registry_native_call(
         callback_argument = callback_argument ||
             emitter->ir->types[function->value_types[
                 instruction->operands[i]]].shape == IR_TYPE_FUNCTION;
+    bool extern_value_wrapper = function->name != NULL &&
+        strncmp(function->name, "<extern-value:", 14U) == 0;
     if (!c_backend_registry_native_symbol(instruction->symbol) &&
-        !callback_argument)
+        !callback_argument && !extern_value_wrapper)
         return false;
     const IrType *result_type =
         &emitter->ir->types[instruction->result_type];

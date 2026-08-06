@@ -726,14 +726,16 @@ declaration gives a reusable name to an exact function signature.
 Parameter and result types must match exactly. A function value contains an
 invocation target and an optional borrowed class receiver; indirect calls still
 receive compile-time signature and arity checks. Imported language functions
-work through the same normal symbol resolution. Extern C functions cannot
-currently become function values, and there are no arbitrary capturing
-closures or heap environments. Non-capturing language functions can be passed
-into registered extern calls as call-scoped callbacks; native code invokes
-them through `lang_vm_call_function` and must not retain the delegate or
-borrowed arguments after returning. A bound delegate does not extend its
-receiver's lifetime. Binding a virtual class method resolves the override for
-the receiver's runtime class, as in C#.
+work through the same normal symbol resolution. A registered extern function
+can become an exact delegate value; the compiler emits an ordinary language
+wrapper whose body performs the registered native call. A target delegate type
+selects an overloaded extern signature exactly. Non-capturing language
+functions can also be passed into registered extern calls as call-scoped
+callbacks; native code invokes them through `lang_vm_call_function` and must
+not retain the delegate or borrowed arguments after returning. There are no
+arbitrary capturing closures or heap environments. A bound delegate does not
+extend its receiver's lifetime. Binding a virtual class method resolves the
+override for the receiver's runtime class, as in C#.
 
 The compiler implementation uses an internal bump arena for syntax and type
 data. Guest `Arena` is a noncopyable owner of allocation blocks. `ArenaAlloc`

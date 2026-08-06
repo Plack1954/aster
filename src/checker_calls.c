@@ -256,7 +256,8 @@ static const Decl *resolve_function_value_overload(
 }
 
 static Type *function_value_type(
-    Checker *checker, const Decl *declaration, LangSpan span) {
+    Checker *checker, const Decl *declaration, LangSpan span,
+    const Decl **resolved_declaration) {
     if (declaration->type_param_count != 0U) {
         lang_diag(
             checker->diagnostics, span,
@@ -265,12 +266,100 @@ static Type *function_value_type(
         return &type_error;
     }
     if (declaration->as.function.is_extern) {
-        lang_diag(
-            checker->diagnostics, span,
-            "extern function `%s` cannot be used as a function value",
-            declaration->as.function.name);
-        return &type_error;
+        const Function *source = &declaration->as.function;
+        Decl *wrapper = lang_arena_alloc(
+            &checker->module->arena, sizeof(*wrapper));
+        memset(wrapper, 0, sizeof(*wrapper));
+        wrapper->kind = DECL_FUNCTION;
+        wrapper->span = declaration->span;
+        wrapper->module_name = declaration->module_name;
+        wrapper->is_public = false;
+        wrapper->has_explicit_visibility = true;
+        Function *function = &wrapper->as.function;
+        *function = *source;
+        size_t name_length = strlen(source->name) + 48U;
+        char *name = lang_arena_alloc(
+            &checker->module->arena, name_length);
+        (void)snprintf(
+            name, name_length, "<extern-value:%s:%zu>",
+            source->name, checker->module->count);
+        function->name = name;
+        function->is_extern = false;
+        function->checked_return_type = NULL;
+        function->local_count = 0U;
+        if (source->param_count != 0U) {
+            function->params = lang_arena_alloc(
+                &checker->module->arena,
+                source->param_count * sizeof(*function->params));
+            memcpy(function->params, source->params,
+                   source->param_count * sizeof(*function->params));
+            for (size_t i = 0U; i < source->param_count; ++i) {
+                function->params[i].checked_type = NULL;
+                function->params[i].binding_id = 0U;
+            }
+        }
+        Expr *callee = lang_arena_alloc(
+            &checker->module->arena, sizeof(*callee));
+        memset(callee, 0, sizeof(*callee));
+        callee->kind = EXPR_NAME;
+        callee->span = span;
+        callee->as.name = source->name;
+        Expr *call = lang_arena_alloc(
+            &checker->module->arena, sizeof(*call));
+        memset(call, 0, sizeof(*call));
+        call->kind = EXPR_CALL;
+        call->span = span;
+        call->as.call.callee = callee;
+        call->as.call.arguments.count = source->param_count;
+        if (source->param_count != 0U) {
+            call->as.call.arguments.items = lang_arena_alloc(
+                &checker->module->arena,
+                source->param_count *
+                    sizeof(*call->as.call.arguments.items));
+            call->as.call.argument_modes = lang_arena_alloc(
+                &checker->module->arena,
+                source->param_count *
+                    sizeof(*call->as.call.argument_modes));
+            for (size_t i = 0U; i < source->param_count; ++i) {
+                Expr *argument = lang_arena_alloc(
+                    &checker->module->arena, sizeof(*argument));
+                memset(argument, 0, sizeof(*argument));
+                argument->kind = EXPR_NAME;
+                argument->span = span;
+                argument->as.name = source->params[i].name;
+                call->as.call.arguments.items[i] = argument;
+                call->as.call.argument_modes[i] =
+                    parameter_mode_from_param(&source->params[i]);
+            }
+        }
+        Stmt *return_statement = lang_arena_alloc(
+            &checker->module->arena, sizeof(*return_statement));
+        memset(return_statement, 0, sizeof(*return_statement));
+        return_statement->kind = STMT_RETURN;
+        return_statement->span = span;
+        return_statement->as.return_value = call;
+        Stmt *body = lang_arena_alloc(
+            &checker->module->arena, sizeof(*body));
+        memset(body, 0, sizeof(*body));
+        body->kind = STMT_BLOCK;
+        body->span = span;
+        body->as.block.count = 1U;
+        body->as.block.items = lang_arena_alloc(
+            &checker->module->arena, sizeof(*body->as.block.items));
+        body->as.block.items[0] = return_statement;
+        function->body = body;
+        Decl **declarations = lang_arena_alloc(
+            &checker->module->arena,
+            (checker->module->count + 1U) * sizeof(*declarations));
+        memcpy(declarations, checker->module->decls,
+               checker->module->count * sizeof(*declarations));
+        declarations[checker->module->count] = wrapper;
+        checker->module->decls = declarations;
+        ++checker->module->count;
+        declaration = wrapper;
     }
+    if (resolved_declaration != NULL)
+        *resolved_declaration = declaration;
     const Function *function = &declaration->as.function;
     Type *type =
         lang_arena_alloc(&checker->module->arena, sizeof(*type));
@@ -445,9 +534,10 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
     const Decl *declaration = resolve_function_value_overload(
         checker, expr->as.name, expr->span);
     if (declaration != NULL) {
+        Type *type = function_value_type(
+            checker, declaration, expr->span, &declaration);
         expr->resolved_decl = declaration;
-        return function_value_type(
-            checker, declaration, expr->span);
+        return type;
     }
     if (strcmp(expr->as.name, "Console::WriteLine") == 0 ||
         strcmp(expr->as.name, "Console::Write") == 0 ||
