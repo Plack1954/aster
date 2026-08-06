@@ -68,10 +68,20 @@ intentionally corrupt rendered values and prove that later transitions use the
 stored typed value and repair the DOM.
 
 The first asynchronous slice proves real Wasm suspension and resumption with
-`Task.Delay`; it does not yet provide browser I/O. Current explicit gaps include
-Fetch-backed HTTP, cancellation driven by the browser host, general nested
-aggregate ABI generation, broad browser APIs, navigation and history policy,
-and evidence from a substantial interactive application.
+`Task.Delay`; it does not yet provide browser I/O. An async input trial exposed
+two browser-specific requirements: editable controls must not be disabled while
+deriving results, and an older completion must not overwrite a newer input.
+The runtime now versions async transitions per hydrated event source, drops all
+owned results from stale completions, and commits only the latest result. A
+rapid `a` then `ab` trial deliberately completes `ab` first and retains its
+projection, focus, and caret after the slower `a` task finishes. This is
+latest-result-wins, not host cancellation: stale Wasm work still runs to
+completion and is then discarded safely.
+
+Current explicit gaps include Fetch-backed HTTP, cancellation driven by the
+browser host, general nested aggregate ABI generation, broad browser APIs,
+navigation and history policy, and evidence from a substantial interactive
+application.
 
 ## Why a virtual DOM is not the starting point
 
@@ -166,8 +176,8 @@ named target removes duplicate patch fields. This is sufficient evidence to
 continue improving statically known projections; it is not evidence that a
 runtime signal graph is needed. Extending the same typed Boolean projection to
 a named button also handles derived enabled/disabled state without handler-side
-DOM code. The trial currently produces about 11.4 KB of optimized Wasm and
-17.7 KB of unminified generic JavaScript (about 5.4 KB and 3.9 KB respectively
+DOM code. The trial currently produces about 12.7 KB of optimized Wasm and
+18.7 KB of unminified generic JavaScript (about 5.8 KB and 4.1 KB respectively
 when gzipped), so the JavaScript projection runtime—not reactive Wasm state—is the
 larger raw artifact to watch as capabilities grow. Hydration now also rejects
 a misspelled or absent aggregate projection with the handler and field name,

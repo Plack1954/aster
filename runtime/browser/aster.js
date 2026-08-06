@@ -270,6 +270,19 @@ async function awaitBrowserTask(
     }
 }
 
+function dropUnusedResult(result, resultType, aggregateDrop, exports) {
+    if (resultType === "o") {
+        exports.aster_export_string_drop(Number(result));
+    } else if (resultType === "h") {
+        const rendered = Number(
+            exports.aster_export_html_render(Number(result))
+        );
+        exports.aster_export_string_drop(rendered);
+    } else if (resultType === "a" || resultType === "r") {
+        aggregateDrop(Number(result));
+    }
+}
+
 function updateSubmission(form, message) {
     const accepted = message.length !== 0;
     const success = document.getElementById(`${form.id}-success`);
@@ -349,7 +362,9 @@ export async function hydrateAster({wasmUrl, root = document}) {
             );
         collectionFor(source, stateFor(initialScope));
 
+        let transitionVersion = 0;
         source.addEventListener(eventName, async (event) => {
+            const version = ++transitionVersion;
             const form = source.closest("form");
             const scope = eventScope(source, root);
             const state = stateFor(scope);
@@ -369,16 +384,27 @@ export async function hydrateAster({wasmUrl, root = document}) {
             if (eventName === "submit") event.preventDefault();
             if (asyncResult) {
                 source.setAttribute("aria-busy", "true");
-                const disables = "disabled" in source;
+                const disables = source instanceof HTMLButtonElement;
                 const wasDisabled = disables ? source.disabled : false;
                 if (disables) source.disabled = true;
                 try {
                     result = await awaitBrowserTask(
                         Number(result), taskResult, instance.exports, memory
                     );
+                } catch (error) {
+                    if (version === transitionVersion) throw error;
+                    return;
                 } finally {
-                    source.removeAttribute("aria-busy");
-                    if (disables) source.disabled = wasDisabled;
+                    if (version === transitionVersion) {
+                        source.removeAttribute("aria-busy");
+                        if (disables) source.disabled = wasDisabled;
+                    }
+                }
+                if (version !== transitionVersion) {
+                    dropUnusedResult(
+                        result, resultType, aggregateDrop, instance.exports
+                    );
+                    return;
                 }
             }
             if (resultType === "o") {

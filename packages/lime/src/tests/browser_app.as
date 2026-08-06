@@ -66,7 +66,7 @@ public ReactiveCounterPatch DecreaseReactive(int value)
     return ReactiveCounter(value - 1);
 }
 
-public QueryProjection ProjectQuery(string query)
+private QueryProjection QueryProjectionFor(string query)
 {
     return new()
     {
@@ -74,6 +74,17 @@ public QueryProjection ProjectQuery(string query)
         valid = query.Length >= 2,
         preview = query.Length == 0 ? "Nothing to search" : $"Search: {query}"
     };
+}
+
+public QueryProjection ProjectQuery(string query)
+{
+    return QueryProjectionFor(query);
+}
+
+public async Task<QueryProjection> ProjectQueryLater(string query)
+{
+    await Task.Delay(query.Length == 1 ? 30 : 1);
+    return QueryProjectionFor(query);
 }
 
 public bool ValidateName(string name)
@@ -164,6 +175,25 @@ public Html BrowserPage(Html browserLoader)
                 id="reactive-query-input"
                 name="query"
                 oninput=ProjectQuery
+            />
+            <output name="length">{initialQuery.length}</output>
+            <output name="preview">{initialQuery.preview}</output>
+            <button
+                type="submit"
+                name="valid"
+                disabled=!initialQuery.valid
+            >Search</button>
+        </form>
+        <form
+            id="async-query"
+            action=Url.relative("/search")
+            method="get"
+        >
+            <label for="async-query-input">Async query</label>
+            <input
+                id="async-query-input"
+                name="query"
+                oninput=ProjectQueryLater
             />
             <output name="length">{initialQuery.length}</output>
             <output name="preview">{initialQuery.preview}</output>
