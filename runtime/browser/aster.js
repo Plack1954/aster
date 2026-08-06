@@ -312,7 +312,8 @@ function applyProjectionBatch(
 
         const targets = [...scope.querySelectorAll("[data-aster-project]")];
         const recordsByName = new Map(
-            records.map((record) => [record.name, record])
+            records.filter((record) => record.type !== "r")
+                .map((record) => [record.name, record])
         );
         for (const target of targets) {
             const descriptor = target.dataset.asterProject.split(":");

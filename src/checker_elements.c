@@ -143,6 +143,23 @@ static bool projection_state_type(const Type *type) {
            strcmp(name + name_length - suffix_length, suffix) == 0;
 }
 
+static bool projection_transition_type(const Type *type) {
+    if (type == NULL || type->kind != TYPE_NAMED ||
+        type->declaration == NULL ||
+        type->declaration->kind != DECL_STRUCT)
+        return false;
+    const char *name = type->declaration->as.structure.name;
+    const char *suffix = "ProjectionTransition";
+    size_t name_length = strlen(name);
+    size_t suffix_length = strlen(suffix);
+    return name_length >= suffix_length &&
+           strcmp(name + name_length - suffix_length, suffix) == 0;
+}
+
+static bool projection_batch_type(const Type *type) {
+    return projection_state_type(type) || projection_transition_type(type);
+}
+
 static bool web_handler_standard_html_type(
     const Type *type, const char *name) {
     return type->kind == TYPE_NAMED && type->declaration != NULL &&
@@ -153,7 +170,7 @@ static bool web_handler_standard_html_type(
 }
 
 static char web_handler_type_code(const Type *type) {
-    if (projection_state_type(type))
+    if (projection_batch_type(type))
         return 'p';
     if (web_handler_standard_html_type(type, "KeyedRemove"))
         return 'r';
@@ -249,28 +266,58 @@ static void check_html_event_handler(
         lang_diag(checker->diagnostics, property->value->span,
                   "event handler `%s` must return a scalar, `String`, `Html`, struct, `void`, or `Task` of one of those types",
                   handler->as.function.name);
-    if (projection_state_type(completion)) {
+    if (projection_batch_type(completion)) {
         if (handler_type->element->kind == TYPE_TASK)
             lang_diag(checker->diagnostics, property->value->span,
-                      "projection-state handlers are synchronous in the experimental prototype");
-        const Decl *state = completion->declaration;
+                      "projection handlers are synchronous in the experimental prototype");
+        const Decl *container = completion->declaration;
+        size_t state_count = projection_state_type(completion) ? 1U : 0U;
         for (size_t field = 0U;
-             field < state->as.structure.field_count; ++field) {
-            const FieldDecl *field_decl = &state->as.structure.fields[field];
+             field < container->as.structure.field_count; ++field) {
+            const FieldDecl *field_decl =
+                &container->as.structure.fields[field];
             Type *field_type = resolve_declared_type_in_module(
                 checker, field_decl->type_syntax, field_decl->type_name,
-                field_decl->span, state->module_name);
-            if (!(field_type->kind == TYPE_BOOL ||
-                  is_signed_integer(field_type) ||
-                  is_unsigned_integer(field_type) ||
-                  field_type->kind == TYPE_STRING ||
-                  web_handler_standard_html_type(
-                      field_type, "KeyedRemove")))
-                lang_diag(checker->diagnostics,
-                          state->as.structure.fields[field].span,
-                          "projection-state field `%s` must be Boolean, integer, `string`, or `KeyedRemove`",
-                          state->as.structure.fields[field].name);
+                field_decl->span, container->module_name);
+            if (projection_transition_type(completion)) {
+                if (projection_state_type(field_type)) {
+                    ++state_count;
+                    const Decl *state = field_type->declaration;
+                    for (size_t nested = 0U;
+                         nested < state->as.structure.field_count; ++nested) {
+                        const FieldDecl *nested_field =
+                            &state->as.structure.fields[nested];
+                        Type *nested_type = resolve_declared_type_in_module(
+                            checker, nested_field->type_syntax,
+                            nested_field->type_name, nested_field->span,
+                            state->module_name);
+                        if (!(nested_type->kind == TYPE_BOOL ||
+                              is_signed_integer(nested_type) ||
+                              is_unsigned_integer(nested_type) ||
+                              nested_type->kind == TYPE_STRING))
+                            lang_diag(checker->diagnostics,
+                                      nested_field->span,
+                                      "projection-state field `%s` must be Boolean, integer, or `string`",
+                                      nested_field->name);
+                    }
+                } else if (!web_handler_standard_html_type(
+                               field_type, "KeyedRemove")) {
+                    lang_diag(checker->diagnostics, field_decl->span,
+                              "projection-transition field `%s` must be a `*ProjectionState` or `KeyedRemove`",
+                              field_decl->name);
+                }
+            } else if (!(field_type->kind == TYPE_BOOL ||
+                         is_signed_integer(field_type) ||
+                         is_unsigned_integer(field_type) ||
+                         field_type->kind == TYPE_STRING)) {
+                lang_diag(checker->diagnostics, field_decl->span,
+                          "projection-state field `%s` must be Boolean, integer, or `string`",
+                          field_decl->name);
+            }
         }
+        if (projection_transition_type(completion) && state_count != 1U)
+            lang_diag(checker->diagnostics, completion->declaration->span,
+                      "projection transition must contain exactly one `*ProjectionState` field");
     }
     for (size_t argument = 0U;
          argument < handler_type->argument_count; ++argument)

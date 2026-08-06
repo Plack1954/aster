@@ -188,6 +188,21 @@ static bool web_projection_state_type(const IrType *type) {
            strcmp(type->name + name_length - suffix_length, suffix) == 0;
 }
 
+static bool web_projection_transition_type(const IrType *type) {
+    if (type == NULL || type->shape != IR_TYPE_STRUCT || type->name == NULL)
+        return false;
+    const char *suffix = "ProjectionTransition";
+    size_t name_length = strlen(type->name);
+    size_t suffix_length = strlen(suffix);
+    return name_length >= suffix_length &&
+           strcmp(type->name + name_length - suffix_length, suffix) == 0;
+}
+
+static bool web_projection_batch_type(const IrType *type) {
+    return web_projection_state_type(type) ||
+           web_projection_transition_type(type);
+}
+
 static bool web_standard_html_type(
     const IrType *type, const char *name) {
     return type != NULL && type->shape == IR_TYPE_STRUCT &&
@@ -208,7 +223,7 @@ static void emit_public_export_signature(
         &emitter->ir->functions[function_index];
     const IrType *result =
         &emitter->ir->types[function->return_type];
-    if (web_projection_state_type(result))
+    if (web_projection_batch_type(result))
         fputs("aster_projection_batch", emitter->output);
     else
         c_backend_emit_type(emitter, function->return_type);
@@ -240,16 +255,96 @@ static void emit_public_export_signature(
     fputc(')', emitter->output);
 }
 
+static char projection_record_code(const IrType *type) {
+    if (type->shape == IR_TYPE_BOOL) return 'b';
+    if (type->shape == IR_TYPE_SIGNED_INT ||
+        type->shape == IR_TYPE_UNSIGNED_INT ||
+        type->shape == IR_TYPE_CHAR)
+        return 'l';
+    if (web_standard_html_type(type, "KeyedRemove")) return 'r';
+    return 'o';
+}
+
+static void emit_projection_record_size(
+    CEmitter *emitter, const IrType *type, const char *name,
+    const char *access) {
+    fprintf(emitter->output, "    bytes += 8U + %zuU + ", strlen(name));
+    char code = projection_record_code(type);
+    if (code == 'b')
+        fputs("1U;\n", emitter->output);
+    else if (code == 'l')
+        fputs("8U;\n", emitter->output);
+    else
+        fprintf(emitter->output, "%s%s->length;\n", access,
+                code == 'r' ? ".f0" : "");
+}
+
+static void emit_projection_record(
+    CEmitter *emitter, const IrType *type, const char *name,
+    const char *access) {
+    size_t name_length = strlen(name);
+    char code = projection_record_code(type);
+    fprintf(emitter->output,
+            "    *cursor++ = '%c';\n"
+            "    *cursor++ = %zuU;\n"
+            "    *cursor++ = 0U; *cursor++ = 0U;\n",
+            code, name_length);
+    if (code == 'b')
+        fputs("    aster_projection_write_u32(&cursor, 1U);\n",
+              emitter->output);
+    else if (code == 'l')
+        fputs("    aster_projection_write_u32(&cursor, 8U);\n",
+              emitter->output);
+    else
+        fprintf(emitter->output,
+                "    aster_projection_write_u32(&cursor, "
+                "(uint32_t)%s%s->length);\n",
+                access, code == 'r' ? ".f0" : "");
+    fprintf(emitter->output,
+            "    memcpy(cursor, \"%s\", %zuU); cursor += %zuU;\n",
+            name, name_length, name_length);
+    if (code == 'b')
+        fprintf(emitter->output, "    *cursor++ = %s ? 1U : 0U;\n", access);
+    else if (code == 'l')
+        fprintf(emitter->output,
+                "    aster_projection_write_u64(&cursor, "
+                "(uint64_t)(int64_t)%s);\n", access);
+    else
+        fprintf(emitter->output,
+                "    memcpy(cursor, %s%s->data, %s%s->length); "
+                "cursor += %s%s->length;\n",
+                access, code == 'r' ? ".f0" : "",
+                access, code == 'r' ? ".f0" : "",
+                access, code == 'r' ? ".f0" : "");
+}
+
 static void emit_projection_export_wrapper(
     CEmitter *emitter, size_t function_index) {
     const IrFunction *function = &emitter->ir->functions[function_index];
     const IrType *result = &emitter->ir->types[function->return_type];
-    for (size_t field = 0U; field < result->field_count; ++field)
-        if (strlen(result->field_names[field]) > 255U) {
-            c_backend_unsupported(
-                emitter, function->span, "projection-state field name");
-            return;
+    size_t record_count = 0U;
+    for (size_t field = 0U; field < result->field_count; ++field) {
+        const IrType *field_type = &emitter->ir->types[
+            result->field_types[field]];
+        if (web_projection_state_type(field_type)) {
+            record_count += field_type->field_count;
+            for (size_t nested = 0U; nested < field_type->field_count; ++nested)
+                if (strlen(field_type->field_names[nested]) > 255U) {
+                    c_backend_unsupported(
+                        emitter, function->span,
+                        "projection-state field name");
+                    return;
+                }
+        } else {
+            ++record_count;
+            if (strlen(result->field_names[field]) > 255U) {
+                c_backend_unsupported(
+                    emitter, function->span,
+                    "projection-state field name");
+                return;
+            }
         }
+    }
     emit_public_export_signature(emitter, function_index);
     fputs(";\n", emitter->output);
     emit_public_export_signature(emitter, function_index);
@@ -287,21 +382,21 @@ static void emit_projection_export_wrapper(
     for (size_t field = 0U; field < result->field_count; ++field) {
         const IrType *field_type = &emitter->ir->types[
             result->field_types[field]];
-        size_t name_length = strlen(result->field_names[field]);
-        fprintf(emitter->output,
-                "    bytes += 8U + %zuU + ", name_length);
-        if (field_type->shape == IR_TYPE_BOOL)
-            fputs("1U;\n", emitter->output);
-        else if (field_type->shape == IR_TYPE_SIGNED_INT ||
-                 field_type->shape == IR_TYPE_UNSIGNED_INT ||
-                 field_type->shape == IR_TYPE_CHAR)
-            fputs("8U;\n", emitter->output);
-        else if (web_standard_html_type(field_type, "KeyedRemove"))
-            fprintf(emitter->output,
-                    "result.f%zu.f0->length;\n", field);
-        else
-            fprintf(emitter->output,
-                    "result.f%zu->length;\n", field);
+        char access[64];
+        if (web_projection_state_type(field_type)) {
+            for (size_t nested = 0U; nested < field_type->field_count; ++nested) {
+                (void)snprintf(access, sizeof(access),
+                               "result.f%zu.f%zu", field, nested);
+                emit_projection_record_size(
+                    emitter,
+                    &emitter->ir->types[field_type->field_types[nested]],
+                    field_type->field_names[nested], access);
+            }
+        } else {
+            (void)snprintf(access, sizeof(access), "result.f%zu", field);
+            emit_projection_record_size(
+                emitter, field_type, result->field_names[field], access);
+        }
     }
     fputs("    aster_projection_batch *batch = malloc("
           "sizeof(*batch) + bytes);\n"
@@ -311,59 +406,24 @@ static void emit_projection_export_wrapper(
             "    batch->count = %zuU;\n"
             "    batch->length = (uint32_t)bytes;\n"
             "    unsigned char *cursor = batch->data;\n",
-            result->field_count);
+            record_count);
     for (size_t field = 0U; field < result->field_count; ++field) {
         const IrType *field_type = &emitter->ir->types[
             result->field_types[field]];
-        const char *name = result->field_names[field];
-        size_t name_length = strlen(name);
-        char code = field_type->shape == IR_TYPE_BOOL ? 'b' :
-            (field_type->shape == IR_TYPE_SIGNED_INT ||
-             field_type->shape == IR_TYPE_UNSIGNED_INT ||
-             field_type->shape == IR_TYPE_CHAR) ? 'l' :
-            web_standard_html_type(field_type, "KeyedRemove") ? 'r' : 'o';
-        fprintf(emitter->output,
-                "    *cursor++ = '%c';\n"
-                "    *cursor++ = %zuU;\n"
-                "    *cursor++ = 0U; *cursor++ = 0U;\n",
-                code, name_length);
-        if (code == 'b') {
-            fputs("    aster_projection_write_u32(&cursor, 1U);\n",
-                  emitter->output);
-        } else if (code == 'l') {
-            fputs("    aster_projection_write_u32(&cursor, 8U);\n",
-                  emitter->output);
-        } else if (code == 'r') {
-            fprintf(emitter->output,
-                    "    aster_projection_write_u32(&cursor, "
-                    "(uint32_t)result.f%zu.f0->length);\n",
-                    field);
+        char access[64];
+        if (web_projection_state_type(field_type)) {
+            for (size_t nested = 0U; nested < field_type->field_count; ++nested) {
+                (void)snprintf(access, sizeof(access),
+                               "result.f%zu.f%zu", field, nested);
+                emit_projection_record(
+                    emitter,
+                    &emitter->ir->types[field_type->field_types[nested]],
+                    field_type->field_names[nested], access);
+            }
         } else {
-            fprintf(emitter->output,
-                    "    aster_projection_write_u32(&cursor, "
-                    "(uint32_t)result.f%zu->length);\n",
-                    field);
-        }
-        fprintf(emitter->output,
-                "    memcpy(cursor, \"%s\", %zuU); cursor += %zuU;\n",
-                name, name_length, name_length);
-        if (code == 'b') {
-            fprintf(emitter->output,
-                    "    *cursor++ = result.f%zu ? 1U : 0U;\n", field);
-        } else if (code == 'l') {
-            fprintf(emitter->output,
-                    "    aster_projection_write_u64(&cursor, "
-                    "(uint64_t)(int64_t)result.f%zu);\n", field);
-        } else if (code == 'r') {
-            fprintf(emitter->output,
-                    "    memcpy(cursor, result.f%zu.f0->data, "
-                    "result.f%zu.f0->length); cursor += result.f%zu.f0->length;\n",
-                    field, field, field);
-        } else {
-            fprintf(emitter->output,
-                    "    memcpy(cursor, result.f%zu->data, "
-                    "result.f%zu->length); cursor += result.f%zu->length;\n",
-                    field, field, field);
+            (void)snprintf(access, sizeof(access), "result.f%zu", field);
+            emit_projection_record(
+                emitter, field_type, result->field_names[field], access);
         }
     }
     if (c_backend_type_needs_drop(emitter, function->return_type))
@@ -379,7 +439,7 @@ void c_backend_emit_public_export_wrapper(
         &emitter->ir->functions[function_index];
     const IrType *result =
         &emitter->ir->types[function->return_type];
-    if (web_projection_state_type(result)) {
+    if (web_projection_batch_type(result)) {
         emit_projection_export_wrapper(emitter, function_index);
         return;
     }
@@ -507,7 +567,7 @@ void c_backend_emit_public_aggregate_accessors(
     IrTypeId result_type = function->is_async
         ? function->async_result_type : function->return_type;
     const IrType *result = &emitter->ir->types[result_type];
-    if (result->shape != IR_TYPE_STRUCT || web_projection_state_type(result))
+    if (result->shape != IR_TYPE_STRUCT || web_projection_batch_type(result))
         return;
     for (size_t field = 0U; field < result->field_count; ++field) {
         IrTypeId field_type_id = result->field_types[field];
@@ -668,7 +728,7 @@ bool c_backend_web_exports_use_projection_batches(
     for (size_t function = 0U;
          function < ir->function_count; ++function)
         if (c_backend_function_is_entry_module_export(ir, function, entry) &&
-            web_projection_state_type(
+            web_projection_batch_type(
                 &ir->types[ir->functions[function].return_type]))
             return true;
     return false;

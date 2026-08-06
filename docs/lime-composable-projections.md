@@ -418,8 +418,9 @@ The first prototype now exists behind deliberately experimental conventions:
 - a state struct name ends in `ProjectionState`;
 - `project_text`, `project_disabled`, and `project_class` are checked native
   HTML properties whose values must be direct fields of that state;
-- synchronous handlers returning the state are lowered to one owned packed
-  batch instead of flat aggregate accessors;
+- synchronous handlers returning state, or a nested state-plus-effect
+  transition, are lowered to one owned packed batch instead of flat aggregate
+  accessors;
 - JavaScript validates the complete batch before mutating text, `disabled`, or
   `class` parts;
 - one drop export handles success and discarded results.
@@ -436,23 +437,35 @@ second and third row nodes, a nested input node, and the input's browser-edited
 value all survive. The runtime validates every projection and removal target
 before applying any record.
 
-That experiment also exposed an important source-model problem. The temporary
-flat prototype puts `KeyedRemove` directly in the `ProjectionState`, forcing the
-initial render value to contain a meaningless removal. This is operationally
-correct because initial state is rendered rather than applied as a transition,
-but it is not an acceptable public model. Persistent state and one-shot effects
-must be distinct, probably through the nested `TableTransition { state, rows }`
-shape described above. We should implement recursive batch lowering rather than
-add more structural fields to projection state.
+That experiment initially exposed an important source-model problem: putting
+`KeyedRemove` directly in `ProjectionState` forced the initial render value to
+contain a meaningless removal. The prototype now separates the values with a
+nested transition:
 
-This validates one-batch scalar/structural composition and the retained-part
-architecture, not the temporary source syntax. Current prototype limits are
-intentional: projection handlers are synchronous, persistent state fields are
-flat Boolean/integer/string values, only nested `KeyedRemove` has been exercised,
+```aster
+struct RowSelectionProjectionTransition
+{
+    RowSelectionProjectionState state;
+    KeyedRemove removal;
+}
+```
+
+The checker requires exactly one `*ProjectionState` in an experimental
+`*ProjectionTransition`, permits the standard structural effect separately,
+and rejects structural values in persistent state. The backend recursively
+flattens the nested state and removal into the same owned batch. Initial state
+is now pure and no placeholder effect is needed. This supports the semantic
+split proposed above without exposing scalar DOM commands.
+
+This validates one-batch scalar/structural composition and one level of nested
+transition lowering, not the temporary source syntax. Current prototype limits
+are intentional: projection handlers are synchronous, persistent state fields
+are flat Boolean/integer/string values, only `KeyedRemove` has been exercised,
 text initialization is still written as an ordinary child expression, and the
-`ProjectionState` suffix is a marker rather than a final region declaration.
-Async batches, true keyed item-local plans, recursive transition composition,
-and a final explicit state-boundary spelling remain to be designed.
+`ProjectionState`/`ProjectionTransition` suffixes are markers rather than final
+region declarations. Async batches, effect collections, true keyed item-local
+plans, deeper recursive composition, and a final explicit state-boundary
+spelling remain to be designed.
 
 The generic decoder and first structural record increased the comparison
 client from 8.8 KB to 9.7 KB gzip. A future production implementation should

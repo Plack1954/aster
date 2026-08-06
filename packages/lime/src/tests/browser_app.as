@@ -40,6 +40,11 @@ public struct RowSelectionProjectionState
     string firstClass;
     string secondClass;
     string thirdClass;
+}
+
+public struct RowSelectionProjectionTransition
+{
+    RowSelectionProjectionState state;
     KeyedRemove removal;
 }
 
@@ -134,21 +139,23 @@ private RowSelectionProjectionState InitialRowSelection()
         selectedLabel = "Selected row 1",
         firstClass = "selected",
         secondClass = "",
-        thirdClass = "",
-        removal = RemoveKey("projection-row-unused")
+        thirdClass = ""
     };
 }
 
-public RowSelectionProjectionState SelectSecondAndRemoveFirst(int selectedId)
+public RowSelectionProjectionTransition SelectSecondAndRemoveFirst(int selectedId)
 {
     int nextId = selectedId == 1 ? 2 : selectedId;
     return new()
     {
-        selectedId = nextId,
-        selectedLabel = $"Selected row {nextId}",
-        firstClass = "",
-        secondClass = "selected",
-        thirdClass = "",
+        state = new()
+        {
+            selectedId = nextId,
+            selectedLabel = $"Selected row {nextId}",
+            firstClass = "",
+            secondClass = "selected",
+            thirdClass = ""
+        },
         removal = RemoveKey("projection-row-1")
     };
 }
