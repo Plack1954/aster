@@ -361,6 +361,51 @@ nested aggregate values, discarded temporaries, early returns, propagated
 `Result.Err` values, and VM trap unwinding. Moving a value transfers its
 pending destructor to the destination.
 
+User value types may control copying with a C++-style copy constructor. Its
+single `const ref T` parameter is a non-owning immutable reference to the
+source, while the constructor initializes an independent destination:
+
+```aster
+struct BufferOwner {
+    Arena storage;
+
+    public BufferOwner(const ref BufferOwner other) {
+        storage = Arena.new();
+    }
+}
+```
+
+Every ordinary copy of `BufferOwner` invokes this constructor, including
+initialization, assignment, by-value parameters, and explicit
+`new BufferOwner(existing)`. Assignment finishes constructing the replacement
+before destroying the destination's previous value, so self-assignment is
+well-defined. The source cannot be mutated through `const ref`.
+
+A unique owner can reject copying instead:
+
+```aster
+struct UniqueOwner {
+    Arena storage;
+
+    private UniqueOwner(const ref UniqueOwner other) = delete;
+}
+```
+
+Copying then produces a diagnostic at the copy site with the deleted
+declaration as secondary context. A destructor alone does not disable ordinary
+recursive field copying. Class-variable assignment remains an alias copy and
+does not use value copy constructors; explicit `new ClassName(existing)` may
+invoke a declared class constructor.
+
+Custom copy operations compose recursively through user structs, generic user
+struct instantiations, and fixed-size arrays. Each enclosing value is rebuilt
+from independently copied fields or elements, so a scalar-only member with a
+custom copy constructor is not mistaken for a trivial representation copy.
+`Option`, `Result`, unions, and dynamically sized collections containing a
+custom-copy value remain temporarily noncopyable while their typed runtime
+copy dispatch is completed. This restriction prevents silent fieldwise or
+elementwise copying from bypassing the custom operation.
+
 `string` is Aster's single immutable UTF-8 string type. Assignment, argument
 passing, field reads, and returns retain the underlying reference-counted byte
 allocation rather than copying its contents. There are no source-level string

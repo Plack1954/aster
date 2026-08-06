@@ -198,7 +198,12 @@ bool c_backend_value_is_borrowed_projection(
     const IrInstruction *producer =
         c_backend_find_value_producer(function, value);
     if (producer != NULL)
-        return producer->opcode == IR_OP_LOCAL_FIELD_BORROW;
+        return producer->opcode == IR_OP_LOCAL_FIELD_BORROW ||
+               (producer->opcode == IR_OP_FIELD_GET &&
+                (producer->auxiliary == 1U ||
+                 producer->auxiliary == 2U)) ||
+               (producer->opcode == IR_OP_INDEX_GET &&
+                producer->integer != 0U);
     return false;
 }
 

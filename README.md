@@ -1,15 +1,23 @@
 # Aster
 
-Aster is a statically typed application language built around a C#-shaped
-programming model and a .NET-referenced standard library. C# and .NET are the
-primary guides for source-level conventions, API names, casing, organization,
-overloads, nullable values, exceptions, delegates, `ref`/`out`, and
-`async`/`await` with `Task`.
+Aster is a statically typed application language with a C-family syntax, a
+C#-shaped application programming model, and a .NET-referenced standard
+library. C# and .NET are the primary guides for application-facing conventions,
+API names, casing, organization, overloads, nullable values, exceptions,
+delegates, `ref`/`out`, and `async`/`await` with `Task`. They are not exclusive
+sources for Aster's syntax or semantics: conventional C and C++ syntax and
+resource-management designs are welcome when they fit Aster better.
 
 Aster does not target the CLR or adopt its runtime model. It uses deterministic
 manual memory management, ordinary value semantics, explicit references and
 raw pointers, narrow reference counting for shared values, UTF-8 strings, and
 no tracing garbage collector. Native typed HTML is part of the language.
+
+Aster is not inspired by Rust and is not intended to converge on Rust's
+ownership model. It deliberately does not adopt borrow checking, lifetime
+annotations, move-only-by-default values, or Rust-style ownership ceremony.
+Like C and C++, Aster leaves pointer and alias lifetime correctness to the
+programmer while making value copying and resource destruction deterministic.
 
 The compiler and runtime are implemented in C. Programs can run on the
 bytecode VM or compile to portable C17 through the same verified IR. C is
@@ -75,8 +83,13 @@ Manifest projects support named binary, library, and test targets:
 
 ## Design
 
-- C# shapes the source-level programming model; .NET shapes the public standard
-  library.
+- Aster may use C, C++, or C# syntax and semantics where each provides the best
+  fit; it is not restricted to exclusively C#-shaped syntax.
+- C# shapes the application-facing programming model; .NET shapes the public
+  standard library; C and C++ inform native interoperation, explicit lifetime
+  responsibility, value semantics, copy control, and deterministic cleanup.
+- Rust is not a design source or destination for Aster. Borrow checking,
+  lifetime annotations, and Rust-style ownership syntax are non-goals.
 - Aster keeps its own deterministic, no-GC runtime, UTF-8 representation, and
   native HTML rather than pretending to be a CLR implementation.
 - Portable C17 is the primary deployment backend.

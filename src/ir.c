@@ -18,6 +18,10 @@ static const Type ir_unit_type = {
     .kind = TYPE_UNIT,
     .name = "unit"
 };
+static const Type ir_usize_type = {
+    .kind = TYPE_USIZE,
+    .name = "nuint"
+};
 const Type ir_string_type = {
     .kind = TYPE_STRING,
     .name = "string",
@@ -116,6 +120,12 @@ static uint8_t type_bit_width(const Type *type) {
 }
 
 static IrCopyPolicy type_copy_policy(const Type *type) {
+    if (type != NULL && type->kind == TYPE_NAMED) {
+        const Decl *copy = type_copy_constructor(type);
+        if (copy != NULL)
+            return copy->as.function.is_deleted
+                ? IR_COPY_NONCOPYABLE : IR_COPY_CUSTOM;
+    }
     if (type == NULL || (!type->requires_cleanup && !type->managed))
         return IR_COPY_TRIVIAL;
     if (type->kind == TYPE_ARENA)
@@ -1688,6 +1698,208 @@ static IrValueId lower_owned_interpolation(
     return result;
 }
 
+static bool ir_type_requires_custom_copy_inner(
+    IrBuilder *builder, const Type *value_type,
+    const Type **seen, size_t seen_count
+) {
+    if (value_type == NULL) return false;
+    if (type_copy_constructor(value_type) != NULL) return true;
+    if (value_type->kind == TYPE_ARRAY)
+        return ir_type_requires_custom_copy_inner(
+            builder, value_type->element, seen, seen_count);
+    if (value_type->kind != TYPE_NAMED ||
+        value_type->declaration == NULL ||
+        value_type->declaration->kind != DECL_STRUCT)
+        return false;
+    for (size_t i = 0U; i < seen_count; ++i)
+        if (same_ir_type_identity(seen[i], value_type)) return false;
+    if (seen_count >= 64U) return false;
+    const Type *next_seen[64];
+    for (size_t i = 0U; i < seen_count; ++i)
+        next_seen[i] = seen[i];
+    next_seen[seen_count++] = value_type;
+    size_t field_count =
+        value_type->declaration->as.structure.field_count;
+    for (size_t field = 0U; field < field_count; ++field) {
+        Type *field_type = lang_checker_resolve_aggregate_member(
+            builder->source, builder->diagnostics,
+            value_type, field);
+        if (field_type != NULL &&
+            ir_type_requires_custom_copy_inner(
+                builder, field_type, next_seen, seen_count))
+            return true;
+    }
+    return false;
+}
+
+static bool ir_type_requires_custom_copy(
+    IrBuilder *builder, const Type *value_type
+) {
+    return ir_type_requires_custom_copy_inner(
+        builder, value_type, NULL, 0U);
+}
+
+static IrValueId emit_plain_clone(
+    IrBuilder *builder, const Type *value_type,
+    IrValueId source, LangSpan span
+) {
+    IrInstruction *clone = ir_append_instruction(
+        builder, IR_OP_VALUE_CLONE,
+        ir_intern_type(builder->module, value_type),
+        &source, 1U, span);
+    if (clone == NULL) return IR_INVALID_ID;
+    clone->auxiliary = 0U;
+    return clone->result;
+}
+
+static IrValueId emit_recursive_copy(
+    IrBuilder *builder, const Type *value_type,
+    IrValueId source, LangSpan span
+) {
+    IrTypeId result_type = ir_intern_type(builder->module, value_type);
+    const Decl *copy_constructor = type_copy_constructor(value_type);
+    if (copy_constructor != NULL &&
+        !copy_constructor->as.function.is_deleted) {
+        IrInstruction *call = ir_append_instruction(
+            builder, IR_OP_CALL_DIRECT, result_type,
+            &source, 1U, span);
+        if (call == NULL) return IR_INVALID_ID;
+        call->index = ir_find_function(builder->module, copy_constructor);
+        call->symbol = copy_constructor->as.function.name;
+        call->symbol_length = strlen(call->symbol);
+        call->argument_mode_count = 1U;
+        call->argument_modes = ir_resize(
+            NULL, 1U, sizeof(*call->argument_modes));
+        call->argument_modes[0] = PARAMETER_MODE_IMMUTABLE_REFERENCE;
+        return call->result;
+    }
+    if (value_type != NULL && value_type->kind == TYPE_ARRAY) {
+        size_t count = value_type->array_length;
+        IrValueId *items = ir_resize(
+            NULL, count, sizeof(*items));
+        IrTypeId index_type = ir_intern_type(
+            builder->module, &ir_usize_type);
+        for (size_t item = 0U; item < count; ++item) {
+            IrInstruction *index = ir_append_instruction(
+                builder, IR_OP_CONST_INT, index_type,
+                NULL, 0U, span);
+            if (index == NULL) {
+                free(items);
+                return IR_INVALID_ID;
+            }
+            index->integer = item;
+            IrValueId operands[2] = {source, index->result};
+            IrTypeId element_type = ir_intern_type(
+                builder->module, value_type->element);
+            IrInstruction *borrow = ir_append_instruction(
+                builder, IR_OP_INDEX_GET,
+                element_type,
+                operands, 2U, span);
+            if (borrow == NULL) {
+                free(items);
+                return IR_INVALID_ID;
+            }
+            borrow->integer = item + 1U == count ? 2U : 1U;
+            if (ir_type_requires_custom_copy(
+                    builder, value_type->element))
+                items[item] = emit_recursive_copy(
+                    builder, value_type->element,
+                    borrow->result, span);
+            else if (builder->module->types[element_type].copy_policy !=
+                     IR_COPY_TRIVIAL)
+                items[item] = emit_plain_clone(
+                    builder, value_type->element,
+                    borrow->result, span);
+            else
+                items[item] = borrow->result;
+        }
+        IrInstruction *make = ir_append_instruction(
+            builder, IR_OP_AGGREGATE_MAKE, result_type,
+            items, count, span);
+        free(items);
+        if (make == NULL) return IR_INVALID_ID;
+        make->symbol = "array";
+        make->symbol_length = 5U;
+        make->index = (uint32_t)count;
+        return make->result;
+    }
+    if (value_type == NULL || value_type->kind != TYPE_NAMED ||
+        value_type->declaration == NULL ||
+        value_type->declaration->kind != DECL_STRUCT) {
+        IrInstruction *clone = ir_append_instruction(
+            builder, IR_OP_VALUE_CLONE, result_type,
+            &source, 1U, span);
+        if (clone == NULL) return IR_INVALID_ID;
+        clone->auxiliary = 0U;
+        return clone->result;
+    }
+
+    const Decl *declaration = value_type->declaration;
+    size_t field_count = declaration->as.structure.field_count;
+    IrValueId *fields = ir_resize(
+        NULL, field_count, sizeof(*fields));
+    uint32_t *labels = ir_resize(
+        NULL, field_count, sizeof(*labels));
+    for (size_t field = 0U; field < field_count; ++field) {
+        const FieldDecl *member =
+            &declaration->as.structure.fields[field];
+        const Type *field_type = lang_checker_resolve_aggregate_member(
+            builder->source, builder->diagnostics,
+            value_type, field);
+        if (field_type == NULL) {
+            lang_diag(builder->diagnostics, member->span,
+                      "could not resolve field `%s` while lowering a copy",
+                      member->name);
+            builder->failed = true;
+            free(fields);
+            free(labels);
+            return IR_INVALID_ID;
+        }
+        IrTypeId field_ir_type = ir_intern_type(
+            builder->module, field_type);
+        IrInstruction *borrow = ir_append_instruction(
+            builder, IR_OP_FIELD_GET,
+            field_ir_type,
+            &source, 1U, member->span);
+        if (borrow == NULL) {
+            free(fields);
+            free(labels);
+            return IR_INVALID_ID;
+        }
+        borrow->index = (uint32_t)field;
+        /* A borrowed projection never destroys its aggregate. The final
+         * projection may invalidate the temporary VM slot after all sibling
+         * fields have been read. */
+        borrow->auxiliary = field + 1U == field_count ? 2U : 1U;
+        borrow->symbol = member->name;
+        borrow->symbol_length = strlen(member->name);
+        if (ir_type_requires_custom_copy(builder, field_type))
+            fields[field] = emit_recursive_copy(
+                builder, field_type, borrow->result, member->span);
+        else if (builder->module->types[field_ir_type].copy_policy !=
+                 IR_COPY_TRIVIAL)
+            fields[field] = emit_plain_clone(
+                builder, field_type, borrow->result, member->span);
+        else
+            fields[field] = borrow->result;
+        labels[field] = (uint32_t)field;
+    }
+    IrInstruction *make = ir_append_instruction(
+        builder, IR_OP_AGGREGATE_MAKE, result_type,
+        fields, field_count, span);
+    free(fields);
+    if (make == NULL) {
+        free(labels);
+        return IR_INVALID_ID;
+    }
+    make->labels = labels;
+    make->label_count = field_count;
+    make->symbol = declaration->as.structure.name;
+    make->symbol_length = strlen(make->symbol);
+    make->index = (uint32_t)field_count;
+    return make->result;
+}
+
 IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
     IrTypeId type = ir_intern_type(builder->module, expr->type);
     IrInstruction *instruction = NULL;
@@ -2125,12 +2337,24 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             } else {
                 operand = ir_lower_expr(builder, source);
             }
-            instruction = ir_append_instruction(
-                builder, IR_OP_VALUE_CLONE, type,
-                &operand, 1U, expr->span);
-            if (instruction != NULL)
-                instruction->auxiliary =
-                    source->kind == EXPR_NAME ? 0U : 1U;
+            if (ir_type_requires_custom_copy(builder, expr->type)) {
+                IrValueId copied = emit_recursive_copy(
+                    builder, expr->type, operand, expr->span);
+                if (source->kind != EXPR_NAME) {
+                    IrInstruction *discard = ir_append_instruction(
+                        builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                        &operand, 1U, expr->span);
+                    (void)discard;
+                }
+                return copied;
+            } else {
+                instruction = ir_append_instruction(
+                    builder, IR_OP_VALUE_CLONE, type,
+                    &operand, 1U, expr->span);
+                if (instruction != NULL)
+                    instruction->auxiliary =
+                        source->kind == EXPR_NAME ? 0U : 1U;
+            }
             break;
         }
         case EXPR_TRY:
@@ -2564,7 +2788,8 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         const Decl *decl = module->decls[i];
         if (decl->kind == DECL_FUNCTION &&
             decl->type_param_count == 0U &&
-            !decl->as.function.is_extern)
+            !decl->as.function.is_extern &&
+            !decl->as.function.is_deleted)
             ++ir->function_count;
     }
     ir->functions = ir_resize(
@@ -2576,7 +2801,8 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         const Decl *decl = module->decls[i];
         if (decl->kind != DECL_FUNCTION ||
             decl->type_param_count != 0U ||
-            decl->as.function.is_extern)
+            decl->as.function.is_extern ||
+            decl->as.function.is_deleted)
             continue;
         IrFunction *function = &ir->functions[output++];
         function->name = decl->as.function.name;
@@ -2640,6 +2866,20 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         if (root != NULL)
             ir->functions[i].virtual_root =
                 ir_find_function(ir, root);
+    }
+}
+
+static void resolve_type_copy_functions(IrModule *ir) {
+    for (size_t type_index = 0U;
+         type_index < ir->type_count; ++type_index) {
+        IrType *type = &ir->types[type_index];
+        if (type->copy_policy != IR_COPY_CUSTOM ||
+            type->checked_type == NULL)
+            continue;
+        const Decl *copy = type_copy_constructor(type->checked_type);
+        if (copy == NULL || copy->as.function.is_deleted)
+            continue;
+        type->copy_function = ir_find_function(ir, copy);
     }
 }
 
@@ -2810,6 +3050,7 @@ bool lang_ir_lower_module(Module *module,
     ir->lowering_diagnostics = diagnostics;
     initialize_static_fields(module, ir);
     initialize_functions(module, ir);
+    resolve_type_copy_functions(ir);
     initialize_interface_dispatches(module, ir);
     for (size_t i = 0U; i < ir->function_count; ++i) {
         IrFunction *output = &ir->functions[i];

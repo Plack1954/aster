@@ -23,7 +23,7 @@ typedef struct IrFinalizerContext {
 } IrFinalizerContext;
 
 typedef struct IrBuilder {
-    const Module *source;
+    Module *source;
     LangDiagnostics *diagnostics;
     IrModule *module;
     IrFunction *function;

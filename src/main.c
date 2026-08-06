@@ -85,6 +85,12 @@ static int run_tests(void) {
         , "tests/checker/immutable_field_assignment.as"
         , "tests/checker/immutable_index_assignment.as"
         , "tests/html_child_value_copy.as"
+        , "tests/custom_copy_constructor.as"
+        , "tests/custom_copy_cleanup.as"
+        , "tests/nested_custom_copy.as"
+        , "tests/nested_custom_copy_cleanup.as"
+        , "tests/array_custom_copy.as"
+        , "tests/generic_wrapper_custom_copy.as"
     };
     static const char *negative[] = {
         "tests/parser/mismatched_element.as",
@@ -93,6 +99,10 @@ static int run_tests(void) {
         , "tests/checker/noncopyable_arena.as"
         , "tests/checker/noncopyable_struct.as"
         , "tests/checker/generic_noncopyable.as"
+        , "tests/checker/deleted_copy_constructor.as"
+        , "tests/checker/custom_copy_mutates_source.as"
+        , "tests/checker/nested_deleted_copy.as"
+        , "tests/checker/option_custom_copy.as"
         , "tests/checker/component_missing_property.as"
         , "tests/checker/non_exhaustive_match.as"
         , "tests/checker/payloadless_enum_call.as"

@@ -1906,8 +1906,11 @@ vm_switch_integer_binary:
                 }
                 size_t offset = index.tag == LANG_VALUE_I64
                               ? (size_t)index.as.i64 : (size_t)index.as.u64;
-                LangValue item = vm_value_clone(array->as.array.items[offset]);
-                vm_value_drop_owned(vm, aggregate);
+                LangValue item = instruction.b != 0
+                    ? array->as.array.items[offset]
+                    : vm_value_clone(array->as.array.items[offset]);
+                if (instruction.b == 0)
+                    vm_value_drop_owned(vm, aggregate);
                 PUSH(item); break;
             }
             VM_LABEL(get_index_local)

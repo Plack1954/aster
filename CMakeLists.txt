@@ -209,6 +209,86 @@ add_test(NAME readonly_span_mutation_rejected
 set_tests_properties(readonly_span_mutation_rejected PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE)
+add_test(NAME deleted_copy_constructor_rejected
+    COMMAND lang check tests/checker/deleted_copy_constructor.as)
+set_tests_properties(deleted_copy_constructor_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME custom_copy_source_is_immutable
+    COMMAND lang check tests/checker/custom_copy_mutates_source.as)
+set_tests_properties(custom_copy_source_is_immutable PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME nested_deleted_copy_rejected
+    COMMAND lang check tests/checker/nested_deleted_copy.as)
+set_tests_properties(nested_deleted_copy_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME option_custom_copy_temporarily_rejected
+    COMMAND lang check tests/checker/option_custom_copy.as)
+set_tests_properties(option_custom_copy_temporarily_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME nested_custom_copy_vm
+    COMMAND lang run tests/nested_custom_copy.as)
+set_tests_properties(nested_custom_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "41[\r\n]+42")
+add_aster_generated_c_test(
+    nested_custom_copy_generated_c
+    tests/nested_custom_copy.as
+    nested_custom_copy
+    "-DEXPECTED_OUTPUT=41\n42\n")
+add_test(NAME nested_custom_copy_cleanup_vm
+    COMMAND lang run tests/nested_custom_copy_cleanup.as)
+set_tests_properties(nested_custom_copy_cleanup_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "2[\r\n]+1")
+add_aster_generated_c_test(
+    nested_custom_copy_cleanup_generated_c
+    tests/nested_custom_copy_cleanup.as
+    nested_custom_copy_cleanup
+    "-DEXPECTED_OUTPUT=2\n1\n")
+add_test(NAME array_custom_copy_vm
+    COMMAND lang run tests/array_custom_copy.as)
+set_tests_properties(array_custom_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "1[\r\n]+2[\r\n]+2[\r\n]+3")
+add_aster_generated_c_test(
+    array_custom_copy_generated_c
+    tests/array_custom_copy.as
+    array_custom_copy
+    "-DEXPECTED_OUTPUT=1\n2\n2\n3\n")
+add_test(NAME generic_wrapper_custom_copy_vm
+    COMMAND lang run tests/generic_wrapper_custom_copy.as)
+set_tests_properties(generic_wrapper_custom_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7[\r\n]+8")
+add_aster_generated_c_test(
+    generic_wrapper_custom_copy_generated_c
+    tests/generic_wrapper_custom_copy.as
+    generic_wrapper_custom_copy
+    "-DEXPECTED_OUTPUT=7\n8\n")
+add_test(NAME custom_copy_constructor_vm
+    COMMAND lang run tests/custom_copy_constructor.as)
+set_tests_properties(custom_copy_constructor_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+42[\r\n]+43[\r\n]+43")
+add_aster_generated_c_test(
+    custom_copy_constructor_generated_c
+    tests/custom_copy_constructor.as
+    custom_copy_constructor
+    "-DEXPECTED_OUTPUT=42\n42\n43\n43\n")
+add_test(NAME custom_copy_cleanup_vm
+    COMMAND lang run tests/custom_copy_cleanup.as)
+set_tests_properties(custom_copy_cleanup_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "1[\r\n]+2[\r\n]+1")
+add_aster_generated_c_test(
+    custom_copy_cleanup_generated_c
+    tests/custom_copy_cleanup.as
+    custom_copy_cleanup
+    "-DEXPECTED_OUTPUT=1\n2\n1\n")
 add_test(NAME struct_members_vm COMMAND lang run tests/struct_members.as)
 set_tests_properties(struct_members_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

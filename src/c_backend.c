@@ -1721,7 +1721,13 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 fprintf(output,
                         "    if (v%" PRIu32 " == NULL) aster_trap(\"null class reference\");\n",
                         instruction->operands[0]);
-                if (c_backend_type_needs_drop(emitter, instruction->result_type))
+                if (instruction->auxiliary == 1U ||
+                    instruction->auxiliary == 2U)
+                    fprintf(output,
+                            "    v%" PRIu32 " = v%" PRIu32 "->f%" PRIu32 ";\n",
+                            instruction->result, instruction->operands[0],
+                            instruction->index);
+                else if (c_backend_type_needs_drop(emitter, instruction->result_type))
                     fprintf(output,
                             "    v%" PRIu32 " = aster_clone_%" PRIu32
                             "(v%" PRIu32 "->f%" PRIu32 ");\n",
@@ -1734,7 +1740,13 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             instruction->index);
                 return;
             }
-            if (c_backend_type_needs_drop(emitter, instruction->result_type))
+            if (instruction->auxiliary == 1U ||
+                instruction->auxiliary == 2U)
+                fprintf(output,
+                        "    v%" PRIu32 " = v%" PRIu32 ".f%" PRIu32 ";\n",
+                        instruction->result, instruction->operands[0],
+                        instruction->index);
+            else if (c_backend_type_needs_drop(emitter, instruction->result_type))
                 fprintf(output,
                         "    v%" PRIu32 " = aster_clone_%" PRIu32
                         "(v%" PRIu32 ".f%" PRIu32 ");\n",
@@ -1745,7 +1757,9 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    v%" PRIu32 " = v%" PRIu32 ".f%" PRIu32 ";\n",
                         instruction->result, instruction->operands[0],
                         instruction->index);
-            if (c_backend_type_needs_drop(
+            if (instruction->auxiliary != 1U &&
+                instruction->auxiliary != 2U &&
+                c_backend_type_needs_drop(
                     emitter,
                     function->value_types[instruction->operands[0]]) &&
                 !c_backend_value_is_borrowed_projection(
@@ -1815,15 +1829,18 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 array->array_length);
             fprintf(output,
                     "    v%" PRIu32 " = ", instruction->result);
-            if (c_backend_type_needs_drop(emitter, instruction->result_type))
+            if (instruction->integer == 0U &&
+                c_backend_type_needs_drop(emitter, instruction->result_type))
                 fprintf(output, "aster_clone_%" PRIu32 "(",
                         instruction->result_type);
             fprintf(output, "v%" PRIu32
                     ".items[(size_t)v%" PRIu32 "]",
                     instruction->operands[0], instruction->operands[1]);
-            fputs(c_backend_type_needs_drop(emitter, instruction->result_type)
+            fputs(instruction->integer == 0U &&
+                  c_backend_type_needs_drop(emitter, instruction->result_type)
                     ? ");\n" : ";\n", output);
-            if (c_backend_type_needs_drop(emitter, array_type) &&
+            if (instruction->integer == 0U &&
+                c_backend_type_needs_drop(emitter, array_type) &&
                 !c_backend_value_is_borrowed_projection(
                     function, instruction->operands[0])) {
                 fputs("    ", output);

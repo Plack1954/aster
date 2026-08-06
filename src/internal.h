@@ -418,6 +418,7 @@ typedef struct Param {
     TypeSyntax *type_syntax;
     bool borrowed;
     bool mutable_;
+    bool by_const_ref;
     bool by_ref;
     bool by_out;
     LangSpan span;
@@ -428,7 +429,8 @@ typedef struct Param {
 static inline ParameterMode parameter_mode_from_param(const Param *param) {
     if (param->by_out) return PARAMETER_MODE_OUT;
     if (param->by_ref) return PARAMETER_MODE_MUTABLE_REFERENCE;
-    if (param->borrowed) return PARAMETER_MODE_IMMUTABLE_REFERENCE;
+    if (param->by_const_ref || param->borrowed)
+        return PARAMETER_MODE_IMMUTABLE_REFERENCE;
     return PARAMETER_MODE_VALUE;
 }
 
@@ -458,6 +460,8 @@ typedef struct Function {
     const char *property_name;
     const char *property_backing_field;
     bool is_constructor;
+    bool is_copy_constructor;
+    bool is_deleted;
     const char *owner_type;
     size_t *constructor_field_binding_ids;
     Type **constructor_field_types;
@@ -537,6 +541,9 @@ typedef struct Decl {
         } element;
     } as;
 } Decl;
+
+/* Returns the declared copy constructor for a concrete user value, if any. */
+const Decl *type_copy_constructor(const Type *type);
 
 typedef struct ImportItem {
     const char *name;

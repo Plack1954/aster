@@ -1155,6 +1155,22 @@ bool lang_ir_verify_module(const IrModule *ir,
                       "IR type t%zu has an invalid copy function", t);
             ok = false;
         }
+        if (type->copy_function != IR_INVALID_ID &&
+            type->copy_function < ir->function_count) {
+            const IrFunction *copy =
+                &ir->functions[type->copy_function];
+            if (copy->return_type != (IrTypeId)t ||
+                copy->parameter_count != 1U ||
+                copy->parameters[0].type != (IrTypeId)t ||
+                copy->parameters[0].mode !=
+                    PARAMETER_MODE_IMMUTABLE_REFERENCE) {
+                lang_diag(
+                    diagnostics, copy->span,
+                    "IR type t%zu has an invalid custom copy function signature",
+                    t);
+                ok = false;
+            }
+        }
         if (type->target_layout_known &&
             type->target_alignment == 0U) {
             lang_diag(

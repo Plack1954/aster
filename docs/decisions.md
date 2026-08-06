@@ -1386,3 +1386,32 @@ data only from an explicitly trusted nginx peer. nginx configuration and
 certificate renewal belong to host administration. A systemd restart drains
 the old H2O process gracefully but has a brief listener handoff until Lime
 adds an explicitly justified zero-downtime mechanism.
+## Use bounded C++-style copy control for user-owned values
+
+Decision: add implicit recursive copy, a user-defined copy constructor, and a
+deleted copy constructor for user value types. Begin with the Aster/C++-family
+spellings `public T(const ref T source) { ... }` and
+`private T(const ref T source) = delete;` (or `public` where exported).
+
+Context: deterministic destruction does not by itself make the default copy of
+a raw resource owner correct. C leaves that contract to conventions and helper
+functions. C++ lets a type author define duplication or delete copying without
+requiring lifetime annotations or borrow checking.
+
+Alternatives: make every destructor-bearing type noncopyable, add a Rust-style
+ownership model, retain unconditional field copying, or reproduce all C++
+special members.
+
+Reason: ordinary Aster values should continue to copy normally. Exceptional
+resource owners need the same bounded choice used in conventional C++: accept
+recursive member copying, implement a real copy, share through an existing
+managed field, or reject copying. `const ref` describes the non-owning,
+immutable source used while constructing the independent destination; it does
+not introduce lifetime analysis.
+
+Consequences: value assignment constructs its replacement before destroying
+the previous destination. Class-variable assignment remains a pointer-like
+alias copy; an explicit `new T(existing)` may separately invoke a class copy
+constructor. Compiler-internal moves and return elision remain implementation
+details. Aster does not initially add copy-assignment operators, move
+constructors, lifetime annotations, a borrow checker, or move-only defaults.

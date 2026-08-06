@@ -2062,13 +2062,30 @@ static void lower_instruction(IrBytecodeBuilder *builder,
             store_result(builder, instruction);
             return;
         case IR_OP_FIELD_GET: {
-            move_value(
-                builder, instruction->operands[0], instruction->span);
+            if (instruction->auxiliary == 1U) {
+                int32_t source_slot;
+                if (!as_i32(
+                        builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                    return;
+                (void)emit_instruction(
+                    builder, OP_LOAD_LOCAL, source_slot, 0,
+                    instruction->span);
+            } else {
+                move_value(
+                    builder, instruction->operands[0],
+                    instruction->span);
+            }
             int32_t field = add_symbol_constant(
                 builder, instruction->symbol,
                 instruction->symbol_length, instruction->span);
             (void)emit_instruction(
-                builder, OP_GET_FIELD, field, 0,
+                builder,
+                (instruction->auxiliary == 1U ||
+                 instruction->auxiliary == 2U)
+                    ? OP_GET_FIELD_BORROW : OP_GET_FIELD,
+                field, 0,
                 instruction->span);
             store_result(builder, instruction);
             return;
@@ -2141,14 +2158,28 @@ static void lower_instruction(IrBytecodeBuilder *builder,
             return;
         }
         case IR_OP_INDEX_GET:
-            move_value(
-                builder, instruction->operands[0], instruction->span);
+            if (instruction->integer == 1U) {
+                int32_t source_slot;
+                if (!as_i32(
+                        builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                    return;
+                (void)emit_instruction(
+                    builder, OP_LOAD_LOCAL, source_slot, 0,
+                    instruction->span);
+            } else {
+                move_value(
+                    builder, instruction->operands[0],
+                    instruction->span);
+            }
             move_value(
                 builder, instruction->operands[1], instruction->span);
             (void)emit_instruction(
                 builder, OP_GET_INDEX,
                 instruction->auxiliary == 1U ? 1 : 0,
-                0, instruction->span);
+                instruction->integer != 0U ? 1 : 0,
+                instruction->span);
             store_result(builder, instruction);
             return;
         case IR_OP_LOCAL_INDEX_GET:
@@ -2268,7 +2299,9 @@ static bool lower_function(IrBytecodeBuilder *builder) {
     function->local_destructors = ir_bc_resize(
         NULL, local_count, sizeof(*function->local_destructors));
     for (size_t i = 0U; i < local_count; ++i)
-        function->local_destructors[i] = -1;
+        function->local_destructors[i] =
+            i < source->local_count && source->locals[i].borrowed
+                ? -2 : -1;
     builder->value_base = source->local_count;
     builder->value_source_locals = ir_bc_resize(
         NULL, source->value_count, sizeof(*builder->value_source_locals));

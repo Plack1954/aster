@@ -347,17 +347,34 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
             lang_diag(checker->diagnostics, expr->span,
                       "`out` parameter `%s` cannot be read before assignment",
                       local->name);
-        if (local->type->requires_cleanup) {
+        bool copyable = type_is_copyable(checker, local->type);
+        const Decl *copy_constructor = type_copy_constructor(local->type);
+        if (!copyable) {
+            if (copy_constructor != NULL &&
+                copy_constructor->as.function.is_deleted) {
+                LangDiagnostic *diagnostic = lang_diag(
+                    checker->diagnostics, expr->span,
+                    "copy constructor for `%s` is deleted",
+                    local->type->name);
+                lang_diag_secondary(
+                    diagnostic, copy_constructor->span,
+                    "copy constructor deleted here");
+            } else {
+                lang_diag(
+                    checker->diagnostics, expr->span,
+                    "type `%s` is not copyable; pass `%s` with `ref` or a pointer",
+                    local->type->name, local->name);
+            }
+        }
+        if (local->type->kind == TYPE_NAMED ||
+            local->type->kind == TYPE_ARRAY ||
+            local->type->requires_cleanup) {
             Expr *source = lang_arena_alloc(
                 &checker->module->arena, sizeof(*source));
             *source = *expr;
             source->type = local->type;
             expr->kind = EXPR_CLONE;
             expr->as.clone.value = source;
-            if (!type_is_copyable(checker, local->type))
-                lang_diag(checker->diagnostics, expr->span,
-                          "type `%s` is not copyable; pass `%s` with `ref` or a pointer",
-                          local->type->name, local->name);
         }
         return local->type;
     }
@@ -1233,7 +1250,8 @@ static_call:
             text_local ||
             (declared_function != NULL &&
              i < declared_function->param_count &&
-             declared_function->params[i].by_ref);
+             (declared_function->params[i].by_ref ||
+              declared_function->params[i].by_const_ref));
         if (borrowed) {
             bool builtin_place =
                 (strcmp(name, "List::Add") == 0 ||
@@ -2835,6 +2853,11 @@ static_call:
                   "cannot instantiate abstract class `%s`",
                   function->checked_return_type->declaration
                       ->as.structure.name);
+    if (function->is_deleted)
+        lang_diag(checker->diagnostics, expr->span,
+                  "copy constructor for `%s` is deleted",
+                  function->owner_type != NULL
+                      ? function->owner_type : function->name);
     if (function->param_count != expr->as.call.arguments.count) {
         lang_diag(checker->diagnostics, expr->span,
                   "function `%s` expects %zu arguments, found %zu", name,

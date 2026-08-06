@@ -100,6 +100,11 @@ static bool instruction_result_owns_value(
         case IR_OP_LOCAL_FIELD_BORROW:
         case IR_OP_LOCAL_ITERATOR_NEXT:
             return false;
+        case IR_OP_FIELD_GET:
+            return instruction->auxiliary != 1U &&
+                   instruction->auxiliary != 2U;
+        case IR_OP_INDEX_GET:
+            return instruction->integer == 0U;
         case IR_OP_PARAMETER:
             return instruction->index >= function->parameter_count ||
                    !parameter_mode_is_reference(
@@ -131,7 +136,14 @@ static bool instruction_consumes_operand(
         case IR_OP_RAW_STORE:
             return operand == 1U;
         case IR_OP_FIELD_GET:
+            if (instruction->auxiliary == 1U ||
+                instruction->auxiliary == 2U)
+                return false;
+            return operand == 0U &&
+                   !c_backend_value_is_borrowed_projection(
+                       function, instruction->operands[operand]);
         case IR_OP_INDEX_GET:
+            if (instruction->integer != 0U) return false;
             return operand == 0U &&
                    !c_backend_value_is_borrowed_projection(
                        function, instruction->operands[operand]);

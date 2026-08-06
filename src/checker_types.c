@@ -1703,35 +1703,57 @@ bool coerce_literal(Checker *checker, Expr *expr, Type *expected) {
     return false;
 }
 
+const Decl *type_copy_constructor(const Type *type) {
+    if (type == NULL || type->declaration == NULL ||
+        type->declaration->kind != DECL_STRUCT)
+        return NULL;
+    const Decl *declaration = type->declaration;
+    for (size_t member = 0U;
+         member < declaration->as.structure.member_count; ++member) {
+        const Decl *candidate = declaration->as.structure.members[member];
+        if (candidate->kind == DECL_FUNCTION &&
+            candidate->as.function.is_copy_constructor)
+            return candidate;
+    }
+    return NULL;
+}
+
 static bool type_is_copyable_inner(Checker *checker, Type *type,
-                                   const Type **seen, size_t seen_count) {
+                                   const Type **seen, size_t seen_count,
+                                   bool allow_custom_copy) {
     if (type->kind == TYPE_ARENA)
         return false;
     if (type->kind == TYPE_ARRAY)
-        return type_is_copyable_inner(checker, type->element, seen, seen_count);
+        return type_is_copyable_inner(
+            checker, type->element, seen, seen_count,
+            allow_custom_copy);
     if (type->kind == TYPE_OPTION)
-        return type_is_copyable_inner(checker, type->element,
-                                      seen, seen_count);
+        return type_is_copyable_inner(
+            checker, type->element, seen, seen_count, false);
     if (type->kind == TYPE_VEC || type->kind == TYPE_QUEUE ||
         type->kind == TYPE_STACK)
-        return type_is_copyable_inner(checker, type->element,
-                                      seen, seen_count);
+        return type_is_copyable_inner(
+            checker, type->element, seen, seen_count, false);
     if (type->kind == TYPE_DICTIONARY)
-        return type_is_copyable_inner(checker, type->element,
-                                      seen, seen_count) &&
-               type_is_copyable_inner(checker, type->error_type,
-                                      seen, seen_count);
+        return type_is_copyable_inner(
+                   checker, type->element, seen, seen_count, false) &&
+               type_is_copyable_inner(
+                   checker, type->error_type, seen, seen_count, false);
     if (type->kind == TYPE_HASH_SET)
-        return type_is_copyable_inner(checker, type->element,
-                                      seen, seen_count);
+        return type_is_copyable_inner(
+            checker, type->element, seen, seen_count, false);
     if (type->kind == TYPE_RESULT)
-        return type_is_copyable_inner(checker, type->element, seen, seen_count) &&
-               type_is_copyable_inner(checker, type->error_type,
-                                      seen, seen_count);
+        return type_is_copyable_inner(
+                   checker, type->element, seen, seen_count, false) &&
+               type_is_copyable_inner(
+                   checker, type->error_type, seen, seen_count, false);
     if (type->kind == TYPE_CLASS) return true;
     if (type->kind != TYPE_NAMED) return true;
     const Decl *type_decl = type->declaration;
     if (type_decl == NULL) return false;
+    const Decl *copy = type_copy_constructor(type);
+    if (copy != NULL)
+        return allow_custom_copy && !copy->as.function.is_deleted;
     for (size_t i = 0U; i < seen_count; ++i)
         if (same_type(seen[i], type)) return false;
     if (seen_count >= 64U) return false;
@@ -1749,13 +1771,16 @@ static bool type_is_copyable_inner(Checker *checker, Type *type,
     }
     if (fields == NULL) return false;
     bool copyable = true;
+    bool allow_member_custom =
+        allow_custom_copy && type_decl->kind == DECL_STRUCT;
     for (size_t field = 0U; field < field_count; ++field) {
         Type *field_type = resolve_type_syntax_in_applied_declaration(
             checker, type, fields[field].type_syntax,
             fields[field].type_name,
             fields[field].span);
         if (!type_is_copyable_inner(
-                checker, field_type, next_seen, seen_count)) {
+                checker, field_type, next_seen, seen_count,
+                allow_member_custom)) {
             copyable = false;
             break;
         }
@@ -1764,5 +1789,5 @@ static bool type_is_copyable_inner(Checker *checker, Type *type,
 }
 
 bool type_is_copyable(Checker *checker, Type *type) {
-    return type_is_copyable_inner(checker, type, NULL, 0U);
+    return type_is_copyable_inner(checker, type, NULL, 0U, true);
 }

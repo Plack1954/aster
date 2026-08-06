@@ -21,6 +21,26 @@ Its model is deliberately C/C++-like:
 There is no `take`, `borrow`, `owned`, source invalidation, use-after-move
 diagnostic, or lifetime proof in Aster source.
 
+### Relationship to C and C++
+
+C copies a struct by copying its stored members/representation. It has no
+constructors, destructors, deleted copy operation, or type-defined copy hook.
+A C resource-owning struct therefore normally uses explicit conventions and
+functions such as `resource_init`, `resource_clone`, and `resource_destroy`;
+an accidental plain copy of an owning pointer can alias the allocation and
+lead to a double free. The C compiler does not prevent that programmer error.
+
+Aster deliberately keeps that C/C++ trust boundary for pointer and alias
+validity, while taking deterministic destruction and type-defined/deleted copy
+operations from C++. This design is not derived from Rust and does not add
+borrow checking or lifetime annotations.
+
+User copy constructors propagate through enclosing structs, instantiated
+generic structs, and fixed-size arrays. This propagation is based on the copy
+policy of each field or element, independently of whether that type needs
+destruction. Dynamic collections and tagged unions containing custom-copy
+values are still rejected until their runtime copy dispatch is implemented.
+
 Scalars copy directly. Immutable UTF-8 `string` values share reference-counted
 storage. `Buffer` and other ordinary owning containers deep-copy their storage.
 `NativeHandle` copies share one deterministically destroyed native resource,
@@ -61,9 +81,13 @@ User-defined destructors use:
 
 The compiler runs destructors in reverse declaration order on normal scope
 exit, return, `break`, `continue`, propagated errors, and VM trap unwinding.
-Copying a value also copies its destructor-bearing value, just as a normal C++
-copy creates another object that will later be destroyed. Aster does not try
-to prove that a user-written destructor is compatible with the default copy.
+Copying a value also creates another value that will later be destroyed. As in
+C++, a destructor does not by itself disable copying: recursively copyable
+fields receive their normal copies. A resource-owning value can instead define
+`public T(const ref T source) { ... }` to perform custom duplication or declare
+`private T(const ref T source) = delete;` to prohibit copying. `const ref` does
+not extend the source lifetime or introduce lifetime analysis; it only gives
+the constructor an immutable non-owning source during the call.
 
 Raw pointers are intentionally outside any safety guarantee. An
 `unsafe { ... }` block acknowledges programmer responsibility for validity,

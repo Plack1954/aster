@@ -1909,6 +1909,12 @@ static Decl *parse_struct_decl(
                 member->as.function.owner_type = *decl_name;
                 member->as.function.name = join_text(
                     parser, *decl_name, "::", "new");
+                Function *constructor = &member->as.function;
+                constructor->is_copy_constructor =
+                    constructor->param_count == 1U &&
+                    constructor->params[0].by_const_ref &&
+                    strcmp(constructor->params[0].type_name,
+                           *decl_name) == 0;
                 member->is_public = member_public;
                 member->has_explicit_visibility =
                     member_visibility || is_class;
@@ -2204,7 +2210,17 @@ static Decl *parse_function(
     parser_expect(parser, TOK_LPAREN, "expected `(` after function name");
     ParserArrayBuilder parameters = parser_array_builder(sizeof(Param));
     while (parser->current.kind != TOK_RPAREN && parser->current.kind != TOK_EOF) {
-        bool by_ref = parser_accept(parser, TOK_REF);
+        bool immutable_ref = false;
+        if (parser->current.kind == TOK_CONST) {
+            Parser probe = *parser;
+            parser_next(&probe);
+            if (probe.current.kind == TOK_REF) {
+                parser_next(parser);
+                parser_next(parser);
+                immutable_ref = true;
+            }
+        }
+        bool by_ref = !immutable_ref && parser_accept(parser, TOK_REF);
         bool by_out = !by_ref && parser_accept(parser, TOK_OUT);
         TypeSyntax *type_syntax = NULL;
         const char *type_name = parse_type(parser, &type_syntax);
@@ -2216,8 +2232,9 @@ static Decl *parse_function(
             .name=parameter_name,
             .type_name=type_name,
             .type_syntax=type_syntax,
-            .borrowed=by_ref || by_out,
-            .mutable_=true,
+            .borrowed=immutable_ref || by_ref || by_out,
+            .mutable_=!immutable_ref,
+            .by_const_ref=immutable_ref,
             .by_ref=by_ref || by_out,
             .by_out=by_out,
             .span=param_name.span,
@@ -2231,7 +2248,14 @@ static Decl *parse_function(
     fn->params = parser_array_freeze(parser, &parameters);
     fn->return_type = return_type;
     fn->return_type_syntax = return_type_syntax;
-    if (is_extern || declaration_only) {
+    if (parser_accept(parser, TOK_EQUAL)) {
+        Token deleted = parser_expect(
+            parser, TOK_DELETE, "expected `delete` after `=`");
+        Token end = parser_expect(
+            parser, TOK_SEMICOLON, "expected `;` after `= delete`");
+        fn->is_deleted = deleted.kind == TOK_DELETE;
+        fn->span = (LangSpan){start.span.file, start.span.start, end.span.end};
+    } else if (is_extern || declaration_only) {
         Token end = parser_expect(parser, TOK_SEMICOLON,
                            "expected `;` after function declaration");
         fn->span = (LangSpan){start.span.file, start.span.start, end.span.end};

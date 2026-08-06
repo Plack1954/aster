@@ -3403,10 +3403,8 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 continue;
             bool same_signature = true;
             for (size_t p = 0U; p < function->param_count; ++p) {
-                if (function->params[p].by_ref !=
-                        candidate->params[p].by_ref ||
-                    function->params[p].by_out !=
-                        candidate->params[p].by_out ||
+                if (parameter_mode_from_param(&function->params[p]) !=
+                        parameter_mode_from_param(&candidate->params[p]) ||
                     !same_type(function->params[p].checked_type,
                                candidate->params[p].checked_type)) {
                     same_signature = false;
@@ -3469,6 +3467,13 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 };
             }
         }
+        if (function->is_deleted && !function->is_copy_constructor)
+            lang_diag(diagnostics, function->span,
+                      "only a copy constructor may be declared `= delete`");
+        if (function->is_copy_constructor && !function->is_deleted &&
+            !module->decls[i]->is_public)
+            lang_diag(diagnostics, function->span,
+                      "a custom copy constructor must be public");
         if (function->is_async && function->is_extern)
             lang_diag(diagnostics, function->span,
                       "extern functions cannot be declared async");
@@ -3492,7 +3497,13 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 function->params[j].type_name,
                 function->params[j].span);
             function->params[j].checked_type = type;
-            function->params[j].borrowed = function->params[j].by_ref;
+            /* `borrowed` is also used provisionally by parser-created method
+             * receivers. Preserve only source-level reference parameter modes
+             * here; ordinary struct receivers retain their established value
+             * ABI. */
+            function->params[j].borrowed =
+                function->params[j].by_ref ||
+                function->params[j].by_const_ref;
             function->params[j].binding_id = ++checker.next_local_id;
             checker.locals[checker.local_count++] = (Local){
                 function->params[j].name, type,
@@ -3504,7 +3515,8 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 !function->params[j].by_out
             };
         }
-        if (function->is_extern || function->is_abstract_member) {
+        if (function->is_extern || function->is_abstract_member ||
+            function->is_deleted) {
             function->local_count = function->param_count;
             continue;
         }

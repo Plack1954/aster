@@ -118,6 +118,7 @@ bool type_assignable(const Type *expected, const Type *actual);
 const char *type_display_name(Checker *checker, const Type *type);
 bool coerce_literal(Checker *checker, Expr *expr, Type *expected);
 bool type_is_copyable(Checker *checker, Type *type);
+const Decl *type_copy_constructor(const Type *type);
 
 Local *find_local(Checker *checker, const char *name);
 Function *find_function(Checker *checker, const char *name,
