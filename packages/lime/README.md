@@ -110,7 +110,11 @@ application needs to replace it; sync and async fallback handlers are accepted.
 Patterns are parsed and validated when registered. Literal routes outrank
 constrained parameters, which outrank ordinary parameters and catch-alls.
 Chained constraints are conjunctive. Conflicting equal-precedence endpoints
-and contradictory or incompatible constraint chains are rejected.
+and contradictory or incompatible constraint chains are rejected. Registration
+also compiles endpoints into method-specific precedence buckets, so normal
+dispatch neither scans unrelated HTTP methods nor recomputes precedence. The
+canonical endpoint graph remains the source for metadata, links, `Allow`, and
+automatic `OPTIONS` behavior.
 
 Typed route binding supports one route parameter across `MapGet`, `MapPost`,
 `MapPut`, `MapPatch`, `MapDelete`, `MapHead`, and `MapMethods`. The parameter

@@ -675,6 +675,107 @@ class Route
     }
 }
 
+class RouteMethodBucket
+{
+    private string Method;
+    private List<Route> Routes;
+
+    public RouteMethodBucket(string method)
+    {
+        Method = method;
+        Routes = new();
+    }
+
+    public bool Handles(string method)
+    {
+        return Method == method;
+    }
+
+    public void Add(Route route)
+    {
+        List<Route> routes = Routes;
+        nuint index = 0;
+        while (index < routes.Count)
+        {
+            Route current = routes[index];
+            if (route.pattern.ComparePrecedence(current.pattern) < 0)
+            {
+                break;
+            }
+            index += 1;
+        }
+        routes.Insert(index, route);
+        Routes = routes;
+    }
+
+    public Option<Route> Match(string path)
+    {
+        foreach (Route route in Routes)
+        {
+            if (route.pattern.IsMatch(path))
+            {
+                return Option.Some(route);
+            }
+        }
+        return Option.None;
+    }
+}
+
+class RouteTable
+{
+    private List<RouteMethodBucket> Buckets;
+
+    public RouteTable()
+    {
+        Buckets = new();
+    }
+
+    public void Add(Route route)
+    {
+        foreach (string method in route.methods)
+        {
+            bool found = false;
+            foreach (RouteMethodBucket bucket in Buckets)
+            {
+                if (bucket.Handles(method))
+                {
+                    bucket.Add(route);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                RouteMethodBucket bucket = new RouteMethodBucket(method);
+                bucket.Add(route);
+                List<RouteMethodBucket> buckets = Buckets;
+                buckets.Add(bucket);
+                Buckets = buckets;
+            }
+        }
+    }
+
+    public Option<Route> Match(string method, string path)
+    {
+        foreach (RouteMethodBucket bucket in Buckets)
+        {
+            if (bucket.Handles(method))
+            {
+                return bucket.Match(path);
+            }
+        }
+        return Option.None;
+    }
+
+    ~RouteTable()
+    {
+        foreach (RouteMethodBucket bucket in Buckets)
+        {
+            delete bucket;
+        }
+    }
+}
+
 class EndpointMetadata
 {
     public Option<string> Name;
@@ -857,6 +958,7 @@ public struct RouteEndpoint
 public class WebApplication
 {
     public List<Route> routes;
+    public RouteTable routeTable;
     public List<BuildPage> pages;
     public List<RequestFilter> filters;
     public List<HtmlMiddleware> htmlMiddleware;
@@ -871,6 +973,7 @@ public class WebApplication
     private WebApplication()
     {
         routes = new();
+        routeTable = new RouteTable();
         pages = new();
         filters = new();
         htmlMiddleware = new();
@@ -887,6 +990,7 @@ public class WebApplication
 
     ~WebApplication()
     {
+        delete routeTable;
         foreach (Route route in routes)
         {
             delete route;
@@ -2167,7 +2271,9 @@ private EndpointBuilder WebApplication.MapEndpoint(
         }
     }
     EndpointMetadata metadata = new EndpointMetadata();
-    self.routes.Add(new Route(pattern, methods, handler, metadata));
+    Route route = new Route(pattern, methods, handler, metadata);
+    self.routes.Add(route);
+    self.routeTable.Add(route);
     return new()
     {
         Application = self,
@@ -4908,6 +5014,7 @@ private Response DispatchAppUnchecked(WebApplication self, Request request)
 
     return DispatchRoutes(
         self.routes,
+        self.routeTable,
         self.staticDirectories,
         self.htmlMiddleware,
         self.fallback,
@@ -4949,6 +5056,7 @@ private async Task<Response> DispatchAppUncheckedAsync(
 
     return await DispatchRoutesAsync(
         self.routes,
+        self.routeTable,
         self.staticDirectories,
         self.htmlMiddleware,
         self.fallback,
@@ -5106,43 +5214,6 @@ private Response WithAllowedMethods(Response response, List<string> methods)
     );
     response.AddHeader(allow);
     return response;
-}
-
-private Option<Route> BestRoute(
-    List<Route> routes,
-    string method,
-    string path
-)
-{
-    Option<Route> selected = Option.None;
-    foreach (Route route in routes)
-    {
-        if (!MethodContains(route.methods, method) ||
-            !route.pattern.IsMatch(path))
-        {
-            continue;
-        }
-        switch (selected)
-        {
-            case Option.None: { selected = Option.Some(route); }
-            case Option.Some(current): {
-                int precedence = route.pattern.ComparePrecedence(
-                    current.pattern
-                );
-                if (precedence < 0)
-                {
-                    selected = Option.Some(route);
-                }
-                else if (precedence == 0)
-                {
-                    throw new InvalidOperationException(
-                        "request matched multiple endpoints with equal precedence"
-                    );
-                }
-            }
-        }
-    }
-    return selected;
 }
 
 private Option<string> SingleRouteValue(Request request)
@@ -5468,13 +5539,14 @@ private async Task<Response> InvokeRouteHandlerAsync(
 
 private Response DispatchRoutes(
     List<Route> routes,
+    RouteTable routeTable,
     List<StaticDirectory> staticDirectories,
     List<HtmlMiddleware> middleware,
     RouteHandler fallback,
     Request request
 )
 {
-    switch (BestRoute(routes, request.method, request.path))
+    switch (routeTable.Match(request.method, request.path))
     {
         case Option.Some(route): {
                 SelectRoute(request, route.pattern);
@@ -5489,7 +5561,7 @@ private Response DispatchRoutes(
 
     if (request.method == "HEAD")
     {
-        switch (BestRoute(routes, "GET", request.path))
+        switch (routeTable.Match("GET", request.path))
         {
             case Option.Some(route): {
                 SelectRoute(request, route.pattern);
@@ -5578,13 +5650,14 @@ private Response DispatchRoutes(
 
 private async Task<Response> DispatchRoutesAsync(
     List<Route> routes,
+    RouteTable routeTable,
     List<StaticDirectory> staticDirectories,
     List<HtmlMiddleware> middleware,
     RouteHandler fallback,
     Request request
 )
 {
-    switch (BestRoute(routes, request.method, request.path))
+    switch (routeTable.Match(request.method, request.path))
     {
         case Option.Some(route): {
             SelectRoute(request, route.pattern);
@@ -5598,7 +5671,7 @@ private async Task<Response> DispatchRoutesAsync(
 
     if (request.method == "HEAD")
     {
-        switch (BestRoute(routes, "GET", request.path))
+        switch (routeTable.Match("GET", request.path))
         {
             case Option.Some(route): {
                 SelectRoute(request, route.pattern);

@@ -985,11 +985,41 @@ private bool StructuralRoutingWorks()
     List<ResponseHeader> optionsHeaders) = options;
     (int invalidStatus, ResponseBody invalidBody,
     List<ResponseHeader> invalidHeaders) = invalidMethod;
-    return EmptyResponseEquals(options, 204) && invalidStatus == 405 &&
+    bool protocolBehavior = EmptyResponseEquals(options, 204) &&
+        invalidStatus == 405 &&
         AllowEquals(options, "GET, HEAD, OPTIONS") &&
         AllowEquals(invalidMethod, "GET, HEAD, OPTIONS") &&
         multiInvalidMethod.StatusCode == 405 &&
         AllowEquals(multiInvalidMethod, "POST, PUT, OPTIONS");
+    if (!protocolBehavior) { return false; }
+
+    ApplicationOwner reverseOwner = NewApplication();
+    WebApplication reverse = reverseOwner.Value;
+    reverse.MapGet("/compiled/fixed", LiteralRoute);
+    reverse.MapGet("/compiled/{value:int}", ConstrainedRoute);
+    reverse.MapGet("/compiled/{value}", ParameterRoute);
+    if (!TextResponseEquals(
+            reverse.Dispatch(request("GET", "/compiled/fixed")),
+            200, "literal"
+        ) ||
+        !TextResponseEquals(
+            reverse.Dispatch(request("GET", "/compiled/42")),
+            200, "constrained"
+        ) ||
+        !TextResponseEquals(
+            reverse.Dispatch(request("GET", "/compiled/aster")),
+            200, "parameter"
+        ))
+    {
+        return false;
+    }
+
+    Response beforeRegistration = reverse.Dispatch(request("GET", "/late"));
+    reverse.MapGet("/late", LiteralRoute);
+    return beforeRegistration.StatusCode == StatusCodes.Status404NotFound &&
+        TextResponseEquals(
+            reverse.Dispatch(request("GET", "/late")), 200, "literal"
+        );
 }
 
 private bool RegistrationValidationWorks()
