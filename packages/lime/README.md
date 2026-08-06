@@ -71,6 +71,23 @@ endpoint names and invalid values return `Result.Err`; malformed paths are
 never returned. `LinkGenerator` borrows its application, so it must not outlive
 the `WebApplication`.
 
+The application also exposes its registered endpoint metadata without copying
+or rebuilding the graph:
+
+```aster
+EndpointDataSource endpoints = app.Endpoints;
+RouteEndpoint endpoint = endpoints.GetEndpoint(0);
+
+Console.WriteLine(endpoint.Pattern);
+Console.WriteLine(endpoint.GetMethod(0));
+```
+
+`RouteEndpoint` exposes the optional name and description plus indexed methods,
+tags, and produced statuses. The data source and its endpoints are borrowed
+views; the application owns the stable registered endpoint objects and must
+outlive every view. This surface is sufficient for tests and future tooling
+without coupling Lime itself to OpenAPI.
+
 Groups contribute a prefix while registering into the same endpoint graph.
 They can be nested and expose the same `Map*` family:
 

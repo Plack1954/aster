@@ -649,12 +649,30 @@ public struct UrlValues
     List<UrlValue> values;
 }
 
-struct Route
+class Route
 {
-    List<string> methods;
-    RoutePattern pattern;
-    RouteHandler handler;
-    EndpointMetadata metadata;
+    public List<string> methods;
+    public RoutePattern pattern;
+    public RouteHandler handler;
+    public EndpointMetadata metadata;
+
+    public Route(
+        RoutePattern routePattern,
+        List<string> routeMethods,
+        RouteHandler routeHandler,
+        EndpointMetadata endpointMetadata
+    )
+    {
+        pattern = routePattern;
+        methods = routeMethods;
+        handler = routeHandler;
+        metadata = endpointMetadata;
+    }
+
+    ~Route()
+    {
+        delete metadata;
+    }
 }
 
 class EndpointMetadata
@@ -706,6 +724,136 @@ public struct LinkGenerator
     WebApplication Application;
 }
 
+public struct EndpointDataSource
+{
+    WebApplication Application;
+
+    public nuint Count
+    {
+        get
+        {
+            if (Application == null)
+            {
+                throw new InvalidOperationException(
+                    "endpoint data source is invalid"
+                );
+            }
+            WebApplication application = Application;
+            return application.routes.Count;
+        }
+    }
+
+    public RouteEndpoint GetEndpoint(nuint index)
+    {
+        if (Application == null)
+        {
+            throw new InvalidOperationException(
+                "endpoint data source is invalid"
+            );
+        }
+        WebApplication application = Application;
+        if (index >= application.routes.Count)
+        {
+            throw new ArgumentException("endpoint index is out of range");
+        }
+        return new() { Endpoint = application.routes[index] };
+    }
+}
+
+public struct RouteEndpoint
+{
+    Route Endpoint;
+
+    public string Pattern
+    {
+        get { return this.Validate().pattern.RawText; }
+    }
+
+    public Option<string> Name
+    {
+        get
+        {
+            return this.Validate().metadata.Name;
+        }
+    }
+
+    public Option<string> Description
+    {
+        get
+        {
+            return this.Validate().metadata.Description;
+        }
+    }
+
+    public nuint MethodCount
+    {
+        get
+        {
+            Route endpoint = this.Validate();
+            return endpoint.methods.Count;
+        }
+    }
+
+    public string GetMethod(nuint index)
+    {
+        Route endpoint = this.Validate();
+        if (index >= endpoint.methods.Count)
+        {
+            throw new ArgumentException("endpoint method index is out of range");
+        }
+        return endpoint.methods[index];
+    }
+
+    public nuint TagCount
+    {
+        get
+        {
+            EndpointMetadata metadata = this.Validate().metadata;
+            return metadata.Tags.Count;
+        }
+    }
+
+    public string GetTag(nuint index)
+    {
+        EndpointMetadata metadata = this.Validate().metadata;
+        if (index >= metadata.Tags.Count)
+        {
+            throw new ArgumentException("endpoint tag index is out of range");
+        }
+        return metadata.Tags[index];
+    }
+
+    public nuint ProducedStatusCount
+    {
+        get
+        {
+            EndpointMetadata metadata = this.Validate().metadata;
+            return metadata.ProducedStatuses.Count;
+        }
+    }
+
+    public int GetProducedStatus(nuint index)
+    {
+        EndpointMetadata metadata = this.Validate().metadata;
+        if (index >= metadata.ProducedStatuses.Count)
+        {
+            throw new ArgumentException(
+                "endpoint produced-status index is out of range"
+            );
+        }
+        return metadata.ProducedStatuses[index];
+    }
+
+    private readonly Route Validate()
+    {
+        if (Endpoint == null)
+        {
+            throw new InvalidOperationException("route endpoint is invalid");
+        }
+        return Endpoint;
+    }
+}
+
 public class WebApplication
 {
     public List<Route> routes;
@@ -718,6 +866,7 @@ public class WebApplication
     public Option<ForwardedHeadersOptions> forwardedHeaders;
 
     public LinkGenerator Links => new() { Application = this };
+    public EndpointDataSource Endpoints => new() { Application = this };
 
     private WebApplication()
     {
@@ -740,7 +889,7 @@ public class WebApplication
     {
         foreach (Route route in routes)
         {
-            delete route.metadata;
+            delete route;
         }
     }
 }
@@ -2018,13 +2167,7 @@ private EndpointBuilder WebApplication.MapEndpoint(
         }
     }
     EndpointMetadata metadata = new EndpointMetadata();
-    self.routes.Add(new()
-    {
-        methods = methods,
-        pattern = pattern,
-        handler = handler,
-        metadata = metadata
-    });
+    self.routes.Add(new Route(pattern, methods, handler, metadata));
     return new()
     {
         Application = self,

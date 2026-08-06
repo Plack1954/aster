@@ -1159,6 +1159,77 @@ private bool TypedRouteBindingWorks()
     }
 }
 
+private bool EndpointMetadataWorks()
+{
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    app.MapGet("/articles/{slug}", TypedString)
+        .WithName("GetArticle")
+        .WithDescription("Gets one article")
+        .WithTag("articles")
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
+    List<string> methods = new();
+    methods.Add("POST");
+    methods.Add("PUT");
+    app.MapMethods("/articles", methods, LiteralRoute)
+        .WithName("WriteArticle");
+
+    EndpointDataSource endpoints = app.Endpoints;
+    if (endpoints.Count != 2) { return false; }
+    RouteEndpoint article = endpoints.GetEndpoint(0);
+    if (article.Pattern != "/articles/{slug}" ||
+        article.MethodCount != 1 || article.GetMethod(0) != "GET" ||
+        article.TagCount != 1 || article.GetTag(0) != "articles" ||
+        article.ProducedStatusCount != 2 ||
+        article.GetProducedStatus(0) != StatusCodes.Status200OK ||
+        article.GetProducedStatus(1) != StatusCodes.Status404NotFound)
+    {
+        return false;
+    }
+    switch (article.Name)
+    {
+        case Option.Some(name): {
+            if (name != "GetArticle") { return false; }
+        }
+        case Option.None: { return false; }
+    }
+    switch (article.Description)
+    {
+        case Option.Some(description): {
+            if (description != "Gets one article") { return false; }
+        }
+        case Option.None: { return false; }
+    }
+
+    RouteEndpoint write = endpoints.GetEndpoint(1);
+    if (write.Pattern != "/articles" || write.MethodCount != 2 ||
+        write.GetMethod(0) != "POST" || write.GetMethod(1) != "PUT")
+    {
+        return false;
+    }
+
+    try
+    {
+        RouteEndpoint missing = endpoints.GetEndpoint(2);
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        if (error.Message.Length == 0) { return false; }
+    }
+    try
+    {
+        string missing = article.GetTag(1);
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        if (error.Message.Length == 0) { return false; }
+    }
+    return true;
+}
+
 private bool LinkGenerationWorks()
 {
     ApplicationOwner appOwner = NewApplication();
@@ -1290,6 +1361,10 @@ int main()
         return 1;
     }
     if (!LinkGenerationWorks())
+    {
+        return 1;
+    }
+    if (!EndpointMetadataWorks())
     {
         return 1;
     }
