@@ -125,6 +125,7 @@ Manifest projects support named binary, library, and test targets:
 - [Projects and targets](docs/projects.md)
 - [Lime seamless SSR and static generation](docs/lime-seamless-ssg.md)
 - [Lime browser client and Wasm direction](docs/lime-browser-client.md)
+- [Composable compiler-checked browser projections](docs/lime-composable-projections.md)
 - [Typed IR](docs/ir.md)
 - [Backend architecture](docs/architecture.md)
 - [C interoperability](docs/ffi.md)

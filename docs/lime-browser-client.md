@@ -12,6 +12,9 @@ applications. Signals, fine-grained reactivity, bounded reconciliation, and
 even a virtual-DOM control remain questions to be means-tested rather than
 accepted or rejected ideologically.
 
+The detailed composition research and recommended transition-batch design are
+in [Composable, compiler-checked browser projections](lime-composable-projections.md).
+
 The guiding rule is:
 
 > Begin with the smallest retained-DOM model that provides excellent developer
