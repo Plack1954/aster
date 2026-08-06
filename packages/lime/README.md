@@ -366,8 +366,12 @@ the application before deleting any service object borrowed by its handlers.
   emits a deletion cookie on `Commit()`, and expiry cleanup is amortized by
   `SessionOptions.cleanupInterval` or explicit `SessionStore.SweepExpired()`.
 - `Lime.Static` mounts safe static-file roots.
-- `Lime.Browser` adds optional browser/Wasm assets and hydration support.
-- `Lime.Ssg` executes the real GET endpoint graph to produce static output.
+- `Lime.Browser` adds optional browser/Wasm assets and hydration support. Its
+  retained-DOM direction is documented in
+  [`../../docs/lime-browser-client.md`](../../docs/lime-browser-client.md).
+- `Lime.Ssg` executes the real GET endpoint graph to produce static output. Its
+  seamless SSR/publication direction is documented in
+  [`../../docs/lime-seamless-ssg.md`](../../docs/lime-seamless-ssg.md).
 - `Lime.Content` and `Lime.Markdown` support content-oriented sites.
 - `Lime.CurrentHttp` is the development and conformance adapter.
 - `Lime.H2O` is the production adapter track.

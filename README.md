@@ -123,6 +123,8 @@ Manifest projects support named binary, library, and test targets:
 - [.NET-referenced standard-library map](docs/standard-library-api-map.md)
 - [Values and cleanup](docs/values-and-cleanup.md)
 - [Projects and targets](docs/projects.md)
+- [Lime seamless SSR and static generation](docs/lime-seamless-ssg.md)
+- [Lime browser client and Wasm direction](docs/lime-browser-client.md)
 - [Typed IR](docs/ir.md)
 - [Backend architecture](docs/architecture.md)
 - [C interoperability](docs/ffi.md)
