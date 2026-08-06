@@ -985,6 +985,16 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
         PASS_REGULAR_EXPRESSION
             "Lime browser async Task.Delay transition verified"
         TIMEOUT 60)
+    add_test(NAME browser_compare_wasm
+        COMMAND bash tests/browser_compare_wasm.sh
+            $<TARGET_FILE:lang>
+            ${ASTER_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_BINARY_DIR}/browser-compare)
+    set_tests_properties(browser_compare_wasm PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION
+            "browser comparison Wasm rendered 1,000 keyed rows"
+        TIMEOUT 60)
 endif()
 if(ASTER_ENABLE_SQLITE_TESTS AND UNIX AND ASTER_WASM_CLANG AND
    ASTER_WASM_LINKER AND ASTER_WASM_OPTIMIZER AND

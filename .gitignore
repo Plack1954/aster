@@ -25,6 +25,8 @@
 /examples/issue_tracker/issues.db
 /examples/wasm_counter/build/
 /examples/wasm_counter/dist/
+/examples/browser_compare/build/
+/examples/browser_compare/dist/
 
 # Coverage, profiling, sanitizer, and crash output.
 *.gcda

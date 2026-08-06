@@ -966,7 +966,7 @@ int lang_project_build_web(const char *manifest_path,
         link[at++] = "--strip-all";
         link[at++] = "--export-memory";
         link[at++] = "--initial-memory=131072";
-        link[at++] = "--max-memory=1048576";
+        link[at++] = "--max-memory=16777216";
         for (size_t i = 0U; i < exports.count; ++i) {
             size_t length = strlen(exports.items[i]) + 10U;
             export_flags[i] = project_resize(NULL, length);

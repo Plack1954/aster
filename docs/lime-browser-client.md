@@ -319,6 +319,30 @@ be tested with practical missing capabilities:
 
 These capabilities are likely to reveal the real state-management pressure.
 
+## Current Vue comparison
+
+[`examples/browser_compare`](../examples/browser_compare/) is now the concrete
+capability and performance check. In a representative local Chrome run, Aster
+created 1,000 keyed table rows in about 10.8 ms versus Vue's 11.1 ms, appended
+1,000 in 10.6 ms versus Vue's 9.0 ms, and directly deleted one row in 0.5 ms
+versus Vue's 5.3 ms. Aster's benchmark client was 8.1 KB gzip versus Vue's 41.8
+KB gzip. These are smoke measurements, not universal benchmark claims: Aster
+was not consistently faster, because Vue won append.
+
+The comparison also gives a hard capability boundary. Aster currently handles
+bulk keyed creation, append, and direct removal. It does not yet provide one
+transition for clear, keyed reorder/swap, arbitrary class/style/attribute
+bindings, efficient sparse updates across many existing rows, or nested patch
+composition. Vue supports those operations today. The retained model is proven
+for its listed operations, not as a general Vue replacement.
+
+The comparison found and fixed three concrete problems: context-free parsing
+could not insert table rows, a 1 MB Wasm maximum trapped at 1,000 rows, and
+eager per-row collection initialization made creation take roughly 140 ms.
+Contextual fragment parsing, a growable 16 MB maximum, and lazy collection
+initialization brought creation down to roughly 11 ms without increasing the
+initial Wasm allocation.
+
 ## Means-testing applications
 
 Counters and small forms prove mechanics but cannot select the long-term

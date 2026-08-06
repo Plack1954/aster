@@ -191,9 +191,10 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
     if (destination === null)
         throw new Error("Aster aggregate Html requires an aria-controls target");
     const {controlled, collection} = destination;
-    const template = document.createElement("template");
-    template.innerHTML = html;
-    for (const child of [...template.content.children]) {
+    const range = document.createRange();
+    range.selectNodeContents(controlled);
+    const fragment = range.createContextualFragment(html);
+    for (const child of [...fragment.children]) {
         const existing = child.id === "" ? null : collection.get(child.id);
         if (existing === null || existing === undefined || !existing.isConnected)
             controlled.append(child);
@@ -205,12 +206,13 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
 }
 
 function removeControlledKey(source, state, key) {
-    const destination = collectionFor(source, state);
-    if (destination === null) return false;
-    const item = destination.collection.get(key);
-    if (item === undefined) return false;
+    const controlled = controlledTarget(source);
+    if (controlled === null) return false;
+    const item = document.getElementById(key);
+    if (item === null || item.parentElement !== controlled) return false;
     item.remove();
-    destination.collection.delete(key);
+    const collection = state.get(`collection:${controlled.id}`);
+    if (collection !== undefined) collection.delete(key);
     return true;
 }
 
@@ -311,56 +313,73 @@ export async function hydrateAster({wasmUrl, root = document}) {
     const {instance} = await WebAssembly.instantiateStreaming(response, imports);
     memory = instance.exports.memory;
 
+    const bindingCache = new Map();
     function hydrateWithin(container) {
       for (const source of container.querySelectorAll("[data-aster-event]")) {
         if (hydratedSources.has(source)) continue;
-        const [eventName, handlerName, encodedResultType,
-            ...parameterBindings] = source.dataset.asterEvent.split("|");
-        const asyncResult = encodedResultType !== encodedResultType.toLowerCase();
-        const resultType = encodedResultType.toLowerCase();
-        const handler = instance.exports[`aster_export_${handlerName}`];
-        if (typeof handler !== "function")
-            throw new Error(`Aster Wasm export is missing: ${handlerName}`);
-        const parameters = parameterBindings.map((binding) => {
-            const separator = binding.indexOf(":");
-            return [binding.slice(0, separator), binding.slice(separator + 1)];
-        });
-        const aggregatePrefix =
-            `aster_export_${handlerName}_result_`;
-        const aggregateResult = resultType === "a" || resultType === "r";
-        const aggregateFields = aggregateResult
-            ? Object.entries(instance.exports).flatMap(([name, accessor]) => {
-                if (!name.startsWith(aggregatePrefix) ||
-                    name.endsWith("_drop"))
-                    return [];
-                const descriptor = name.slice(aggregatePrefix.length);
-                return [{
-                    type: descriptor[0],
-                    name: descriptor.slice(2),
-                    accessor
-                }];
-            })
-            : [];
-        const aggregateDrop = aggregateResult
-            ? instance.exports[`${aggregatePrefix}drop`]
-            : null;
-        const taskResult = asyncResult
-            ? instance.exports[`aster_export_${handlerName}_task_result`]
-            : null;
-        if (asyncResult && typeof taskResult !== "function")
-            throw new Error(
-                `Aster Task result export is missing: ${handlerName}`
-            );
+        const encodedBinding = source.dataset.asterEvent;
+        let binding = bindingCache.get(encodedBinding);
+        if (binding === undefined) {
+            const [eventName, handlerName, encodedResultType,
+                ...parameterBindings] = encodedBinding.split("|");
+            const asyncResult =
+                encodedResultType !== encodedResultType.toLowerCase();
+            const resultType = encodedResultType.toLowerCase();
+            const handler = instance.exports[`aster_export_${handlerName}`];
+            if (typeof handler !== "function")
+                throw new Error(`Aster Wasm export is missing: ${handlerName}`);
+            const parameters = parameterBindings.map((parameter) => {
+                const separator = parameter.indexOf(":");
+                return [
+                    parameter.slice(0, separator),
+                    parameter.slice(separator + 1)
+                ];
+            });
+            const aggregatePrefix = `aster_export_${handlerName}_result_`;
+            const aggregateResult = resultType === "a" || resultType === "r";
+            const aggregateFields = aggregateResult
+                ? Object.entries(instance.exports).flatMap(([name, accessor]) => {
+                    if (!name.startsWith(aggregatePrefix) ||
+                        name.endsWith("_drop"))
+                        return [];
+                    const descriptor = name.slice(aggregatePrefix.length);
+                    return [{
+                        type: descriptor[0],
+                        name: descriptor.slice(2),
+                        accessor
+                    }];
+                })
+                : [];
+            const aggregateDrop = aggregateResult
+                ? instance.exports[`${aggregatePrefix}drop`]
+                : null;
+            const taskResult = asyncResult
+                ? instance.exports[`aster_export_${handlerName}_task_result`]
+                : null;
+            if (asyncResult && typeof taskResult !== "function")
+                throw new Error(
+                    `Aster Task result export is missing: ${handlerName}`
+                );
+            binding = {
+                eventName, handlerName, asyncResult, resultType, handler,
+                parameters, aggregateFields, aggregateDrop, taskResult
+            };
+            bindingCache.set(encodedBinding, binding);
+        }
+        const {
+            eventName, handlerName, asyncResult, resultType, handler,
+            parameters, aggregateFields, aggregateDrop, taskResult
+        } = binding;
         const initialScope = eventScope(source, root);
         if (resultType === "a")
             validateAggregateProjections(
                 source, initialScope, handlerName, aggregateFields
             );
-        if (resultType === "r" && controlledTarget(source) === null)
+        if (resultType === "r" &&
+            source.getAttribute("aria-controls") === null)
             throw new Error(
                 `Aster keyed removal target is missing: ${handlerName}`
             );
-        collectionFor(source, stateFor(initialScope));
 
         let transitionVersion = 0;
         source.addEventListener(eventName, async (event) => {
