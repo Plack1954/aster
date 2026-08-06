@@ -106,21 +106,16 @@ public Html BrowserPage(Html browserLoader)
         <section id="reactive-counter">
             <h2>Reactive projection trial</h2>
             <output name="value">1</output>
+            <output name="value">1</output>
             <output name="doubled">2</output>
             <output name="summary">Value 1; doubled 2</output>
-            <p id="positive-message">The value is positive.</p>
-            <button
-                type="button"
-                aria-positive="true"
-                aria-controls="positive-message"
-                onclick=IncreaseReactive
-            >Increase</button>
-            <button
-                type="button"
-                aria-positive="true"
-                aria-controls="positive-message"
-                onclick=DecreaseReactive
-            >Decrease</button>
+            <output name="positive">The value is positive.</output>
+            <button type="button" onclick=IncreaseReactive>
+                Increase
+            </button>
+            <button type="button" onclick=DecreaseReactive>
+                Decrease
+            </button>
         </section>
         <form
             id="contact"

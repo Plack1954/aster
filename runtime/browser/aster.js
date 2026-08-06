@@ -3,8 +3,12 @@ const decoder = new TextDecoder();
 const islandStates = new WeakMap();
 const hydratedSources = new WeakSet();
 
+function targetsFor(scope, name) {
+    return scope.querySelectorAll(`[name="${CSS.escape(name)}"]`);
+}
+
 function targetFor(scope, name) {
-    return scope.querySelector(`[name="${CSS.escape(name)}"]`);
+    return targetsFor(scope, name)[0] ?? null;
 }
 
 function targetValue(source, scope, type, name) {
@@ -94,14 +98,14 @@ function decodeOwnedString(handle, exports, memory) {
 }
 
 function updateText(scope, name, value) {
-    const target = targetFor(scope, name);
-    if (target === null) return;
-    if (target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement)
-        target.value = String(value);
-    else
-        target.textContent = String(value);
+    for (const target of targetsFor(scope, name)) {
+        if (target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            target instanceof HTMLSelectElement)
+            target.value = String(value);
+        else
+            target.textContent = String(value);
+    }
 }
 
 function updateValidity(source, valid) {
@@ -114,7 +118,13 @@ function updateValidity(source, valid) {
     }
 }
 
-function updateBooleanState(source, name, value) {
+function updateBooleanState(source, scope, name, value) {
+    for (const target of targetsFor(scope, name)) {
+        if (target instanceof HTMLInputElement && target.type === "checkbox")
+            target.checked = value;
+        else
+            target.hidden = !value;
+    }
     const ariaName = `aria-${name.replaceAll("_", "-")}`;
     if (source.hasAttribute(ariaName))
         source.setAttribute(ariaName, value ? "true" : "false");
@@ -133,7 +143,7 @@ function commitScalarState(
     const value = resultType === "b" ? (result !== 0 ? 1 : 0) : result;
     state.set(stateKey(resultType, name), value);
     if (resultType === "b")
-        updateBooleanState(source, name, value !== 0);
+        updateBooleanState(source, scope, name, value !== 0);
     else
         updateText(scope, name, value);
     return true;

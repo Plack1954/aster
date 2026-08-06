@@ -57,7 +57,9 @@ port=$(head -n 1 "$port_file")
 page=$(curl -fsS "http://127.0.0.1:${port}/")
 grep -q 'data-aster-event="click|Increment|l|l:count"' <<<"$page"
 grep -q 'data-aster-event="click|IncrementLater|L|l:count"' <<<"$page"
-grep -q 'data-aster-event="click|DecreaseReactive|A|l:value"' <<<"$page"
+grep -q 'data-aster-event="click|DecreaseReactive|a|l:value"' <<<"$page"
+test "$(grep -o 'name="value"' <<<"$page" | wc -l)" -ge 2
+grep -q 'name="positive"' <<<"$page"
 test "$(curl -fsS \
     "http://127.0.0.1:${port}/browser/browser_http_server.wasm" |
     wc -c)" -gt 0

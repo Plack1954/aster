@@ -47,7 +47,8 @@ or export adapter. Supported experiments cover:
 - owned string results and deterministic drops;
 - direct owned `Html` results;
 - supported typed patch structs;
-- text, ARIA, visibility, and controlled-property updates;
+- one-to-many named text projections and named Boolean visibility or checkbox
+  projections, alongside ARIA and controlled-property updates;
 - island-local persistent scalar state initialized from SSR output;
 - multiple isolated component instances;
 - state shared by handlers in one semantic scope;
@@ -155,6 +156,12 @@ Risks:
 - conditional interfaces may require too much projection wiring.
 
 This remains the baseline against which richer mechanisms should be measured.
+A small derived-counter trial found that one patch can cleanly update primary
+state, derived numbers, derived text, and conditional visibility while
+preserving the component DOM. Allowing one field to project to every matching
+named target removes duplicate patch fields. This is sufficient evidence to
+continue improving statically known projections; it is not evidence that a
+runtime signal graph is needed.
 
 ### Statically compiled fine-grained projections
 
