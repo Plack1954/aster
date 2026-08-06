@@ -263,10 +263,12 @@ static void check_html_event_handler(
             if (!(field_type->kind == TYPE_BOOL ||
                   is_signed_integer(field_type) ||
                   is_unsigned_integer(field_type) ||
-                  field_type->kind == TYPE_STRING))
+                  field_type->kind == TYPE_STRING ||
+                  web_handler_standard_html_type(
+                      field_type, "KeyedRemove")))
                 lang_diag(checker->diagnostics,
                           state->as.structure.fields[field].span,
-                          "projection-state field `%s` must be Boolean, integer, or `string`",
+                          "projection-state field `%s` must be Boolean, integer, `string`, or `KeyedRemove`",
                           state->as.structure.fields[field].name);
         }
     }

@@ -188,6 +188,14 @@ static bool web_projection_state_type(const IrType *type) {
            strcmp(type->name + name_length - suffix_length, suffix) == 0;
 }
 
+static bool web_standard_html_type(
+    const IrType *type, const char *name) {
+    return type != NULL && type->shape == IR_TYPE_STRUCT &&
+           type->module_name != NULL &&
+           strcmp(type->module_name, "Aster::Html") == 0 &&
+           type->name != NULL && strcmp(type->name, name) == 0;
+}
+
 static bool web_parameter_is_string(const IrType *type) {
     return type->shape == IR_TYPE_STRING_VIEW ||
            (type->shape == IR_TYPE_BUILTIN_OBJECT &&
@@ -288,6 +296,9 @@ static void emit_projection_export_wrapper(
                  field_type->shape == IR_TYPE_UNSIGNED_INT ||
                  field_type->shape == IR_TYPE_CHAR)
             fputs("8U;\n", emitter->output);
+        else if (web_standard_html_type(field_type, "KeyedRemove"))
+            fprintf(emitter->output,
+                    "result.f%zu.f0->length;\n", field);
         else
             fprintf(emitter->output,
                     "result.f%zu->length;\n", field);
@@ -309,7 +320,8 @@ static void emit_projection_export_wrapper(
         char code = field_type->shape == IR_TYPE_BOOL ? 'b' :
             (field_type->shape == IR_TYPE_SIGNED_INT ||
              field_type->shape == IR_TYPE_UNSIGNED_INT ||
-             field_type->shape == IR_TYPE_CHAR) ? 'l' : 'o';
+             field_type->shape == IR_TYPE_CHAR) ? 'l' :
+            web_standard_html_type(field_type, "KeyedRemove") ? 'r' : 'o';
         fprintf(emitter->output,
                 "    *cursor++ = '%c';\n"
                 "    *cursor++ = %zuU;\n"
@@ -321,6 +333,11 @@ static void emit_projection_export_wrapper(
         } else if (code == 'l') {
             fputs("    aster_projection_write_u32(&cursor, 8U);\n",
                   emitter->output);
+        } else if (code == 'r') {
+            fprintf(emitter->output,
+                    "    aster_projection_write_u32(&cursor, "
+                    "(uint32_t)result.f%zu.f0->length);\n",
+                    field);
         } else {
             fprintf(emitter->output,
                     "    aster_projection_write_u32(&cursor, "
@@ -337,6 +354,11 @@ static void emit_projection_export_wrapper(
             fprintf(emitter->output,
                     "    aster_projection_write_u64(&cursor, "
                     "(uint64_t)(int64_t)result.f%zu);\n", field);
+        } else if (code == 'r') {
+            fprintf(emitter->output,
+                    "    memcpy(cursor, result.f%zu.f0->data, "
+                    "result.f%zu.f0->length); cursor += result.f%zu.f0->length;\n",
+                    field, field, field);
         } else {
             fprintf(emitter->output,
                     "    memcpy(cursor, result.f%zu->data, "

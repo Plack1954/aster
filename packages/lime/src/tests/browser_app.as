@@ -33,6 +33,16 @@ public struct CounterProjectionState
     string className;
 }
 
+public struct RowSelectionProjectionState
+{
+    int selectedId;
+    string selectedLabel;
+    string firstClass;
+    string secondClass;
+    string thirdClass;
+    KeyedRemove removal;
+}
+
 private extern Task Task.Delay(int milliseconds);
 
 public int Increment(int count)
@@ -116,6 +126,33 @@ public CounterProjectionState DecreaseProjected(int count)
     return CounterProjection(count - 1);
 }
 
+private RowSelectionProjectionState InitialRowSelection()
+{
+    return new()
+    {
+        selectedId = 1,
+        selectedLabel = "Selected row 1",
+        firstClass = "selected",
+        secondClass = "",
+        thirdClass = "",
+        removal = RemoveKey("projection-row-unused")
+    };
+}
+
+public RowSelectionProjectionState SelectSecondAndRemoveFirst(int selectedId)
+{
+    int nextId = selectedId == 1 ? 2 : selectedId;
+    return new()
+    {
+        selectedId = nextId,
+        selectedLabel = $"Selected row {nextId}",
+        firstClass = "",
+        secondClass = "selected",
+        thirdClass = "",
+        removal = RemoveKey("projection-row-1")
+    };
+}
+
 public bool ValidateName(string name)
 {
     return name.Length >= 2;
@@ -165,6 +202,7 @@ public Html BrowserPage(Html browserLoader)
 {
     QueryProjection initialQuery = ProjectQuery("");
     CounterProjectionState initialCounter = CounterProjection(1);
+    RowSelectionProjectionState initialRows = InitialRowSelection();
     return <main>
         <h1>Lime Browser 0.1</h1>
         <section id="counter-island">
@@ -214,6 +252,40 @@ public Html BrowserPage(Html browserLoader)
                 project_disabled=initialCounter.disabled
                 onclick=DecreaseProjected
             >Decrease projected</button>
+        </section>
+        <section id="compiled-row-transition">
+            <h2>Composed keyed projection trial</h2>
+            <output project_text=initialRows.selectedId>
+                {initialRows.selectedId}
+            </output>
+            <output project_text=initialRows.selectedLabel>
+                {initialRows.selectedLabel}
+            </output>
+            <ul id="projection-row-list">
+                <li
+                    id="projection-row-1"
+                    project_class=initialRows.firstClass
+                >First row</li>
+                <li
+                    id="projection-row-2"
+                    project_class=initialRows.secondClass
+                >
+                    Second row
+                    <input
+                        id="projection-row-input"
+                        value="browser-owned value"
+                    />
+                </li>
+                <li
+                    id="projection-row-3"
+                    project_class=initialRows.thirdClass
+                >Third row</li>
+            </ul>
+            <button
+                type="button"
+                aria-controls="projection-row-list"
+                onclick=SelectSecondAndRemoveFirst
+            >Select second and remove first</button>
         </section>
         <form
             id="reactive-query"

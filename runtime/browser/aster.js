@@ -258,7 +258,7 @@ function aggregateString(
 }
 
 function applyProjectionBatch(
-    handle, scope, state, exports, memory
+    handle, source, scope, state, exports, memory
 ) {
     if (handle === 0) throw new Error("Aster projection batch is null");
     try {
@@ -297,7 +297,7 @@ function applyProjectionBatch(
                 if (payloadLength !== 8)
                     throw new Error("Aster integer projection is malformed");
                 value = view.getBigInt64(offset, true);
-            } else if (type === "o") {
+            } else if (type === "o" || type === "r") {
                 value = decoder.decode(
                     bytes.subarray(offset, offset + payloadLength)
                 );
@@ -327,7 +327,26 @@ function applyProjectionBatch(
                 !["t", "d", "c"].includes(kind))
                 throw new Error(`Aster projection type mismatch: ${kind}:${field}`);
         }
+        const controlled = controlledTarget(source);
+        const removalKeys = new Set();
+        for (const {type, value} of records) {
+            if (type !== "r") continue;
+            const item = document.getElementById(value);
+            if (controlled === null || item === null ||
+                item.parentElement !== controlled || removalKeys.has(value))
+                throw new Error(
+                    `Aster projection cannot remove keyed item: ${value}`
+                );
+            removalKeys.add(value);
+        }
         for (const {type, name, value} of records) {
+            if (type === "r") {
+                if (!removeControlledKey(source, state, value))
+                    throw new Error(
+                        `Aster projection could not remove keyed item: ${value}`
+                    );
+                continue;
+            }
             state.set(stateKey(type, name), value);
             for (const target of targets) {
                 const [kind, field] = target.dataset.asterProject.split(":");
@@ -564,7 +583,8 @@ export async function hydrateAster({wasmUrl, root = document}) {
             }
             if (resultType === "p") {
                 applyProjectionBatch(
-                    Number(result), scope, state, instance.exports, memory
+                    Number(result), source, scope, state,
+                    instance.exports, memory
                 );
             } else if (resultType === "o") {
                 const message = decodeOwnedString(

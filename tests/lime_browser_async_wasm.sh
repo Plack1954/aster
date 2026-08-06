@@ -10,3 +10,4 @@ rm -rf "$output_directory"
     packages/lime/aster.toml "$output_directory" browser_http_server
 "$node" tests/lime_browser_async_integration.mjs \
     "$output_directory/browser_http_server.wasm"
+python3 tests/lime_projection_browser.py "$output_directory"

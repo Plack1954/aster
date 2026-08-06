@@ -30,8 +30,8 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 9.4 KB gzip versus 41.9 KB for the compared Vue client after adding the
-  experimental batch decoder;
+- 9.7 KB gzip versus 41.9 KB for the compared Vue client after adding the
+  experimental batch decoder and structural batch validation;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
 
@@ -429,16 +429,34 @@ that every projected DOM node retains identity. Its Node integration verifies
 that four state fields arrive in one batch and that no per-field result exports
 exist.
 
-This validates the batch and retained-part architecture, not the temporary
-source syntax. Current prototype limits are intentional: projection handlers
-are synchronous, state fields are flat Boolean/integer/string values, text
-initialization is still written as an ordinary child expression, and the
-`ProjectionState` suffix is a marker rather than a final region declaration.
-Async batches, keyed item-local parts, recursive transition composition, and a
-final explicit state-boundary spelling remain to be designed.
+A second Chrome trial now composes those scalar records with a standard
+`KeyedRemove` record in the same owned batch. Selecting the second row updates
+its class and the region label while removing the first keyed row. The retained
+second and third row nodes, a nested input node, and the input's browser-edited
+value all survive. The runtime validates every projection and removal target
+before applying any record.
 
-The generic decoder increased the comparison client from 8.8 KB to 9.4 KB
-gzip. A future production implementation should tree-shake the decoder from
+That experiment also exposed an important source-model problem. The temporary
+flat prototype puts `KeyedRemove` directly in the `ProjectionState`, forcing the
+initial render value to contain a meaningless removal. This is operationally
+correct because initial state is rendered rather than applied as a transition,
+but it is not an acceptable public model. Persistent state and one-shot effects
+must be distinct, probably through the nested `TableTransition { state, rows }`
+shape described above. We should implement recursive batch lowering rather than
+add more structural fields to projection state.
+
+This validates one-batch scalar/structural composition and the retained-part
+architecture, not the temporary source syntax. Current prototype limits are
+intentional: projection handlers are synchronous, persistent state fields are
+flat Boolean/integer/string values, only nested `KeyedRemove` has been exercised,
+text initialization is still written as an ordinary child expression, and the
+`ProjectionState` suffix is a marker rather than a final region declaration.
+Async batches, true keyed item-local plans, recursive transition composition,
+and a final explicit state-boundary spelling remain to be designed.
+
+The generic decoder and first structural record increased the comparison
+client from 8.8 KB to 9.7 KB gzip. A future production implementation should
+tree-shake the decoder from
 applications without projection-state handlers.
 
 ## Stop criteria
