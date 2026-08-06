@@ -11,6 +11,8 @@ int main()
     scores.Add("Lime", 20);
     if (scores.TryAdd("Aster", 999)) { return 16; }
     if (!scores.TryAdd("Fresh", 25)) { return 17; }
+    if (scores.KeyAt(0) != "Aster" || scores.ValueAt(1) != 20)
+        { return 39; }
     if (scores["Aster"] != 10 || scores["Fresh"] != 25) { return 18; }
     if (scores.Count != 3) { return 2; }
     if (!scores.ContainsKey("Aster")) { return 3; }

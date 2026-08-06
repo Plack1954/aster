@@ -1018,6 +1018,13 @@ add_aster_generated_c_test(
     json_document_surface_generated_c
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/json_document_surface.as
     aster_json_document_surface)
+add_test(NAME typed_json_unsupported_diagnostic
+    COMMAND lang check tests/checker/typed_json_unsupported.as)
+set_tests_properties(typed_json_unsupported_diagnostic PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+    PASS_REGULAR_EXPRESSION
+        "typed JSON does not support `Dictionary<int, int>`")
 add_test(NAME custom_indexer_surface_vm
     COMMAND lang run tests/custom_indexer_surface.as)
 set_tests_properties(custom_indexer_surface_vm PROPERTIES

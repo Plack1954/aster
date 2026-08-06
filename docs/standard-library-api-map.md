@@ -323,6 +323,8 @@ The first bounded dictionary surface is implemented in the VM and generated C:
 | `values[key]` | same | Checked read and insert-or-replace assignment |
 | `values.Remove(key)` | same | Exact Boolean result |
 | `values.Clear()` | same | Exact |
+| `values.KeyAt(index)` | no direct equivalent | Checked key copy by dense logical index |
+| `values.ValueAt(index)` | no direct equivalent | Checked value copy by dense logical index |
 
 Keys are currently limited to scalar, character, `string`, and raw-pointer
 types with defined built-in equality. The VM and generated C keep dense
@@ -331,7 +333,9 @@ time key lookup while retaining deterministic cleanup and copying. Dictionary
 assignment performs an independent value copy, including keys and values.
 `Keys` and `Values` remain pending because .NET exposes live read-only
 collection views. Aster will not disguise copied `List<T>` snapshots under
-those names.
+those names. `KeyAt` and `ValueAt` are bounded Aster extensions used for
+allocation-free indexed traversal; structural mutation can change the logical
+order, so callers must not treat an index as a stable key identity.
 
 ### `HashSet<T>`
 
@@ -555,10 +559,10 @@ The public reference is `System.Text.Json`:
 - `Utf8JsonWriter`
 - converter support
 
-Aster has no CLR reflection. Typed serialization therefore requires an
-approved implementation strategy before `Deserialize<T>` is promised. Valid
-options may include explicit converters, compiler-emitted type metadata, or a
-limited structural facility, but none is selected by this map.
+Aster has no CLR reflection. Each concrete call to generic `Serialize<T>` or
+`Deserialize<T>` is monomorphized, and the checker generates direct typed code
+for that concrete shape before IR lowering. There is no runtime field lookup,
+type metadata registry, or reflection fallback.
 
 The parser and DOM can be implemented independently of that decision and
 should preserve UTF-8 input rather than converting through UTF-16.
@@ -567,11 +571,14 @@ Implemented DOM slice:
 
 - `JsonDocument.Parse(string)` and `RootElement`;
 - `JsonElement.Parse(string)`, `ValueKind`, array indexing, `GetProperty`,
-  `GetPropertyCount`, and `GetArrayLength`;
+  `GetPropertyCount`, indexed `GetPropertyName`/`GetPropertyAt`, and
+  `GetArrayLength`;
 - `GetString`, `GetBoolean`, the supported integral and floating-point
   getters, `Clone`, and `GetRawText`;
-- bounded `JsonSerializer.Serialize` overloads for strings, nullable strings,
-  Boolean and numeric scalars, and `JsonElement`;
+- compiler-generated `JsonSerializer.Serialize<T>` and `Deserialize<T>` for
+  strings, Boolean and numeric scalars, payloadless enums, `JsonElement`,
+  `Option<T>`, `List<T>`, `Dictionary<string, T>`, and structs composed from
+  supported fields;
 - `JsonWriter`, an Aster-owned forward-only text writer with structural
   object/array validation, property names, escaped strings, Boolean/null and
   numeric values, and validated `JsonElement` insertion;
@@ -583,8 +590,13 @@ Array indexing uses the CLR indexer member name `Item`, so an ordinary Aster
 member supplies `element[index]` without a JSON-specific compiler rule.
 `JsonElement.TryGetProperty(string, out JsonElement)` uses the C#-shaped API
 and returns `JsonValueKind.Undefined` through the output for a missing member.
-Generic typed serialization remains deliberately unimplemented until its
-non-reflection strategy is settled.
+Struct property names are their source field names. Missing required fields,
+wrong JSON kinds, invalid enum names, duplicate dictionary keys, and numeric
+parse failures raise an exception; extra object properties are ignored.
+Classes, payload-bearing unions, non-string-key dictionaries, and custom naming
+or converter policies are intentionally rejected at compile time in this
+bounded first version. `Deserialize<T>` normally infers `T` from its expected
+result type, for example `User user = JsonSerializer.Deserialize(json);`.
 
 `JsonWriter` deliberately owns a `StringBuilder` and returns one completed JSON
 string; it is the bounded intermediate needed by Lime today. The distinct
@@ -658,6 +670,6 @@ location only.
    (implemented; additional overloads remain demand-driven)
 7. Add `Dictionary`, `HashSet`, `Queue`, and `Stack`.
 8. Add date/time.
-9. Settle typed JSON strategy, then implement `System.Text.Json`-shaped APIs.
+9. Extend the compiler-generated typed JSON subset only from concrete use cases.
 10. Use Nook to measure remaining application ceremony before expanding the
     surface further.

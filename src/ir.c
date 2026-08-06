@@ -807,6 +807,9 @@ IrValueId ir_emit_synthetic_native_call(
     const Type *result_type, const IrValueId *operands,
     size_t operand_count, bool borrow_first,
     LangSpan span);
+static IrValueId emit_plain_clone(
+    IrBuilder *builder, const Type *type,
+    IrValueId source, LangSpan span);
 
 static void ir_set_native_call_descriptor(
     IrBuilder *builder, IrInstruction *call, bool compiler_generated
@@ -887,6 +890,8 @@ static bool builtin_borrows_first_place(const char *name) {
             strcmp(name, "Dictionary::EnsureCapacity") == 0 ||
             strcmp(name, "Dictionary::TrimExcess") == 0 ||
             strcmp(name, "Dictionary::Capacity") == 0 ||
+            strcmp(name, "Dictionary::KeyAt") == 0 ||
+            strcmp(name, "Dictionary::ValueAt") == 0 ||
             strcmp(name, "Queue::Enqueue") == 0 ||
             strcmp(name, "Queue::Dequeue") == 0 ||
             strcmp(name, "Queue::Peek") == 0 ||
@@ -1511,6 +1516,40 @@ static IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         IrValueId copied = ir_emit_recursive_copy(
             builder, expr->type, mapped->result,
             expr->span, false);
+        IrInstruction *discard = ir_append_instruction(
+            builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+            &dictionary, 1U, expr->span);
+        if (discard != NULL)
+            discard->auxiliary = borrowed_dictionary ? 1U : 0U;
+        return copied;
+    }
+    if (callee_name != NULL &&
+        (strcmp(callee_name, "Dictionary::KeyAt") == 0 ||
+         strcmp(callee_name, "Dictionary::ValueAt") == 0) &&
+        expr->as.call.arguments.count == 2U) {
+        const Expr *dictionary_expr = expr->as.call.arguments.items[0];
+        bool borrowed_dictionary = false;
+        IrValueId dictionary = lower_borrowed_collection_place(
+            builder, dictionary_expr, &borrowed_dictionary);
+        if (dictionary == IR_INVALID_ID) return IR_INVALID_ID;
+        IrValueId index = ir_lower_expr(
+            builder, expr->as.call.arguments.items[1]);
+        IrValueId operands[2] = {dictionary, index};
+        IrTypeId result_type = ir_intern_type(builder->module, expr->type);
+        IrInstruction *element = ir_append_instruction(
+            builder,
+            strcmp(callee_name, "Dictionary::KeyAt") == 0
+                ? IR_OP_DICTIONARY_KEY_BORROW
+                : IR_OP_DICTIONARY_VALUE_BORROW,
+            result_type, operands, 2U, expr->span);
+        if (element == NULL) return IR_INVALID_ID;
+        IrValueId copied = ir_type_requires_custom_copy(builder, expr->type)
+            ? ir_emit_recursive_copy(
+                builder, expr->type, element->result, expr->span, false)
+            : builder->module->types[result_type].copy_policy != IR_COPY_TRIVIAL
+                ? emit_plain_clone(
+                    builder, expr->type, element->result, expr->span)
+                : element->result;
         IrInstruction *discard = ir_append_instruction(
             builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
             &dictionary, 1U, expr->span);

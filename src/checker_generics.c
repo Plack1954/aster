@@ -6,6 +6,448 @@
 
 static Expr *clone_generic_expr(Module *module, const Expr *source);
 
+static void *json_node(Checker *checker, size_t size) {
+    if (size == 0U) size = 1U;
+    void *node = lang_arena_alloc(&checker->module->arena, size);
+    memset(node, 0, size);
+    return node;
+}
+
+static Expr *json_name(Checker *checker, LangSpan span, const char *name) {
+    Expr *expr = json_node(checker, sizeof(*expr));
+    expr->kind = EXPR_NAME;
+    expr->span = span;
+    expr->as.name = name;
+    return expr;
+}
+
+static Expr *json_string(
+    Checker *checker, LangSpan span, const char *value
+) {
+    Expr *expr = json_node(checker, sizeof(*expr));
+    expr->kind = EXPR_STRING;
+    expr->span = span;
+    expr->as.string.data = value;
+    expr->as.string.length = strlen(value);
+    return expr;
+}
+
+static Expr *json_field(
+    Checker *checker, LangSpan span, Expr *object, const char *field
+) {
+    Expr *expr = json_node(checker, sizeof(*expr));
+    expr->kind = EXPR_FIELD;
+    expr->span = span;
+    expr->as.field.object = object;
+    expr->as.field.field = field;
+    return expr;
+}
+
+static Expr *json_binary(
+    Checker *checker, LangSpan span, TokenKind op,
+    Expr *left, Expr *right
+) {
+    Expr *expr = json_node(checker, sizeof(*expr));
+    expr->kind = EXPR_BINARY;
+    expr->span = span;
+    expr->as.binary.op = op;
+    expr->as.binary.left = left;
+    expr->as.binary.right = right;
+    return expr;
+}
+
+static Expr *json_call(
+    Checker *checker, LangSpan span, const char *name,
+    Expr **arguments, ParameterMode *modes, size_t count
+) {
+    Expr *expr = json_node(checker, sizeof(*expr));
+    expr->kind = EXPR_CALL;
+    expr->span = span;
+    expr->as.call.callee = json_name(checker, span, name);
+    expr->as.call.arguments.items = arguments;
+    expr->as.call.arguments.count = count;
+    expr->as.call.argument_modes = modes;
+    return expr;
+}
+
+static Expr *json_call_values(
+    Checker *checker, LangSpan span, const char *name,
+    Expr **arguments, size_t count
+) {
+    ParameterMode *modes = json_node(
+        checker, count * sizeof(*modes));
+    return json_call(checker, span, name, arguments, modes, count);
+}
+
+static Expr *json_writer_call(
+    Checker *checker, LangSpan span, const char *name,
+    Expr *value
+) {
+    size_t count = value == NULL ? 1U : 2U;
+    Expr **arguments = json_node(
+        checker, count * sizeof(*arguments));
+    ParameterMode *modes = json_node(
+        checker, count * sizeof(*modes));
+    arguments[0] = json_name(checker, span, "writer");
+    modes[0] = PARAMETER_MODE_MUTABLE_REFERENCE;
+    if (value != NULL) arguments[1] = value;
+    return json_call(checker, span, name, arguments, modes, count);
+}
+
+static Stmt *json_expression_statement(
+    Checker *checker, LangSpan span, Expr *expression
+) {
+    Stmt *stmt = json_node(checker, sizeof(*stmt));
+    stmt->kind = STMT_EXPR;
+    stmt->span = span;
+    stmt->expression_terminated = true;
+    stmt->as.expression = expression;
+    return stmt;
+}
+
+static Stmt *json_return_statement(
+    Checker *checker, LangSpan span, Expr *value
+) {
+    Stmt *stmt = json_node(checker, sizeof(*stmt));
+    stmt->kind = STMT_RETURN;
+    stmt->span = span;
+    stmt->as.return_value = value;
+    return stmt;
+}
+
+static Stmt *json_let_statement(
+    Checker *checker, LangSpan span, const char *name,
+    const char *type_name, Expr *value
+) {
+    Stmt *stmt = json_node(checker, sizeof(*stmt));
+    stmt->kind = STMT_LET;
+    stmt->span = span;
+    stmt->expression_terminated = true;
+    stmt->as.let.name = name;
+    stmt->as.let.type_name = type_name;
+    stmt->as.let.mutable_ = false;
+    stmt->as.let.value = value;
+    return stmt;
+}
+
+static Stmt *json_if_statement(
+    Checker *checker, LangSpan span, Expr *condition, Stmt *then_branch
+) {
+    Stmt *stmt = json_node(checker, sizeof(*stmt));
+    stmt->kind = STMT_IF;
+    stmt->span = span;
+    stmt->as.if_.condition = condition;
+    stmt->as.if_.then_branch = then_branch;
+    return stmt;
+}
+
+static Stmt *json_invalid_enum_return(
+    Checker *checker, LangSpan span
+) {
+    return json_return_statement(
+        checker, span,
+        json_call(checker, span, "JsonInvalidEnum", NULL, NULL, 0U));
+}
+
+static Stmt *json_block(
+    Checker *checker, LangSpan span, Stmt **items, size_t count
+) {
+    Stmt *stmt = json_node(checker, sizeof(*stmt));
+    stmt->kind = STMT_BLOCK;
+    stmt->span = span;
+    stmt->as.block.items = items;
+    stmt->as.block.count = count;
+    return stmt;
+}
+
+static bool json_element_type(const Type *type) {
+    return type != NULL && type->kind == TYPE_NAMED &&
+           type->declaration != NULL &&
+           type->declaration->kind == DECL_STRUCT &&
+           strcmp(type->declaration->as.structure.name,
+                  "JsonElement") == 0 &&
+           type->declaration->module_name != NULL &&
+           strcmp(type->declaration->module_name,
+                  "System::Text::Json") == 0;
+}
+
+static const char *json_writer_method(const Type *type) {
+    switch (type->kind) {
+        case TYPE_STRING: return "JsonWriter::WriteStringValue";
+        case TYPE_BOOL: return "JsonWriter::WriteBooleanValue";
+        case TYPE_I8: case TYPE_I16: case TYPE_I32: case TYPE_I64:
+        case TYPE_U8: case TYPE_U16: case TYPE_U32: case TYPE_U64:
+        case TYPE_ISIZE: case TYPE_USIZE:
+        case TYPE_F32: case TYPE_F64:
+            return "JsonWriter::WriteNumberValue";
+        default: return NULL;
+    }
+}
+
+static const char *json_reader_method(const Type *type) {
+    switch (type->kind) {
+        case TYPE_STRING: return "JsonReadRequiredString";
+        case TYPE_BOOL: return "JsonElement::GetBoolean";
+        case TYPE_I8: return "JsonElement::GetSByte";
+        case TYPE_I16: return "JsonElement::GetInt16";
+        case TYPE_I32: return "JsonElement::GetInt32";
+        case TYPE_I64: return "JsonElement::GetInt64";
+        case TYPE_U8: return "JsonElement::GetByte";
+        case TYPE_U16: return "JsonElement::GetUInt16";
+        case TYPE_U32: return "JsonElement::GetUInt32";
+        case TYPE_U64: return "JsonElement::GetUInt64";
+        case TYPE_ISIZE: return "JsonElement::GetNInt";
+        case TYPE_USIZE: return "JsonElement::GetNUInt";
+        case TYPE_F32: return "JsonElement::GetSingle";
+        case TYPE_F64: return "JsonElement::GetDouble";
+        default: return NULL;
+    }
+}
+
+static Stmt *synthesize_json_write_body(
+    Checker *checker, Type *type, LangSpan span
+) {
+    const char *method = json_writer_method(type);
+    if (method != NULL) {
+        Stmt **items = json_node(checker, sizeof(*items));
+        items[0] = json_expression_statement(
+            checker, span, json_writer_call(
+                checker, span, method,
+                json_name(checker, span, "value")));
+        return json_block(checker, span, items, 1U);
+    }
+    if (json_element_type(type)) {
+        Stmt **items = json_node(checker, sizeof(*items));
+        items[0] = json_expression_statement(
+            checker, span, json_writer_call(
+                checker, span, "JsonWriter::WriteValue",
+                json_name(checker, span, "value")));
+        return json_block(checker, span, items, 1U);
+    }
+    if (type->kind == TYPE_VEC || type->kind == TYPE_OPTION ||
+        (type->kind == TYPE_DICTIONARY &&
+         type->element->kind == TYPE_STRING)) {
+        Expr **arguments = json_node(
+            checker, 2U * sizeof(*arguments));
+        ParameterMode *modes = json_node(
+            checker, 2U * sizeof(*modes));
+        arguments[0] = json_name(checker, span, "writer");
+        arguments[1] = json_name(checker, span, "value");
+        modes[0] = PARAMETER_MODE_MUTABLE_REFERENCE;
+        Stmt **items = json_node(checker, sizeof(*items));
+        items[0] = json_expression_statement(
+            checker, span, json_call(
+                checker, span,
+                type->kind == TYPE_VEC ? "JsonWriteList" :
+                type->kind == TYPE_OPTION ? "JsonWriteOption" :
+                "JsonWriteDictionary",
+                arguments, modes, 2U));
+        return json_block(checker, span, items, 1U);
+    }
+    if (type->kind == TYPE_NAMED && type->declaration != NULL &&
+        type->declaration->kind == DECL_ENUM &&
+        !type->declaration->as.enumeration.is_union) {
+        const Decl *decl = type->declaration;
+        size_t count = decl->as.enumeration.variant_count;
+        Stmt *match = json_node(checker, sizeof(*match));
+        match->kind = STMT_MATCH;
+        match->span = span;
+        match->as.match_.value = json_name(checker, span, "value");
+        match->as.match_.arms = json_node(
+            checker, count * sizeof(*match->as.match_.arms));
+        match->as.match_.arm_count = count;
+        for (size_t i = 0U; i < count; ++i) {
+            const char *variant =
+                decl->as.enumeration.variants[i].name;
+            size_t length = strlen(decl->as.enumeration.name) +
+                            strlen(variant) + 3U;
+            char *path = lang_arena_alloc(
+                &checker->module->arena, length);
+            (void)snprintf(
+                path, length, "%s::%s",
+                decl->as.enumeration.name, variant);
+            MatchArm *arm = &match->as.match_.arms[i];
+            arm->variant = path;
+            arm->span = span;
+            Stmt **arm_items = json_node(
+                checker, sizeof(*arm_items));
+            arm_items[0] = json_expression_statement(
+                checker, span, json_writer_call(
+                    checker, span, "JsonWriter::WriteStringValue",
+                    json_string(checker, span, variant)));
+            arm->body = json_block(
+                checker, span, arm_items, 1U);
+        }
+        Stmt **items = json_node(checker, sizeof(*items));
+        items[0] = match;
+        return json_block(checker, span, items, 1U);
+    }
+    if (type->kind != TYPE_NAMED || type->declaration == NULL ||
+        type->declaration->kind != DECL_STRUCT)
+        return NULL;
+
+    const Decl *decl = type->declaration;
+    size_t field_count = decl->as.structure.field_count;
+    size_t statement_count = 2U + field_count * 2U;
+    Stmt **items = json_node(
+        checker, statement_count * sizeof(*items));
+    size_t next = 0U;
+    items[next++] = json_expression_statement(
+        checker, span, json_writer_call(
+            checker, span, "JsonWriter::WriteStartObject", NULL));
+    for (size_t i = 0U; i < field_count; ++i) {
+        const FieldDecl *field = &decl->as.structure.fields[i];
+        items[next++] = json_expression_statement(
+            checker, span, json_writer_call(
+                checker, span, "JsonWriter::WritePropertyName",
+                json_string(checker, span, field->name)));
+        Expr **arguments = json_node(
+            checker, 2U * sizeof(*arguments));
+        ParameterMode *modes = json_node(
+            checker, 2U * sizeof(*modes));
+        arguments[0] = json_name(checker, span, "writer");
+        modes[0] = PARAMETER_MODE_MUTABLE_REFERENCE;
+        arguments[1] = json_field(
+            checker, span,
+            json_name(checker, span, "value"), field->name);
+        items[next++] = json_expression_statement(
+            checker, span, json_call(
+                checker, span, "JsonWriteTyped",
+                arguments, modes, 2U));
+    }
+    items[next++] = json_expression_statement(
+        checker, span, json_writer_call(
+            checker, span, "JsonWriter::WriteEndObject", NULL));
+    return json_block(checker, span, items, next);
+}
+
+static Stmt *synthesize_json_read_body(
+    Checker *checker, Type *type, LangSpan span
+) {
+    Expr *value = NULL;
+    const char *method = json_reader_method(type);
+    if (method != NULL) {
+        Expr **arguments = json_node(
+            checker, sizeof(*arguments));
+        arguments[0] = json_name(checker, span, "jsonValue");
+        value = json_call_values(
+            checker, span, method, arguments, 1U);
+    } else if (json_element_type(type)) {
+        value = json_name(checker, span, "jsonValue");
+    } else if (type->kind == TYPE_VEC || type->kind == TYPE_OPTION ||
+               (type->kind == TYPE_DICTIONARY &&
+                type->element->kind == TYPE_STRING)) {
+        Expr **arguments = json_node(
+            checker, sizeof(*arguments));
+        arguments[0] = json_name(checker, span, "jsonValue");
+        value = json_call_values(
+            checker, span,
+            type->kind == TYPE_VEC ? "JsonReadList" :
+            type->kind == TYPE_OPTION ? "JsonReadOption" :
+            "JsonReadDictionary",
+            arguments, 1U);
+    } else if (type->kind == TYPE_NAMED && type->declaration != NULL &&
+               type->declaration->kind == DECL_ENUM &&
+               !type->declaration->as.enumeration.is_union) {
+        const Decl *decl = type->declaration;
+        size_t count = decl->as.enumeration.variant_count;
+        Stmt **items = json_node(
+            checker, (count + 2U) * sizeof(*items));
+        Expr **name_arguments = json_node(
+            checker, sizeof(*name_arguments));
+        name_arguments[0] = json_name(checker, span, "jsonValue");
+        items[0] = json_let_statement(
+            checker, span, "enumName", "string",
+            json_call_values(
+                checker, span, "JsonReadRequiredString",
+                name_arguments, 1U));
+        for (size_t i = 0U; i < count; ++i) {
+            const char *variant =
+                decl->as.enumeration.variants[i].name;
+            Expr *enum_value = json_field(
+                checker, span,
+                json_name(
+                    checker, span,
+                    decl->as.enumeration.name),
+                variant);
+            Stmt **return_items = json_node(
+                checker, sizeof(*return_items));
+            return_items[0] = json_return_statement(
+                checker, span, enum_value);
+            items[i + 1U] = json_if_statement(
+                checker, span,
+                json_binary(
+                    checker, span, TOK_EQUAL_EQUAL,
+                    json_name(checker, span, "enumName"),
+                    json_string(checker, span, variant)),
+                json_block(checker, span, return_items, 1U));
+        }
+        items[count + 1U] = json_invalid_enum_return(checker, span);
+        return json_block(checker, span, items, count + 2U);
+    } else if (type->kind == TYPE_NAMED && type->declaration != NULL &&
+               type->declaration->kind == DECL_STRUCT) {
+        const Decl *decl = type->declaration;
+        size_t count = decl->as.structure.field_count;
+        Expr *aggregate = json_node(checker, sizeof(*aggregate));
+        aggregate->kind = EXPR_STRUCT;
+        aggregate->span = span;
+        aggregate->as.structure.fields = json_node(
+            checker, count * sizeof(*aggregate->as.structure.fields));
+        aggregate->as.structure.field_count = count;
+        for (size_t i = 0U; i < count; ++i) {
+            const FieldDecl *field = &decl->as.structure.fields[i];
+            ElementProperty *property =
+                &aggregate->as.structure.fields[i];
+            property->name = field->name;
+            property->span = span;
+            Expr **property_arguments = json_node(
+                checker, 2U * sizeof(*property_arguments));
+            property_arguments[0] = json_name(
+                checker, span, "jsonValue");
+            property_arguments[1] = json_string(
+                checker, span, field->name);
+            Expr *property_element = json_call_values(
+                checker, span, "JsonElement::GetProperty",
+                property_arguments, 2U);
+            Expr **read_arguments = json_node(
+                checker, sizeof(*read_arguments));
+            read_arguments[0] = property_element;
+            property->value = json_call_values(
+                checker, span, "JsonReadTyped", read_arguments, 1U);
+        }
+        value = aggregate;
+    }
+    if (value == NULL) return NULL;
+    Stmt **items = json_node(checker, sizeof(*items));
+    items[0] = json_return_statement(checker, span, value);
+    return json_block(checker, span, items, 1U);
+}
+
+static void synthesize_typed_json_instance(
+    Checker *checker, const Decl *template_decl, Decl *instance,
+    Type *type, LangSpan use_span
+) {
+    if (template_decl->module_name == NULL ||
+        strcmp(template_decl->module_name, "System::Text::Json") != 0)
+        return;
+    const char *name = template_decl->as.function.name;
+    Stmt *body = NULL;
+    if (strcmp(name, "JsonWriteTyped") == 0)
+        body = synthesize_json_write_body(checker, type, use_span);
+    else if (strcmp(name, "JsonReadTyped") == 0)
+        body = synthesize_json_read_body(checker, type, use_span);
+    else
+        return;
+    if (body != NULL) {
+        instance->as.function.body = body;
+        return;
+    }
+    lang_diag(
+        checker->diagnostics, use_span,
+        "typed JSON does not support `%s`; supported shapes are scalars, payloadless enums, JsonElement, Option<T>, List<T>, Dictionary<string, T>, and structs with supported public fields",
+        type_display_name(checker, type));
+}
+
 static Stmt *clone_generic_stmt(Module *module, const Stmt *source) {
     if (source == NULL) return NULL;
     Stmt *result = lang_arena_alloc(&module->arena, sizeof(*result));
@@ -601,6 +1043,9 @@ static Decl *instantiate_generic_function(
     }
     instance->as.function.body = clone_generic_stmt(
         checker->module, template_decl->as.function.body);
+    if (argument_count == 1U)
+        synthesize_typed_json_instance(
+            checker, template_decl, instance, arguments[0], span);
 
     Decl **next = lang_arena_alloc(
         &checker->module->arena,

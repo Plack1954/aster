@@ -233,6 +233,9 @@ copies, and `FindAll` constructs an independent result.
 indexer reads and assignments. Its read-only `.Capacity`,
 `.EnsureCapacity(capacity)`, and both `.TrimExcess()` forms expose predictable
 storage control using Aster `nuint` collection sizes.
+`.KeyAt(index)` and `.ValueAt(index)` return checked value copies from the
+dictionary's dense logical storage. They support allocation-free traversal;
+indices are not stable across structural mutation.
 Indexer assignment replaces an existing value or inserts a new key. The
 initial implementation accepts scalar, character, `string`, and raw-pointer
 keys with built-in equality and has matching VM and generated-C hash-table

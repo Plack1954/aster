@@ -1,5 +1,29 @@
 using System.Text.Json;
 
+public struct JsonAddress
+{
+    string City;
+    int Postcode;
+}
+
+public enum JsonRole
+{
+    Reader,
+    Author,
+}
+
+public struct JsonUser
+{
+    string Name;
+    int Age;
+    bool Active;
+    JsonRole Role;
+    JsonAddress Address;
+    string? Nickname;
+    List<int> Scores;
+    Dictionary<string, int> Attributes;
+}
+
 private bool Rejects(string json)
 {
     try
@@ -36,6 +60,9 @@ int main()
     JsonElement root = document.RootElement;
     if (root.ValueKind != JsonValueKind.Object) { return 1; }
     if (root.GetPropertyCount() != 10) { return 2; }
+    if (root.GetPropertyName(0) != "name" ||
+        root.GetPropertyAt(1).GetInt32() != 42)
+        { return 40; }
 
     string? name = root.GetProperty("name").GetString();
     if (name == null || name.Value != "Aster\nLang") { return 3; }
@@ -122,5 +149,39 @@ int main()
     if (JsonDocument.Parse(written).RootElement.GetProperty("items")
         .GetArrayLength() != 4) { return 36; }
     if (!JsonWriterRejectsInvalidOrder()) { return 37; }
+
+    List<int> scores = new();
+    scores.Add(7);
+    scores.Add(11);
+    Dictionary<string, int> attributes = new();
+    attributes.Add("level", 4);
+    attributes.Add("build", 9);
+    JsonUser user = new()
+    {
+        Name = "Aster",
+        Age = 3,
+        Active = true,
+        Role = JsonRole.Author,
+        Address = new() { City = "Melbourne", Postcode = 3000 },
+        Nickname = null,
+        Scores = scores,
+        Attributes = attributes
+    };
+    string typed = JsonSerializer.Serialize(user);
+    if (typed !=
+        "{\"Name\":\"Aster\",\"Age\":3,\"Active\":true,\"Role\":\"Author\",\"Address\":{\"City\":\"Melbourne\",\"Postcode\":3000},\"Nickname\":null,\"Scores\":[7,11],\"Attributes\":{\"level\":4,\"build\":9}}"
+    ) { return 38; }
+    JsonUser decoded = JsonSerializer.Deserialize(typed);
+    if (decoded.Name != "Aster" || decoded.Age != 3 ||
+        !decoded.Active || decoded.Role != JsonRole.Author ||
+        decoded.Address.City != "Melbourne" ||
+        decoded.Address.Postcode != 3000 || decoded.Nickname != null ||
+        decoded.Scores.Count != 2 || decoded.Scores[0] != 7 ||
+        decoded.Scores[1] != 11 || decoded.Attributes.Count != 2 ||
+        decoded.Attributes["level"] != 4 ||
+        decoded.Attributes["build"] != 9)
+    {
+        return 39;
+    }
     return 0;
 }

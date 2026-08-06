@@ -507,6 +507,8 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
         strcmp(expr->as.name, "Dictionary::EnsureCapacity") == 0 ||
         strcmp(expr->as.name, "Dictionary::TrimExcess") == 0 ||
         strcmp(expr->as.name, "Dictionary::Capacity") == 0 ||
+        strcmp(expr->as.name, "Dictionary::KeyAt") == 0 ||
+        strcmp(expr->as.name, "Dictionary::ValueAt") == 0 ||
         strcmp(expr->as.name, "Queue::New") == 0 ||
         strcmp(expr->as.name, "Queue::Enqueue") == 0 ||
         strcmp(expr->as.name, "Queue::Dequeue") == 0 ||
@@ -712,6 +714,10 @@ Type *checker_check_call(Checker *checker, Expr *expr) {
                 qualified = "Dictionary::TrimExcess";
             else if (strcmp(field->as.field.field, "Capacity") == 0)
                 qualified = "Dictionary::Capacity";
+            else if (strcmp(field->as.field.field, "KeyAt") == 0)
+                qualified = "Dictionary::KeyAt";
+            else if (strcmp(field->as.field.field, "ValueAt") == 0)
+                qualified = "Dictionary::ValueAt";
         } else if (receiver_type->kind == TYPE_HASH_SET) {
             if (strcmp(field->as.field.field, "Add") == 0)
                 qualified = "Dictionary::TryAdd";
@@ -1151,7 +1157,9 @@ static_call:
         strcmp(name, "Dictionary::EnsureCapacity") == 0 ||
         strcmp(name, "Dictionary::TrimExcess") == 0;
     builtin_borrow = builtin_borrow ||
-        strcmp(name, "Dictionary::Capacity") == 0;
+        strcmp(name, "Dictionary::Capacity") == 0 ||
+        strcmp(name, "Dictionary::KeyAt") == 0 ||
+        strcmp(name, "Dictionary::ValueAt") == 0;
     builtin_borrow = builtin_borrow ||
         strcmp(name, "Queue::Enqueue") == 0 ||
         strcmp(name, "Queue::Dequeue") == 0 ||
@@ -1295,6 +1303,9 @@ static_call:
                  i == 0U);
             builtin_place = builtin_place ||
                 (strcmp(name, "Dictionary::Capacity") == 0 && i == 0U);
+            builtin_place = builtin_place ||
+                ((strcmp(name, "Dictionary::KeyAt") == 0 ||
+                  strcmp(name, "Dictionary::ValueAt") == 0) && i == 0U);
             builtin_place = builtin_place ||
                 ((strcmp(name, "Queue::Enqueue") == 0 ||
                   strcmp(name, "Queue::Dequeue") == 0 ||
@@ -1456,6 +1467,10 @@ static_call:
                     expr->as.call.arguments.items[0]->type->error_type;
             else if ((strcmp(name, "Dictionary::EnsureCapacity") == 0 ||
                       strcmp(name, "Dictionary::TrimExcess") == 0) &&
+                     i == 1U)
+                checker->expected_type = &type_usize;
+            else if ((strcmp(name, "Dictionary::KeyAt") == 0 ||
+                      strcmp(name, "Dictionary::ValueAt") == 0) &&
                      i == 1U)
                 checker->expected_type = &type_usize;
             else if (strcmp(name, "Queue::Enqueue") == 0 && i == 1U &&
@@ -2223,6 +2238,31 @@ static_call:
             lang_diag(checker->diagnostics, expr->span,
                       "`Dictionary.Capacity` expects one Dictionary value");
         return &type_usize;
+    }
+    if (strcmp(name, "Dictionary::KeyAt") == 0 ||
+        strcmp(name, "Dictionary::ValueAt") == 0) {
+        bool key = strcmp(name, "Dictionary::KeyAt") == 0;
+        if (expr->as.call.arguments.count != 2U ||
+            expr->as.call.arguments.items[0]->type->kind != TYPE_DICTIONARY) {
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Dictionary.%s` expects a Dictionary and nuint index",
+                      key ? "KeyAt" : "ValueAt");
+            return &type_error;
+        }
+        (void)coerce_literal(checker, expr->as.call.arguments.items[1],
+                             &type_usize);
+        if (!same_type(expr->as.call.arguments.items[1]->type, &type_usize))
+            lang_diag(checker->diagnostics,
+                      expr->as.call.arguments.items[1]->span,
+                      "Dictionary index expects `nuint`, found `%s`",
+                      expr->as.call.arguments.items[1]->type->name);
+        Type *dictionary = expr->as.call.arguments.items[0]->type;
+        Type *result = key ? dictionary->element : dictionary->error_type;
+        if (!type_is_copyable(checker, result))
+            lang_diag(checker->diagnostics, expr->span,
+                      "`Dictionary::%s` cannot copy noncopyable type `%s`",
+                      key ? "KeyAt" : "ValueAt", result->name);
+        return result;
     }
     if (strcmp(name, "List::Add") == 0) {
         if (expr->as.call.arguments.count != 2U ||
