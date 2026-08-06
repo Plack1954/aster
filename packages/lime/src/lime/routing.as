@@ -146,6 +146,19 @@ public struct RoutePattern
         }
     }
 
+    public readonly bool HasParameter(string name)
+    {
+        foreach (RouteSegment segment in segments)
+        {
+            if (segment.kind != RouteSegmentKind.Literal &&
+                segment.value == name)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public Option<string> FirstLiteralSegment
     {
         get

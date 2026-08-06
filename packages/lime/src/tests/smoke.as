@@ -1434,6 +1434,124 @@ private bool EndpointMetadataWorks()
     return true;
 }
 
+struct BoundArticle
+{
+    string title;
+    int revision;
+}
+
+private Response BoundPair(RouteBinding organization, RouteBinding user)
+{
+    return Results.Text($"{organization.Value}:{user.Value}");
+}
+
+private Response BoundQuery(RouteBinding user, QueryBinding page)
+{
+    return Results.Text($"{user.Value}:{page.Value}");
+}
+
+private Response BoundHeader(RouteBinding user, HeaderBinding trace)
+{
+    return Results.Text($"{user.Value}:{trace.Value}");
+}
+
+private Response BoundJson(RouteBinding article, JsonBody body)
+{
+    BoundArticle value = body.Deserialize();
+    return Results.Text(
+        $"{article.Value}:{value.title}:{value.revision}"
+    );
+}
+
+private bool ExplicitEndpointBindingWorks()
+{
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    app.MapGet(
+        "/orgs/{organization}/users/{user}",
+        FromRoute("organization"), FromRoute("user"), BoundPair
+    ).WithName("BoundPair");
+    app.MapGet(
+        "/users/{user}/page", FromRoute("user"), FromQuery("page"),
+        BoundQuery
+    );
+    app.MapGet(
+        "/users/{user}/trace", FromRoute("user"), FromHeader("X-Trace"),
+        BoundHeader
+    );
+    app.MapPost(
+        "/articles/{article}", FromRoute("article"), FromJsonBody(),
+        BoundJson
+    );
+
+    if (!TextResponseEquals(app.Dispatch(request(
+        "GET", "/orgs/acme/users/42"
+    )), 200, "acme:42")) { return false; }
+    if (!TextResponseEquals(app.Dispatch(request(
+        "GET", "/users/42/page?page=3"
+    )), 200, "42:3")) { return false; }
+    if (app.Dispatch(request(
+        "GET", "/users/42/page"
+    )).StatusCode != StatusCodes.Status400BadRequest) { return false; }
+
+    Request headerRequest = RequestNewWithHeaders(
+        "GET", "/users/42/trace", "example.test", "", "", "",
+        "X-Trace\0abc\0"
+    );
+    if (!TextResponseEquals(
+        app.Dispatch(headerRequest), 200, "42:abc"
+    )) { return false; }
+
+    Request jsonRequest = RequestNew(
+        "POST", "/articles/7", "example.test", "application/json", "",
+        "{\"title\":\"Aster\",\"revision\":2}"
+    );
+    if (!TextResponseEquals(
+        app.Dispatch(jsonRequest), 200, "7:Aster:2"
+    )) { return false; }
+    if (app.Dispatch(request(
+        "POST", "/articles/7"
+    )).StatusCode != StatusCodes.Status400BadRequest) { return false; }
+
+    EndpointDataSource endpoints = app.Endpoints;
+    if (endpoints.Count != 4)
+    {
+        return false;
+    }
+    switch (endpoints.GetEndpoint(0).Name)
+    {
+        case Option.Some(name): {
+            if (name != "BoundPair") { return false; }
+        }
+        case Option.None: { return false; }
+    }
+
+    try
+    {
+        app.MapGet(
+            "/bad/{actual}", FromRoute("missing"), FromQuery("page"),
+            BoundQuery
+        );
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        if (error.Message.Length == 0) { return false; }
+    }
+    try
+    {
+        app.MapGet(
+            "/bad/{one}/{two}", FromRoute("one"), FromRoute("one"),
+            BoundPair
+        );
+        return false;
+    }
+    catch (ArgumentException error)
+    {
+        return error.Message.Length > 0;
+    }
+}
+
 private bool GroupMetadataWorks()
 {
     ApplicationOwner appOwner = NewApplication();
@@ -1618,6 +1736,10 @@ int main()
         return 1;
     }
     if (!EndpointMetadataWorks())
+    {
+        return 1;
+    }
+    if (!ExplicitEndpointBindingWorks())
     {
         return 1;
     }

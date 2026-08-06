@@ -636,6 +636,127 @@ public delegate Task<Response> AsyncRequestIntRouteHandler(Request request, int 
 public delegate Task<Response> AsyncRequestLongRouteHandler(Request request, long value);
 public delegate Task<Response> AsyncRequestBoolRouteHandler(Request request, bool value);
 
+public struct RouteBinding
+{
+    string Name;
+    string Value;
+}
+
+public struct QueryBinding
+{
+    string Name;
+    string Value;
+}
+
+public struct HeaderBinding
+{
+    string Name;
+    string Value;
+}
+
+public struct JsonBody
+{
+    string Value;
+}
+
+public RouteBinding FromRoute(string name)
+{
+    return new() { Name = name, Value = "" };
+}
+
+public QueryBinding FromQuery(string name)
+{
+    return new() { Name = name, Value = "" };
+}
+
+public HeaderBinding FromHeader(string name)
+{
+    return new() { Name = name, Value = "" };
+}
+
+public JsonBody FromJsonBody()
+{
+    return new() { Value = "" };
+}
+
+public T JsonBody.Deserialize<T>(JsonBody self)
+{
+    T value = JsonSerializer.Deserialize(self.Value);
+    return value;
+}
+
+public delegate Response RouteRouteBindingHandler(
+    RouteBinding first, RouteBinding second
+);
+public delegate Response RouteQueryBindingHandler(
+    RouteBinding route, QueryBinding query
+);
+public delegate Response RouteHeaderBindingHandler(
+    RouteBinding route, HeaderBinding header
+);
+public delegate Response RouteJsonBindingHandler(
+    RouteBinding route, JsonBody body
+);
+public delegate Task<Response> AsyncRouteRouteBindingHandler(
+    RouteBinding first, RouteBinding second
+);
+public delegate Task<Response> AsyncRouteQueryBindingHandler(
+    RouteBinding route, QueryBinding query
+);
+public delegate Task<Response> AsyncRouteHeaderBindingHandler(
+    RouteBinding route, HeaderBinding header
+);
+public delegate Task<Response> AsyncRouteJsonBindingHandler(
+    RouteBinding route, JsonBody body
+);
+
+struct RouteRouteBindingEndpoint
+{
+    string first;
+    string second;
+    RouteRouteBindingHandler handler;
+}
+struct RouteQueryBindingEndpoint
+{
+    string route;
+    string query;
+    RouteQueryBindingHandler handler;
+}
+struct RouteHeaderBindingEndpoint
+{
+    string route;
+    string header;
+    RouteHeaderBindingHandler handler;
+}
+struct RouteJsonBindingEndpoint
+{
+    string route;
+    RouteJsonBindingHandler handler;
+}
+struct AsyncRouteRouteBindingEndpoint
+{
+    string first;
+    string second;
+    AsyncRouteRouteBindingHandler handler;
+}
+struct AsyncRouteQueryBindingEndpoint
+{
+    string route;
+    string query;
+    AsyncRouteQueryBindingHandler handler;
+}
+struct AsyncRouteHeaderBindingEndpoint
+{
+    string route;
+    string header;
+    AsyncRouteHeaderBindingHandler handler;
+}
+struct AsyncRouteJsonBindingEndpoint
+{
+    string route;
+    AsyncRouteJsonBindingHandler handler;
+}
+
 public delegate List<string> BuildSource();
 
 public delegate Option<Response> StaticResolver(
@@ -677,6 +798,14 @@ union RouteHandler
     AsyncRequestInt(AsyncRequestIntRouteHandler),
     AsyncRequestLong(AsyncRequestLongRouteHandler),
     AsyncRequestBool(AsyncRequestBoolRouteHandler),
+    BoundRouteRoute(RouteRouteBindingEndpoint),
+    BoundRouteQuery(RouteQueryBindingEndpoint),
+    BoundRouteHeader(RouteHeaderBindingEndpoint),
+    BoundRouteJson(RouteJsonBindingEndpoint),
+    AsyncBoundRouteRoute(AsyncRouteRouteBindingEndpoint),
+    AsyncBoundRouteQuery(AsyncRouteQueryBindingEndpoint),
+    AsyncBoundRouteHeader(AsyncRouteHeaderBindingEndpoint),
+    AsyncBoundRouteJson(AsyncRouteJsonBindingEndpoint),
 }
 struct UrlValue
 {
@@ -2547,6 +2676,210 @@ private EndpointBuilder WebApplication.MapTypedMethod(
     List<string> methods = new();
     methods.Add(method);
     return self.MapEndpoint(pattern, methods, handler);
+}
+
+private EndpointBuilder WebApplication.MapExplicitBindingMethod(
+    WebApplication self,
+    string method,
+    string path,
+    RouteHandler handler,
+    nuint routeParameterCount,
+    string firstRouteName,
+    Option<string> secondRouteName
+)
+{
+    if (!HttpMethodValid(method))
+    {
+        throw new ArgumentException(
+            "HTTP method must be a non-empty uppercase token"
+        );
+    }
+    RoutePattern pattern = ParseRoutePattern(path);
+    if (pattern.ParameterCount != routeParameterCount)
+    {
+        throw new ArgumentException(
+            "explicit route bindings must name every route parameter exactly once"
+        );
+    }
+    if (!pattern.HasParameter(firstRouteName))
+    {
+        throw new ArgumentException(
+            "route binding name does not occur in the route pattern"
+        );
+    }
+    switch (secondRouteName)
+    {
+        case Option.Some(name): {
+            if (!pattern.HasParameter(name))
+            {
+                throw new ArgumentException(
+                    "route binding name does not occur in the route pattern"
+                );
+            }
+        }
+        case Option.None: { }
+    }
+    List<string> methods = new();
+    methods.Add(method);
+    return self.MapEndpoint(pattern, methods, handler);
+}
+
+private void ValidateBindingName(string name)
+{
+    if (name.Length == 0)
+    {
+        throw new ArgumentException("binding source name cannot be empty");
+    }
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path,
+    RouteBinding first, RouteBinding second,
+    RouteRouteBindingHandler handler
+)
+{
+    ValidateBindingName(first.Name);
+    ValidateBindingName(second.Name);
+    if (first.Name == second.Name)
+    {
+        throw new ArgumentException("route binding name is duplicated");
+    }
+    RouteRouteBindingEndpoint endpoint = new()
+    {
+        first = first.Name, second = second.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "GET", path, RouteHandler.BoundRouteRoute(endpoint), 2,
+        first.Name, Option.Some(second.Name)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path,
+    RouteBinding route, QueryBinding query,
+    RouteQueryBindingHandler handler
+)
+{
+    ValidateBindingName(route.Name);
+    ValidateBindingName(query.Name);
+    RouteQueryBindingEndpoint endpoint = new()
+    {
+        route = route.Name, query = query.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "GET", path, RouteHandler.BoundRouteQuery(endpoint), 1,
+        route.Name, Option.None
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path,
+    RouteBinding route, HeaderBinding header,
+    RouteHeaderBindingHandler handler
+)
+{
+    ValidateBindingName(route.Name);
+    ValidateBindingName(header.Name);
+    RouteHeaderBindingEndpoint endpoint = new()
+    {
+        route = route.Name, header = header.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "GET", path, RouteHandler.BoundRouteHeader(endpoint), 1,
+        route.Name, Option.None
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path,
+    RouteBinding route, JsonBody body,
+    RouteJsonBindingHandler handler
+)
+{
+    ValidateBindingName(route.Name);
+    RouteJsonBindingEndpoint endpoint = new()
+    {
+        route = route.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "POST", path, RouteHandler.BoundRouteJson(endpoint), 1,
+        route.Name, Option.None
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path,
+    RouteBinding first, RouteBinding second,
+    AsyncRouteRouteBindingHandler handler
+)
+{
+    ValidateBindingName(first.Name);
+    ValidateBindingName(second.Name);
+    if (first.Name == second.Name)
+    {
+        throw new ArgumentException("route binding name is duplicated");
+    }
+    AsyncRouteRouteBindingEndpoint endpoint = new()
+    {
+        first = first.Name, second = second.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "GET", path, RouteHandler.AsyncBoundRouteRoute(endpoint), 2,
+        first.Name, Option.Some(second.Name)
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path,
+    RouteBinding route, QueryBinding query,
+    AsyncRouteQueryBindingHandler handler
+)
+{
+    ValidateBindingName(route.Name);
+    ValidateBindingName(query.Name);
+    AsyncRouteQueryBindingEndpoint endpoint = new()
+    {
+        route = route.Name, query = query.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "GET", path, RouteHandler.AsyncBoundRouteQuery(endpoint), 1,
+        route.Name, Option.None
+    );
+}
+
+public EndpointBuilder WebApplication.MapGet(
+    WebApplication self, string path,
+    RouteBinding route, HeaderBinding header,
+    AsyncRouteHeaderBindingHandler handler
+)
+{
+    ValidateBindingName(route.Name);
+    ValidateBindingName(header.Name);
+    AsyncRouteHeaderBindingEndpoint endpoint = new()
+    {
+        route = route.Name, header = header.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "GET", path, RouteHandler.AsyncBoundRouteHeader(endpoint), 1,
+        route.Name, Option.None
+    );
+}
+
+public EndpointBuilder WebApplication.MapPost(
+    WebApplication self, string path,
+    RouteBinding route, JsonBody body,
+    AsyncRouteJsonBindingHandler handler
+)
+{
+    ValidateBindingName(route.Name);
+    AsyncRouteJsonBindingEndpoint endpoint = new()
+    {
+        route = route.Name, handler = handler
+    };
+    return self.MapExplicitBindingMethod(
+        "POST", path, RouteHandler.AsyncBoundRouteJson(endpoint), 1,
+        route.Name, Option.None
+    );
 }
 
 private void ValidateHttpMethods(List<string> methods)
@@ -5833,6 +6166,56 @@ private Response RouteBindingBadRequest()
     );
 }
 
+private Option<RouteBinding> BindRoute(Request request, string name)
+{
+    switch (request.RouteValue(name))
+    {
+        case Option.Some(value): {
+            return Option.Some(new() { Name = name, Value = value });
+        }
+        case Option.None: { return Option.None; }
+    }
+}
+
+private Option<QueryBinding> BindQuery(Request request, string name)
+{
+    switch (request.Query(name))
+    {
+        case Result.Ok(value): {
+            switch (value)
+            {
+                case Option.Some(found): {
+                    return Option.Some(new() { Name = name, Value = found });
+                }
+                case Option.None: { return Option.None; }
+            }
+        }
+        case Result.Err(error): { return Option.None; }
+    }
+}
+
+private Option<HeaderBinding> BindHeader(Request request, string name)
+{
+    switch (request.Header(name))
+    {
+        case Option.Some(value): {
+            return Option.Some(new() { Name = name, Value = value });
+        }
+        case Option.None: { return Option.None; }
+    }
+}
+
+private Option<JsonBody> BindJsonBody(Request request)
+{
+    switch (request.Json())
+    {
+        case Result.Ok(value): {
+            return Option.Some(new() { Value = value });
+        }
+        case Result.Err(error): { return Option.None; }
+    }
+}
+
 private Option<bool> ParseRouteBool(string value)
 {
     if (AsciiEqualIgnoringCase(value, "true"))
@@ -5952,6 +6335,70 @@ private Response InvokeRouteHandler(
                 case Option.None: { return RouteBindingBadRequest(); }
             }
         }
+        case RouteHandler.BoundRouteRoute(endpoint): {
+            switch (BindRoute(request, endpoint.first))
+            {
+                case Option.Some(first): {
+                    switch (BindRoute(request, endpoint.second))
+                    {
+                        case Option.Some(second): {
+                            RouteRouteBindingHandler invoke = endpoint.handler;
+                            return invoke(first, second);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.BoundRouteQuery(endpoint): {
+            switch (BindRoute(request, endpoint.route))
+            {
+                case Option.Some(route): {
+                    switch (BindQuery(request, endpoint.query))
+                    {
+                        case Option.Some(query): {
+                            RouteQueryBindingHandler invoke = endpoint.handler;
+                            return invoke(route, query);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.BoundRouteHeader(endpoint): {
+            switch (BindRoute(request, endpoint.route))
+            {
+                case Option.Some(route): {
+                    switch (BindHeader(request, endpoint.header))
+                    {
+                        case Option.Some(header): {
+                            RouteHeaderBindingHandler invoke = endpoint.handler;
+                            return invoke(route, header);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.BoundRouteJson(endpoint): {
+            switch (BindRoute(request, endpoint.route))
+            {
+                case Option.Some(route): {
+                    switch (BindJsonBody(request))
+                    {
+                        case Option.Some(body): {
+                            RouteJsonBindingHandler invoke = endpoint.handler;
+                            return invoke(route, body);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
         case RouteHandler.AsyncString(handler): {
             throw new InvalidOperationException(
                 "async endpoint requires DispatchAsync"
@@ -5988,6 +6435,26 @@ private Response InvokeRouteHandler(
             );
         }
         case RouteHandler.AsyncRequestBool(handler): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncBoundRouteRoute(endpoint): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncBoundRouteQuery(endpoint): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncBoundRouteHeader(endpoint): {
+            throw new InvalidOperationException(
+                "async endpoint requires DispatchAsync"
+            );
+        }
+        case RouteHandler.AsyncBoundRouteJson(endpoint): {
             throw new InvalidOperationException(
                 "async endpoint requires DispatchAsync"
             );
@@ -6032,6 +6499,18 @@ private async Task<Response> InvokeRouteHandlerAsync(
             return InvokeRouteHandler(routeHandler, request);
         }
         case RouteHandler.RequestBool(handler): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.BoundRouteRoute(endpoint): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.BoundRouteQuery(endpoint): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.BoundRouteHeader(endpoint): {
+            return InvokeRouteHandler(routeHandler, request);
+        }
+        case RouteHandler.BoundRouteJson(endpoint): {
             return InvokeRouteHandler(routeHandler, request);
         }
         case RouteHandler.AsyncString(handler): {
@@ -6125,6 +6604,70 @@ private async Task<Response> InvokeRouteHandlerAsync(
                     {
                         case Option.Some(parsed): {
                             return await handler(request, parsed);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncBoundRouteRoute(endpoint): {
+            switch (BindRoute(request, endpoint.first))
+            {
+                case Option.Some(first): {
+                    switch (BindRoute(request, endpoint.second))
+                    {
+                        case Option.Some(second): {
+                            AsyncRouteRouteBindingHandler invoke = endpoint.handler;
+                            return await invoke(first, second);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncBoundRouteQuery(endpoint): {
+            switch (BindRoute(request, endpoint.route))
+            {
+                case Option.Some(route): {
+                    switch (BindQuery(request, endpoint.query))
+                    {
+                        case Option.Some(query): {
+                            AsyncRouteQueryBindingHandler invoke = endpoint.handler;
+                            return await invoke(route, query);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncBoundRouteHeader(endpoint): {
+            switch (BindRoute(request, endpoint.route))
+            {
+                case Option.Some(route): {
+                    switch (BindHeader(request, endpoint.header))
+                    {
+                        case Option.Some(header): {
+                            AsyncRouteHeaderBindingHandler invoke = endpoint.handler;
+                            return await invoke(route, header);
+                        }
+                        case Option.None: { return RouteBindingBadRequest(); }
+                    }
+                }
+                case Option.None: { return RouteBindingBadRequest(); }
+            }
+        }
+        case RouteHandler.AsyncBoundRouteJson(endpoint): {
+            switch (BindRoute(request, endpoint.route))
+            {
+                case Option.Some(route): {
+                    switch (BindJsonBody(request))
+                    {
+                        case Option.Some(body): {
+                            AsyncRouteJsonBindingHandler invoke = endpoint.handler;
+                            return await invoke(route, body);
                         }
                         case Option.None: { return RouteBindingBadRequest(); }
                     }

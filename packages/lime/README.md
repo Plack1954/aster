@@ -150,10 +150,53 @@ the handler runs. A conversion failure after route selection returns 400; a
 constraint failure means the endpoint did not match. Registration rejects a
 typed handler unless its pattern contains exactly one route parameter.
 
-This is deliberately not advertised as arbitrary Minimal API binding yet.
-Multiple route parameters and query/header/body/form binding remain future
-work. Until a handler shape is supported, the low-level route-value API
-represents absence explicitly:
+Lime also has a bounded, explicit multi-source binding surface. Source markers
+are passed at registration; Lime does not guess a source from the handler's
+parameter type:
+
+```aster
+private Response Pair(RouteBinding org, RouteBinding user)
+{
+    return Results.Text($"{org.Value}:{user.Value}");
+}
+
+private Response Page(RouteBinding user, QueryBinding page)
+{
+    return Results.Text($"{user.Value}:{page.Value}");
+}
+
+private Response Update(RouteBinding article, JsonBody body)
+{
+    UpdateArticle input = body.Deserialize();
+    return Results.Text($"{article.Value}:{input.title}");
+}
+
+app.MapGet(
+    "/orgs/{org}/users/{user}",
+    FromRoute("org"), FromRoute("user"), Pair
+);
+app.MapGet(
+    "/users/{user}", FromRoute("user"), FromQuery("page"), Page
+);
+app.MapPost(
+    "/articles/{article}", FromRoute("article"), FromJsonBody(), Update
+);
+```
+
+The implemented pairs are route+route, route+query, route+header, and
+route+JSON for synchronous and asynchronous handlers. Route names are checked
+against the parsed pattern at registration. Missing query/header values or a
+non-JSON body return 400. `JsonBody.Deserialize()` uses Aster's
+compiler-generated serializer for the inferred concrete result type; malformed
+or structurally invalid JSON throws `JsonException` as an application error.
+No reflection or runtime type inspection is involved. Endpoint metadata is
+preserved because these overloads register in the same canonical endpoint
+graph.
+
+This is deliberately not advertised as arbitrary Minimal API binding. More
+source combinations, automatic numeric conversion, form binding, and handlers
+with arbitrary arity remain future work. Until a handler shape is supported,
+the low-level route-value API represents absence explicitly:
 
 ```aster
 switch (request.RouteValue("slug"))

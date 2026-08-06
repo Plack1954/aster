@@ -45,6 +45,14 @@ private async Task<Response> HandleMethodAsync(Request request)
     return Results.Text(request.Method);
 }
 
+private async Task<Response> HandleBoundAsync(
+    RouteBinding user, QueryBinding page
+)
+{
+    await Task.Delay(1);
+    return Results.Text($"{user.Value}:{page.Value}");
+}
+
 private async Task<Response> FailAsync(Request request)
 {
     await Task.Delay(1);
@@ -101,6 +109,10 @@ private async Task<bool> VerifyEndpointDispatchAsync()
     app.MapMethods("/methods", methods, HandleMethodAsync);
     methods.Add("DELETE");
     app.MapGet("/failure", FailAsync);
+    app.MapGet(
+        "/bound/{user}", FromRoute("user"), FromQuery("page"),
+        HandleBoundAsync
+    );
 
     Response handled = await app.DispatchAsync(RequestNew(
         "GET", "/async/42", "", "", "", ""
@@ -123,6 +135,9 @@ private async Task<bool> VerifyEndpointDispatchAsync()
     Response failed = await app.DispatchAsync(RequestNew(
         "GET", "/failure", "", "", "", ""
     ));
+    Response bound = await app.DispatchAsync(RequestNew(
+        "GET", "/bound/42?page=3", "", "", "", ""
+    ));
     WebApplication defaultApp = WebApplication.Create();
     ApplicationOwner defaultOwner = new() { Value = defaultApp };
     Response defaultMissing = await defaultApp.DispatchAsync(RequestNew(
@@ -142,6 +157,7 @@ private async Task<bool> VerifyEndpointDispatchAsync()
         ResponseTextEquals(methodHandled, 200, "PUT") &&
         methodRejected.StatusCode == StatusCodes.Status405MethodNotAllowed &&
         ResponseTextEquals(failed, 200, "async endpoint failed") &&
+        ResponseTextEquals(bound, 200, "42:3") &&
         defaultMissing.StatusCode == StatusCodes.Status404NotFound &&
         ResponseTextEquals(asyncMissing, 200, "async fallback");
 }

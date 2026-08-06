@@ -422,16 +422,31 @@ The initial binding rules should be deliberately explicit:
 - Bound instance methods are accepted only when the application explicitly
   passes the method delegate.
 
-Examples of possible explicit source wrappers, subject to implementation
-prototyping:
+The first bounded explicit-source slice is implemented with registration
+markers and value wrappers:
 
 ```aster
-Response Search(Query<string> term, Query<int?> page);
-Response Create(Json<CreateArticle> input);
-Response Upload(FormFile image);
+Response Search(RouteBinding user, QueryBinding page);
+Response Trace(RouteBinding user, HeaderBinding trace);
+Response Update(RouteBinding article, JsonBody input);
+
+app.MapGet(
+    "/users/{user}", FromRoute("user"), FromQuery("page"), Search
+);
+app.MapPost(
+    "/articles/{article}", FromRoute("article"), FromJsonBody(), Update
+);
 ```
 
-These wrappers must earn their place through application code. The fallback is
+The finite initial combinations are route+route, route+query, route+header,
+and route+JSON, with synchronous and asynchronous delegates. Registration
+checks that every named route source occurs in the parsed pattern and rejects
+duplicate route names. `JsonBody.Deserialize()` selects the existing
+compiler-generated serializer through its inferred concrete return type.
+Missing query/header sources and invalid JSON media types produce 400;
+deserialization exceptions remain application exceptions.
+
+Further wrappers must earn their place through application code. The fallback is
 always direct, typed request access; Lime must not accumulate invented wrapper
 types solely to imitate every ASP.NET binding shortcut.
 
