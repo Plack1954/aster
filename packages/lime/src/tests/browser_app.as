@@ -87,10 +87,23 @@ public string SubmitName(string name)
     return $"Thanks, {name}.";
 }
 
+public string RemoveTodo(string key)
+{
+    return key;
+}
+
 private Html TodoItem(int id, string title)
 {
-    return <li id=$"todo-{id}">
+    string key = $"todo-{id}";
+    return <li id=key>
         <span>{title}</span>
+        <button
+            type="button"
+            name="key"
+            value=key
+            aria-controls="todo-list"
+            onclick=RemoveTodo
+        >Remove</button>
     </li>;
 }
 
