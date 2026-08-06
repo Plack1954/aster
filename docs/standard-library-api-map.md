@@ -65,7 +65,7 @@ features exist:
 | `out` parameters or an approved alternative | Numeric `TryParse` | Aster has `ref`, but `ref` is not the same contract as C# `out`. |
 | Static members on primitive aliases | `int.Parse`, `string.Join` | Static-call syntax exists, but primitive-owner support needs confirmation. |
 | Generic comparison/equality capability | collection search, sorting, dictionaries | Current generic constraints and comparer abstractions are incomplete. |
-| Native asynchronous I/O completion | `HttpClient`, streams | `HttpClient` uses shared libcurl-multi transfers driven by nonblocking executor-timer polls and has bounded response streaming; generic native readiness registration, upload streams, and file streams remain pending. |
+| Native asynchronous I/O completion | `HttpClient`, streams | `HttpClient` uses shared libcurl-multi transfers driven by nonblocking executor-timer polls and has bounded response and fixed-length upload streaming; generic native readiness registration and async file streams remain pending. |
 
 The standard library should not compensate for these gaps with permanent
 names such as `StringLen` or `ListGet`. Implement the prerequisite or record a
@@ -563,12 +563,17 @@ optional libcurl component:
 - headers-first `GetStreamAsync` returning `HttpResponseStream`, whose
   `ReadAsync` fills caller-provided spans and whose `Close` cancels an
   unfinished transfer;
+- `StartUpload` returning `HttpUploadStream`; `WriteAsync` feeds borrowed byte
+  spans through a bounded native queue and `CompleteAsync` verifies the
+  declared content length before returning the response;
 - HTTP/HTTPS-only redirects, a ten-redirect ceiling, one-MiB response-header
   limit, bounded response bodies, and deterministic native-handle cleanup;
 - asynchronous transfers share a libcurl multi handle for concurrency and
   connection reuse; request bytes are copied before the first suspension;
 - streaming downloads use a bounded 64-KiB native queue and libcurl
   pause/resume backpressure rather than buffering the complete response;
+- fixed-length streaming uploads use the same bounded 64-KiB pause/resume
+  design and never retain a caller span after a native write call;
 - matching VM and generated-C behavior against a local
   binary/redirect/POST/concurrency/cancellation/large-stream fixture.
 
@@ -576,8 +581,8 @@ optional libcurl component:
 requiring libcurl. This is an implementation dependency of native
 `System.Net.Http`, not a language dependency. The current `Headers` spelling is
 a raw response-header block and request headers use a bounded raw block; typed
-header collections remain pending. Async streaming uploads, connection policy
-objects, cookies, and proxies are not yet
+header collections remain pending. Unknown-length/chunked uploads, connection
+policy objects, cookies, and proxies are not yet
 implemented. Multi transfers currently use a one-millisecond nonblocking poll
 through the existing timer executor; socket-readiness registration is a future
 efficiency refinement, not a semantic dependency.

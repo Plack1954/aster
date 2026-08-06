@@ -92,7 +92,9 @@ libcurl. Synchronous calls use easy handles; asynchronous calls share a multi
 handle and advance it through nonblocking executor-timer polls, allowing
 concurrent transfers, cancellation, and connection reuse in both native
 backends. Streaming responses pause libcurl when their bounded native queue is
-full and resume as the Aster caller drains it into borrowed spans.
+full and resume as the Aster caller drains it into borrowed spans. Streaming
+uploads invert that flow: Aster fills a bounded queue from borrowed spans and
+libcurl pauses whenever the producer has not supplied the next chunk.
 `ASTER_ENABLE_CURL=OFF` retains the compiler and core runtime with
 typed unavailable stubs. Browser/Wasm does not use this component and will use
 Fetch.

@@ -36,7 +36,15 @@ typedef struct CurlHttpRequest {
     size_t stream_length;
     size_t stream_capacity;
     size_t stream_total;
+    unsigned char *upload_data;
+    size_t upload_length;
+    size_t upload_capacity;
+    size_t upload_sent;
+    size_t upload_expected;
     bool streaming;
+    bool uploading;
+    bool upload_complete;
+    bool upload_paused;
     bool follow_redirects;
     bool stream_ready;
     bool stream_paused;
@@ -81,6 +89,7 @@ static void curl_http_request_drop(void *data) {
     curl_http_request_cleanup_transfer(request);
     curl_http_response_drop(request->response);
     free(request->stream_data);
+    free(request->upload_data);
     free(request);
 }
 
@@ -188,6 +197,31 @@ static size_t curl_stream_header_write(
             request->stream_ready = true;
     }
     return written;
+}
+
+static size_t curl_upload_read(
+    char *destination, size_t size, size_t members, void *context
+) {
+    CurlHttpRequest *request = context;
+    if (members != 0U && size > SIZE_MAX / members)
+        return CURL_READFUNC_ABORT;
+    size_t capacity = size * members;
+    if (request->upload_length == 0U) {
+        if (request->upload_complete)
+            return request->upload_sent == request->upload_expected
+                ? 0U : CURL_READFUNC_ABORT;
+        request->upload_paused = true;
+        return CURL_READFUNC_PAUSE;
+    }
+    size_t copied = request->upload_length < capacity
+        ? request->upload_length : capacity;
+    memcpy(destination, request->upload_data, copied);
+    request->upload_length -= copied;
+    request->upload_sent += copied;
+    if (request->upload_length != 0U)
+        memmove(request->upload_data, request->upload_data + copied,
+                request->upload_length);
+    return copied;
 }
 
 static char *curl_copy_text(LangStringView value) {
@@ -402,7 +436,8 @@ static void curl_multi_drain(void) {
 }
 
 static LangNativeResult native_http_client_start_mode(
-    LangVM *vm, const LangValue *args, size_t count, bool streaming
+    LangVM *vm, const LangValue *args, size_t count, bool streaming,
+    bool uploading, size_t upload_expected
 ) {
     LangStringView method;
     LangStringView url;
@@ -445,6 +480,8 @@ static LangNativeResult native_http_client_start_mode(
     }
     request->response->maximum_body_length = (size_t)args[5].as.i64;
     request->streaming = streaming;
+    request->uploading = uploading;
+    request->upload_expected = upload_expected;
     request->follow_redirects = args[6].as.boolean;
     (void)curl_easy_setopt(request->easy, CURLOPT_ERRORBUFFER, request->error);
     (void)curl_easy_setopt(request->easy, CURLOPT_URL, request->url);
@@ -480,7 +517,14 @@ static LangNativeResult native_http_client_start_mode(
     if (request->headers != NULL)
         (void)curl_easy_setopt(request->easy, CURLOPT_HTTPHEADER,
                                request->headers);
-    if (body.length != 0U) {
+    if (uploading) {
+        (void)curl_easy_setopt(request->easy, CURLOPT_UPLOAD, 1L);
+        (void)curl_easy_setopt(request->easy, CURLOPT_READFUNCTION,
+                               curl_upload_read);
+        (void)curl_easy_setopt(request->easy, CURLOPT_READDATA, request);
+        (void)curl_easy_setopt(request->easy, CURLOPT_INFILESIZE_LARGE,
+                               (curl_off_t)upload_expected);
+    } else if (body.length != 0U) {
         (void)curl_easy_setopt(request->easy, CURLOPT_POSTFIELDS, request->body);
         (void)curl_easy_setopt(request->easy, CURLOPT_POSTFIELDSIZE_LARGE,
                                (curl_off_t)body.length);
@@ -503,13 +547,32 @@ static LangNativeResult native_http_client_start_mode(
 static LangNativeResult native_http_client_start(
     LangVM *vm, const LangValue *args, size_t count
 ) {
-    return native_http_client_start_mode(vm, args, count, false);
+    return native_http_client_start_mode(vm, args, count, false, false, 0U);
 }
 
 static LangNativeResult native_http_client_start_stream(
     LangVM *vm, const LangValue *args, size_t count
 ) {
-    return native_http_client_start_mode(vm, args, count, true);
+    return native_http_client_start_mode(vm, args, count, true, false, 0U);
+}
+
+static LangNativeResult native_http_client_start_upload(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    if (count != 7U || args[3].tag != LANG_VALUE_I64 ||
+        args[3].as.i64 < 0)
+        return lang_native_result_error(
+            "NativeHttpClientStartUpload received invalid arguments");
+    if ((uint64_t)args[3].as.i64 > (uint64_t)SIZE_MAX)
+        return curl_typed_error(vm, "HTTP upload length is too large");
+    LangValue start_args[7] = {
+        args[0], args[1], args[2],
+        {.tag=LANG_VALUE_BYTE_SLICE,
+         .as.bytes={.data=NULL, .length=0U}},
+        args[4], args[5], args[6]
+    };
+    return native_http_client_start_mode(
+        vm, start_args, 7U, false, true, (size_t)args[3].as.i64);
 }
 
 static CurlHttpRequest *curl_request(const LangValue *args, size_t count) {
@@ -704,6 +767,71 @@ static LangNativeResult native_http_client_stream_close(
     return (LangNativeResult){true, {.tag=LANG_VALUE_UNIT}, NULL};
 }
 
+static LangNativeResult native_http_client_upload_write(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    CurlHttpRequest *request = count == 2U
+        ? lang_native_handle_data(&args[0]) : NULL;
+    LangByteSlice source;
+    if (request == NULL || !request->uploading || request->closed ||
+        request->upload_complete ||
+        !lang_value_byte_slice(&args[1], &source))
+        return curl_typed_error(vm, "invalid HTTP upload write");
+    if (request->completed) {
+        const char *message = request->result != CURLE_OK
+            ? request->error[0] != '\0' ? request->error
+                : curl_easy_strerror(request->result)
+            : "HTTP upload ended before all request bytes were written";
+        return curl_typed_error(vm, message);
+    }
+    const size_t maximum_buffer = 64U * 1024U;
+    size_t capacity = maximum_buffer - request->upload_length;
+    size_t remaining = request->upload_expected - request->upload_sent -
+                       request->upload_length;
+    if (remaining == 0U && source.length != 0U)
+        return curl_typed_error(vm,
+            "HTTP upload exceeded its declared content length");
+    size_t copied = source.length < capacity ? source.length : capacity;
+    if (copied > remaining) copied = remaining;
+    if (copied != 0U && !curl_append(
+            &request->upload_data, &request->upload_length,
+            &request->upload_capacity, source.data, copied,
+            maximum_buffer))
+        return curl_typed_error(vm, "could not buffer HTTP upload bytes");
+    if (request->upload_paused && request->easy != NULL && copied != 0U) {
+        request->upload_paused = false;
+        CURLcode resumed = curl_easy_pause(request->easy, CURLPAUSE_CONT);
+        if (resumed != CURLE_OK) {
+            request->result = resumed;
+            curl_complete_request(request, resumed);
+        }
+    }
+    return curl_typed_success(vm, (LangValue){
+        .tag=LANG_VALUE_U64, .as.u64=(uint64_t)copied});
+}
+
+static LangNativeResult native_http_client_upload_complete(
+    LangVM *vm, const LangValue *args, size_t count
+) {
+    CurlHttpRequest *request = curl_request(args, count);
+    if (request == NULL || !request->uploading || request->closed)
+        return curl_typed_error(vm, "invalid HTTP upload handle");
+    if (request->upload_sent + request->upload_length !=
+        request->upload_expected)
+        return curl_typed_error(vm,
+            "HTTP upload completed before its declared content length");
+    request->upload_complete = true;
+    if (request->upload_paused && request->easy != NULL) {
+        request->upload_paused = false;
+        CURLcode resumed = curl_easy_pause(request->easy, CURLPAUSE_CONT);
+        if (resumed != CURLE_OK) {
+            request->result = resumed;
+            curl_complete_request(request, resumed);
+        }
+    }
+    return curl_typed_success(vm, (LangValue){.tag=LANG_VALUE_UNIT});
+}
+
 static CurlHttpResponse *curl_response(
     const LangValue *args, size_t count
 ) {
@@ -832,6 +960,15 @@ void lang_register_http_client_natives(LangVM *vm) {
     (void)lang_register_native(
         vm, "NativeHttpClientStreamClose",
         native_http_client_stream_close, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStartUpload",
+        native_http_client_start_upload, 7U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientUploadWrite",
+        native_http_client_upload_write, 2U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientUploadComplete",
+        native_http_client_upload_complete, 1U);
 }
 
 #else
@@ -902,6 +1039,12 @@ void lang_register_http_client_natives(LangVM *vm) {
         vm, "NativeHttpClientStreamUrl", curl_unavailable_direct, 1U);
     (void)lang_register_native(
         vm, "NativeHttpClientStreamClose", curl_unavailable_direct, 1U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientStartUpload", curl_unavailable, 7U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientUploadWrite", curl_unavailable, 2U);
+    (void)lang_register_native(
+        vm, "NativeHttpClientUploadComplete", curl_unavailable, 1U);
 }
 
 #endif

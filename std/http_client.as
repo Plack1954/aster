@@ -44,6 +44,22 @@ private extern long NativeHttpClientStreamStatus(NativeHandle stream);
 private extern string NativeHttpClientStreamHeaders(NativeHandle stream);
 private extern string NativeHttpClientStreamUrl(NativeHandle stream);
 private extern void NativeHttpClientStreamClose(NativeHandle stream);
+private extern Result<NativeHandle, string> NativeHttpClientStartUpload(
+    string method,
+    string requestUri,
+    string headers,
+    long contentLength,
+    long timeoutMilliseconds,
+    long maximumResponseBodyBytes,
+    bool followRedirects
+);
+private extern Result<nuint, string> NativeHttpClientUploadWrite(
+    NativeHandle upload,
+    ReadOnlySpan<byte> source
+);
+private extern Result<Unit, string> NativeHttpClientUploadComplete(
+    NativeHandle upload
+);
 private extern Task Task.Delay(int milliseconds);
 
 private extern long NativeHttpClientResponseStatus(NativeHandle response);
@@ -125,7 +141,11 @@ public async Task<nuint> HttpResponseStream.ReadAsync(
     CancellationToken cancellationToken
 )
 {
-    cancellationToken.ThrowIfCancellationRequested();
+    if (cancellationToken.IsCancellationRequested)
+    {
+        NativeHttpClientCancel(self.Handle);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
     if (ByteSliceLen(destination) == 0) { return 0; }
     while (true)
     {
@@ -156,6 +176,93 @@ public async Task<nuint> HttpResponseStream.ReadAsync(
 }
 
 public void HttpResponseStream.Close(HttpResponseStream self)
+{
+    NativeHttpClientStreamClose(self.Handle);
+}
+
+// A fixed-length streaming request body. Bytes are copied only into a bounded
+// native queue; CompleteAsync finishes the transfer and returns its response.
+public struct HttpUploadStream
+{
+    NativeHandle Handle;
+}
+
+public async Task HttpUploadStream.WriteAsync(
+    HttpUploadStream self,
+    ReadOnlySpan<byte> source,
+    CancellationToken cancellationToken
+)
+{
+    if (cancellationToken.IsCancellationRequested)
+    {
+        NativeHttpClientCancel(self.Handle);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+    nuint offset = 0;
+    nuint length = ByteSliceLen(source);
+    while (offset < length)
+    {
+        ReadOnlySpan<byte> remaining = ByteSliceRange(
+            source, offset, length - offset
+        );
+        nuint copied = HttpCountOrThrow(
+            NativeHttpClientUploadWrite(self.Handle, remaining)
+        );
+        offset += copied;
+        if (offset == length) { break; }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            NativeHttpClientCancel(self.Handle);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        NativeHttpClientPoll(self.Handle);
+        await Task.Delay(1);
+    }
+}
+
+public async Task HttpUploadStream.WriteAsync(
+    HttpUploadStream self,
+    ReadOnlySpan<byte> source
+)
+{
+    await self.WriteAsync(source, CancellationToken.None);
+}
+
+public async Task<HttpResponseMessage> HttpUploadStream.CompleteAsync(
+    HttpUploadStream self,
+    CancellationToken cancellationToken
+)
+{
+    if (cancellationToken.IsCancellationRequested)
+    {
+        NativeHttpClientCancel(self.Handle);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+    Unit ignored = HttpUnitOrThrow(
+        NativeHttpClientUploadComplete(self.Handle)
+    );
+    while (NativeHttpClientPoll(self.Handle) == 0)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            NativeHttpClientCancel(self.Handle);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        await Task.Delay(1);
+    }
+    return MaterializeHttpResponse(
+        HttpResultOrThrow(NativeHttpClientTakeResponse(self.Handle))
+    );
+}
+
+public async Task<HttpResponseMessage> HttpUploadStream.CompleteAsync(
+    HttpUploadStream self
+)
+{
+    return await self.CompleteAsync(CancellationToken.None);
+}
+
+public void HttpUploadStream.Close(HttpUploadStream self)
 {
     NativeHttpClientStreamClose(self.Handle);
 }
@@ -209,6 +316,15 @@ private nuint HttpCountOrThrow(Result<nuint, string> result)
     switch (result)
     {
         case Result.Ok(count): { return count; }
+        case Result.Err(error): { throw new IOException(error); }
+    }
+}
+
+private Unit HttpUnitOrThrow(Result<Unit, string> result)
+{
+    switch (result)
+    {
+        case Result.Ok(value): { return value; }
         case Result.Err(error): { throw new IOException(error); }
     }
 }
@@ -282,6 +398,35 @@ private NativeHandle StartEmptyHttpStream(
             )
         );
     }
+}
+
+public HttpUploadStream HttpClient.StartUpload(
+    HttpClient self,
+    string method,
+    string requestUri,
+    string headers,
+    long contentLength
+)
+{
+    ValidateHttpRequest(self, method, requestUri);
+    if (contentLength < 0)
+    {
+        throw new ArgumentException("contentLength cannot be negative");
+    }
+    return new()
+    {
+        Handle = HttpResultOrThrow(
+            NativeHttpClientStartUpload(
+                method,
+                requestUri,
+                headers,
+                contentLength,
+                self.TimeoutMilliseconds,
+                self.MaximumResponseBodyBytes,
+                self.FollowRedirects
+            )
+        )
+    };
 }
 
 public HttpResponseMessage HttpClient.Send(

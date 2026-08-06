@@ -70,7 +70,7 @@ Aster language semantics. Generated programs that use `System.Net.Http` link
 the Aster native runtime and libcurl; programs that do not reach that module do
 not require its API. The native client provides synchronous calls plus
 libcurl-multi-backed `SendAsync`/`GetAsync` with cooperative cancellation and
-bounded `GetStreamAsync` response streaming.
+bounded response downloads and fixed-length streaming uploads.
 
 Run a source file:
 

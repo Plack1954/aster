@@ -90,6 +90,57 @@ async Task<int> main()
     if (!observedCancellation) { return 7; }
 
     client.MaximumResponseBodyBytes = 300000;
+    HttpUploadStream upload = client.StartUpload(
+        "POST",
+        $"{origin}/echo",
+        "Content-Type: text/plain\r\n",
+        100000
+    );
+    Buffer uploadChunk = Buffer.allocate(70000);
+    unsafe
+    {
+        Span<byte> uploadBytes = BufferAsMutSlice(uploadChunk);
+        ByteSliceFill(uploadBytes, 65);
+        await upload.WriteAsync(uploadBytes);
+        await upload.WriteAsync(ByteSliceRange(uploadBytes, 0, 30000));
+    }
+    HttpResponseMessage uploaded = await upload.CompleteAsync();
+    upload.Close();
+    if (uploaded.StatusCode != 201 || uploaded.Content.Length() != 100000)
+    {
+        return 8;
+    }
+    unsafe
+    {
+        ReadOnlySpan<byte> uploadedBytes = uploaded.Content.ReadAsBytes();
+        if (ByteSliceAt(uploadedBytes, 0) != 65 ||
+            ByteSliceAt(uploadedBytes, 99999) != 65)
+        {
+            return 9;
+        }
+    }
+
+    HttpUploadStream shortUpload = client.StartUpload(
+        "POST", $"{origin}/echo", "Content-Type: text/plain\r\n", 2
+    );
+    bool rejectedShortUpload = false;
+    unsafe
+    {
+        Span<byte> uploadBytes = BufferAsMutSlice(uploadChunk);
+        await shortUpload.WriteAsync(ByteSliceRange(uploadBytes, 0, 1));
+    }
+    try
+    {
+        HttpResponseMessage ignoredShortUpload =
+            await shortUpload.CompleteAsync();
+    }
+    catch (IOException error)
+    {
+        rejectedShortUpload = error.Message.Contains("content length");
+    }
+    shortUpload.Close();
+    if (!rejectedShortUpload) { return 10; }
+
     HttpResponseStream stream = await client.GetStreamAsync(
         $"{origin}/stream"
     );
@@ -97,7 +148,7 @@ async Task<int> main()
         !stream.Headers.Contains("X-Stream: yes") ||
         stream.RequestUri != $"{origin}/stream")
     {
-        return 8;
+        return 11;
     }
     Buffer chunk = Buffer.allocate(4096);
     nuint total = 0;
@@ -123,7 +174,7 @@ async Task<int> main()
     stream.Close();
     if (total != 200000 || firstByte != 0 || lastByte != 203)
     {
-        return 9;
+        return 12;
     }
 
     client.MaximumResponseBodyBytes = 4;
@@ -146,7 +197,7 @@ async Task<int> main()
         streamLimited = error.Message.Contains("body limit");
     }
     limitedStream.Close();
-    if (!streamLimited) { return 10; }
+    if (!streamLimited) { return 13; }
 
     client.MaximumResponseBodyBytes = 3000000;
     HttpResponseStream abandoned = await client.GetStreamAsync(
@@ -171,6 +222,6 @@ async Task<int> main()
         readCanceled = error.Message.Contains("canceled");
     }
     abandoned.Close();
-    if (!readCanceled) { return 11; }
+    if (!readCanceled) { return 14; }
     return 0;
 }

@@ -91,7 +91,9 @@ byte request and owned response bodies, headers, redirects, timeouts, response
 limits, cancellation, shared libcurl-multi connection reuse, and deterministic
 handle cleanup in both backends. `GetStreamAsync` returns after final response
 headers and feeds caller-provided spans through a bounded 64-KiB queue with
-libcurl pause/resume backpressure. Pending multi transfers are advanced by short
+libcurl pause/resume backpressure. Fixed-length `HttpUploadStream` requests
+use the corresponding bounded producer queue and reject early completion.
+Pending multi transfers are advanced by short
 nonblocking executor-timer polls; native socket-readiness registration can
 later replace that bounded bridge without changing the public API. The broader
 blocking-I/O strategy remains pending.
@@ -104,7 +106,8 @@ executors support multiple pending timer tasks, continuation registration,
 immediate completion, fault capture/rethrow at `await`, and deterministic
 cleanup of a suspended frame. Buffered async HTTP copies the request body into
 native request storage before suspension, so a borrowed caller span never
-escapes. Streaming uploads remain future work.
+escapes. Streaming upload writes likewise copy only into bounded native
+storage during the call; unknown-length/chunked uploads remain future work.
 
 `Task.FromResult` and `Task.CompletedTask()` are ordinary standard-library
 async functions. The language now supports C#-style static properties, so the
