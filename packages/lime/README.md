@@ -189,7 +189,22 @@ Option<string> session = request.Cookie("session");
 Result<Option<string>, string> page = request.Query("page");
 Result<Option<string>, string> title = request.Form("title");
 Result<string, string> json = request.Json();
+ReadOnlySpan<byte> bytes = request.BodyBytes();
 ```
+
+`BodyBytes` is a zero-copy borrowed view over Lime's owned buffered request
+body. It can contain arbitrary bytes, including zero, and must not outlive the
+`Request`. Applications default to a 1 MiB body limit; configure a smaller or
+larger policy before dispatch when required:
+
+```aster
+WebApplication app = WebApplication.Create();
+app.SetMaxRequestBodySize(8 * 1024 * 1024);
+```
+
+Oversized bodies receive 413 before filters or handlers run. Transport-level
+limits still bound buffering before Lime dispatch (for H2O, configure
+`H2OServerOptions.MaxRequestBodySize` as well).
 
 Handlers return a transport-neutral `Response` constructed through `Results`:
 
@@ -197,6 +212,7 @@ Handlers return a transport-neutral `Response` constructed through `Results`:
 return Results.Html(<h1>Saved</h1>);
 return Results.Text("ready");
 return Results.Json("{\"ready\":true}");
+return Results.Bytes(encodedBytes);
 return Results.NotFound(<h1>Missing</h1>);
 return Results.SeeOther("/articles");
 return Results.Problem(ProblemDetails.Create(409, "Conflict"));
@@ -219,7 +235,10 @@ provide 303, 301, 307, and 308 explicitly. Redirects have an empty body and a
 validated `Location` header. `StatusCodes` contains named HTTP status values.
 
 Responses can also carry validated headers and cookies, CSS, typed assets,
-files, and bounded streams. Adapters own framing fields such as
+owned byte lists, files, and bounded streams. `Results.Bytes` copies its
+`List<byte>` into the response's ownership. CurrentHttp and H2O send byte and
+stream bodies through byte spans without translating each chunk through a
+string. Adapters own framing fields such as
 `Content-Length`, `Content-Type`, `Connection`, and `Transfer-Encoding`.
 
 ## Explicit state

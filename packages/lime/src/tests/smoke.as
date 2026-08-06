@@ -7,6 +7,7 @@ using Lime.Forwarding;
 using Lime.Content;
 using Lime.Markdown;
 using Lime.Static;
+using Aster.Memory;
 using Aster.Html;
 using System.Text;
 
@@ -124,6 +125,7 @@ private bool ExceptionBoundaryWorks()
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -216,6 +218,73 @@ private void RegisterDynamicRoute(
 private Request request(string method, string path)
 {
     return RequestNew(method, path, "example.test", "", "", "");
+}
+
+private Response AcceptBody(Request request)
+{
+    return Results.Text("accepted");
+}
+
+private bool ByteBodiesAndLimitsWork()
+{
+    List<byte> source = new();
+    source.Add(0);
+    source.Add(65);
+    source.Add(255);
+    Response response = Results.Bytes(source);
+    source.Add(99);
+
+    (int status, ResponseBody body,
+        List<ResponseHeader> headers) = response;
+    if (status != 200 || headers.Count != 0) { return false; }
+    switch (body)
+    {
+        case ResponseBody.Bytes(byteBody): {
+            (List<byte> values, AssetKind kind) = byteBody;
+            if (kind != AssetKind.Binary || values.Count != 3)
+            {
+                return false;
+            }
+            if (values[0] != 0 || values[1] != 65 || values[2] != 255)
+            {
+                return false;
+            }
+        }
+        case ResponseBody.Empty: { return false; }
+        case ResponseBody.Html(page): { return false; }
+        case ResponseBody.Text(text): { return false; }
+        case ResponseBody.Css(text): { return false; }
+        case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Stream(stream): { return false; }
+        case ResponseBody.File(file): { return false; }
+    }
+
+    Request binary = RequestNew(
+        "POST", "/", "example.test", "application/octet-stream", "",
+        "A\0B"
+    );
+    ReadOnlySpan<byte> buffered = binary.BodyBytes();
+    if (binary.BodyLength() != 3 || ByteSliceLen(buffered) != 3)
+    {
+        return false;
+    }
+    if (ByteSliceAt(buffered, 0) != 65 ||
+        ByteSliceAt(buffered, 1) != 0 ||
+        ByteSliceAt(buffered, 2) != 66)
+    {
+        return false;
+    }
+
+    ApplicationOwner appOwner = NewApplication();
+    WebApplication app = appOwner.Value;
+    app.SetMaxRequestBodySize(3);
+    app.MapPost("/body", AcceptBody);
+    Response rejected = app.Dispatch(RequestNew(
+        "POST", "/body", "example.test", "", "", "four"
+    ));
+    (int rejectedStatus, ResponseBody rejectedBody,
+        List<ResponseHeader> rejectedHeaders) = rejected;
+    return rejectedStatus == StatusCodes.Status413PayloadTooLarge;
 }
 
 private bool RejectsMalformedValues()
@@ -329,6 +398,7 @@ private bool HttpPrimitivesWork()
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -390,6 +460,7 @@ private bool ProblemResultsWork()
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -434,6 +505,7 @@ private bool ForwardedHeadersAreTrustedExplicitly()
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -455,6 +527,7 @@ private bool ForwardedHeadersAreTrustedExplicitly()
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -509,6 +582,7 @@ private bool StaticAssetsWork()
                 case ResponseBody.Html(page): { return false; }
                 case ResponseBody.Text(text): { return false; }
                 case ResponseBody.Css(text): { return false; }
+                case ResponseBody.Bytes(byteBody): { return false; }
                 case ResponseBody.Stream(stream): { return false; }
                 case ResponseBody.File(file): { return false; }
             }
@@ -534,6 +608,7 @@ private bool StaticCssWorks()
                 case ResponseBody.Html(page): { return false; }
                 case ResponseBody.Text(text): { return false; }
                 case ResponseBody.Asset(asset): { return false; }
+                case ResponseBody.Bytes(byteBody): { return false; }
                 case ResponseBody.Stream(stream): { return false; }
                 case ResponseBody.File(file): { return false; }
             }
@@ -564,6 +639,7 @@ private bool StaticDirectoriesWork()
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -660,6 +736,7 @@ private bool PrintHtmlResponse(Response response, int expectedStatus)
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -687,6 +764,7 @@ private bool PrintRedirect(Response response)
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -729,6 +807,7 @@ private bool BoundServiceRoutes()
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -807,6 +886,7 @@ private bool TextResponseEquals(
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -836,6 +916,7 @@ private bool EmptyResponseEquals(Response response, int expectedStatus)
         case ResponseBody.Text(text): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -1412,6 +1493,7 @@ private bool LinkGenerationWorks()
 
 int main()
 {
+    if (!ByteBodiesAndLimitsWork()) { return 1; }
     if (!MultipartFormsWork()) { return 1; }
     if (!ExceptionBoundaryWorks())
     {

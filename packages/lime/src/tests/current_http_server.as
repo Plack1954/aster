@@ -261,16 +261,13 @@ private Response Problem(Request request)
 
 private Response StreamedAsset(Request request)
 {
-    MemoryStream stream = MemoryStream.Create();
     List<byte> first = new();
     first.Add(65);
     first.Add(115);
     first.Add(116);
     first.Add(101);
     first.Add(114);
-    stream.Write(first);
-    stream.Seek(0, SeekOrigin.Begin);
-    Response response = Results.Stream(stream, AssetKind.Binary);
+    Response response = Results.Bytes(first);
     switch (ResponseHeader("X-Lime-Stream", "yes"))
     {
         case Result.Ok(header): { response.AddHeader(header); }

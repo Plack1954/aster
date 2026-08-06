@@ -189,6 +189,20 @@ private Result<SsgResponse, string> SsgResponseBytes(
             (string bytes, AssetKind kind) = asset;
             return Result.Ok(new() { bytes = bytes, html = false });
         }
+        case ResponseBody.Bytes(byteBody): {
+            if (SsgPathEndsSlash(url))
+            {
+                return Result.Err("SSG file response URL cannot end with /");
+            }
+            (List<byte> values, AssetKind kind) = byteBody;
+            StringBuilder bytes = new();
+            foreach (byte value in values) { bytes.AppendByte(value); }
+            return Result.Ok(new()
+            {
+                bytes = bytes.ToString(),
+                html = false
+            });
+        }
         case ResponseBody.Stream(streamBody): {
             if (SsgPathEndsSlash(url))
             {

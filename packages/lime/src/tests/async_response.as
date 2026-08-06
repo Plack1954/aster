@@ -78,6 +78,7 @@ private bool ResponseTextEquals(
         case ResponseBody.Html(page): { return false; }
         case ResponseBody.Css(text): { return false; }
         case ResponseBody.Asset(asset): { return false; }
+        case ResponseBody.Bytes(byteBody): { return false; }
         case ResponseBody.Stream(stream): { return false; }
         case ResponseBody.File(file): { return false; }
     }
@@ -166,6 +167,7 @@ async Task<int> main()
         case ResponseBody.Text(text): { return 1; }
         case ResponseBody.Css(text): { return 2; }
         case ResponseBody.Asset(asset): { return 3; }
+        case ResponseBody.Bytes(byteBody): { return 12; }
         case ResponseBody.Stream(stream): { return 4; }
         case ResponseBody.File(file): { return 5; }
     }
@@ -176,6 +178,7 @@ async Task<int> main()
         case ResponseBody.Text(text): { return 6; }
         case ResponseBody.Css(text): { return 7; }
         case ResponseBody.Asset(asset): { return 8; }
+        case ResponseBody.Bytes(byteBody): { return 13; }
         case ResponseBody.Stream(stream): { return 9; }
         case ResponseBody.File(file): { return 10; }
     }

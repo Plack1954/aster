@@ -233,6 +233,7 @@ WINDOWS_HTTP_STUB(http_respond_reuse)
 WINDOWS_HTTP_STUB(http_stream_begin)
 WINDOWS_HTTP_STUB(http_stream_begin_headers)
 WINDOWS_HTTP_STUB(http_stream_chunk)
+WINDOWS_HTTP_STUB(http_stream_chunk_bytes)
 WINDOWS_HTTP_STUB(http_stream_finish)
 
 #undef WINDOWS_HTTP_STUB
@@ -1608,34 +1609,52 @@ static LangNativeResult http_stream_begin_headers(LangVM *vm,
     return native_i64(args[1].as.i64);
 }
 
-static LangNativeResult http_stream_chunk(LangVM *vm,
-                                          const LangValue *args,
-                                          size_t arg_count) {
-    (void)vm;
-    if (arg_count != 2U)
-        return native_error(
-            "http_stream_chunk expects `(request, data)`");
-    HttpRequest *request = get_request(&args[0]);
-    LangStringView data;
-    if (request == NULL || request->client_fd < 0 ||
-        !request->streaming ||
-        !lang_value_string_view(&args[1], &data))
+static LangNativeResult http_stream_chunk_data(
+    HttpRequest *request, const void *data, size_t length
+) {
+    if (request == NULL || request->client_fd < 0 || !request->streaming)
         return native_error("invalid HTTP stream or chunk");
-    if (request->head || data.length == 0U)
-        return native_i64((int64_t)data.length);
+    if (request->head || length == 0U)
+        return native_i64((int64_t)length);
     char prefix[32];
     int prefix_length = snprintf(
-        prefix, sizeof(prefix), "%zx\r\n", data.length);
+        prefix, sizeof(prefix), "%zx\r\n", length);
     bool ok =
         prefix_length > 0 &&
         (size_t)prefix_length < sizeof(prefix) &&
         send_all(request->client_fd, prefix,
                  (size_t)prefix_length) &&
-        send_all(request->client_fd, data.data, data.length) &&
+        send_all(request->client_fd, data, length) &&
         send_all(request->client_fd, "\r\n", 2U);
     return ok
-         ? native_i64((int64_t)data.length)
+         ? native_i64((int64_t)length)
          : native_error("HTTP stream chunk write failed");
+}
+
+static LangNativeResult http_stream_chunk(LangVM *vm,
+                                          const LangValue *args,
+                                          size_t arg_count) {
+    (void)vm;
+    LangStringView data;
+    if (arg_count != 2U ||
+        !lang_value_string_view(&args[1], &data))
+        return native_error(
+            "http_stream_chunk expects `(request, data)`");
+    return http_stream_chunk_data(
+        get_request(&args[0]), data.data, data.length);
+}
+
+static LangNativeResult http_stream_chunk_bytes(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    (void)vm;
+    LangByteSlice data;
+    if (arg_count != 2U ||
+        !lang_value_byte_slice(&args[1], &data))
+        return native_error(
+            "http_stream_chunk_bytes expects `(request, bytes)`");
+    return http_stream_chunk_data(
+        get_request(&args[0]), data.data, data.length);
 }
 
 static LangNativeResult http_stream_finish(LangVM *vm,
@@ -1838,6 +1857,8 @@ void lang_register_http_natives(LangVM *vm) {
                                http_stream_begin_headers, 4U);
     (void)lang_register_native(vm, "HttpStreamChunk",
                                http_stream_chunk, 2U);
+    (void)lang_register_native(vm, "HttpStreamChunkBytes",
+                               http_stream_chunk_bytes, 2U);
     (void)lang_register_native(vm, "HttpStreamFinish",
                                http_stream_finish, 1U);
 }

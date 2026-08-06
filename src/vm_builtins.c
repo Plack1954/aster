@@ -1443,6 +1443,29 @@ static LangNativeResult native_byte_slice_ends_value(
     return native_byte_slice_edge_value(vm, args, arg_count, true);
 }
 
+static LangNativeResult native_string_byte_slice_value(
+    LangVM *vm, const LangValue *args, size_t arg_count) {
+    (void)vm;
+    LangStringView bytes;
+    if (arg_count != 1U ||
+        !lang_value_string_view(&args[0], &bytes))
+        return (LangNativeResult){
+            false, {.tag=LANG_VALUE_UNIT},
+            "StringAsByteSlice expects one string"
+        };
+    return (LangNativeResult){
+        true,
+        {
+            .tag=LANG_VALUE_BYTE_SLICE,
+            .as.bytes={
+                (unsigned char *)(uintptr_t)bytes.data,
+                bytes.length
+            }
+        },
+        NULL
+    };
+}
+
 static LangNativeResult native_byte_slice_string_value(
     LangVM *vm, const LangValue *args, size_t arg_count) {
     LangByteSlice bytes;
@@ -2011,6 +2034,8 @@ void lang_vm_register_builtins(LangVM *vm) {
                                native_byte_slice_starts_value, 2U);
     (void)lang_register_native(vm, "ByteSliceEndsWith",
                                native_byte_slice_ends_value, 2U);
+    (void)lang_register_native(vm, "StringAsByteSlice",
+                               native_string_byte_slice_value, 1U);
     (void)lang_register_native(vm, "ByteSliceToString",
                                native_byte_slice_string_value, 3U);
     (void)lang_register_native(vm, "NativeFileClose",

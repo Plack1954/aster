@@ -176,17 +176,13 @@ private Response Stylesheet(Request request)
 
 private Response Binary(Request request)
 {
-    MemoryStream stream = MemoryStream.Create();
     List<byte> bytes = new();
-    bytes.Add(79);
-    bytes.Add(114);
-    bytes.Add(97);
-    bytes.Add(110);
-    bytes.Add(103);
+    bytes.Add(65);
+    bytes.Add(115);
+    bytes.Add(116);
     bytes.Add(101);
-    stream.Write(bytes);
-    stream.Seek(0, SeekOrigin.Begin);
-    return Results.Stream(stream, AssetKind.Binary);
+    bytes.Add(114);
+    return Results.Bytes(bytes);
 }
 
 private Response LargeBinary(Request request)

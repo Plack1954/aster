@@ -1,6 +1,7 @@
 namespace Lime.CurrentHttp;
 
 using Lime;
+using Aster.Memory;
 using Aster.Net.Http;
 using Aster.Html;
 using System.IO;
@@ -100,6 +101,28 @@ public Result<bool, string> CurrentHttpSend(
                 bytes
             );
         }
+        case ResponseBody.Bytes(byteBody): {
+            (List<byte> bytes, AssetKind kind) = byteBody;
+            Buffer buffer = Buffer.allocate((long)bytes.Count);
+            unsafe
+            {
+                Span<byte> destination = BufferAsMutSlice(buffer);
+                for (nuint index = 0; index < bytes.Count; index += 1)
+                {
+                    ByteSliceSet(destination, index, bytes[index]);
+                }
+                HttpStreamBeginHeaders(
+                    request, (long)status,
+                    AssetContentType(kind), headerBlock
+                );
+                if (HttpRequestMethod(request) != "HEAD")
+                {
+                    HttpStreamChunkBytes(request, destination);
+                }
+                HttpStreamFinish(request);
+            }
+            return Result.Ok(false);
+        }
         case ResponseBody.Stream(streamBody): {
             (Stream stream, AssetKind kind) = streamBody;
             try
@@ -112,22 +135,18 @@ public Result<bool, string> CurrentHttpSend(
                 );
                 if (HttpRequestMethod(request) != "HEAD")
                 {
-                    bool reading = true;
-                    while (reading)
+                    Buffer buffer = Buffer.allocate(65536);
+                    unsafe
                     {
-                        List<byte> bytes = stream.Read(65536);
-                        if (bytes.Count == 0)
+                        Span<byte> destination = BufferAsMutSlice(buffer);
+                        while (true)
                         {
-                            reading = false;
-                        }
-                        else
-                        {
-                            StringBuilder chunk = new();
-                            foreach (byte value in bytes)
-                            {
-                                chunk.AppendByte(value);
-                            }
-                            HttpStreamChunk(request, chunk.ToString());
+                            nuint count = stream.ReadInto(destination);
+                            if (count == 0) { break; }
+                            ReadOnlySpan<byte> chunk = ByteSliceRange(
+                                destination, 0, count
+                            );
+                            HttpStreamChunkBytes(request, chunk);
                         }
                     }
                 }
@@ -152,16 +171,19 @@ public Result<bool, string> CurrentHttpSend(
                 );
                 if (HttpRequestMethod(request) != "HEAD")
                 {
-                    while (true)
+                    Buffer buffer = Buffer.allocate(65536);
+                    unsafe
                     {
-                        List<byte> bytes = stream.Read(65536);
-                        if (bytes.Count == 0) { break; }
-                        StringBuilder chunk = new();
-                        foreach (byte value in bytes)
+                        Span<byte> destination = BufferAsMutSlice(buffer);
+                        while (true)
                         {
-                            chunk.AppendByte(value);
+                            nuint count = stream.ReadInto(destination);
+                            if (count == 0) { break; }
+                            ReadOnlySpan<byte> chunk = ByteSliceRange(
+                                destination, 0, count
+                            );
+                            HttpStreamChunkBytes(request, chunk);
                         }
-                        HttpStreamChunk(request, chunk.ToString());
                     }
                 }
                 HttpStreamFinish(request);

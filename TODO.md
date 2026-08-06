@@ -54,8 +54,8 @@ do not reproduce unrelated C++ special-member complexity.
   instantiation.
   Direct sites now do so, including self-assignment, returns from `const ref`,
   deconstruction, `foreach`, and `List.Get`/`Queue.Peek`/`Stack.Peek`/
-  `Dictionary.Get`. The conditional `TryPeek` and `TryGetValue` out-parameter
-  paths still need typed custom-copy lowering.
+  `Dictionary.Get`, plus the conditional `Queue.TryPeek`, `Stack.TryPeek`, and
+  `Dictionary.TryGetValue` out-parameter paths.
 - [ ] Check that a custom copy constructor completely initializes its result and
   cannot mutate its immutable source through the reference.
 - [x] Produce one consistent deleted-copy diagnostic that identifies both the

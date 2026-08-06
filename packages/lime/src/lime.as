@@ -2,6 +2,7 @@ namespace Lime;
 
 using Lime.Forwarding;
 using Lime.Routing;
+using Aster.Memory;
 using Aster.Html;
 using System.IO;
 using System.Text;
@@ -73,6 +74,12 @@ public struct StreamBody
     AssetKind kind;
 }
 
+public struct ByteBody
+{
+    List<byte> bytes;
+    AssetKind kind;
+}
+
 public struct FileBody
 {
     string path;
@@ -86,6 +93,7 @@ public union ResponseBody
     Text(string),
     Css(string),
     Asset(AssetBody),
+    Bytes(ByteBody),
     Stream(StreamBody),
     File(FileBody),
 }
@@ -120,6 +128,7 @@ public struct StatusCodes
     public static int Status404NotFound => 404;
     public static int Status405MethodNotAllowed => 405;
     public static int Status409Conflict => 409;
+    public static int Status413PayloadTooLarge => 413;
     public static int Status415UnsupportedMediaType => 415;
     public static int Status422UnprocessableEntity => 422;
     public static int Status429TooManyRequests => 429;
@@ -295,6 +304,27 @@ public Response Results.Asset(
     };
 }
 
+public Response Results.Bytes(
+    int status,
+    List<byte> bytes,
+    AssetKind kind
+)
+{
+    EnsureResponseBodyAllowed(status);
+    List<ResponseHeader> headers = new();
+    ByteBody byteBody = new()
+    {
+        bytes = bytes,
+        kind = kind
+    };
+    return new()
+    {
+        status = status,
+        body = ResponseBody.Bytes(byteBody),
+        headers = headers
+    };
+}
+
 public Response Results.Json(int status, string bytes)
 {
     return Results.Asset(status, bytes, AssetKind.Json);
@@ -373,6 +403,16 @@ public Response Results.Asset(string bytes, AssetKind kind)
         body = ResponseBody.Asset(asset),
         headers = headers
     };
+}
+
+public Response Results.Bytes(List<byte> bytes, AssetKind kind)
+{
+    return Results.Bytes(StatusCodes.Status200OK, bytes, kind);
+}
+
+public Response Results.Bytes(List<byte> bytes)
+{
+    return Results.Bytes(bytes, AssetKind.Binary);
 }
 
 public Response Results.JavaScript(string bytes)
@@ -1084,6 +1124,7 @@ public class WebApplication
     public RouteHandler fallback;
     public ExceptionHandler exceptionHandler;
     public Option<ForwardedHeadersOptions> forwardedHeaders;
+    public long maxRequestBodySize;
 
     public LinkGenerator Links => new() { Application = this };
     public EndpointDataSource Endpoints => new() { Application = this };
@@ -1100,11 +1141,23 @@ public class WebApplication
         fallback = RouteHandler.Sync(DefaultNotFound);
         exceptionHandler = DefaultExceptionResponse;
         forwardedHeaders = Option.None;
+        maxRequestBodySize = 1048576;
     }
 
     public static WebApplication Create()
     {
         return new WebApplication();
+    }
+
+    public void SetMaxRequestBodySize(long bytes)
+    {
+        if (bytes < 0)
+        {
+            throw new ArgumentException(
+                "maximum request body size cannot be negative"
+            );
+        }
+        maxRequestBodySize = bytes;
     }
 
     ~WebApplication()
@@ -1573,6 +1626,18 @@ public Request RequestNew(
         body,
         ""
     );
+}
+
+// This view borrows the Request's owned buffered body and does not extend its
+// lifetime.
+public ReadOnlySpan<byte> Request.BodyBytes(Request self)
+{
+    return StringAsByteSlice(self.body);
+}
+
+public nuint Request.BodyLength(Request self)
+{
+    return self.body.Length;
 }
 
 public Option<string> Request.Header(Request self, string name)
@@ -5455,6 +5520,14 @@ private Response ApplyHtmlMiddleware(
                 headers = headers
             };
         }
+        case ResponseBody.Bytes(byteBody): {
+            return new()
+            {
+                status = status,
+                body = ResponseBody.Bytes(byteBody),
+                headers = headers
+            };
+        }
         case ResponseBody.Stream(stream): {
             return new()
             {
@@ -5495,6 +5568,13 @@ private FilterResult ApplyRequestFilters(
 
 private Response DispatchAppUnchecked(WebApplication self, Request request)
 {
+    if ((long)request.BodyLength() > self.maxRequestBodySize)
+    {
+        return Results.Text(
+            StatusCodes.Status413PayloadTooLarge,
+            "Request body exceeds the configured limit."
+        );
+    }
     request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
     switch (ApplyRequestFilters(self.filters, request))
     {
@@ -5537,6 +5617,13 @@ private async Task<Response> DispatchAppUncheckedAsync(
     Request request
 )
 {
+    if ((long)request.BodyLength() > self.maxRequestBodySize)
+    {
+        return Results.Text(
+            StatusCodes.Status413PayloadTooLarge,
+            "Request body exceeds the configured limit."
+        );
+    }
     request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
     switch (ApplyRequestFilters(self.filters, request))
     {
@@ -5576,6 +5663,13 @@ public async Task<Response> WebApplication.DispatchAsync(WebApplication self, Re
 
 private Response DispatchAppFallbackUnchecked(WebApplication self, Request request)
 {
+    if ((long)request.BodyLength() > self.maxRequestBodySize)
+    {
+        return Results.Text(
+            StatusCodes.Status413PayloadTooLarge,
+            "Request body exceeds the configured limit."
+        );
+    }
     request = ApplyConfiguredForwardedHeaders(self.forwardedHeaders, request);
     switch (ApplyRequestFilters(self.filters, request))
     {
@@ -5616,6 +5710,13 @@ public async Task<Response> WebApplication.DispatchFallbackAsync(
 {
     try
     {
+        if ((long)request.BodyLength() > self.maxRequestBodySize)
+        {
+            return Results.Text(
+                StatusCodes.Status413PayloadTooLarge,
+                "Request body exceeds the configured limit."
+            );
+        }
         request = ApplyConfiguredForwardedHeaders(
             self.forwardedHeaders, request
         );

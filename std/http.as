@@ -207,6 +207,11 @@ public extern long HttpStreamChunk(
     string data
 );
 
+public extern long HttpStreamChunkBytes(
+    NativeHandle request,
+    ReadOnlySpan<byte> data
+);
+
 public extern long HttpStreamFinish(
     NativeHandle request
 );

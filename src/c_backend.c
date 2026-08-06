@@ -398,8 +398,10 @@ bool c_backend_registry_native_symbol(const char *symbol) {
             strcmp(symbol, "HttpStreamBegin") == 0 ||
             strcmp(symbol, "HttpStreamBeginHeaders") == 0 ||
             strcmp(symbol, "HttpStreamChunk") == 0 ||
+            strcmp(symbol, "HttpStreamChunkBytes") == 0 ||
             strcmp(symbol, "HttpStreamFinish") == 0 ||
             strncmp(symbol, "ByteSlice", 9U) == 0 ||
+            strcmp(symbol, "StringAsByteSlice") == 0 ||
             strcmp(symbol, "UnicodeToUpper") == 0 ||
             strcmp(symbol, "UnicodeToLower") == 0 ||
             strcmp(symbol, "UnicodeSpecialUpper") == 0 ||

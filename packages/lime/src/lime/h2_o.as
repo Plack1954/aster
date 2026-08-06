@@ -1,6 +1,7 @@
 namespace Lime.H2O;
 
 using Lime;
+using Aster.Memory;
 using Aster.Html;
 using System.IO;
 using System.Text;
@@ -82,6 +83,14 @@ public extern Result<bool, string> H2OTryRespond(
     string body,
     bool head
 );
+public extern Result<bool, string> H2OTryRespondBytes(
+    NativeHandle request,
+    long status,
+    string contentType,
+    string headers,
+    ReadOnlySpan<byte> body,
+    bool head
+);
 public extern Result<bool, string> H2OTryRespondEmpty(
     NativeHandle request,
     long status,
@@ -97,6 +106,11 @@ public extern Result<NativeHandle, string> H2OTryStreamBegin(
 public extern Result<bool, string> H2OTryStreamWrite(
     NativeHandle stream,
     string bytes,
+    bool final
+);
+public extern Result<bool, string> H2OTryStreamWriteBytes(
+    NativeHandle stream,
+    ReadOnlySpan<byte> bytes,
     bool final
 );
 public extern Result<bool, string> H2ORegisterStatic(
@@ -158,6 +172,7 @@ private Result<bool, string> H2OSendStream(
 {
     try
     {
+        Buffer buffer = Buffer.allocate(65536);
         NativeHandle output = try H2OTryStreamBegin(
             request, status, contentType, headers, head
         );
@@ -165,24 +180,24 @@ private Result<bool, string> H2OSendStream(
         {
             return H2OTryStreamWrite(output, "", true);
         }
-        while (true)
+        unsafe
         {
-            List<byte> bytes = stream.Read(65536);
-            if (bytes.Count == 0)
+            Span<byte> destination = BufferAsMutSlice(buffer);
+            while (true)
             {
-                return H2OTryStreamWrite(output, "", true);
-            }
-            StringBuilder chunk = new();
-            foreach (byte value in bytes)
-            {
-                chunk.AppendByte(value);
-            }
-            switch (H2OTryStreamWrite(
-                output, chunk.ToString(), false
-            ))
-            {
-                case Result.Ok(sent): { }
-                case Result.Err(error): { return Result.Err(error); }
+                nuint count = stream.ReadInto(destination);
+                if (count == 0)
+                {
+                    return H2OTryStreamWrite(output, "", true);
+                }
+                ReadOnlySpan<byte> chunk = ByteSliceRange(
+                    destination, 0, count
+                );
+                switch (H2OTryStreamWriteBytes(output, chunk, false))
+                {
+                    case Result.Ok(sent): { }
+                    case Result.Err(error): { return Result.Err(error); }
+                }
             }
         }
     }
@@ -255,6 +270,22 @@ public Result<bool, string> H2OSend(
                 request, (long)status, H2OAssetContentType(kind),
                 headerBlock, bytes, head
             );
+        }
+        case ResponseBody.Bytes(byteBody): {
+            (List<byte> bytes, AssetKind kind) = byteBody;
+            Buffer buffer = Buffer.allocate((long)bytes.Count);
+            unsafe
+            {
+                Span<byte> destination = BufferAsMutSlice(buffer);
+                for (nuint index = 0; index < bytes.Count; index += 1)
+                {
+                    ByteSliceSet(destination, index, bytes[index]);
+                }
+                return H2OTryRespondBytes(
+                    request, (long)status, H2OAssetContentType(kind),
+                    headerBlock, destination, head
+                );
+            }
         }
         case ResponseBody.Stream(streamBody): {
             (Stream stream, AssetKind kind) = streamBody;

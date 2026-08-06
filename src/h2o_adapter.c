@@ -1036,6 +1036,34 @@ static LangNativeResult h2o_respond_value(
     });
 }
 
+static LangNativeResult h2o_respond_bytes_value(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    LimeH2ORequest *wrapper = arg_count == 6U
+        ? get_h2o_request(&args[0]) : NULL;
+    int64_t status;
+    LangStringView content_type;
+    LangStringView headers;
+    LangByteSlice body;
+    if (wrapper == NULL || wrapper->request == NULL || wrapper->responded ||
+        !h2o_integer_arg(&args[1], &status) ||
+        !lang_value_string_view(&args[2], &content_type) ||
+        !lang_value_string_view(&args[3], &headers) ||
+        !lang_value_byte_slice(&args[4], &body) ||
+        args[5].tag != LANG_VALUE_BOOL)
+        return h2o_result_error(vm, "invalid H2O byte response arguments");
+    h2o_req_t *request = wrapper->request;
+    if (!h2o_prepare_response(request, status, content_type, headers))
+        return h2o_result_error(vm, "invalid H2O response metadata");
+    size_t length = (status == 204 || args[5].as.boolean) ? 0U : body.length;
+    h2o_send_inline(request, (const char *)body.data, length);
+    wrapper->responded = true;
+    wrapper->request = NULL;
+    return h2o_result_value(vm, (LangValue){
+        .tag=LANG_VALUE_BOOL, .as.boolean=true
+    });
+}
+
 static LangNativeResult h2o_stream_begin_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
@@ -1077,17 +1105,11 @@ static LangNativeResult h2o_stream_begin_value(
     return h2o_result_value(vm, handle);
 }
 
-static LangNativeResult h2o_stream_write_value(
-    LangVM *vm, const LangValue *args, size_t arg_count
+static LangNativeResult h2o_stream_write_chunk(
+    LangVM *vm, LimeH2OStream *stream,
+    const void *data, size_t length, bool final
 ) {
-    LimeH2OStream *stream = arg_count == 3U
-        ? get_h2o_stream(&args[0]) : NULL;
-    LangStringView chunk;
-    if (stream == NULL ||
-        !lang_value_string_view(&args[1], &chunk) ||
-        args[2].tag != LANG_VALUE_BOOL)
-        return h2o_result_error(vm, "invalid H2O stream write arguments");
-    if (chunk.length > 1024U * 1024U)
+    if (length > 1024U * 1024U)
         return h2o_result_error(vm, "H2O response chunk exceeds 1 MiB");
     while (!stream->ready && !stream->stopped) {
         if (stream->server == NULL ||
@@ -1103,17 +1125,16 @@ static LangNativeResult h2o_stream_write_value(
         return h2o_result_error(vm, "H2O response stream already finished");
 
     char *copy = NULL;
-    if (chunk.length != 0U) {
-        copy = malloc(chunk.length);
+    if (length != 0U) {
+        copy = malloc(length);
         if (copy == NULL) return h2o_native_failure("out of memory");
-        memcpy(copy, chunk.data, chunk.length);
+        memcpy(copy, data, length);
     }
     stream->inflight = copy;
     stream->ready = false;
-    bool final = args[2].as.boolean;
-    h2o_iovec_t output = h2o_iovec_init(copy, chunk.length);
-    h2o_send(stream->request, chunk.length != 0U ? &output : NULL,
-             chunk.length != 0U ? 1U : 0U,
+    h2o_iovec_t output = h2o_iovec_init(copy, length);
+    h2o_send(stream->request, length != 0U ? &output : NULL,
+             length != 0U ? 1U : 0U,
              final ? H2O_SEND_STATE_FINAL : H2O_SEND_STATE_IN_PROGRESS);
     if (final) {
         stream->final_sent = true;
@@ -1122,6 +1143,35 @@ static LangNativeResult h2o_stream_write_value(
     return h2o_result_value(vm, (LangValue){
         .tag=LANG_VALUE_BOOL, .as.boolean=true
     });
+}
+
+static LangNativeResult h2o_stream_write_value(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    LimeH2OStream *stream = arg_count == 3U
+        ? get_h2o_stream(&args[0]) : NULL;
+    LangStringView chunk;
+    if (stream == NULL ||
+        !lang_value_string_view(&args[1], &chunk) ||
+        args[2].tag != LANG_VALUE_BOOL)
+        return h2o_result_error(vm, "invalid H2O stream write arguments");
+    return h2o_stream_write_chunk(
+        vm, stream, chunk.data, chunk.length, args[2].as.boolean);
+}
+
+static LangNativeResult h2o_stream_write_bytes_value(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    LimeH2OStream *stream = arg_count == 3U
+        ? get_h2o_stream(&args[0]) : NULL;
+    LangByteSlice chunk;
+    if (stream == NULL ||
+        !lang_value_byte_slice(&args[1], &chunk) ||
+        args[2].tag != LANG_VALUE_BOOL)
+        return h2o_result_error(vm,
+            "invalid H2O byte stream write arguments");
+    return h2o_stream_write_chunk(
+        vm, stream, chunk.data, chunk.length, args[2].as.boolean);
 }
 
 #else
@@ -1155,6 +1205,14 @@ H2O_UNAVAILABLE(h2o_request_remote_ip_value, "H2O is unavailable")
 H2O_UNAVAILABLE(h2o_request_scheme_value, "H2O is unavailable")
 
 static LangNativeResult h2o_respond_value(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    (void)args;
+    (void)arg_count;
+    return h2o_result_error(vm, "H2O is unavailable");
+}
+
+static LangNativeResult h2o_respond_bytes_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
     (void)args;
@@ -1210,6 +1268,14 @@ static LangNativeResult h2o_stream_write_value(
     return h2o_result_error(vm, "H2O is unavailable");
 }
 
+static LangNativeResult h2o_stream_write_bytes_value(
+    LangVM *vm, const LangValue *args, size_t arg_count
+) {
+    (void)args;
+    (void)arg_count;
+    return h2o_result_error(vm, "H2O is unavailable");
+}
+
 #endif
 
 void lang_register_h2o_natives(LangVM *vm) {
@@ -1241,12 +1307,16 @@ void lang_register_h2o_natives(LangVM *vm) {
                                h2o_request_scheme_value, 1U);
     (void)lang_register_native(vm, "H2OTryRespond",
                                h2o_respond_value, 6U);
+    (void)lang_register_native(vm, "H2OTryRespondBytes",
+                               h2o_respond_bytes_value, 6U);
     (void)lang_register_native(vm, "H2OTryRespondEmpty",
                                h2o_respond_empty_value, 3U);
     (void)lang_register_native(vm, "H2OTryStreamBegin",
                                h2o_stream_begin_value, 5U);
     (void)lang_register_native(vm, "H2OTryStreamWrite",
                                h2o_stream_write_value, 3U);
+    (void)lang_register_native(vm, "H2OTryStreamWriteBytes",
+                               h2o_stream_write_bytes_value, 3U);
     (void)lang_register_native(vm, "H2ORegisterStatic",
                                h2o_register_static_value, 2U);
     (void)lang_register_native(vm, "H2OTryRespondFile",

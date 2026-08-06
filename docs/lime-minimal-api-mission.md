@@ -90,8 +90,9 @@ Lime's transport boundary is substantially better than its application API.
 The following work should be preserved:
 
 - `Request` and `Response` are independent of the socket implementation.
-- Response bodies distinguish native `Html`, text, CSS, assets, streams, and
-  files instead of reducing everything to an untyped byte/string convention.
+- Response bodies distinguish native `Html`, text, CSS, assets, owned bytes,
+  streams, and files instead of reducing everything to an untyped
+  byte/string convention.
 - Response headers and cookies are validated before reaching an adapter.
 - The development HTTP implementation and H2O adapter consume the same request
   and response model.
@@ -168,6 +169,14 @@ worktree:
 - CurrentHttp and H2O both close response streams deterministically. HEAD
   response handling no longer reads a CurrentHttp stream or file merely to
   discard its bytes.
+- `Results.Bytes` owns an independent `List<byte>`. CurrentHttp and H2O lower
+  it to borrowed byte spans at the synchronous native boundary, and stream and
+  file response loops reuse one `Buffer` rather than rebuilding strings for
+  every chunk.
+- `Request.BodyBytes` exposes a zero-copy borrowed byte span over the buffered
+  body, including embedded zero bytes. `WebApplication` defaults to a 1 MiB
+  body policy and rejects larger bodies with 413 before filters or handlers;
+  adapter limits remain responsible for bounding pre-dispatch buffering.
 - `WebApplication.MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `MapHead`, and
   `MapMethods` accept either `Response` or `Task<Response>` handlers under the
   same names. `DispatchAsync` executes both shapes, preserves selected route
@@ -228,9 +237,11 @@ application architecture is not yet the target design:
    bound service methods when their delegate is asynchronous. H2O's current
    `ServeAsync` loop awaits one handler at a time;
    its event loop is not yet integrated with Aster's executor.
-7. Request bodies are buffered strings in the core request. CurrentHttp reads
-   the declared body completely during native request parsing, and H2O exposes
-   its already-buffered request entity. Response streaming exists, but neither
+7. Request bodies remain transport-buffered before dispatch. The core owns the
+   binary-capable storage and exposes both the compatibility `Body` string and
+   a borrowed `BodyBytes` span. CurrentHttp reads the declared body completely
+   during native request parsing, and H2O exposes its already-buffered request
+   entity. Response streaming exists, but neither
    transport currently supplies incremental body reads or a disconnect event
    to Aster's task executor. Consequently a truthful `RequestAborted` token
    cannot yet be implemented; attaching `CancellationToken.None` would only
@@ -653,7 +664,8 @@ It must not distort production HTTP semantics.
 ### Stage 6: async HTTP and lifecycle
 
 - Carry request cancellation through every adapter.
-- Expose bounded request-body streaming.
+- Expose bounded incremental request-body streaming beyond the implemented
+  bounded buffered-body API.
 - Support asynchronous handlers without blocking H2O's event loop.
 - Verify disconnect, timeout, streaming, exception, and graceful-shutdown
   cleanup under VM and generated-C execution.
