@@ -122,6 +122,8 @@ function updateBooleanState(source, scope, name, value) {
     for (const target of targetsFor(scope, name)) {
         if (target instanceof HTMLInputElement && target.type === "checkbox")
             target.checked = value;
+        else if (target instanceof HTMLButtonElement)
+            target.disabled = !value;
         else
             target.hidden = !value;
     }
@@ -152,6 +154,22 @@ function commitScalarState(
 function controlledTarget(source) {
     const controlledId = source.getAttribute("aria-controls");
     return controlledId === null ? null : document.getElementById(controlledId);
+}
+
+function validateAggregateProjections(source, scope, handlerName, fields) {
+    for (const {type, name} of fields) {
+        const hasNamedTarget = targetsFor(scope, name).length !== 0;
+        const ariaName = `aria-${name.replaceAll("_", "-")}`;
+        const hasControlledTarget = controlledTarget(source) !== null;
+        if (hasNamedTarget ||
+            (type === "h" && hasControlledTarget) ||
+            (type === "b" &&
+             (source.hasAttribute(ariaName) || hasControlledTarget)))
+            continue;
+        throw new Error(
+            `Aster projection target is missing: ${handlerName}.${name}`
+        );
+    }
 }
 
 function collectionFor(source, state) {
@@ -319,9 +337,12 @@ export async function hydrateAster({wasmUrl, root = document}) {
             throw new Error(
                 `Aster Task result export is missing: ${handlerName}`
             );
-        collectionFor(
-            source, stateFor(eventScope(source, root))
-        );
+        const initialScope = eventScope(source, root);
+        if (resultType === "a")
+            validateAggregateProjections(
+                source, initialScope, handlerName, aggregateFields
+            );
+        collectionFor(source, stateFor(initialScope));
 
         source.addEventListener(eventName, async (event) => {
             const form = source.closest("form");

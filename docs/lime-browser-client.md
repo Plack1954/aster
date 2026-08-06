@@ -47,8 +47,11 @@ or export adapter. Supported experiments cover:
 - owned string results and deterministic drops;
 - direct owned `Html` results;
 - supported typed patch structs;
-- one-to-many named text projections and named Boolean visibility or checkbox
-  projections, alongside ARIA and controlled-property updates;
+- one-to-many named text projections and named Boolean visibility, checkbox,
+  or button-enabled projections, alongside ARIA and controlled-property
+  updates;
+- hydration-time diagnostics for aggregate patch fields that have no matching
+  projection target;
 - island-local persistent scalar state initialized from SSR output;
 - multiple isolated component instances;
 - state shared by handlers in one semantic scope;
@@ -161,7 +164,16 @@ state, derived numbers, derived text, and conditional visibility while
 preserving the component DOM. Allowing one field to project to every matching
 named target removes duplicate patch fields. This is sufficient evidence to
 continue improving statically known projections; it is not evidence that a
-runtime signal graph is needed.
+runtime signal graph is needed. Extending the same typed Boolean projection to
+a named button also handles derived enabled/disabled state without handler-side
+DOM code. The trial currently produces about 9.9 KB of optimized Wasm and 16.3
+KB of unminified generic JavaScript (about 4.7 KB and 3.7 KB respectively when
+gzipped), so the JavaScript projection runtime—not reactive Wasm state—is the
+larger raw artifact to watch as capabilities grow. Hydration now also rejects
+a misspelled or absent aggregate projection with the handler and field name,
+rather than silently retaining state that never reaches the DOM. This improves
+feedback but remains runtime validation; complete compile-time validation is
+harder because targets can cross component and conditional HTML boundaries.
 
 ### Statically compiled fine-grained projections
 

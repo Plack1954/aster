@@ -14,6 +14,7 @@ public struct ReactiveCounterPatch
     int value;
     int doubled;
     bool positive;
+    bool canDecrease;
     string summary;
 }
 
@@ -43,6 +44,7 @@ private ReactiveCounterPatch ReactiveCounter(int value)
         value = value,
         doubled = value * 2,
         positive = value > 0,
+        canDecrease = value > 0,
         summary = $"Value {value}; doubled {value * 2}"
     };
 }
@@ -113,7 +115,11 @@ public Html BrowserPage(Html browserLoader)
             <button type="button" onclick=IncreaseReactive>
                 Increase
             </button>
-            <button type="button" onclick=DecreaseReactive>
+            <button
+                type="button"
+                name="canDecrease"
+                onclick=DecreaseReactive
+            >
                 Decrease
             </button>
         </section>
