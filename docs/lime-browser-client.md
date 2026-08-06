@@ -166,14 +166,24 @@ named target removes duplicate patch fields. This is sufficient evidence to
 continue improving statically known projections; it is not evidence that a
 runtime signal graph is needed. Extending the same typed Boolean projection to
 a named button also handles derived enabled/disabled state without handler-side
-DOM code. The trial currently produces about 9.9 KB of optimized Wasm and 16.3
-KB of unminified generic JavaScript (about 4.7 KB and 3.7 KB respectively when
-gzipped), so the JavaScript projection runtime—not reactive Wasm state—is the
+DOM code. The trial currently produces about 10.5 KB of optimized Wasm and
+16.3 KB of unminified generic JavaScript (about 5.0 KB and 3.7 KB respectively
+when gzipped), so the JavaScript projection runtime—not reactive Wasm state—is the
 larger raw artifact to watch as capabilities grow. Hydration now also rejects
 a misspelled or absent aggregate projection with the handler and field name,
 rather than silently retaining state that never reaches the DOM. This improves
 feedback but remains runtime validation; complete compile-time validation is
 harder because targets can cross component and conditional HTML boundaries.
+
+An input-driven query trial sends every `input` event through Wasm and projects
+length, preview text, and submit-button validity. Because the runtime changes
+only derived targets, the browser-owned input retains focus and caret position.
+A local headless-Chrome run processed 1,000 short synchronous input transitions
+in about 21 ms; that is a smoke measurement rather than a benchmark, but it
+shows no immediate need for scheduling or batching at this scale. SSR can call
+the same pure projection helper used by the event transition, eliminating
+repeated initial derived-value logic without a reactive runtime. The remaining
+ceremony is placing the projection fields and invoking that initializer.
 
 ### Statically compiled fine-grained projections
 

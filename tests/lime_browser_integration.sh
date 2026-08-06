@@ -61,6 +61,7 @@ grep -q 'data-aster-event="click|DecreaseReactive|a|l:value"' <<<"$page"
 test "$(grep -o 'name="value"' <<<"$page" | wc -l)" -ge 2
 grep -q 'name="positive"' <<<"$page"
 grep -q 'name="canDecrease"' <<<"$page"
+grep -q 'data-aster-event="input|ProjectQuery|a|s:query"' <<<"$page"
 test "$(curl -fsS \
     "http://127.0.0.1:${port}/browser/browser_http_server.wasm" |
     wc -c)" -gt 0

@@ -18,6 +18,13 @@ public struct ReactiveCounterPatch
     string summary;
 }
 
+public struct QueryProjection
+{
+    nuint length;
+    bool valid;
+    string preview;
+}
+
 private extern Task Task.Delay(int milliseconds);
 
 public int Increment(int count)
@@ -59,6 +66,16 @@ public ReactiveCounterPatch DecreaseReactive(int value)
     return ReactiveCounter(value - 1);
 }
 
+public QueryProjection ProjectQuery(string query)
+{
+    return new()
+    {
+        length = query.Length,
+        valid = query.Length >= 2,
+        preview = query.Length == 0 ? "Nothing to search" : $"Search: {query}"
+    };
+}
+
 public bool ValidateName(string name)
 {
     return name.Length >= 2;
@@ -93,6 +110,7 @@ public Html ReplaceMessage(string message)
 
 public Html BrowserPage(Html browserLoader)
 {
+    QueryProjection initialQuery = ProjectQuery("");
     return <main>
         <h1>Lime Browser 0.1</h1>
         <section id="counter-island">
@@ -123,6 +141,25 @@ public Html BrowserPage(Html browserLoader)
                 Decrease
             </button>
         </section>
+        <form
+            id="reactive-query"
+            action=Url.relative("/search")
+            method="get"
+        >
+            <label for="reactive-query-input">Query</label>
+            <input
+                id="reactive-query-input"
+                name="query"
+                oninput=ProjectQuery
+            />
+            <output name="length">{initialQuery.length}</output>
+            <output name="preview">{initialQuery.preview}</output>
+            <button
+                type="submit"
+                name="valid"
+                disabled=!initialQuery.valid
+            >Search</button>
+        </form>
         <form
             id="contact"
             action=Url.relative("/contact")
