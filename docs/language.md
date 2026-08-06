@@ -414,7 +414,11 @@ apply the stored value's copy policy. For a custom-copy value, the runtime
 borrows the selected element long enough to call its copy constructor; the
 source aggregate or collection remains unchanged. Returning a `const ref`
 parameter likewise copies because borrowed parameters are never eligible for
-return-value ownership transfer.
+return-value ownership transfer. The conditional read APIs `Queue.TryPeek`,
+`Stack.TryPeek`, and `Dictionary.TryGetValue` follow the same rule on success:
+they borrow the stored value and initialize the `out` destination through its
+copy constructor. On failure they replace the `out` destination with that
+type's default value, without invoking its copy constructor.
 
 `string` is Aster's single immutable UTF-8 string type. Assignment, argument
 passing, field reads, and returns retain the underlying reference-counted byte

@@ -1592,6 +1592,14 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 builder, OP_DROP_LOCAL, index, -1,
                 instruction->span);
             return;
+        case IR_OP_LOCAL_DEFAULT:
+            if (!as_i32(builder, instruction->index,
+                        instruction->span, &index))
+                return;
+            (void)emit_instruction(
+                builder, OP_DEFAULT_LOCAL, index, 0,
+                instruction->span);
+            return;
         case IR_OP_VALUE_CLONE:
             move_value(
                 builder, instruction->operands[0], instruction->span);
@@ -1966,6 +1974,23 @@ static void lower_instruction(IrBytecodeBuilder *builder,
             store_result(builder, instruction);
             return;
         }
+        case IR_OP_DICTIONARY_FIND: {
+            int32_t source_slot;
+            if (!as_i32(builder,
+                        value_slot(builder, instruction->operands[0]),
+                        instruction->span, &source_slot))
+                return;
+            (void)emit_instruction(
+                builder, OP_LOAD_LOCAL, source_slot, 0,
+                instruction->span);
+            move_value(builder, instruction->operands[1],
+                       instruction->span);
+            (void)emit_instruction(
+                builder, OP_DICTIONARY_FIND, 0, 0,
+                instruction->span);
+            store_result(builder, instruction);
+            return;
+        }
         case IR_OP_DICTIONARY_KEY_BORROW:
         case IR_OP_DICTIONARY_VALUE_BORROW: {
             int32_t source_slot;
@@ -2293,6 +2318,19 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 instruction->span);
             (void)emit_instruction(
                 builder, OP_POP, 0, 0, instruction->span);
+            return;
+        }
+        case IR_OP_LOCAL_FIELD_DEFAULT: {
+            int32_t local;
+            if (!as_i32(builder, instruction->index,
+                        instruction->span, &local))
+                return;
+            int32_t field = add_symbol_constant(
+                builder, instruction->symbol,
+                instruction->symbol_length, instruction->span);
+            (void)emit_instruction(
+                builder, OP_DEFAULT_FIELD_LOCAL, local, field,
+                instruction->span);
             return;
         }
         case IR_OP_INDEX_GET:

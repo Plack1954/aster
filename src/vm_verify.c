@@ -61,6 +61,8 @@ static bool verify_function_stack(const BytecodeFunction *function) {
                 break;
             case OP_CONSTANT_LOCAL:
             case OP_INVALIDATE_LOCAL:
+            case OP_DEFAULT_LOCAL:
+            case OP_DEFAULT_FIELD_LOCAL:
             case OP_COPY_LOCAL_TO:
             case OP_MOVE_LOCAL_TO:
             case OP_HTML_FRAGMENT_LOCAL:
@@ -113,6 +115,7 @@ static bool verify_function_stack(const BytecodeFunction *function) {
             case OP_DICTIONARY_VALUE_BORROW:
             case OP_LIST_ELEMENT_BORROW:
             case OP_DICTIONARY_GET_BORROW:
+            case OP_DICTIONARY_FIND:
                 required = 2; popped = 2; pushed = 1;
                 break;
             case OP_QUEUE_FRONT_BORROW:

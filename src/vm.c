@@ -291,6 +291,7 @@ static LangValue vm_execute_function_core(
         [OP_LOAD_LOCAL]=&&vm_dispatch_load_local,
         [OP_STORE_LOCAL]=&&vm_dispatch_store_local,
         [OP_MOVE_LOCAL]=&&vm_dispatch_move_local,
+        [OP_DEFAULT_LOCAL]=&&vm_dispatch_default_local,
         [OP_REFERENCE_LOCAL]=&&vm_dispatch_reference_local,
         [OP_REFERENCE_FIELD_LOCAL]=&&vm_dispatch_reference_field_local,
         [OP_INVALIDATE_LOCAL]=&&vm_dispatch_invalidate_local,
@@ -353,6 +354,7 @@ static LangValue vm_execute_function_core(
         [OP_GET_FIELD_LOCAL_MOVE]=&&vm_dispatch_get_field_local_move,
         [OP_GET_FIELD_BORROW]=&&vm_dispatch_get_field_borrow,
         [OP_SET_FIELD_LOCAL]=&&vm_dispatch_set_field_local,
+        [OP_DEFAULT_FIELD_LOCAL]=&&vm_dispatch_default_field_local,
         [OP_GET_TAG]=&&vm_dispatch_get_tag,
         [OP_TAKE_PAYLOAD]=&&vm_dispatch_take_payload,
         [OP_BORROW_PAYLOAD]=&&vm_dispatch_borrow_payload,
@@ -363,6 +365,7 @@ static LangValue vm_execute_function_core(
         [OP_QUEUE_FRONT_BORROW]=&&vm_dispatch_queue_front_borrow,
         [OP_STACK_TOP_BORROW]=&&vm_dispatch_stack_top_borrow,
         [OP_DICTIONARY_GET_BORROW]=&&vm_dispatch_dictionary_get_borrow,
+        [OP_DICTIONARY_FIND]=&&vm_dispatch_dictionary_find,
         [OP_SET_LOCAL]=&&vm_dispatch_set_local,
         [OP_HTML_FRAGMENT]=&&vm_dispatch_html_fragment,
         [OP_HTML_BEGIN]=&&vm_dispatch_html_begin,
@@ -501,6 +504,19 @@ static LangValue vm_execute_function_core(
                 }
                 PUSH(LOCAL((size_t)instruction.a));
                 initialized[(size_t)instruction.a] = false; break;
+            VM_LABEL(default_local)
+            case OP_DEFAULT_LOCAL: {
+                size_t slot = (size_t)instruction.a;
+                if (!initialized[slot]) {
+                    runtime_error(vm, instruction,
+                                  "defaulting an unavailable local");
+                    goto fail;
+                }
+                LangValueTag tag = LOCAL(slot).tag;
+                vm_value_drop_owned(vm, LOCAL(slot));
+                LOCAL(slot) = (LangValue){.tag=tag};
+                break;
+            }
             VM_LABEL(reference_local)
             case OP_REFERENCE_LOCAL:
                 if (instruction.a < 0 ||
@@ -2280,6 +2296,54 @@ vm_switch_integer_binary:
                 PUSH(((LangValue){.tag=LANG_VALUE_UNIT}));
                 break;
             }
+            VM_LABEL(default_field_local)
+            case OP_DEFAULT_FIELD_LOCAL: {
+                size_t slot = (size_t)instruction.a;
+                Object *object = initialized[slot] &&
+                    (LOCAL(slot).tag == LANG_VALUE_OBJECT ||
+                     LOCAL(slot).tag == LANG_VALUE_RAW_POINTER)
+                    ? (LOCAL(slot).tag == LANG_VALUE_OBJECT
+                        ? LOCAL(slot).as.object : LOCAL(slot).as.pointer)
+                    : NULL;
+                LangStringView field =
+                    vm->module->constants[(size_t)instruction.b]
+                        .value.as.string;
+                if (object == NULL || object->kind != OBJECT_STRUCT) {
+                    runtime_error(vm, instruction,
+                                  "field default requires a struct");
+                    goto fail;
+                }
+                char *cursor = strchr(
+                    object->as.structure.metadata, '|');
+                bool found = false;
+                size_t field_index = 0U;
+                while (cursor != NULL &&
+                       field_index < object->as.structure.count) {
+                    ++cursor;
+                    char *end = strchr(cursor, '|');
+                    size_t length = end != NULL
+                        ? (size_t)(end - cursor) : strlen(cursor);
+                    if (length == field.length &&
+                        memcmp(cursor, field.data, length) == 0) {
+                        LangValueTag tag = object->as.structure
+                            .fields[field_index].tag;
+                        vm_value_drop_owned(
+                            vm, object->as.structure.fields[field_index]);
+                        object->as.structure.fields[field_index] =
+                            (LangValue){.tag=tag};
+                        found = true;
+                        break;
+                    }
+                    cursor = end;
+                    ++field_index;
+                }
+                if (!found) {
+                    runtime_error(vm, instruction,
+                                  "unknown struct field");
+                    goto fail;
+                }
+                break;
+            }
             VM_LABEL(get_tag)
             case OP_GET_TAG: {
                 LangValue aggregate = POP();
@@ -2343,14 +2407,22 @@ vm_switch_integer_binary:
                 LangValue collection = POP();
                 Object *object = collection.tag == LANG_VALUE_OBJECT
                     ? collection.as.object : NULL;
-                if (object == NULL || object->kind != OBJECT_DICTIONARY) {
+                if (object == NULL ||
+                    (object->kind != OBJECT_DICTIONARY &&
+                     object->kind != OBJECT_VEC &&
+                     object->kind != OBJECT_QUEUE)) {
                     runtime_error(vm, instruction,
-                                  "collection count requires a dictionary");
+                                  "collection count requires a collection");
                     goto fail;
                 }
+                size_t count = object->kind == OBJECT_DICTIONARY
+                    ? object->as.dictionary.count / 2U
+                    : object->kind == OBJECT_QUEUE
+                        ? object->as.queue.count
+                        : object->as.vector.count;
                 PUSH(((LangValue){
                     .tag=LANG_VALUE_U64,
-                    .as.u64=(uint64_t)(object->as.dictionary.count / 2U)
+                    .as.u64=(uint64_t)count
                 }));
                 break;
             }
@@ -2441,6 +2513,27 @@ vm_switch_integer_binary:
                     goto fail;
                 }
                 PUSH(object->as.dictionary.items[found + 1U]);
+                break;
+            }
+            VM_LABEL(dictionary_find)
+            case OP_DICTIONARY_FIND: {
+                LangValue key = POP();
+                LangValue collection = POP();
+                Object *object = collection.tag == LANG_VALUE_OBJECT
+                    ? collection.as.object : NULL;
+                if (object == NULL || object->kind != OBJECT_DICTIONARY) {
+                    vm_value_drop_owned(vm, key);
+                    runtime_error(vm, instruction,
+                                  "dictionary find requires a dictionary");
+                    goto fail;
+                }
+                size_t found = vm_dictionary_find(object, key);
+                vm_value_drop_owned(vm, key);
+                PUSH(((LangValue){
+                    .tag=LANG_VALUE_U64,
+                    .as.u64=found == SIZE_MAX
+                        ? UINT64_MAX : (uint64_t)(found / 2U)
+                }));
                 break;
             }
             VM_LABEL(html_fragment)

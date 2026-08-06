@@ -299,6 +299,16 @@ add_aster_generated_c_test(
     tests/associative_collection_custom_copy.as
     associative_collection_custom_copy
     "-DEXPECTED_OUTPUT=12\n13\n1\n")
+add_test(NAME conditional_out_custom_copy_vm
+    COMMAND lang run tests/conditional_out_custom_copy.as)
+set_tests_properties(conditional_out_custom_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "12[\r\n]+0[\r\n]+22[\r\n]+0[\r\n]+32[\r\n]+0")
+add_aster_generated_c_test(
+    conditional_out_custom_copy_generated_c
+    tests/conditional_out_custom_copy.as
+    conditional_out_custom_copy
+    "-DEXPECTED_OUTPUT=12\n0\n22\n0\n32\n0\n")
 add_test(NAME nested_custom_copy_vm
     COMMAND lang run tests/nested_custom_copy.as)
 set_tests_properties(nested_custom_copy_vm PROPERTIES

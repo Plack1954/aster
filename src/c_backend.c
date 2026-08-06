@@ -965,6 +965,27 @@ void c_backend_emit_instruction(CEmitter *emitter,
             }
             return;
         }
+        case IR_OP_LOCAL_DEFAULT: {
+            IrTypeId local_type =
+                function->locals[instruction->index].type;
+            if (c_backend_local_tracks_drop(
+                    emitter, function, instruction->index)) {
+                fprintf(output, "    if (l%" PRIu32 "_live) ",
+                        instruction->index);
+                c_backend_emit_drop_call(
+                    emitter, local_type, "l", instruction->index);
+                fputs(";\n", output);
+            }
+            fprintf(output,
+                    "    memset(&l%" PRIu32
+                    ", 0, sizeof(l%" PRIu32 "));\n",
+                    instruction->index, instruction->index);
+            if (c_backend_local_tracks_drop(
+                    emitter, function, instruction->index))
+                fprintf(output, "    l%" PRIu32 "_live = true;\n",
+                        instruction->index);
+            return;
+        }
         case IR_OP_VALUE_DISCARD: {
             if (instruction->auxiliary == 1U) return;
             IrTypeId value_type =
@@ -1711,6 +1732,34 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     instruction->result);
             return;
         }
+        case IR_OP_DICTIONARY_FIND: {
+            const IrType *dictionary = &emitter->ir->types[
+                function->value_types[instruction->operands[0]]];
+            fprintf(output,
+                    "    v%" PRIu32 " = UINT64_MAX;\n"
+                    "    for (size_t i = 0U; i < v%" PRIu32
+                    "->length; ++i) {\n"
+                    "        if (",
+                    instruction->result, instruction->operands[0]);
+            emit_dictionary_key_equality(
+                emitter,
+                &emitter->ir->types[dictionary->element_type],
+                instruction->operands[0], "i",
+                instruction->operands[1]);
+            fprintf(output,
+                    ") { v%" PRIu32 " = (uint64_t)i; break; }\n"
+                    "    }\n",
+                    instruction->result);
+            if (c_backend_type_needs_drop(
+                    emitter, dictionary->element_type)) {
+                fputs("    ", output);
+                c_backend_emit_drop_call(
+                    emitter, dictionary->element_type, "v",
+                    instruction->operands[1]);
+                fputs(";\n", output);
+            }
+            return;
+        }
         case IR_OP_DICTIONARY_KEY_BORROW:
         case IR_OP_DICTIONARY_VALUE_BORROW:
             fprintf(output,
@@ -1891,6 +1940,34 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     instruction->operands[0]);
             return;
             }
+        case IR_OP_LOCAL_FIELD_DEFAULT: {
+            IrTypeId structure_type =
+                function->locals[instruction->index].type;
+            const IrType *structure =
+                &emitter->ir->types[structure_type];
+            IrTypeId field_type =
+                structure->field_types[instruction->auxiliary];
+            const char *access = structure->shape ==
+                    IR_TYPE_CLASS_REFERENCE ? "->" : ".";
+            if (structure->shape == IR_TYPE_CLASS_REFERENCE)
+                fprintf(output,
+                        "    if (l%" PRIu32
+                        " == NULL) aster_trap(\"null class reference\");\n",
+                        instruction->index);
+            if (c_backend_type_needs_drop(emitter, field_type))
+                fprintf(output,
+                        "    aster_drop_%" PRIu32
+                        "(&l%" PRIu32 "%sf%" PRIu32 ");\n",
+                        field_type, instruction->index,
+                        access, instruction->auxiliary);
+            fprintf(output,
+                    "    memset(&l%" PRIu32 "%sf%" PRIu32
+                    ", 0, sizeof(l%" PRIu32 "%sf%" PRIu32 "));\n",
+                    instruction->index, access,
+                    instruction->auxiliary, instruction->index,
+                    access, instruction->auxiliary);
+            return;
+        }
         case IR_OP_LOCAL_INDEX_GET: {
             const IrType *array =
                 &emitter->ir->types[

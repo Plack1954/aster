@@ -108,6 +108,9 @@ types can satisfy the key-equality constraint.
   as `Dictionary` or `HashSet` keys.
 - [x] Test initialization, assignment, self-assignment, parameter passing,
   return, field/index reads, `foreach`, and collection insertion.
+- [x] Lower and test conditional custom-copy reads through `Queue.TryPeek`,
+  `Stack.TryPeek`, and `Dictionary.TryGetValue`, including default `out` values
+  on failure in both the VM and generated C.
 - [x] Test destructor counts and independent mutation after copying.
 - [ ] Test a throwing/failing copy and prove that the old destination and source
   remain valid and that partial destination state is cleaned exactly once.

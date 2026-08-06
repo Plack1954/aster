@@ -8,7 +8,7 @@ const char *ir_opcode_name(IrOpcode opcode) {
     static const char *names[] = {
         "parameter", "unit", "const_bool", "const_int", "const_float",
         "const_string", "const_null", "local_load", "local_move",
-        "local_store", "local_drop", "static_field_load",
+        "local_store", "local_drop", "local_default", "static_field_load",
         "static_field_store", "value_clone", "value_discard",
         "add_checked", "sub_checked", "mul_checked", "div_checked",
         "rem_checked", "shift_left_checked", "shift_right_checked",
@@ -22,12 +22,12 @@ const char *ir_opcode_name(IrOpcode opcode) {
         "aggregate_make", "field_get",
         "field_set", "local_field_get", "local_field_move",
         "local_field_borrow",
-        "local_field_set", "index_get",
+        "local_field_set", "local_field_default", "index_get",
         "index_set", "local_index_get", "local_index_set",
         "local_enum_is", "local_enum_payload_move", "enum_is",
         "enum_payload_borrow", "collection_count", "list_element_borrow",
         "queue_front_borrow", "stack_top_borrow",
-        "dictionary_get_borrow",
+        "dictionary_get_borrow", "dictionary_find",
         "dictionary_key_borrow", "dictionary_value_borrow",
         "iterator_begin",
         "borrowed_iterator_begin",
@@ -134,10 +134,12 @@ static bool operand_count_valid(const IrInstruction *instruction) {
         case IR_OP_CONST_INT: case IR_OP_CONST_FLOAT:
         case IR_OP_CONST_STRING: case IR_OP_CONST_NULL:
         case IR_OP_LOCAL_LOAD: case IR_OP_LOCAL_MOVE:
-        case IR_OP_LOCAL_DROP: case IR_OP_STATIC_FIELD_LOAD:
+        case IR_OP_LOCAL_DROP: case IR_OP_LOCAL_DEFAULT:
+        case IR_OP_STATIC_FIELD_LOAD:
         case IR_OP_FUNCTION_REF:
         case IR_OP_LOCAL_FIELD_GET: case IR_OP_LOCAL_FIELD_MOVE:
         case IR_OP_LOCAL_FIELD_BORROW:
+        case IR_OP_LOCAL_FIELD_DEFAULT:
         case IR_OP_LOCAL_ENUM_IS:
         case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
         case IR_OP_LOCAL_ITERATOR_HAS_NEXT:
@@ -158,6 +160,7 @@ static bool operand_count_valid(const IrInstruction *instruction) {
             return instruction->operand_count == 1U;
         case IR_OP_LIST_ELEMENT_BORROW:
         case IR_OP_DICTIONARY_GET_BORROW:
+        case IR_OP_DICTIONARY_FIND:
         case IR_OP_DICTIONARY_KEY_BORROW:
         case IR_OP_DICTIONARY_VALUE_BORROW:
             return instruction->operand_count == 2U;
@@ -211,9 +214,11 @@ static bool result_type_valid(const IrModule *ir,
     bool produces_result;
     switch (instruction->opcode) {
         case IR_OP_LOCAL_STORE: case IR_OP_LOCAL_DROP:
+        case IR_OP_LOCAL_DEFAULT:
         case IR_OP_STATIC_FIELD_STORE:
         case IR_OP_VALUE_DISCARD: case IR_OP_EXCEPTION_SET:
         case IR_OP_FIELD_SET: case IR_OP_LOCAL_FIELD_SET:
+        case IR_OP_LOCAL_FIELD_DEFAULT:
         case IR_OP_INDEX_SET: case IR_OP_LOCAL_INDEX_SET:
         case IR_OP_LOCAL_ELEMENT_PROPERTY:
         case IR_OP_LOCAL_ELEMENT_PROPERTY_BEGIN:
@@ -258,6 +263,7 @@ static bool result_type_valid(const IrModule *ir,
         case IR_OP_QUEUE_FRONT_BORROW:
         case IR_OP_STACK_TOP_BORROW:
         case IR_OP_DICTIONARY_GET_BORROW:
+        case IR_OP_DICTIONARY_FIND:
         case IR_OP_DICTIONARY_KEY_BORROW:
         case IR_OP_DICTIONARY_VALUE_BORROW:
         case IR_OP_ITERATOR_BEGIN: case IR_OP_BORROWED_ITERATOR_BEGIN:
@@ -399,6 +405,7 @@ static bool instruction_signature_valid(
         case IR_OP_CONST_STRING:
             return instruction->symbol != NULL;
         case IR_OP_LOCAL_DROP:
+        case IR_OP_LOCAL_DEFAULT:
             return local != NULL;
         case IR_OP_VALUE_DISCARD:
             return value_type(ir, function, instruction->operands[0], NULL);
@@ -742,6 +749,22 @@ static bool instruction_signature_valid(
                    value_is_type(function, instruction->operands[1],
                                  source->element_type);
         }
+        case IR_OP_DICTIONARY_FIND: {
+            if (!verify_value(function, instruction->operands[0]) ||
+                !verify_value(function, instruction->operands[1]))
+                return false;
+            IrTypeId source_id =
+                function->value_types[instruction->operands[0]];
+            if (!verify_type(ir, source_id)) return false;
+            const IrType *source = &ir->types[source_id];
+            return source->shape == IR_TYPE_BUILTIN_OBJECT &&
+                   source->element_type != IR_INVALID_ID &&
+                   source->error_type != IR_INVALID_ID &&
+                   ir->types[instruction->result_type].shape ==
+                       IR_TYPE_UNSIGNED_INT &&
+                   value_is_type(function, instruction->operands[1],
+                                 source->element_type);
+        }
         case IR_OP_ITERATOR_BEGIN: {
             if (!verify_type(ir, instruction->result_type))
                 return false;
@@ -903,7 +926,8 @@ static bool instruction_signature_valid(
         case IR_OP_LOCAL_FIELD_GET:
         case IR_OP_LOCAL_FIELD_MOVE:
         case IR_OP_LOCAL_FIELD_BORROW:
-        case IR_OP_LOCAL_FIELD_SET: {
+        case IR_OP_LOCAL_FIELD_SET:
+        case IR_OP_LOCAL_FIELD_DEFAULT: {
             if (local == NULL || !verify_type(ir, local->type))
                 return false;
             const IrType *aggregate = &ir->types[local->type];
@@ -919,6 +943,8 @@ static bool instruction_signature_valid(
                 instruction->opcode == IR_OP_LOCAL_FIELD_BORROW)
                 return instruction->operand_count == 0U &&
                        instruction->result_type == field_type;
+            if (instruction->opcode == IR_OP_LOCAL_FIELD_DEFAULT)
+                return instruction->operand_count == 0U;
             return instruction->operand_count == 1U &&
                    value_is_type(
                        function, instruction->operands[0],

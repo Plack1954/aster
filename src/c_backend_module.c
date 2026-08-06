@@ -103,6 +103,7 @@ static bool instruction_result_owns_value(
         case IR_OP_QUEUE_FRONT_BORROW:
         case IR_OP_STACK_TOP_BORROW:
         case IR_OP_DICTIONARY_GET_BORROW:
+        case IR_OP_DICTIONARY_FIND:
         case IR_OP_DICTIONARY_KEY_BORROW:
         case IR_OP_DICTIONARY_VALUE_BORROW:
         case IR_OP_LOCAL_ITERATOR_NEXT:
