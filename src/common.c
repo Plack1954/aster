@@ -193,6 +193,7 @@ static const char *standard_module_file(const char *module_path) {
         {"aster/testing", "testing"},
         {"aster/core", "core"},
         {"aster/net/http", "http"},
+        {"system/net/http", "http_client"},
         {"aster/web/http_app", "http_app"},
         {"aster/web/middleware", "middleware"},
         {"aster/web/router", "router"},

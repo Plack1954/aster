@@ -1259,11 +1259,15 @@ static bool c_emit_module(const IrModule *ir,
         if (emitter.needs_native_runtime)
             fputs("int main(void) {\n"
                   "    aster_vm = lang_vm_new();\n"
-                  "    if (aster_vm == NULL) return 2;\n"
-                  "    lang_vm_register_builtins(aster_vm);\n",
+                  "    if (aster_vm == NULL) return 2;\n",
                   output);
         else
             fputs("int main(void) {\n", output);
+        if (emitter.needs_http_client_runtime)
+            fputs("    lang_configure_http_client_registrar("
+                  "lang_register_http_client_natives);\n", output);
+        if (emitter.needs_native_runtime)
+            fputs("    lang_vm_register_builtins(aster_vm);\n", output);
         fprintf(output,
                 "    aster_task *entry_task = aster_fn_%zu();\n"
                 "    aster_task_run_until(entry_task);\n"
@@ -1293,11 +1297,16 @@ static bool c_emit_module(const IrModule *ir,
             fputs("    lang_vm_free(aster_vm);\n"
                   "    aster_vm = NULL;\n", output);
         fputs("    return status;\n}\n", output);
-    } else if (emitter.needs_native_runtime)
-        fprintf(output,
+    } else if (emitter.needs_native_runtime) {
+        fputs(
                 "int main(void) {\n"
                 "    aster_vm = lang_vm_new();\n"
-                "    if (aster_vm == NULL) return 2;\n"
+                "    if (aster_vm == NULL) return 2;\n",
+                output);
+        if (emitter.needs_http_client_runtime)
+            fputs("    lang_configure_http_client_registrar("
+                  "lang_register_http_client_natives);\n", output);
+        fprintf(output,
                 "    lang_vm_register_builtins(aster_vm);\n"
                 "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"
                 "    if (aster_exception_pending) {\n"
@@ -1316,7 +1325,7 @@ static bool c_emit_module(const IrModule *ir,
                 "    return status;\n"
                 "}\n",
                 entry);
-    else
+    } else
         fprintf(output,
                 "int main(void) {\n"
                 "    int status = aster_fn_%zu() == 0 ? 0 : 1;\n"

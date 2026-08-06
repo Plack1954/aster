@@ -141,6 +141,7 @@ typedef LangNativeResult (*LangNativeFn)(
 );
 
 typedef void (*LangNativeHandleDropFn)(void *handle);
+typedef void (*LangNativeRegistrar)(LangVM *vm);
 
 /* `path` is borrowed. On success, `out_source` owns all loaded storage. */
 bool lang_source_load(const char *path, LangSource *out_source);
@@ -269,6 +270,12 @@ bool lang_result_take(LangVM *vm, LangValue *result, bool *out_is_ok,
 void lang_vm_register_builtins(LangVM *vm);
 /* `vm` is borrowed; registered names are copied into its registry. */
 void lang_register_http_natives(LangVM *vm);
+/* Installs an optional HTTP-client registrar for subsequently initialized VMs. */
+void lang_configure_http_client_registrar(LangNativeRegistrar registrar);
+/* Registers the configured optional HTTP client into one VM. */
+void lang_register_configured_http_client_natives(LangVM *vm);
+/* Registrar supplied by the separately linked libcurl component. */
+void lang_register_http_client_natives(LangVM *vm);
 void lang_register_h2o_natives(LangVM *vm);
 /* Registers the optional SQLite adapter, or typed unavailable stubs. */
 void lang_register_sqlite_natives(LangVM *vm);

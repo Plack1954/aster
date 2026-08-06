@@ -370,6 +370,7 @@ bool c_backend_registry_native_symbol(const char *symbol) {
             strcmp(symbol, "NativeRemoveFile") == 0 ||
             strcmp(symbol, "NativeRemoveDirectory") == 0 ||
             strncmp(symbol, "NativeSqlite", 12U) == 0 ||
+            strncmp(symbol, "NativeHttpClient", 16U) == 0 ||
             strncmp(symbol, "H2O", 3U) == 0 ||
             strcmp(symbol, "NativeProcessEnvironment") == 0 ||
             strcmp(symbol, "NativeProcessArg") == 0 ||
@@ -3179,7 +3180,8 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 return;
             }
             if (instruction->symbol != NULL &&
-                strcmp(instruction->symbol, "BufferAsMutSlice") == 0) {
+                (strcmp(instruction->symbol, "BufferAsMutSlice") == 0 ||
+                 strcmp(instruction->symbol, "BufferAsSlice") == 0)) {
                 fprintf(output,
                         "    v%" PRIu32 " = (aster_slice_%" PRIu32
                         "){v%" PRIu32 "->data, v%" PRIu32 "->length};\n",

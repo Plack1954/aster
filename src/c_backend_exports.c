@@ -91,8 +91,13 @@ void c_backend_mark_function(CEmitter *emitter,
                                 .target_function);
             }
             if (instruction->opcode == IR_OP_CALL_NATIVE &&
-                c_backend_registry_native_symbol(instruction->symbol))
+                c_backend_registry_native_symbol(instruction->symbol)) {
                 emitter->needs_native_runtime = true;
+                if (instruction->symbol != NULL &&
+                    strncmp(instruction->symbol,
+                            "NativeHttpClient", 16U) == 0)
+                    emitter->needs_http_client_runtime = true;
+            }
         }
 }
 

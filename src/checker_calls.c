@@ -534,6 +534,7 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
         strcmp(expr->as.name, "TextLen") == 0 ||
         strcmp(expr->as.name, "StringByteAt") == 0 ||
         strcmp(expr->as.name, "BufferAsMutSlice") == 0 ||
+        strcmp(expr->as.name, "BufferAsSlice") == 0 ||
         strcmp(expr->as.name, "panic") == 0 ||
         strcmp(expr->as.name, "trap") == 0)
         return &type_unit;
@@ -1140,7 +1141,8 @@ static_call:
         strcmp(name, "List::ForEach") == 0 ||
         strcmp(name, "List::TrueForAll") == 0;
     builtin_borrow = builtin_borrow ||
-        strcmp(name, "BufferAsMutSlice") == 0;
+        strcmp(name, "BufferAsMutSlice") == 0 ||
+        strcmp(name, "BufferAsSlice") == 0;
     builtin_borrow = builtin_borrow ||
         strcmp(name, "Dictionary::Add") == 0 ||
         strcmp(name, "Dictionary::Count") == 0 ||
@@ -2673,6 +2675,16 @@ static_call:
                           buffer->name);
         }
         return &type_u8_slice;
+    }
+    if (strcmp(name, "BufferAsSlice") == 0) {
+        if (checker->unsafe_depth == 0U)
+            lang_diag(checker->diagnostics, expr->span,
+                      "`BufferAsSlice` requires an unsafe block");
+        if (expr->as.call.arguments.count != 1U ||
+            expr->as.call.arguments.items[0]->type->kind != TYPE_BUFFER)
+            lang_diag(checker->diagnostics, expr->span,
+                      "`BufferAsSlice` expects one Buffer value");
+        return &type_readonly_u8_span;
     }
     if (strcmp(name, "Arena::new") == 0) {
         if (expr->as.call.arguments.count != 0U)

@@ -1972,7 +1972,7 @@ bool vm_call_builtin(LangVM *vm, int32_t index, LangValue *args,
         result->as.object = html;
         return true;
     }
-    if (index == -21 && count == 1U &&
+    if ((index == -21 || index == -95) && count == 1U &&
         args[0].tag == LANG_VALUE_OBJECT &&
         ((Object *)args[0].as.object)->kind == OBJECT_BUFFER) {
         Object *buffer = args[0].as.object;

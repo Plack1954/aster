@@ -138,7 +138,8 @@ The C#-shaped front end, typed IR, VM, and generated-C backend implement
 cleanup, and cooperative `CancellationToken` behavior. Continue
 `docs/async.md`:
 
-- integrate libcurl-multi-backed `HttpClient` operations with the executor;
+- integrate the implemented synchronous libcurl `HttpClient` foundation with
+  the executor through libcurl multi handles and expose `SendAsync`/`GetAsync`;
 - make asynchronous I/O cancellation-aware;
 - add cancellation registrations and linked-token sources when real code needs
   them;

@@ -23,6 +23,16 @@
 #include <unistd.h>
 #endif
 
+static LangNativeRegistrar http_client_registrar = NULL;
+
+void lang_configure_http_client_registrar(LangNativeRegistrar registrar) {
+    http_client_registrar = registrar;
+}
+
+void lang_register_configured_http_client_natives(LangVM *vm) {
+    if (http_client_registrar != NULL) http_client_registrar(vm);
+}
+
 static LangNativeResult native_add(LangVM *vm, const LangValue *args,
                                    size_t arg_count) {
     (void)vm;
@@ -2238,6 +2248,7 @@ void lang_vm_register_builtins(LangVM *vm) {
     (void)lang_register_native(vm, "NativeRemoveDirectory",
                                native_remove_directory_value, 1U);
     lang_register_http_natives(vm);
+    lang_register_configured_http_client_natives(vm);
     lang_register_h2o_natives(vm);
     lang_register_sqlite_natives(vm);
 }

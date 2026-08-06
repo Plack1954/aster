@@ -65,7 +65,7 @@ features exist:
 | `out` parameters or an approved alternative | Numeric `TryParse` | Aster has `ref`, but `ref` is not the same contract as C# `out`. |
 | Static members on primitive aliases | `int.Parse`, `string.Join` | Static-call syntax exists, but primitive-owner support needs confirmation. |
 | Generic comparison/equality capability | collection search, sorting, dictionaries | Current generic constraints and comparer abstractions are incomplete. |
-| Async state-machine lowering | `HttpClient`, streams, Lime handlers | The C#-shaped front end is implemented; VM and generated-C suspension are the next compiler/runtime milestone. |
+| Native asynchronous I/O completion | `HttpClient`, streams | Async state machines and timers are implemented; externally completed native tasks and executor readiness polling remain pending. |
 
 The standard library should not compensate for these gaps with permanent
 names such as `StringLen` or `ListGet`. Implement the prerequisite or record a
@@ -546,7 +546,32 @@ Still intentionally unresolved:
 Do not provide misleading culture or timezone APIs until their semantics are
 real.
 
-## 7. JSON
+## 7. Native HTTP client
+
+`System.Net.Http` has a bounded synchronous native foundation backed by the
+optional libcurl component:
+
+- `new HttpClient()` with configurable `TimeoutMilliseconds`,
+  `MaximumResponseBodyBytes`, and `FollowRedirects`;
+- `Get`, `Delete`, general `Send`, and byte/string `Post`;
+- `HttpResponseMessage.StatusCode`, raw `Headers`, final `RequestUri`,
+  `IsSuccessStatusCode`, and `EnsureSuccessStatusCode`;
+- owned `HttpContent` with `Length`, borrowed `ReadAsBytes`, and copied
+  `ReadAsString`;
+- HTTP/HTTPS-only redirects, a ten-redirect ceiling, one-MiB response-header
+  limit, bounded response bodies, and deterministic native-handle cleanup;
+- matching VM and generated-C behavior against a local binary/redirect/POST
+  fixture.
+
+`ASTER_ENABLE_CURL=OFF` builds typed unavailable native stubs instead of
+requiring libcurl. This is an implementation dependency of native
+`System.Net.Http`, not a language dependency. The current `Headers` spelling is
+a raw response-header block and request headers use a bounded raw block; typed
+header collections remain pending. `SendAsync`/`GetAsync`, streaming response
+consumption, cancellation, connection policy objects, cookies, proxies, and
+libcurl-multi executor integration are not yet implemented.
+
+## 8. JSON
 
 The public reference is `System.Text.Json`:
 
@@ -604,7 +629,7 @@ string; it is the bounded intermediate needed by Lime today. The distinct
 `IBufferWriter<byte>` so that Aster does not misrepresent .NET's
 destination-backed contract.
 
-## 8. Aster-native and non-BCL libraries
+## 9. Aster-native and non-BCL libraries
 
 These areas should not be distorted merely to resemble .NET:
 
@@ -629,6 +654,7 @@ The implemented organization is:
 ```text
 System.IO
 System.Text
+System.Net.Http
 System.Collections.Generic
 
 Aster.Html

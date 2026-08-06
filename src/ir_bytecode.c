@@ -1016,6 +1016,7 @@ static int32_t builtin_index(const char *name) {
     if (strcmp(name, "Console::Write") == 0) return -89;
     if (strcmp(name, "Console::Error::Write") == 0) return -90;
     if (strcmp(name, "StringIndexOfOrdinal") == 0) return -91;
+    if (strcmp(name, "BufferAsSlice") == 0) return -95;
     return INT32_MIN;
 }
 

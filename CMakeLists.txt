@@ -9,6 +9,8 @@ option(ASTER_GENERATED_C_STRICT
     "Compile every generated-C test with the full warning suite" OFF)
 option(ASTER_ENABLE_SQLITE_TESTS
     "Enable the slow SQLite and issue-tracker integration tests" OFF)
+option(ASTER_ENABLE_CURL
+    "Enable the optional libcurl-backed native HTTP client" ON)
 set(ASTER_GENERATED_C_TEST_LANES 2 CACHE STRING
     "Maximum number of generated-C test compilers run concurrently")
 option(LANG_VM_COMPUTED_GOTO
@@ -87,6 +89,19 @@ if(SQLite3_FOUND)
     target_compile_definitions(langlib PRIVATE LANG_HAVE_SQLITE3=1)
     target_link_libraries(langlib PUBLIC SQLite::SQLite3)
 endif()
+add_library(aster_http_curl STATIC src/http_client_curl.c)
+target_include_directories(aster_http_curl PUBLIC include)
+lang_enable_warnings(aster_http_curl)
+set(ASTER_CURL_LIBRARIES "")
+if(ASTER_ENABLE_CURL)
+    find_package(CURL REQUIRED)
+    target_compile_definitions(aster_http_curl PRIVATE LANG_HAVE_CURL=1)
+    target_link_libraries(aster_http_curl PUBLIC CURL::libcurl)
+    set(ASTER_CURL_LIBRARIES ${CURL_LIBRARIES})
+    message(STATUS "System.Net.Http enabled with libcurl ${CURL_VERSION_STRING}")
+else()
+    message(STATUS "System.Net.Http native transport disabled")
+endif()
 set(LANG_HAVE_H2O OFF)
 if(ASTER_H2O_SOURCE_ROOT OR ASTER_H2O_BUILD_ROOT)
     if(NOT ASTER_H2O_SOURCE_ROOT OR NOT ASTER_H2O_BUILD_ROOT)
@@ -132,7 +147,7 @@ if(LANG_SANITIZE AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 add_executable(lang src/main.c)
-target_link_libraries(lang PRIVATE langlib)
+target_link_libraries(lang PRIVATE langlib aster_http_curl)
 lang_enable_warnings(lang)
 
 install(TARGETS lang RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -890,6 +905,21 @@ find_program(ASTER_WASM_OPTIMIZER NAMES wasm-opt)
 find_program(ASTER_NODE_EXECUTABLE NAMES node)
 find_program(ASTER_CURL_EXECUTABLE NAMES curl)
 find_program(ASTER_PYTHON_EXECUTABLE NAMES python3)
+if(ASTER_ENABLE_CURL AND UNIX AND ASTER_PYTHON_EXECUTABLE)
+    add_test(NAME http_client_vm_and_generated_c_integration
+        COMMAND bash tests/http_client_integration.sh
+            $<TARGET_FILE:lang>
+            ${CMAKE_C_COMPILER}
+            $<TARGET_FILE:langlib>
+            $<TARGET_FILE:aster_http_curl>
+            "${SQLite3_LIBRARIES}"
+            "${ASTER_CURL_LIBRARIES}"
+            ${ASTER_PYTHON_EXECUTABLE}
+            ${CMAKE_CURRENT_BINARY_DIR}/http-client)
+    set_tests_properties(http_client_vm_and_generated_c_integration PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        TIMEOUT 60)
+endif()
 if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
    ASTER_WASM_OPTIMIZER AND ASTER_NODE_EXECUTABLE)
     add_test(NAME wasm_counter_trial

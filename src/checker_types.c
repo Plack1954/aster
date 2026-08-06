@@ -86,6 +86,9 @@ Type type_raw_pointer = {
 Type type_u8_slice = {
     .kind=TYPE_SLICE, .name="Span<u8>", .element=&type_u8
 };
+Type type_readonly_u8_span = {
+    .kind=TYPE_READONLY_SPAN, .name="ReadOnlySpan<u8>", .element=&type_u8
+};
 
 bool is_signed_integer(const Type *type) {
     return type->kind == TYPE_I8 || type->kind == TYPE_I16 ||

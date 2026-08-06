@@ -85,6 +85,13 @@ mechanisms, trap reporting, established libraries, and backend storage
 mechanisms may remain in C. Application policy and reusable APIs should move
 into Aster when real programs show that doing so improves the design.
 
+Native `System.Net.Http` follows that boundary. Its Aster request/response and
+owned-content API is transport-facing library code; the optional
+`http_client_curl.c` component delegates HTTP/TLS protocol machinery to
+libcurl. `ASTER_ENABLE_CURL=OFF` retains the compiler and core runtime with
+typed unavailable stubs. Browser/Wasm does not use this component and will use
+Fetch.
+
 Differential coverage compares generated C and VM output, cleanup, traps, and
 exit status.
 

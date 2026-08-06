@@ -912,7 +912,8 @@ static bool builtin_borrows_first_place(const char *name) {
             strcmp(name, "Stack::EnsureCapacity") == 0 ||
             strcmp(name, "Stack::TrimExcess") == 0 ||
             strcmp(name, "Stack::Capacity") == 0 ||
-            strcmp(name, "BufferAsMutSlice") == 0);
+            strcmp(name, "BufferAsMutSlice") == 0 ||
+            strcmp(name, "BufferAsSlice") == 0);
 }
 
 static bool builtin_borrows_named_first(const char *name) {

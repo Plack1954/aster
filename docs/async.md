@@ -78,13 +78,18 @@ permission to destroy a running frame at an arbitrary instruction.
 3. VM task frames, executor, completion, exception, and cancellation behavior.
 4. Equivalent generated-C runtime and cleanup paths.
 5. Timers and `Task.Delay`.
-6. Libcurl-multi-backed `HttpClient` asynchronous operations.
+6. Libcurl-backed `HttpClient`: the bounded synchronous easy-handle foundation
+   is implemented; multi-handle executor integration remains pending.
 7. Lime handlers returning `Task<Response>` are implemented through the same
    `Map*` APIs and execute through `DispatchAsync`.
 8. Streaming and a controlled worker pool for genuinely blocking operations.
 
-Stages 1 through 5 and stage 7 are implemented; libcurl executor integration
-and the broader blocking-I/O strategy remain pending. Typed IR records the
+Stages 1 through 5 and stage 7 are implemented. The optional native
+`System.Net.Http` component now provides synchronous GET/POST/general Send,
+byte request and owned response bodies, headers, redirects, timeouts, response
+limits, and deterministic easy-handle cleanup in both backends. Libcurl-multi
+executor integration and the broader blocking-I/O strategy remain pending.
+Typed IR records the
 public task
 return type, coroutine completion type, and explicit `await` instructions.
 Generated C lowers async functions to state machines. The VM stores suspended

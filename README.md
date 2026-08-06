@@ -51,13 +51,24 @@ HTML is ordinary Aster syntax and normal control flow works inside elements.
 
 ## Build
 
-Aster requires CMake 3.16 or newer and a C17 compiler.
+Aster requires CMake 3.16 or newer and a C17 compiler. Native
+`System.Net.Http` support uses libcurl and is enabled in normal builds. It can
+be omitted from compiler/runtime builds that do not need the native client:
 
 ```sh
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+```sh
+cmake -S . -B build-no-curl -DASTER_ENABLE_CURL=OFF
+```
+
+Libcurl is an optional standard-library transport dependency, not part of the
+Aster language semantics. Generated programs that use `System.Net.Http` link
+the Aster native runtime and libcurl; programs that do not reach that module do
+not require its API.
 
 Run a source file:
 

@@ -100,7 +100,8 @@ The current implementation supports:
   element or fragment root has no early-return escape, while ordinary calls
   and delegates retain their existing ABI;
 - complete manifest-target emission as a single C17 translation unit;
-- typed bridging to Aster's registered file, directory, SQLite, and bounded
+- typed bridging to Aster's registered file, directory, SQLite, optional
+  libcurl HTTP-client, and bounded
   HTTP natives, including `Result` conversion, request views, response-body
   consumption, and exactly-once server/request-handle cleanup;
 - allocation-free HTTP route matching and path-parameter views;

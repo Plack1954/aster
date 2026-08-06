@@ -198,6 +198,7 @@ static int benchmark(void) {
 }
 
 int main(int argc, char **argv) {
+    lang_configure_http_client_registrar(lang_register_http_client_natives);
     if (argc != 0) lang_set_executable_path(argv[0]);
     if (argc < 2) { usage(stderr); return 2; }
     if (strcmp(argv[1], "test") == 0) return run_tests();

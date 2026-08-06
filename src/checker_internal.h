@@ -81,6 +81,7 @@ extern Type type_cancellation_token;
 extern Type type_cancellation_token_source;
 extern Type type_raw_pointer;
 extern Type type_u8_slice;
+extern Type type_readonly_u8_span;
 
 bool is_signed_integer(const Type *type);
 bool is_unsigned_integer(const Type *type);

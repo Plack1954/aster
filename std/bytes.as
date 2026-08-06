@@ -2,6 +2,10 @@ namespace Aster.Memory;
 
 public using ByteError = string;
 
+// These views do not extend Buffer lifetime. The caller keeps the Buffer
+// alive for the complete use of the returned span.
+public extern ReadOnlySpan<byte> BufferAsSlice(Buffer buffer);
+
 public extern nuint ByteSliceLen(ReadOnlySpan<byte> bytes);
 
 public extern byte ByteSliceAt(
