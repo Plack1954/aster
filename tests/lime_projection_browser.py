@@ -29,24 +29,6 @@ def projection_part(type_name, field_index):
 
 projection_html = """<!doctype html>
 <meta charset="utf-8">
-<section id="compiled-row-transition">
-  <output data-aster-project="t:{selectedId}">1</output>
-  <output data-aster-project="t:{selectedLabel}">Selected row 1</output>
-  <ul id="projection-row-list">
-    <li id="projection-row-1" class="selected"
-        data-aster-project="c:{firstClass}">First row</li>
-    <li id="projection-row-2" class=""
-        data-aster-project="c:{secondClass}">
-      Second row <input id="projection-row-input" value="server value">
-    </li>
-    <li id="projection-row-3" class=""
-        data-aster-project="c:{thirdClass}">Third row</li>
-  </ul>
-  <button type="button" aria-controls="projection-row-list"
-      data-aster-event="click|SelectSecondAndRemoveFirst|p|l:@{selectedId}">
-    Select second and remove first
-  </button>
-</section>
 <section id="native-keyed-list-trial">
   <ul id="native-keyed-list">
     <li data-aster-key="native-1">
@@ -81,6 +63,10 @@ projection_html = """<!doctype html>
       data-aster-event="click|IsolatedCounter_Increment|l|x:IsolatedCounter|l:count">Increment isolated counter</button>
   <button type="button"
       data-aster-event="click|IsolatedCounter_Fail|l|x:IsolatedCounter|l:count">Fail isolated counter</button>
+  <button type="button"
+      data-aster-event="click|IsolatedCounter_FailRender|v|x:IsolatedCounter">Fail isolated render</button>
+  <button type="button"
+      data-aster-event="click|IsolatedCounter_RecoverRender|v|x:IsolatedCounter">Recover isolated render</button>
 </section>
 <section class="isolated-counter" data-aster-component="IsolatedCounter">
   <output name="count">0</output>
@@ -127,6 +113,10 @@ projection_html = """<!doctype html>
   <button type="button" data-aster-event="click|AsyncTodoComponent_SaveFast|V|x:AsyncTodoComponent">Save quickly</button>
   <button type="button" data-aster-event="click|AsyncTodoComponent_FailSave|V|x:AsyncTodoComponent">Fail save</button>
 </section>
+<section class="faulting-destructor-component" data-aster-component="FaultingDestructorComponent">
+  <output name="destructorValue">0</output>
+  <button type="button" data-aster-event="click|FaultingDestructorComponent_TouchDestructor|l|x:FaultingDestructorComponent|l:destructorValue">Touch destructor component</button>
+</section>
 <section id="failing-constructor-component"
     data-aster-component="FailingConstructorComponent">
   <output name="value">0</output>
@@ -146,6 +136,15 @@ projection_html = """<!doctype html>
   <output name="asyncDropCount">0</output>
   <button type="button"
       data-aster-event="click|ReadAsyncComponentDrops|l|l:asyncDropCount">Read async component drops</button>
+  <output name="destructorAttempts">0</output>
+  <button type="button"
+      data-aster-event="click|ReadDestructorAttempts|l|l:destructorAttempts">Read destructor attempts</button>
+</section>
+<section id="malformed-state-component" data-aster-component="PersistentTodoList"
+    data-aster-component-list-state="k:{persistentKey},s:{persistentTitle},s:{persistentClass},b:{persistentDisabled},b:{persistentHidden},s:{persistentTooltip}">
+  <ul id="malformed-state-list"><li data-aster-key="broken-state"></li></ul>
+  <button type="button" aria-controls="malformed-state-list"
+      data-aster-event="click|PersistentTodoList_AppendTodo|v|x:PersistentTodoList">Restore malformed state</button>
 </section>
 <section id="persistent-todo-component" data-aster-component="PersistentTodoList"
     data-aster-component-list-state="k:{persistentKey},s:{persistentTitle},s:{persistentClass},b:{persistentDisabled},b:{persistentHidden},s:{persistentTooltip}">
@@ -156,6 +155,7 @@ projection_html = """<!doctype html>
         data-aster-part-a="{persistentTooltip}"
         data-aster-state-field-{persistentTooltip} data-aster-state-{persistentTooltip}="First persistent todo">
       <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="First persistent">Todo: First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><input type="checkbox"><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
+      <aside class="nested-counter" data-aster-component="NestedCounter"><output name="count">0</output><button type="button" data-aster-event="click|NestedCounter_Increment|l|x:NestedCounter|l:count">Increment nested counter</button></aside>
       <button type="button" name="key" value="persistent-1"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
@@ -169,6 +169,7 @@ projection_html = """<!doctype html>
         data-aster-part-a="{persistentTooltip}"
         data-aster-state-field-{persistentTooltip} data-aster-state-{persistentTooltip}="Server-loaded todo">
       <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="Server loaded">Todo: Server loaded</span> <input value="Server loaded" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><input type="checkbox"><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
+      <aside class="nested-counter" data-aster-component="NestedCounter"><output name="count">0</output><button type="button" data-aster-event="click|NestedCounter_Increment|l|x:NestedCounter|l:count">Increment nested counter</button></aside>
       <button type="button" name="key" value="persistent-2"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
@@ -189,13 +190,6 @@ window.disposeAsterRoot = disposeAsterRoot;
 window.asterReady = true;
 </script>
 """
-for field_index, field_name in enumerate((
-    "selectedId", "selectedLabel", "firstClass", "secondClass", "thirdClass"
-)):
-    projection_html = projection_html.replace(
-        "{" + field_name + "}",
-        projection_part("RowSelectionProjectionState", field_index)
-    )
 projection_html = projection_html.replace(
     "{seededLabel}", projection_part("SeededCounter", 0)
 )
@@ -247,39 +241,6 @@ try:
             f"http://127.0.0.1:{server.server_port}/projection.html"
         )
         page.wait_for_function("window.asterReady === true")
-        page.locator("#projection-row-input").fill("preserved by browser")
-        page.evaluate("""window.retainedRows = [
-            document.querySelector('#projection-row-2'),
-            document.querySelector('#projection-row-3'),
-            document.querySelector('#projection-row-input')
-        ]""")
-        page.get_by_text("Select second and remove first", exact=True).click()
-        page.wait_for_function("!document.querySelector('#projection-row-1')")
-        selected_id_part = projection_part(
-            "RowSelectionProjectionState", 0
-        )
-        selected_label_part = projection_part(
-            "RowSelectionProjectionState", 1
-        )
-        assert page.locator(
-            f'[data-aster-project="t:{selected_id_part}"]'
-        ).text_content().strip() == "2"
-        assert page.locator(
-            f'[data-aster-project="t:{selected_label_part}"]'
-        ).text_content().strip() == "Selected row 2"
-        assert page.locator("#projection-row-2").get_attribute(
-            "class"
-        ) == "selected"
-        assert page.locator("#projection-row-3").get_attribute("class") == ""
-        assert page.locator("#projection-row-input").input_value() == (
-            "preserved by browser"
-        )
-        assert page.evaluate("""window.retainedRows.every((node, index) =>
-            node === [
-                document.querySelector('#projection-row-2'),
-                document.querySelector('#projection-row-3'),
-                document.querySelector('#projection-row-input')
-            ][index])""")
         keyed = page.locator("#native-keyed-list")
         retained_input = keyed.locator(
             '[data-aster-key="native-1"] input'
@@ -405,6 +366,22 @@ try:
         ).text_content() == "Status: fast-save"
         assert errors == []
 
+        faulting_destructor = page.locator(".faulting-destructor-component")
+        faulting_destructor.get_by_text(
+            "Touch destructor component", exact=True
+        ).click()
+        assert faulting_destructor.locator(
+            '[name="destructorValue"]'
+        ).text_content() == "1"
+        faulting_destructor.evaluate("component => component.remove()")
+        page.wait_for_timeout(20)
+        assert len(errors) == 1 and "component destructor failure" in errors[0]
+        errors.clear()
+        page.get_by_text("Read destructor attempts", exact=True).click()
+        assert page.locator(
+            '[name="destructorAttempts"]'
+        ).text_content() == "1"
+
         failing_constructor = page.get_by_text(
             "Construct failing component", exact=True
         )
@@ -420,6 +397,17 @@ try:
             "document.querySelector('[name=\"constructionAttempts\"]')"
             ".textContent === '2'"
         )
+
+        malformed_state = page.get_by_text(
+            "Restore malformed state", exact=True
+        )
+        for _ in range(2):
+            malformed_state.click()
+            page.wait_for_timeout(20)
+            assert len(errors) == 1 and (
+                "component state field is missing" in errors[0]
+            )
+            errors.clear()
 
         counters = page.locator(".isolated-counter")
         first_counter = counters.nth(0)
@@ -445,6 +433,14 @@ try:
             "Increment isolated counter", exact=True
         ).click()
         assert first_counter.locator('[name="count"]').text_content() == "13"
+        first_counter.get_by_text("Fail isolated render", exact=True).click()
+        page.wait_for_timeout(20)
+        assert len(errors) == 1 and "isolated component render failure" in errors[0]
+        errors.clear()
+        assert first_counter.locator('[name="count"]').text_content() == "13"
+        first_counter.get_by_text("Recover isolated render", exact=True).click()
+        assert first_counter.locator('[name="count"]').text_content() == "13"
+        assert second_counter.locator('[name="count"]').text_content() == "1"
 
         first_counter.evaluate("component => component.remove()")
         page.wait_for_timeout(0)
@@ -559,6 +555,26 @@ try:
         )
         assert persistent.locator(":scope > li").count() == 3
         assert persistent_input.input_value() == "persistent browser edit"
+        first_persistent.get_by_text(
+            "Increment nested counter", exact=True
+        ).click()
+        assert first_persistent.locator(
+            ".nested-counter [name=\"count\"]"
+        ).text_content() == "1"
+        page.get_by_text("Read nested drops", exact=True).click()
+        nested_before_keyed_remove = int(page.locator(
+            '[name="nestedDropCount"]'
+        ).text_content())
+        first_persistent.get_by_text("Remove", exact=True).click()
+        page.wait_for_function(
+            "!document.querySelector('[data-aster-key=\"persistent-1\"]')"
+        )
+        page.wait_for_timeout(0)
+        page.get_by_text("Read nested drops", exact=True).click()
+        nested_after_keyed_remove = int(page.locator(
+            '[name="nestedDropCount"]'
+        ).text_content())
+        assert nested_after_keyed_remove - nested_before_keyed_remove == 3
         page.locator("#persistent-todo-component").evaluate(
             "component => component.remove()"
         )
@@ -579,4 +595,4 @@ finally:
     server.shutdown()
     server.server_close()
 
-print("async component lifetime, SSR state, and nested ownership verified")
+print("component faults, exact disposal, and native retained state verified")

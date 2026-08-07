@@ -12,13 +12,6 @@ function targetsFor(scope, name) {
 function targetFor(scope, name) {
     const named = targetsFor(scope, name)[0];
     if (named !== undefined) return named;
-    if (name.startsWith("@")) {
-        const part = name.slice(1);
-        for (const target of scope.querySelectorAll("[data-aster-project]")) {
-            const [, targetPart] = target.dataset.asterProject.split(":");
-            if (targetPart === part) return target;
-        }
-    }
     return null;
 }
 
@@ -199,7 +192,11 @@ function disposeComponent(component) {
     if (component.disposed) return;
     component.disposed = true;
     const {handle, drop, exports, memory} = component;
-    drop(handle);
+    try {
+        drop(handle);
+    } catch (error) {
+        reportHandlerError(error);
+    }
     if (exports.aster_export_exception_pending() !== 0)
         reportHandlerError(new Error(takePendingException(exports, memory)));
 }
@@ -384,7 +381,7 @@ function controlledTarget(source) {
     return controlledId === null ? null : document.getElementById(controlledId);
 }
 
-function validateAggregateProjections(source, scope, handlerName, fields) {
+function validateAggregateTargets(source, scope, handlerName, fields) {
     for (const {type, name} of fields) {
         const hasNamedTarget = targetsFor(scope, name).length !== 0;
         const ariaName = `aria-${name.replaceAll("_", "-")}`;
@@ -395,7 +392,7 @@ function validateAggregateProjections(source, scope, handlerName, fields) {
              (source.hasAttribute(ariaName) || hasControlledTarget)))
             continue;
         throw new Error(
-            `Aster projection target is missing: ${handlerName}.${name}`
+            `Aster aggregate target is missing: ${handlerName}.${name}`
         );
     }
 }
@@ -687,175 +684,6 @@ function applyComponentSnapshot(
     applyKeyedHtml(source, state, snapshot.innerHTML, hydrateWithin);
 }
 
-function removeControlledKey(source, state, key) {
-    const controlled = controlledTarget(source);
-    if (controlled === null) return false;
-    const item = document.getElementById(key);
-    if (item === null || item.parentElement !== controlled) return false;
-    item.remove();
-    const collection = state.get(`collection:${controlled.id}`);
-    if (collection !== undefined) collection.delete(key);
-    return true;
-}
-
-function clearControlledKeys(source, state) {
-    const controlled = controlledTarget(source);
-    if (controlled === null) return false;
-    controlled.replaceChildren();
-    const collection = state.get(`collection:${controlled.id}`);
-    if (collection !== undefined) collection.clear();
-    return true;
-}
-
-function swapControlledKeys(source, firstKey, secondKey) {
-    const controlled = controlledTarget(source);
-    if (controlled === null || firstKey === secondKey) return false;
-    const first = document.getElementById(firstKey);
-    const second = document.getElementById(secondKey);
-    if (first === null || second === null ||
-        first.parentElement !== controlled || second.parentElement !== controlled)
-        return false;
-    const marker = document.createTextNode("");
-    first.replaceWith(marker);
-    second.replaceWith(first);
-    marker.replaceWith(second);
-    return true;
-}
-
-function aggregateString(
-    handle, fields, name, exports, memory
-) {
-    const field = fields.find(
-        (candidate) => candidate.type === "o" && candidate.name === name
-    );
-    if (field === undefined)
-        throw new Error(`Aster keyed operation field is missing: ${name}`);
-    return decodeOwnedString(Number(field.accessor(handle)), exports, memory);
-}
-
-function projectionTargets(source, scope) {
-    const item = source.closest("[data-aster-key]");
-    if (item === null || !scope.contains(item))
-        return [...scope.querySelectorAll("[data-aster-project]")];
-    const targets = item.matches("[data-aster-project]") ? [item] : [];
-    targets.push(...item.querySelectorAll("[data-aster-project]"));
-    return targets.filter(
-        (target) => target.closest("[data-aster-key]") === item
-    );
-}
-
-function applyProjectionBatch(
-    handle, source, scope, state, exports, memory
-) {
-    if (handle === 0) throw new Error("Aster projection batch is null");
-    try {
-        const pointer = Number(
-            exports.aster_export_projection_batch_data(handle)
-        );
-        const length = Number(
-            exports.aster_export_projection_batch_length(handle)
-        );
-        const count = Number(
-            exports.aster_export_projection_batch_count(handle)
-        );
-        const bytes = new Uint8Array(memory.buffer, pointer, length);
-        const view = new DataView(memory.buffer, pointer, length);
-        const records = [];
-        let offset = 0;
-        for (let record = 0; record < count; ++record) {
-            if (offset + 8 > length)
-                throw new Error("Aster projection batch header is truncated");
-            const type = String.fromCharCode(bytes[offset]);
-            const nameLength = bytes[offset + 1];
-            const payloadLength = view.getUint32(offset + 4, true);
-            offset += 8;
-            if (offset + nameLength + payloadLength > length)
-                throw new Error("Aster projection batch record is truncated");
-            const name = decoder.decode(
-                bytes.subarray(offset, offset + nameLength)
-            );
-            offset += nameLength;
-            let value;
-            if (type === "b") {
-                if (payloadLength !== 1)
-                    throw new Error("Aster Boolean projection is malformed");
-                value = bytes[offset] !== 0;
-            } else if (type === "l") {
-                if (payloadLength !== 8)
-                    throw new Error("Aster integer projection is malformed");
-                value = view.getBigInt64(offset, true);
-            } else if (type === "o" || type === "r") {
-                value = decoder.decode(
-                    bytes.subarray(offset, offset + payloadLength)
-                );
-            } else {
-                throw new Error(`Aster projection type is unknown: ${type}`);
-            }
-            offset += payloadLength;
-            records.push({type, name, value});
-        }
-        if (offset !== length)
-            throw new Error("Aster projection batch has trailing data");
-
-        const targets = projectionTargets(source, scope);
-        const recordsByName = new Map(
-            records.filter((record) => record.type !== "r")
-                .map((record) => [record.name, record])
-        );
-        for (const target of targets) {
-            const descriptor = target.dataset.asterProject.split(":");
-            if (descriptor.length !== 2)
-                throw new Error("Aster projection marker is malformed");
-            const [kind, part] = descriptor;
-            const record = recordsByName.get(part);
-            if (record === undefined)
-                throw new Error(`Aster projection part is missing: ${part}`);
-            if ((kind === "d" && record.type !== "b") ||
-                (kind === "c" && record.type !== "o") ||
-                !["t", "d", "c"].includes(kind))
-                throw new Error(`Aster projection type mismatch: ${kind}:${part}`);
-        }
-        const controlled = controlledTarget(source);
-        const removalKeys = new Set();
-        for (const {type, value} of records) {
-            if (type !== "r") continue;
-            const item = document.getElementById(value);
-            if (controlled === null || item === null ||
-                item.parentElement !== controlled || removalKeys.has(value))
-                throw new Error(
-                    `Aster projection cannot remove keyed item: ${value}`
-                );
-            removalKeys.add(value);
-        }
-        for (const {type, name, value} of records) {
-            if (type === "r") {
-                if (!removeControlledKey(source, state, value))
-                    throw new Error(
-                        `Aster projection could not remove keyed item: ${value}`
-                    );
-                continue;
-            }
-            state.set(stateKey(type, name, source), value);
-            for (const target of targets) {
-                const [kind, part] = target.dataset.asterProject.split(":");
-                if (part !== name) continue;
-                if (kind === "t")
-                    target.textContent = String(value);
-                else if (kind === "d")
-                    target.disabled = Boolean(value);
-                else if (kind === "c")
-                    target.className = String(value);
-                else
-                    throw new Error(
-                        `Aster projection kind is unknown: ${kind}`
-                    );
-            }
-        }
-    } finally {
-        exports.aster_export_projection_batch_drop(handle);
-    }
-}
-
 function applyAggregateResult(
     handle, fields, drop, source, scope, state, exports, memory,
     hydrateWithin
@@ -922,10 +750,8 @@ function dropUnusedResult(result, resultType, aggregateDrop, exports) {
             exports.aster_export_html_render(handle)
         );
         exports.aster_export_string_drop(rendered);
-    } else if (["a", "r", "c", "w"].includes(resultType)) {
+    } else if (resultType === "a") {
         aggregateDrop(handle);
-    } else if (resultType === "p") {
-        exports.aster_export_projection_batch_drop(handle);
     }
 }
 
@@ -996,8 +822,7 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 ];
             });
             const aggregatePrefix = `aster_export_${handlerName}_result_`;
-            const aggregateResult =
-                ["a", "r", "c", "w"].includes(resultType);
+            const aggregateResult = resultType === "a";
             const aggregateFields = aggregateResult
                 ? Object.entries(instance.exports).flatMap(([name, accessor]) => {
                     if (!name.startsWith(aggregatePrefix) ||
@@ -1033,15 +858,9 @@ export async function hydrateAster({wasmUrl, root = document}) {
         } = binding;
         const initialScope = eventScope(source, root);
         if (resultType === "a")
-            validateAggregateProjections(
+            validateAggregateTargets(
                 source, initialScope, handlerName, aggregateFields
             );
-        if (["r", "c", "w"].includes(resultType) &&
-            source.getAttribute("aria-controls") === null)
-            throw new Error(
-                `Aster keyed removal target is missing: ${handlerName}`
-            );
-
         let sourceTransitionVersion = 0;
         source.addEventListener(eventName, async (event) => {
             const form = source.closest("form");
@@ -1133,12 +952,7 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 }
             }
             try {
-            if (resultType === "p") {
-                applyProjectionBatch(
-                    Number(result), source, scope, state,
-                    instance.exports, memory
-                );
-            } else if (resultType === "o") {
+            if (resultType === "o") {
                 const message = decodeOwnedString(
                     Number(result), instance.exports, memory
                 );
@@ -1176,53 +990,6 @@ export async function hydrateAster({wasmUrl, root = document}) {
                     source, scope, state, instance.exports, memory,
                     hydrateWithin
                 );
-            } else if (resultType === "r") {
-                if (typeof aggregateDrop !== "function")
-                    throw new Error(
-                        `Aster keyed removal drop export is missing: ${handlerName}`
-                    );
-                const handle = Number(result);
-                try {
-                    removeControlledKey(
-                        source, state,
-                        aggregateString(
-                            handle, aggregateFields, "key",
-                            instance.exports, memory
-                        )
-                    );
-                } finally {
-                    aggregateDrop(handle);
-                }
-            } else if (resultType === "c") {
-                if (typeof aggregateDrop !== "function")
-                    throw new Error(
-                        `Aster keyed clear drop export is missing: ${handlerName}`
-                    );
-                const handle = Number(result);
-                try {
-                    clearControlledKeys(source, state);
-                } finally {
-                    aggregateDrop(handle);
-                }
-            } else if (resultType === "w") {
-                if (typeof aggregateDrop !== "function")
-                    throw new Error(
-                        `Aster keyed swap drop export is missing: ${handlerName}`
-                    );
-                const handle = Number(result);
-                try {
-                    const first = aggregateString(
-                        handle, aggregateFields, "first",
-                        instance.exports, memory
-                    );
-                    const second = aggregateString(
-                        handle, aggregateFields, "second",
-                        instance.exports, memory
-                    );
-                    swapControlledKeys(source, first, second);
-                } finally {
-                    aggregateDrop(handle);
-                }
             } else if (resultType === "v") {
                 const receiver = parameters.find(([type]) => type === "x");
                 if (receiver !== undefined) {
@@ -1267,6 +1034,11 @@ export async function hydrateAster({wasmUrl, root = document}) {
     } else {
         hydrationRoots.set(root, {observer: null});
     }
-    hydrateWithin(root);
+    try {
+        hydrateWithin(root);
+    } catch (error) {
+        disposeAsterRoot(root);
+        throw error;
+    }
     return instance;
 }

@@ -1219,7 +1219,7 @@ int lang_benchmark_file(const char *path, size_t iterations) {
     return 0;
 }
 
-uint64_t lang_projection_part_id(
+uint64_t lang_dom_part_id(
     const char *module_name, const char *type_name, size_t field_index) {
     uint64_t hash = UINT64_C(14695981039346656037);
     const char *segments[] = {
@@ -1242,7 +1242,7 @@ uint64_t lang_projection_part_id(
     return hash == 0U ? 1U : hash;
 }
 
-size_t lang_projection_part_format(uint64_t part_id, char output[14]) {
+size_t lang_dom_part_format(uint64_t part_id, char output[14]) {
     static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
     char reversed[13];
     size_t length = 0U;

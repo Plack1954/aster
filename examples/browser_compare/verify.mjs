@@ -15,6 +15,7 @@ const {instance} = await WebAssembly.instantiate(bytes, {
 });
 memory = instance.exports.memory;
 const exports = instance.exports;
+
 function takeString(handle) {
     try {
         const pointer = Number(exports.aster_export_string_data(handle));
@@ -27,53 +28,48 @@ function takeString(handle) {
     }
 }
 
-const patch = Number(exports.aster_export_Create1000(0n));
-const nextId = exports.aster_export_Create1000_result_l_nextId(patch);
-const htmlHandle = Number(exports.aster_export_Create1000_result_h_rows(patch));
-const stringHandle = Number(exports.aster_export_html_render(htmlHandle));
-try {
-    const pointer = Number(exports.aster_export_string_data(stringHandle));
-    const length = Number(exports.aster_export_string_length(stringHandle));
-    const html = new TextDecoder().decode(
-        new Uint8Array(memory.buffer, pointer, length)
+function render(component) {
+    const html = Number(
+        exports.aster_export_component_BenchmarkTable_render(component)
     );
-    if (nextId !== 1000n)
-        throw new Error(`wrong next row id: ${nextId}`);
-    if ((html.match(/<tr id="row-/g) ?? []).length !== 1000)
+    return takeString(Number(exports.aster_export_html_render(html)));
+}
+
+const component = Number(
+    exports.aster_export_component_BenchmarkTable_new()
+);
+try {
+    exports.aster_export_BenchmarkTable_Create1000(component);
+    let html = render(component);
+    if ((html.match(/data-aster-key="row-/g) ?? []).length !== 1000)
         throw new Error("Wasm did not render 1,000 keyed rows");
-    if (!html.includes("click|RemoveRow|r|s:key"))
-        throw new Error("row removal metadata is missing");
-} finally {
-    exports.aster_export_string_drop(stringHandle);
-    exports.aster_export_Create1000_result_drop(patch);
-}
-const updatedHtml = Number(exports.aster_export_UpdateEvery10th());
-const updatedString = Number(exports.aster_export_html_render(updatedHtml));
-const updates = takeString(updatedString);
-if ((updates.match(/<tr id="row-/g) ?? []).length !== 100 ||
-    !updates.includes("row 990 !!!"))
-    throw new Error("sparse row update output is wrong");
+    if (!html.includes("BenchmarkTable_DeleteRow|v|x:BenchmarkTable|s:key"))
+        throw new Error("native row removal metadata is missing");
 
-const swap = Number(exports.aster_export_SwapRows());
-try {
-    const first = takeString(Number(
-        exports.aster_export_SwapRows_result_o_first(swap)
-    ));
-    const second = takeString(Number(
-        exports.aster_export_SwapRows_result_o_second(swap)
-    ));
-    if (first !== "row-1" || second !== "row-998")
-        throw new Error(`wrong swap keys: ${first}, ${second}`);
+    exports.aster_export_BenchmarkTable_UpdateEvery10th(component);
+    html = render(component);
+    if (!html.includes("row 990 !!!"))
+        throw new Error("sparse row update output is wrong");
+
+    exports.aster_export_BenchmarkTable_SwapRows(component);
+    html = render(component);
+    const first = html.indexOf('data-aster-key="row-998"');
+    const second = html.indexOf('data-aster-key="row-1"');
+    if (first < 0 || second < 0 || first >= second)
+        throw new Error("native keyed swap output is wrong");
+
+    exports.aster_export_BenchmarkTable_ClearRows(component);
+    html = render(component);
+    if (html.includes("data-aster-key="))
+        throw new Error("native keyed clear output is wrong");
 } finally {
-    exports.aster_export_SwapRows_result_drop(swap);
+    exports.aster_export_component_BenchmarkTable_drop(component);
 }
 
-const clear = Number(exports.aster_export_ClearRows());
-try {
-    if (exports.aster_export_ClearRows_result_b_clear(clear) === 0)
-        throw new Error("clear operation is not enabled");
-} finally {
-    exports.aster_export_ClearRows_result_drop(clear);
-}
+if (Object.keys(exports).some((name) =>
+    name.startsWith("aster_export_projection_batch_") ||
+    name.includes("result_r_") || name.includes("result_w_") ||
+    name.includes("result_c_")))
+    throw new Error("legacy structural result ABI was emitted");
 
 console.log("browser comparison Wasm rendered and mutated 1,000 keyed rows");

@@ -256,7 +256,6 @@ typedef struct ElementProperty {
     bool css_custom_property;
     bool keyed_identity; /* Compiler-only retained collection identity. */
     const char *event_binding; /* Generated `event|handler|result|type:name...`. */
-    const char *projection_binding; /* Experimental generated `kind:field`. */
 } ElementProperty;
 
 typedef struct ElementBodyItem {
@@ -478,9 +477,9 @@ typedef struct Function {
 typedef enum DeclKind {
     DECL_FUNCTION, DECL_STRUCT, DECL_CLASS, DECL_ENUM, DECL_ALIAS, DECL_ELEMENT
 } DeclKind;
-uint64_t lang_projection_part_id(
+uint64_t lang_dom_part_id(
     const char *module_name, const char *type_name, size_t field_index);
-size_t lang_projection_part_format(uint64_t part_id, char output[14]);
+size_t lang_dom_part_format(uint64_t part_id, char output[14]);
 
 typedef struct FieldDecl {
     const char *name;

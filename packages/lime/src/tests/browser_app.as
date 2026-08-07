@@ -71,6 +71,7 @@ private class PersistentTodoList
                         <input type="checkbox" checked=false />
                         <small hidden=todo.hidden>renamed detail</small>
                     </label>
+                    <NestedCounter />
                     <button
                         type="button"
                         name="key"
@@ -164,11 +165,13 @@ private class PersistentTodoList
 private class IsolatedCounter
 {
     private int count;
+    private bool renderFault;
     private static int droppedCount;
 
     public IsolatedCounter()
     {
         this.count = 0;
+        this.renderFault = false;
     }
 
     ~IsolatedCounter()
@@ -190,8 +193,22 @@ private class IsolatedCounter
         throw new Exception("isolated component failure");
     }
 
+    private void FailRender()
+    {
+        this.renderFault = true;
+    }
+
+    private void RecoverRender()
+    {
+        this.renderFault = false;
+    }
+
     public Html Render()
     {
+        if (this.renderFault)
+        {
+            throw new Exception("isolated component render failure");
+        }
         return <section class="isolated-counter">
             <output name="count">0</output>
             <button type="button" onclick=this.Increment>
@@ -199,6 +216,12 @@ private class IsolatedCounter
             </button>
             <button type="button" onclick=this.Fail>
                 Fail isolated counter
+            </button>
+            <button type="button" onclick=this.FailRender>
+                Fail isolated render
+            </button>
+            <button type="button" onclick=this.RecoverRender>
+                Recover isolated render
             </button>
         </section>;
     }
@@ -321,6 +344,41 @@ public int ReadConstructionAttempts(int constructionAttempts)
     return FailingConstructorComponent.Attempts;
 }
 
+private class FaultingDestructorComponent
+{
+    private static int attempts;
+
+    public FaultingDestructorComponent()
+    {
+    }
+
+    ~FaultingDestructorComponent()
+    {
+        attempts += 1;
+        throw new Exception("component destructor failure");
+    }
+
+    public static int Attempts => attempts;
+
+    private int TouchDestructor(int destructorValue)
+    {
+        return destructorValue + 1;
+    }
+
+    public Html Render()
+    {
+        return <section class="faulting-destructor-component">
+            <output name="destructorValue">0</output>
+            <button type="button" onclick=this.TouchDestructor>Touch destructor component</button>
+        </section>;
+    }
+}
+
+public int ReadDestructorAttempts(int destructorAttempts)
+{
+    return FaultingDestructorComponent.Attempts;
+}
+
 public struct ReactiveCounterPatch
 {
     int value;
@@ -330,34 +388,105 @@ public struct ReactiveCounterPatch
     string summary;
 }
 
-public struct QueryProjection
+public struct QueryPatch
 {
     nuint length;
     bool valid;
     string preview;
 }
 
-public struct CounterProjectionState
+private struct SelectionRow
 {
-    int count;
-    bool disabled;
-    string summary;
+    string key;
+    string label;
     string className;
 }
 
-public struct RowSelectionProjectionState
+private class ProjectedCounter
 {
-    int selectedId;
-    string selectedLabel;
-    string firstClass;
-    string secondClass;
-    string thirdClass;
+    private int count;
+
+    public ProjectedCounter()
+    {
+        this.count = 1;
+    }
+
+    private void Increase()
+    {
+        this.count += 1;
+    }
+
+    private void Decrease()
+    {
+        this.count -= 1;
+    }
+
+    public Html Render()
+    {
+        string summary = $"Projected count: {this.count}";
+        string className = this.count == 0 ? "at-zero" : "positive";
+        return <section id="inferred-counter-trial">
+            <h2>Inferred counter parts</h2>
+            <output>{this.count}</output>
+            <output>{summary}</output>
+            <p class=className>State class part</p>
+            <button type="button" onclick=this.Increase>Increase projected</button>
+            <button type="button" disabled=this.count <= 0 onclick=this.Decrease>Decrease projected</button>
+        </section>;
+    }
 }
 
-public struct RowSelectionProjectionTransition
+private class RowSelectionComponent
 {
-    RowSelectionProjectionState state;
-    KeyedRemove removal;
+    private List<SelectionRow> rows;
+    private int selectedId;
+
+    public RowSelectionComponent()
+    {
+        rows = new();
+        rows.Add(new() { key = "selection-row-1", label = "First row", className = "selected" });
+        rows.Add(new() { key = "selection-row-2", label = "Second row", className = "" });
+        rows.Add(new() { key = "selection-row-3", label = "Third row", className = "" });
+        this.selectedId = 1;
+    }
+
+    private void SelectSecondAndRemoveFirst()
+    {
+        this.selectedId = 2;
+        for (nuint index = 0; index < this.rows.Count; index++)
+        {
+            if (this.rows[index].key == "selection-row-1")
+            {
+                this.rows.RemoveAt(index);
+                break;
+            }
+        }
+        for (nuint index = 0; index < this.rows.Count; index++)
+        {
+            SelectionRow row = this.rows[index];
+            row.className = row.key == "selection-row-2" ? "selected" : "";
+            this.rows.Set(index, row);
+        }
+    }
+
+    public Html Render()
+    {
+        List<Html> rendered = new();
+        foreach (SelectionRow row in this.rows)
+        {
+            rendered.Add(<li key=row.key class=row.className>
+                {row.label}
+                <input value="browser-owned value" />
+            </li>);
+        }
+        return <section id="compiled-row-transition">
+            <h2>Composed keyed native parts</h2>
+            <output>{this.selectedId}</output>
+            <output>Selected row {this.selectedId}</output>
+            <ul id="selection-row-list">{rendered}</ul>
+            <button type="button" aria-controls="selection-row-list" onclick=this.SelectSecondAndRemoveFirst>Select second and remove first</button>
+        </section>;
+    }
 }
 
 private extern Task Task.Delay(int milliseconds);
@@ -452,7 +581,7 @@ public ReactiveCounterPatch DecreaseReactive(int value)
     return ReactiveCounter(value - 1);
 }
 
-private QueryProjection QueryProjectionFor(string query)
+private QueryPatch QueryPatchFor(string query)
 {
     return new()
     {
@@ -462,65 +591,15 @@ private QueryProjection QueryProjectionFor(string query)
     };
 }
 
-public QueryProjection ProjectQuery(string query)
+public QueryPatch ProjectQuery(string query)
 {
-    return QueryProjectionFor(query);
+    return QueryPatchFor(query);
 }
 
-public async Task<QueryProjection> ProjectQueryLater(string query)
+public async Task<QueryPatch> ProjectQueryLater(string query)
 {
     await Task.Delay(query.Length == 1 ? 30 : 1);
-    return QueryProjectionFor(query);
-}
-
-private CounterProjectionState CounterProjection(int count)
-{
-    return new()
-    {
-        count = count,
-        disabled = count <= 0,
-        summary = $"Projected count: {count}",
-        className = count == 0 ? "at-zero" : "positive"
-    };
-}
-
-public CounterProjectionState IncreaseProjected(int count)
-{
-    return CounterProjection(count + 1);
-}
-
-public CounterProjectionState DecreaseProjected(int count)
-{
-    return CounterProjection(count - 1);
-}
-
-private RowSelectionProjectionState InitialRowSelection()
-{
-    return new()
-    {
-        selectedId = 1,
-        selectedLabel = "Selected row 1",
-        firstClass = "selected",
-        secondClass = "",
-        thirdClass = ""
-    };
-}
-
-public RowSelectionProjectionTransition SelectSecondAndRemoveFirst(int selectedId)
-{
-    int nextId = selectedId == 1 ? 2 : selectedId;
-    return new()
-    {
-        state = new()
-        {
-            selectedId = nextId,
-            selectedLabel = $"Selected row {nextId}",
-            firstClass = "",
-            secondClass = "selected",
-            thirdClass = ""
-        },
-        removal = RemoveKey("projection-row-1")
-    };
+    return QueryPatchFor(query);
 }
 
 public bool ValidateName(string name)
@@ -532,11 +611,6 @@ public string SubmitName(string name)
 {
     if (!ValidateName(name)) { return ""; }
     return $"Thanks, {name}.";
-}
-
-public KeyedRemove RemoveTodo(string key)
-{
-    return RemoveKey(key);
 }
 
 private List<NativeTodo> NativeTodos()
@@ -612,16 +686,7 @@ public Html ClearNativeTodos()
 private Html TodoItem(int id, string title)
 {
     string key = $"todo-{id}";
-    return <li id=key>
-        <span>{title}</span>
-        <button
-            type="button"
-            name="key"
-            value=key
-            aria-controls="todo-list"
-            onclick=RemoveTodo
-        >Remove</button>
-    </li>;
+    return <li id=key><span>{title}</span></li>;
 }
 
 public TodoPatch AddTodo(int nextId, string title)
@@ -640,9 +705,7 @@ public Html ReplaceMessage(string message)
 
 public Html BrowserPage(Html browserLoader)
 {
-    QueryProjection initialQuery = ProjectQuery("");
-    CounterProjectionState initialCounter = CounterProjection(1);
-    RowSelectionProjectionState initialRows = InitialRowSelection();
+    QueryPatch initialQuery = ProjectQuery("");
     return <main>
         <h1>Lime Browser 0.1</h1>
         <section id="counter-island">
@@ -656,7 +719,7 @@ public Html BrowserPage(Html browserLoader)
             </button>
         </section>
         <section id="reactive-counter">
-            <h2>Reactive projection trial</h2>
+            <h2>Aggregate state trial</h2>
             <output name="value">1</output>
             <output name="value">1</output>
             <output name="doubled">2</output>
@@ -673,60 +736,8 @@ public Html BrowserPage(Html browserLoader)
                 Decrease
             </button>
         </section>
-        <section id="compiled-projection-trial">
-            <h2>Compiled projection batch trial</h2>
-            <output project_text=initialCounter.count>
-                {initialCounter.count}
-            </output>
-            <output project_text=initialCounter.summary>
-                {initialCounter.summary}
-            </output>
-            <p project_class=initialCounter.className>
-                State class projection
-            </p>
-            <button type="button" onclick=IncreaseProjected>
-                Increase projected
-            </button>
-            <button
-                type="button"
-                project_disabled=initialCounter.disabled
-                onclick=DecreaseProjected
-            >Decrease projected</button>
-        </section>
-        <section id="compiled-row-transition">
-            <h2>Composed keyed projection trial</h2>
-            <output project_text=initialRows.selectedId>
-                {initialRows.selectedId}
-            </output>
-            <output project_text=initialRows.selectedLabel>
-                {initialRows.selectedLabel}
-            </output>
-            <ul id="projection-row-list">
-                <li
-                    id="projection-row-1"
-                    project_class=initialRows.firstClass
-                >First row</li>
-                <li
-                    id="projection-row-2"
-                    project_class=initialRows.secondClass
-                >
-                    Second row
-                    <input
-                        id="projection-row-input"
-                        value="browser-owned value"
-                    />
-                </li>
-                <li
-                    id="projection-row-3"
-                    project_class=initialRows.thirdClass
-                >Third row</li>
-            </ul>
-            <button
-                type="button"
-                aria-controls="projection-row-list"
-                onclick=SelectSecondAndRemoveFirst
-            >Select second and remove first</button>
-        </section>
+        <ProjectedCounter />
+        <RowSelectionComponent />
         <PersistentTodoList />
         <IsolatedCounter />
         <IsolatedCounter />
@@ -734,6 +745,7 @@ public Html BrowserPage(Html browserLoader)
         <SeededCounter label="Beta" initial=40 enabled=false />
         <AsyncTodoComponent status="idle-one" />
         <AsyncTodoComponent status="idle-two" />
+        <FaultingDestructorComponent />
         <section id="component-drop-probe">
             <output name="dropCount">0</output>
             <button type="button" onclick=ReadDroppedCounters>
@@ -750,6 +762,10 @@ public Html BrowserPage(Html browserLoader)
             <output name="asyncDropCount">0</output>
             <button type="button" onclick=ReadAsyncComponentDrops>
                 Read async component drops
+            </button>
+            <output name="destructorAttempts">0</output>
+            <button type="button" onclick=ReadDestructorAttempts>
+                Read destructor attempts
             </button>
         </section>
         <section id="native-keyed-list-trial">

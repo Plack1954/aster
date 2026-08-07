@@ -51,11 +51,10 @@ real Aster struct containing the next numeric state and an owning native
 `Html` item. Generated accessors transfer owning fields once and a generated
 drop export cleans whatever remains. The runtime renders the transferred
 `Html`, keys collection children by their ordinary `id`, updates only the
-matching child, and hydrates event bindings inside newly inserted HTML. The
-keyed map is initialized from SSR children and then persists independently of
-the DOM projection. `RemoveTodo` returns the explicit owning
-`Aster.Html.KeyedRemove` protocol value; generated accessors transfer its key
-and the runtime applies the typed removal to the controlled collection.
+matching child, and hydrates event bindings inside newly inserted HTML. The keyed map is initialized from SSR children and then persists independently
+of the DOM projection. Structural command result types have been removed;
+real applications use retained class state plus ordinary keyed HTML snapshots
+for removal, reorder, and clear operations.
 
 `build.sh` exercises the normal web-project workflow:
 

@@ -224,9 +224,9 @@ scroll state, and browser-owned element state. DOM morphing preserves more but
 introduces reconciliation machinery and can become a string-rendered VDOM in
 practice.
 
-The legacy keyed collection trial constructs safe HTML for one item and uses an
-explicit `Aster.Html.KeyedRemove` result. That proved the structural mechanism
-but is too low-level as an ordinary application model.
+The former public keyed command result types were removed. Structural changes
+now originate in ordinary collection mutation and compiler-internal keyed
+snapshot reconciliation only.
 
 The newer trial uses normal `List<T>` mutation and native HTML children carrying
 `key=todo.key`. Returning the resulting keyed snapshot inserts new keys, removes
@@ -370,11 +370,15 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 13.1 ms versus Vue's 9.2 ms, updated every tenth
-row in 2.7 ms versus 3.0 ms, swapped two rows in 0.2 ms versus 2.7 ms, appended
-1,000 rows in 12.7 ms versus 9.2 ms, deleted one row in 0.5 ms versus 4.4 ms,
-and cleared 1,999 rows in 4.9 ms versus 7.1 ms. Aster's benchmark client was
-13.8 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
+created 1,000 keyed rows in 32.7 ms versus Vue's 11.3 ms, updated every tenth
+row in 43.8 ms versus 4.4 ms, swapped two rows in 44.3 ms versus 2.6 ms,
+appended 1,000 rows in 134.6 ms versus 8.0 ms, deleted one row in 116.0 ms
+versus 4.2 ms, and cleared 1,999 rows in 7.7 ms versus 7.4 ms. Aster's benchmark
+client was 15.1 KB gzip versus Vue's 41.9 KB gzip. Migrating the benchmark from
+explicit structural results to whole retained class snapshots exposed a serious
+full-list render/planning cost; these measurements are retained as a regression
+baseline rather than presented as competitive update performance. They are
+smoke measurements, not
 universal benchmark claims: Aster was not consistently faster, because Vue won
 bulk create and append.
 

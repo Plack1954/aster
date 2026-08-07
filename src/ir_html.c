@@ -577,11 +577,11 @@ static uint64_t keyed_part_id(
                  field < declaration->as.structure.field_count; ++field)
                 if (strcmp(declaration->as.structure.fields[field].name,
                            expression->as.field.field) == 0)
-                    return lang_projection_part_id(
+                    return lang_dom_part_id(
                         declaration->module_name,
                         declaration->as.structure.name, field);
     }
-    return lang_projection_part_id(
+    return lang_dom_part_id(
         builder->function->module_name,
         builder->function->name,
         span.start * 8U + (size_t)(
@@ -594,7 +594,7 @@ static void append_part_range_marker(
     bool closing, LangSpan span) {
     uint64_t part_id = keyed_part_id(builder, expression, 'r', span);
     char identifier[14];
-    (void)lang_projection_part_format(part_id, identifier);
+    (void)lang_dom_part_format(part_id, identifier);
     char *marker = lang_arena_alloc(
         &builder->module->lowering_module->arena, 24U);
     int length = snprintf(
@@ -617,7 +617,7 @@ static void emit_keyed_part_marker(
     uint64_t part_id = keyed_part_id(
         builder, expression, kind, span);
     char compact_id[14];
-    size_t compact_length = lang_projection_part_format(
+    size_t compact_length = lang_dom_part_format(
         part_id, compact_id);
     size_t property_length = property_name == NULL
         ? 0U : strlen(property_name);
@@ -803,10 +803,10 @@ static void emit_component_constructor_markers(
                 supported = false;
                 break;
             }
-            uint64_t id = lang_projection_part_id(
+            uint64_t id = lang_dom_part_id(
                 item->module_name, item->name, item_field);
             char compact_id[14];
-            (void)lang_projection_part_format(id, compact_id);
+            (void)lang_dom_part_format(id, compact_id);
             offset += (size_t)snprintf(
                 schema + offset, item->field_count * 20U + 1U - offset,
                 "%s%c:%s",
@@ -918,38 +918,6 @@ IrValueId ir_lower_element_with_parent(
         const ElementProperty *property =
             &expr->as.element.properties[i];
         if (property->css_custom_property) continue;
-        if (property->projection_binding != NULL) {
-            IrInstruction *binding = ir_append_instruction(
-                builder, IR_OP_CONST_STRING,
-                ir_intern_type(builder->module, &ir_str_type),
-                NULL, 0U, property->span);
-            if (binding != NULL) {
-                binding->symbol = property->projection_binding;
-                binding->symbol_length = strlen(property->projection_binding);
-                IrValueId marker = binding->result;
-                IrInstruction *set = ir_append_instruction(
-                    builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
-                    IR_INVALID_ID, &marker, 1U, property->span);
-                if (set != NULL) {
-                    set->index = local;
-                    set->symbol = "data-aster-project";
-                    set->symbol_length = strlen(set->symbol);
-                }
-            }
-            if (property->projection_binding[0] != 't') {
-                IrValueId value = ir_lower_expr(builder, property->value);
-                IrInstruction *set = ir_append_instruction(
-                    builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
-                    IR_INVALID_ID, &value, 1U, property->span);
-                if (set != NULL) {
-                    set->index = local;
-                    set->symbol = property->projection_binding[0] == 'c'
-                                ? "class" : "disabled";
-                    set->symbol_length = strlen(set->symbol);
-                }
-            }
-            continue;
-        }
         if (property->event_binding != NULL) {
             IrInstruction *binding = ir_append_instruction(
                 builder, IR_OP_CONST_STRING,

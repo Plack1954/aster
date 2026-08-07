@@ -30,9 +30,9 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 13.8 KB gzip versus 41.9 KB for the compared Vue client after adding inferred
-  ranges, safe attribute/style parts, async component lifetime support, and the
-  experimental batch decoder, keyed snapshots, and class-instance ownership;
+- 15.1 KB gzip versus 41.9 KB for the compared Vue client after adding inferred
+  ranges, safe attribute/style parts, async component lifetime support, keyed
+  snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
 
@@ -412,55 +412,17 @@ Required proof:
 Only after these prototypes should Lime select source syntax and make a public
 API commitment.
 
-## Implemented prototype status
+## Retired projection prototype
 
-The first prototype now exists behind deliberately experimental conventions:
+The packed projection experiment has been removed. Struct-name conventions,
+`project_*` HTML properties, textual target lookup, packed record decoders, and
+projection result accessors are no longer emitted or accepted. The checker now
+diagnoses the old properties with migration guidance.
 
-- a state struct name ends in `ProjectionState`;
-- `project_text`, `project_disabled`, and `project_class` are checked native
-  HTML properties whose values must be direct fields of that state;
-- synchronous handlers returning state, or a nested state-plus-effect
-  transition, are lowered to one owned packed batch instead of flat aggregate
-  accessors;
-- the checker assigns each projected state field a stable 64-bit part ID from
-  its module, state type, and declaration index; HTML markers, event inputs,
-  and packed batch records carry its compact base-36 encoding rather than a
-  field-name convention;
-- JavaScript validates the complete batch by part ID before mutating text,
-  `disabled`, or `class` parts;
-- one drop export handles success and discarded results.
-
-The Lime browser fixture updates all three projection kinds and proves in Chrome
-that every projected DOM node retains identity. Its Node integration verifies
-that four state fields arrive in one batch, that source field names do not leak
-into batch record identities, and that no per-field result exports exist.
-
-A second Chrome trial now composes those scalar records with a standard
-`KeyedRemove` record in the same owned batch. Selecting the second row updates
-its class and the region label while removing the first keyed row. The retained
-second and third row nodes, a nested input node, and the input's browser-edited
-value all survive. The runtime validates every projection and removal target
-before applying any record.
-
-That experiment initially exposed an important source-model problem: putting
-`KeyedRemove` directly in `ProjectionState` forced the initial render value to
-contain a meaningless removal. The prototype now separates the values with a
-nested transition:
-
-```aster
-private struct RowSelectionProjectionTransition
-{
-    RowSelectionProjectionState state;
-    KeyedRemove removal;
-}
-```
-
-The checker requires exactly one `*ProjectionState` in an experimental
-`*ProjectionTransition`, permits the standard structural effect separately,
-and rejects structural values in persistent state. The backend recursively
-flattens the nested state and removal into the same owned batch. Initial state
-is now pure and no placeholder effect is needed. This supports the semantic
-split proposed above without exposing scalar DOM commands.
+The retained implementation uses ordinary class fields, native HTML properties,
+compiler-inferred range/attribute/style parts, and keyed snapshots. Stable
+base-36 part IDs are compiler metadata only; application handlers neither name
+parts nor return scalar DOM command batches.
 
 A separate keyed-list prototype now accepts a compiler-only `key` property on
 ordinary native HTML:
@@ -515,16 +477,15 @@ survive. This proves ordinary native HTML snapshots can drive item-local
 updates without a VDOM, public projection types, or DOM commands.
 
 This validates persistent Wasm-owned state, keyed structural snapshots, native
-item-local compiled updates, and one level of experimental nested transition
-lowering. Current limits are intentional: inferred keyed parts currently cover
+item-local compiled updates, async ownership, and nested component disposal.
+Current limits are intentional: inferred keyed parts currently cover
 text-only mixed static/dynamic children, range-marked text mixed with retained
 nested elements, `class`, `disabled`, `hidden`, `title`, safe metadata
 attributes, and CSS custom properties; interactive constructor transfer is
 limited to Boolean, integer, and
 string parameters stored in matching fields; async class handlers use retained
-component leases and component-wide stale-result generations; and the older
-region-wide `ProjectionState`/`ProjectionTransition` prototype
-remains experimental. SSR can now rebuild the first `List<T>` field from keyed
+component leases and component-wide stale-result generations. SSR can rebuild
+the first `List<T>` field from keyed
 HTML when `T` is a flat Boolean/integer/string struct, and uncontrolled `void`
 handlers can refresh scalar parts across their component root without crossing
 nested ownership boundaries. Nested state structs, multiple list fields,
@@ -532,10 +493,8 @@ structural/conditional whole-root changes, controlled form properties,
 URL-bearing attributes, conditional item-local
 structure, and deeper recursive composition remain to be designed.
 
-The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 13.8 KB gzip. A future production implementation should
-tree-shake the decoder from
-applications without projection-state handlers.
+The obsolete packed decoder has been deleted rather than shipped as a dormant
+compatibility path.
 
 ## Stop criteria
 

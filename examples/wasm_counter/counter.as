@@ -24,10 +24,6 @@ public bool ToggleDetails(bool expanded) {
     return !expanded;
 }
 
-public KeyedRemove RemoveTodo(string removeKey) {
-    return RemoveKey(removeKey);
-}
-
 public bool ValidateName(string name) {
     return name.Length >= 2;
 }
@@ -50,16 +46,7 @@ public string SubmitContact(string name, string email) {
 }
 
 private Html TodoItem(int itemId, string title) {
-    return <li id=$"todo-{itemId}">
-        <span>{title}</span>
-        <button
-            type="button"
-            name="removeKey"
-            value=$"todo-{itemId}"
-            aria-controls="todo-list"
-            onclick=RemoveTodo
-        >Remove</button>
-    </li>;
+    return <li id=$"todo-{itemId}"><span>{title}</span></li>;
 }
 
 public TodoPatch AddTodo(int nextId, string title) {

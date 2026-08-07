@@ -985,7 +985,7 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
     set_tests_properties(lime_browser_async_wasm PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
-            "async component lifetime, SSR state, and nested ownership verified"
+            "component faults, exact disposal, and native retained state verified"
         TIMEOUT 60)
     add_test(NAME browser_compare_wasm
         COMMAND bash tests/browser_compare_wasm.sh
@@ -2130,6 +2130,11 @@ add_aster_generated_c_test(
 add_test(NAME class_component_requires_render
     COMMAND lang check tests/checker/class_component_requires_render.as)
 set_tests_properties(class_component_requires_render PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME legacy_projection_properties_rejected
+    COMMAND lang check tests/checker/legacy_projection_removed.as)
+set_tests_properties(legacy_projection_properties_rejected PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE)
 add_test(NAME interactive_class_component_constructor_rejected

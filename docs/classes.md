@@ -133,7 +133,12 @@ The browser runtime does not currently cancel host work, but detached work is
 safely drained without a stale DOM write. `disposeAsterRoot(root)` disconnects
 the root observer, invalidates every retained instance owned by that root, and
 runs each destructor immediately or after its final pending lease. Repeated root
-teardown is idempotent.
+teardown is idempotent. Constructor, handler, render, structured-state decode,
+and destructor faults are isolated per instance. Failed state restoration drops
+the partially initialized instance before retry; destructor faults are reported
+after the instance has been marked disposed, preventing a second drop. Targeted
+coverage also forces the Wasm allocation ABI to reject an impossible component
+state allocation and then verifies later component construction still succeeds.
 
 Inferred parts have explicit ownership. Text ranges, `class`, `disabled`,
 `hidden`, `title`, safe ordinary metadata attributes (`aria-*`, non-framework

@@ -131,88 +131,7 @@ static const Type *web_handler_completion_type(const Type *type) {
     return type != NULL && type->kind == TYPE_TASK ? type->element : type;
 }
 
-static bool projection_state_type(const Type *type) {
-    if (type == NULL || type->kind != TYPE_NAMED ||
-        type->declaration == NULL ||
-        type->declaration->kind != DECL_STRUCT)
-        return false;
-    const char *name = type->declaration->as.structure.name;
-    const char *suffix = "ProjectionState";
-    size_t name_length = strlen(name);
-    size_t suffix_length = strlen(suffix);
-    return name_length >= suffix_length &&
-           strcmp(name + name_length - suffix_length, suffix) == 0;
-}
-
-static bool projection_transition_type(const Type *type) {
-    if (type == NULL || type->kind != TYPE_NAMED ||
-        type->declaration == NULL ||
-        type->declaration->kind != DECL_STRUCT)
-        return false;
-    const char *name = type->declaration->as.structure.name;
-    const char *suffix = "ProjectionTransition";
-    size_t name_length = strlen(name);
-    size_t suffix_length = strlen(suffix);
-    return name_length >= suffix_length &&
-           strcmp(name + name_length - suffix_length, suffix) == 0;
-}
-
-static bool projection_batch_type(const Type *type) {
-    return projection_state_type(type) || projection_transition_type(type);
-}
-
-static bool projection_field_part(
-    const Type *type, const char *field_name, uint64_t *part_id) {
-    if (!projection_state_type(type) || type->declaration == NULL)
-        return false;
-    const Decl *declaration = type->declaration;
-    for (size_t field = 0U;
-         field < declaration->as.structure.field_count; ++field)
-        if (strcmp(declaration->as.structure.fields[field].name,
-                   field_name) == 0) {
-            *part_id = lang_projection_part_id(
-                declaration->module_name,
-                declaration->as.structure.name, field);
-            return true;
-        }
-    return false;
-}
-
-static bool completion_projection_part(
-    const Type *completion, const char *field_name, uint64_t *part_id) {
-    if (projection_field_part(completion, field_name, part_id))
-        return true;
-    if (!projection_transition_type(completion) ||
-        completion->declaration == NULL)
-        return false;
-    const Decl *transition = completion->declaration;
-    for (size_t field = 0U;
-         field < transition->as.structure.field_count; ++field)
-        if (projection_field_part(
-                transition->as.structure.fields[field].checked_type,
-                field_name, part_id))
-            return true;
-    return false;
-}
-
-static bool web_handler_standard_html_type(
-    const Type *type, const char *name) {
-    return type->kind == TYPE_NAMED && type->declaration != NULL &&
-           type->declaration->kind == DECL_STRUCT &&
-           type->declaration->module_name != NULL &&
-           strcmp(type->declaration->module_name, "Aster::Html") == 0 &&
-           strcmp(type->declaration->as.structure.name, name) == 0;
-}
-
 static char web_handler_type_code(const Type *type) {
-    if (projection_batch_type(type))
-        return 'p';
-    if (web_handler_standard_html_type(type, "KeyedRemove"))
-        return 'r';
-    if (web_handler_standard_html_type(type, "KeyedClear"))
-        return 'c';
-    if (web_handler_standard_html_type(type, "KeyedSwap"))
-        return 'w';
     if (type->kind == TYPE_BOOL)
         return 'b';
     if (type->kind == TYPE_UNIT)
@@ -227,61 +146,6 @@ static char web_handler_type_code(const Type *type) {
         type->declaration->kind == DECL_STRUCT)
         return 'a';
     return '?';
-}
-
-static bool projection_property(const char *name) {
-    return element_property_names_equal(name, "project_text") ||
-           element_property_names_equal(name, "project_disabled") ||
-           element_property_names_equal(name, "project_class");
-}
-
-static void check_projection_property(
-    Checker *checker, ElementProperty *property) {
-    Type *value = check_expr(checker, property->value);
-    Expr *expression = property->value;
-    if (expression->kind != EXPR_FIELD ||
-        !projection_state_type(expression->as.field.object->type)) {
-        lang_diag(checker->diagnostics, expression->span,
-                  "projection `%s` requires a direct field of a `*ProjectionState` struct",
-                  property->name);
-        return;
-    }
-    bool valid = false;
-    char kind = '?';
-    if (element_property_names_equal(property->name, "project_text")) {
-        valid = value->kind == TYPE_STRING || value->kind == TYPE_BOOL ||
-                is_signed_integer(value) || is_unsigned_integer(value);
-        kind = 't';
-    } else if (element_property_names_equal(
-                   property->name, "project_disabled")) {
-        valid = value->kind == TYPE_BOOL;
-        kind = 'd';
-    } else if (element_property_names_equal(
-                   property->name, "project_class")) {
-        valid = value->kind == TYPE_STRING;
-        kind = 'c';
-    }
-    if (!valid) {
-        lang_diag(checker->diagnostics, expression->span,
-                  "projection `%s` has unsupported type `%s`",
-                  property->name, type_display_name(checker, value));
-        return;
-    }
-    uint64_t part_id = 0U;
-    if (!projection_field_part(
-            expression->as.field.object->type,
-            expression->as.field.field, &part_id)) {
-        lang_diag(checker->diagnostics, expression->span,
-                  "projection field `%s` has no generated part identity",
-                  expression->as.field.field);
-        return;
-    }
-    char compact_id[14];
-    size_t id_length = lang_projection_part_format(part_id, compact_id);
-    size_t length = id_length + 3U;
-    char *binding = lang_arena_alloc(&checker->module->arena, length);
-    (void)snprintf(binding, length, "%c:%s", kind, compact_id);
-    property->projection_binding = binding;
 }
 
 static Type *event_bound_method_type(
@@ -422,59 +286,6 @@ static void check_html_event_handler(
         lang_diag(checker->diagnostics, property->value->span,
                   "event handler `%s` must return a scalar, `String`, `Html`, struct, `void`, or `Task` of one of those types",
                   handler->as.function.name);
-    if (projection_batch_type(completion)) {
-        if (handler_type->element->kind == TYPE_TASK)
-            lang_diag(checker->diagnostics, property->value->span,
-                      "projection handlers are synchronous in the experimental prototype");
-        const Decl *container = completion->declaration;
-        size_t state_count = projection_state_type(completion) ? 1U : 0U;
-        for (size_t field = 0U;
-             field < container->as.structure.field_count; ++field) {
-            const FieldDecl *field_decl =
-                &container->as.structure.fields[field];
-            Type *field_type = resolve_declared_type_in_module(
-                checker, field_decl->type_syntax, field_decl->type_name,
-                field_decl->span, container->module_name);
-            if (projection_transition_type(completion)) {
-                if (projection_state_type(field_type)) {
-                    ++state_count;
-                    const Decl *state = field_type->declaration;
-                    for (size_t nested = 0U;
-                         nested < state->as.structure.field_count; ++nested) {
-                        const FieldDecl *nested_field =
-                            &state->as.structure.fields[nested];
-                        Type *nested_type = resolve_declared_type_in_module(
-                            checker, nested_field->type_syntax,
-                            nested_field->type_name, nested_field->span,
-                            state->module_name);
-                        if (!(nested_type->kind == TYPE_BOOL ||
-                              is_signed_integer(nested_type) ||
-                              is_unsigned_integer(nested_type) ||
-                              nested_type->kind == TYPE_STRING))
-                            lang_diag(checker->diagnostics,
-                                      nested_field->span,
-                                      "projection-state field `%s` must be Boolean, integer, or `string`",
-                                      nested_field->name);
-                    }
-                } else if (!web_handler_standard_html_type(
-                               field_type, "KeyedRemove")) {
-                    lang_diag(checker->diagnostics, field_decl->span,
-                              "projection-transition field `%s` must be a `*ProjectionState` or `KeyedRemove`",
-                              field_decl->name);
-                }
-            } else if (!(field_type->kind == TYPE_BOOL ||
-                         is_signed_integer(field_type) ||
-                         is_unsigned_integer(field_type) ||
-                         field_type->kind == TYPE_STRING)) {
-                lang_diag(checker->diagnostics, field_decl->span,
-                          "projection-state field `%s` must be Boolean, integer, or `string`",
-                          field_decl->name);
-            }
-        }
-        if (projection_transition_type(completion) && state_count != 1U)
-            lang_diag(checker->diagnostics, completion->declaration->span,
-                      "projection transition must contain exactly one `*ProjectionState` field");
-    }
     size_t first_parameter = handler->as.function.owner_type != NULL &&
         !handler->as.function.is_static_member ? 1U : 0U;
     for (size_t argument = 0U;
@@ -497,11 +308,8 @@ static void check_html_event_handler(
         length += strlen(owner) * 2U + 4U;
     for (size_t parameter = first_parameter;
          parameter < handler->as.function.param_count; ++parameter) {
-        uint64_t part_id = 0U;
         const char *name = handler->as.function.params[parameter].name;
-        length += completion_projection_part(
-                completion, name, &part_id)
-            ? 20U : strlen(name) + 3U;
+        length += strlen(name) + 3U;
     }
     char *binding = lang_arena_alloc(
         &checker->module->arena, length + 1U);
@@ -521,20 +329,12 @@ static void check_html_event_handler(
             event_name, handler_name, result_code);
     for (size_t parameter = first_parameter;
          parameter < handler->as.function.param_count; ++parameter) {
-        uint64_t part_id = 0U;
         const char *name = handler->as.function.params[parameter].name;
         char code = web_handler_type_code(
             handler_type->arguments[parameter - first_parameter]);
-        if (completion_projection_part(completion, name, &part_id)) {
-            char compact_id[14];
-            (void)lang_projection_part_format(part_id, compact_id);
-            offset += (size_t)snprintf(
-                binding + offset, length + 1U - offset,
-                "|%c:@%s", code, compact_id);
-        } else
-            offset += (size_t)snprintf(
-                binding + offset, length + 1U - offset,
-                "|%c:%s", code, name);
+        offset += (size_t)snprintf(
+            binding + offset, length + 1U - offset,
+            "|%c:%s", code, name);
     }
     property->event_binding = binding;
 }
@@ -976,8 +776,13 @@ Type *check_element(Checker *checker, Expr *expr) {
                         expr->as.element.properties[prior].name))
                     lang_diag(checker->diagnostics, property->span,
                               "duplicate property `%s`", property->name);
-            if (projection_property(property->name)) {
-                check_projection_property(checker, property);
+            if (element_property_names_equal(property->name, "project_text") ||
+                element_property_names_equal(property->name, "project_disabled") ||
+                element_property_names_equal(property->name, "project_class")) {
+                (void)check_expr(checker, property->value);
+                lang_diag(checker->diagnostics, property->span,
+                          "legacy `%s` was removed; bind the ordinary native HTML property instead",
+                          property->name);
                 continue;
             }
             if (element_property_names_equal(property->name, "key")) {
