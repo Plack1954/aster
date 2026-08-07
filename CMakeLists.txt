@@ -171,10 +171,16 @@ add_executable(lang src/main.c)
 target_link_libraries(lang PRIVATE langlib aster_http_curl aster_crypto)
 lang_enable_warnings(lang)
 
-add_executable(aster src/main.c)
-target_compile_definitions(aster PRIVATE
-    ASTER_PUBLIC_CLI=1 ASTER_VERSION="${PROJECT_VERSION}")
-target_link_libraries(aster PRIVATE langlib aster_http_curl aster_crypto)
+add_library(aster_cli STATIC src/cli.c)
+target_include_directories(aster_cli PUBLIC src)
+target_compile_definitions(aster_cli PRIVATE
+    ASTER_VERSION="${PROJECT_VERSION}")
+target_link_libraries(aster_cli PUBLIC langlib)
+lang_enable_warnings(aster_cli)
+
+add_executable(aster src/aster_main.c)
+target_link_libraries(aster PRIVATE
+    aster_cli aster_http_curl aster_crypto)
 lang_enable_warnings(aster)
 
 install(TARGETS aster RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -184,6 +190,11 @@ install(DIRECTORY std/
 
 enable_testing()
 set_property(GLOBAL PROPERTY ASTER_GENERATED_C_NEXT_LANE 0)
+
+add_executable(aster_cli_unit_test tests/cli_unit.c)
+target_link_libraries(aster_cli_unit_test PRIVATE aster_cli)
+lang_enable_warnings(aster_cli_unit_test)
+add_test(NAME aster_cli_unit COMMAND aster_cli_unit_test)
 
 function(aster_limit_generated_c_test test_name)
     if(NOT ASTER_GENERATED_C_TEST_LANES MATCHES "^[1-9][0-9]*$")
@@ -1637,6 +1648,25 @@ add_test(NAME aster_cli_help COMMAND aster --help)
 set_tests_properties(aster_cli_help PROPERTIES
     PASS_REGULAR_EXPRESSION "Usage:(.|[\r\n])*Commands:(.|[\r\n])*run(.|[\r\n])*test"
 )
+add_test(NAME aster_cli_help_question_alias COMMAND aster run -?)
+set_tests_properties(aster_cli_help_question_alias PROPERTIES
+    PASS_REGULAR_EXPRESSION "Aster Run Command"
+)
+add_test(NAME aster_cli_info COMMAND aster --info)
+set_tests_properties(aster_cli_info PROPERTIES
+    PASS_REGULAR_EXPRESSION
+        "Aster:(.|[\r\n])*Version: ${PROJECT_VERSION}(.|[\r\n])*Runtime Environment:"
+)
+add_test(NAME aster_cli_missing_project_argument
+    COMMAND ${CMAKE_COMMAND}
+        -DASTER_EXECUTABLE=$<TARGET_FILE:aster>
+        -DCASE=missing-project
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_cli_failure.cmake)
+add_test(NAME aster_cli_unknown_command
+    COMMAND ${CMAKE_COMMAND}
+        -DASTER_EXECUTABLE=$<TARGET_FILE:aster>
+        -DCASE=unknown-command
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_cli_failure.cmake)
 add_test(NAME aster_cli_run_project_directory
     COMMAND aster run --project tests/cli_project -- alpha --beta)
 set_tests_properties(aster_cli_run_project_directory PROPERTIES
