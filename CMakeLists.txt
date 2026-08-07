@@ -71,7 +71,9 @@ add_library(langlib
     src/ir_html.c
     src/ir_verify.c
     src/ir_debug.c
-    src/ir_bytecode.c
+    src/ir_bytecode_emit.c
+    src/ir_bytecode_instructions.c
+    src/ir_bytecode_module.c
     src/c_backend.c
     src/c_backend_native.c
     src/c_backend_native_runtime.c
