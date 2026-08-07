@@ -223,6 +223,7 @@ Manifest projects support named binary, library, and test targets:
 - [Normative Aster Web component semantics](docs/aster-web-component-semantics.md)
 - [Final Aster Web application proof](docs/aster-web-final-application-proof.md)
 - [Final retained-DOM measurement](docs/aster-web-final-measurement.md)
+- [Aster DX grievances](docs/aster-dx-grievances.md)
 - [Browser projection design history](docs/aster-web-composable-projections.md)
 - [Typed IR](docs/ir.md)
 - [Backend architecture](docs/architecture.md)
