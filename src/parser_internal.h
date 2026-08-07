@@ -38,6 +38,8 @@ const char *parser_copy_token(Parser *parser, Token token);
 const char *join_text(Parser *parser, const char *left,
                       const char *middle, const char *right);
 Expr *parser_new_expr(Parser *parser, ExprKind kind, LangSpan span);
+Stmt *new_stmt(Parser *parser, StmtKind kind, LangSpan span);
+Stmt *parse_block(Parser *parser);
 bool parser_looks_like_c_local(const Parser *parser);
 bool looks_like_deconstruction(const Parser *parser);
 bool parser_looks_like_cast(const Parser *parser);

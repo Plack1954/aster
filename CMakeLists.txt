@@ -43,6 +43,7 @@ add_library(langlib
     src/parser.c
     src/parser_support.c
     src/parser_types.c
+    src/parser_declarations.c
     src/parser_debug.c
     src/parser_elements.c
     src/checker.c
