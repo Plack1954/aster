@@ -586,24 +586,56 @@ static uint64_t keyed_part_id(
         builder->function->name,
         span.start * 8U + (size_t)(
             kind == 't' ? 1U : kind == 'c' ? 2U : kind == 'd' ? 3U :
-            kind == 'h' ? 4U : 5U));
+            kind == 'h' ? 4U : kind == 'a' ? 5U : 6U));
+}
+
+static void append_part_range_marker(
+    IrBuilder *builder, uint32_t local, const Expr *expression,
+    bool closing, LangSpan span) {
+    uint64_t part_id = keyed_part_id(builder, expression, 'r', span);
+    char identifier[14];
+    (void)lang_projection_part_format(part_id, identifier);
+    char *marker = lang_arena_alloc(
+        &builder->module->lowering_module->arena, 24U);
+    int length = snprintf(
+        marker, 24U, closing ? "<!--/a:%s-->" : "<!--a:%s-->",
+        identifier);
+    IrInstruction *text = ir_append_instruction(
+        builder, IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT,
+        IR_INVALID_ID, NULL, 0U, span);
+    if (text != NULL) {
+        text->index = local;
+        text->symbol = marker;
+        text->symbol_length = length > 0 ? (size_t)length : 0U;
+        text->auxiliary = 1U;
+    }
 }
 
 static void emit_keyed_part_marker(
     IrBuilder *builder, uint32_t local, const Expr *expression,
-    char kind, LangSpan span) {
+    char kind, const char *property_name, LangSpan span) {
     uint64_t part_id = keyed_part_id(
         builder, expression, kind, span);
+    char compact_id[14];
+    size_t compact_length = lang_projection_part_format(
+        part_id, compact_id);
+    size_t property_length = property_name == NULL
+        ? 0U : strlen(property_name);
     char *identifier = lang_arena_alloc(
-        &builder->module->lowering_module->arena, 17U);
-    (void)snprintf(identifier, 17U, "%016" PRIx64, part_id);
+        &builder->module->lowering_module->arena,
+        compact_length + property_length + 2U);
+    int identifier_length = property_name == NULL
+        ? snprintf(identifier, compact_length + 1U, "%s", compact_id)
+        : snprintf(identifier, compact_length + property_length + 2U,
+                   "%s|%s", compact_id, property_name);
     IrInstruction *constant = ir_append_instruction(
         builder, IR_OP_CONST_STRING,
         ir_intern_type(builder->module, &ir_str_type),
         NULL, 0U, span);
     if (constant == NULL) return;
     constant->symbol = identifier;
-    constant->symbol_length = 16U;
+    constant->symbol_length = identifier_length > 0
+        ? (size_t)identifier_length : 0U;
     IrValueId value = constant->result;
     IrInstruction *set = ir_append_instruction(
         builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
@@ -614,6 +646,7 @@ static void emit_keyed_part_marker(
                 : kind == 'c' ? "data-aster-part-c"
                 : kind == 'd' ? "data-aster-part-d"
                 : kind == 'h' ? "data-aster-part-h"
+                : kind == 's' ? "data-aster-part-s"
                               : "data-aster-part-a";
     set->symbol_length = strlen(set->symbol);
 
@@ -628,10 +661,10 @@ static void emit_keyed_part_marker(
     char *state_marker_name = lang_arena_alloc(
         &builder->module->lowering_module->arena, 48U);
     (void)snprintf(
-        state_name, 40U, "data-aster-state-%016" PRIx64, part_id);
+        state_name, 40U, "data-aster-state-%s", compact_id);
     (void)snprintf(
         state_marker_name, 48U,
-        "data-aster-state-field-%016" PRIx64, part_id);
+        "data-aster-state-field-%s", compact_id);
     IrInstruction *state_marker = ir_append_instruction(
         builder, IR_OP_CONST_BOOL,
         ir_intern_type(builder->module, &ir_bool_type),
@@ -772,10 +805,12 @@ static void emit_component_constructor_markers(
             }
             uint64_t id = lang_projection_part_id(
                 item->module_name, item->name, item_field);
+            char compact_id[14];
+            (void)lang_projection_part_format(id, compact_id);
             offset += (size_t)snprintf(
                 schema + offset, item->field_count * 20U + 1U - offset,
-                "%s%c:%016" PRIx64,
-                item_field == 0U ? "" : ",", code, id);
+                "%s%c:%s",
+                item_field == 0U ? "" : ",", code, compact_id);
         }
         if (!supported) continue;
         IrInstruction *constant = ir_append_instruction(
@@ -799,6 +834,23 @@ static void emit_component_constructor_markers(
     }
 }
 
+static bool inferred_safe_attribute(const char *name) {
+    if (strcmp(name, "alt") == 0 || strcmp(name, "role") == 0 ||
+        strcmp(name, "lang") == 0 || strcmp(name, "dir") == 0)
+        return true;
+    if (strncmp(name, "aria-", 5U) == 0) return true;
+    return strncmp(name, "data-", 5U) == 0 &&
+        strncmp(name, "data-aster-", 11U) != 0;
+}
+
+static bool inferred_text_part_type(const Type *type) {
+    return type != NULL &&
+        (type->kind == TYPE_STRING || type->kind == TYPE_STR ||
+         type->kind == TYPE_BOOL || type->kind == TYPE_CHAR ||
+         (type->kind >= TYPE_I8 && type->kind <= TYPE_USIZE) ||
+         type->kind == TYPE_F32 || type->kind == TYPE_F64);
+}
+
 static const Expr *keyed_text_part_expression(const Expr *element) {
     const Expr *first_dynamic = NULL;
     for (size_t item_index = 0U;
@@ -809,13 +861,7 @@ static const Expr *keyed_text_part_expression(const Expr *element) {
         const Expr *expression = item->as.expression;
         if (expression->kind == EXPR_ELEMENT) return NULL;
         if (expression->kind != EXPR_INTERPOLATION &&
-            expression->type != NULL &&
-            !(expression->type->kind == TYPE_STRING ||
-              expression->type->kind == TYPE_STR ||
-              expression->type->kind == TYPE_BOOL ||
-              expression->type->kind == TYPE_CHAR ||
-              (expression->type->kind >= TYPE_I8 &&
-               expression->type->kind <= TYPE_USIZE)))
+            !inferred_text_part_type(expression->type))
             return NULL;
         if (first_dynamic == NULL) first_dynamic = expression;
     }
@@ -951,19 +997,24 @@ IrValueId ir_lower_element_with_parent(
         if (keyed_item && dynamic_property &&
             strcmp(property_name, "class") == 0)
             emit_keyed_part_marker(
-                builder, local, property->value, 'c', property->span);
+                builder, local, property->value, 'c', NULL, property->span);
         else if (keyed_item && dynamic_property &&
                  strcmp(property_name, "disabled") == 0)
             emit_keyed_part_marker(
-                builder, local, property->value, 'd', property->span);
+                builder, local, property->value, 'd', NULL, property->span);
         else if (keyed_item && dynamic_property &&
                  strcmp(property_name, "hidden") == 0)
             emit_keyed_part_marker(
-                builder, local, property->value, 'h', property->span);
+                builder, local, property->value, 'h', NULL, property->span);
         else if (keyed_item && dynamic_property &&
                  strcmp(property_name, "title") == 0)
             emit_keyed_part_marker(
-                builder, local, property->value, 'a', property->span);
+                builder, local, property->value, 'a', NULL, property->span);
+        else if (keyed_item && dynamic_property &&
+                 inferred_safe_attribute(property_name))
+            emit_keyed_part_marker(
+                builder, local, property->value, 'a', property_name,
+                property->span);
     }
     bool custom_property_started = false;
     for (size_t i = 0U; i < expr->as.element.property_count; ++i) {
@@ -1012,6 +1063,20 @@ IrValueId ir_lower_element_with_parent(
             builder, IR_OP_LOCAL_ELEMENT_PROPERTY_END,
             IR_INVALID_ID, NULL, 0U, expr->as.element.open_span);
         if (end != NULL) end->index = local;
+        if (keyed_item)
+            for (size_t i = 0U;
+                 i < expr->as.element.property_count; ++i) {
+                const ElementProperty *property =
+                    &expr->as.element.properties[i];
+                bool dynamic = property->value->kind != EXPR_INT &&
+                    property->value->kind != EXPR_FLOAT &&
+                    property->value->kind != EXPR_STRING &&
+                    property->value->kind != EXPR_BOOL;
+                if (property->css_custom_property && dynamic)
+                    emit_keyed_part_marker(
+                        builder, local, property->value, 's',
+                        property->name, property->span);
+            }
     }
     if (expr->as.element.css_style_attribute != NULL) {
         IrInstruction *constant = ir_append_instruction(
@@ -1055,7 +1120,7 @@ IrValueId ir_lower_element_with_parent(
         ? keyed_text_part_expression(expr) : NULL;
     if (text_part != NULL)
         emit_keyed_part_marker(
-            builder, local, text_part, 't', text_part->span);
+            builder, local, text_part, 't', NULL, text_part->span);
     if (!push_element_context(builder, local, keyed_item, expr->span))
         return IR_INVALID_ID;
     for (size_t i = 0U; i < expr->as.element.body_count; ++i) {
@@ -1077,10 +1142,26 @@ IrValueId ir_lower_element_with_parent(
         } else if (
             item->as.expression->kind ==
                 EXPR_INTERPOLATION) {
+            bool ranged = keyed_item && text_part == NULL;
+            if (ranged)
+                append_part_range_marker(
+                    builder, local, item->as.expression, false,
+                    item->as.expression->span);
             lower_interpolation_to_element(
                 builder, item->as.expression,
                 local, NULL);
+            if (ranged && !ir_current_terminated(builder))
+                append_part_range_marker(
+                    builder, local, item->as.expression, true,
+                    item->as.expression->span);
         } else {
+            bool ranged = keyed_item && text_part == NULL &&
+                item->as.expression->kind != EXPR_ELEMENT &&
+                inferred_text_part_type(item->as.expression->type);
+            if (ranged)
+                append_part_range_marker(
+                    builder, local, item->as.expression, false,
+                    item->as.expression->span);
             IrValueId child;
             if (item->as.expression->borrow_html_string)
                 child = lower_borrowed_interpolation_string(
@@ -1090,10 +1171,15 @@ IrValueId ir_lower_element_with_parent(
                     ? ir_lower_element_with_parent(
                           builder, item->as.expression, local)
                     : ir_lower_expr(builder, item->as.expression);
-            if (!ir_current_terminated(builder))
+            if (!ir_current_terminated(builder)) {
                 ir_append_element_child(
                     builder, child, item->as.expression->type,
                     item->as.expression->span);
+                if (ranged && !ir_current_terminated(builder))
+                    append_part_range_marker(
+                        builder, local, item->as.expression, true,
+                        item->as.expression->span);
+            }
         }
     }
     --builder->element_count;

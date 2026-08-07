@@ -1241,3 +1241,17 @@ uint64_t lang_projection_part_id(
     }
     return hash == 0U ? 1U : hash;
 }
+
+size_t lang_projection_part_format(uint64_t part_id, char output[14]) {
+    static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    char reversed[13];
+    size_t length = 0U;
+    do {
+        reversed[length++] = digits[part_id % 36U];
+        part_id /= 36U;
+    } while (part_id != 0U);
+    for (size_t index = 0U; index < length; ++index)
+        output[index] = reversed[length - index - 1U];
+    output[length] = '\0';
+    return length;
+}

@@ -85,7 +85,7 @@ function projectionPart(typeName, fieldIndex) {
         value = BigInt.asUintN(64, value * 1099511628211n);
     }
     if (value === 0n) value = 1n;
-    return value.toString(16).padStart(16, "0");
+    return value.toString(36);
 }
 
 const project = instance.exports.aster_export_IncreaseProjected;

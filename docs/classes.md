@@ -132,6 +132,15 @@ until all tasks have settled and their results have been dropped. A successful
 The browser runtime does not currently cancel host work, but detached work is
 safely drained without a stale DOM write.
 
+Inferred parts have explicit ownership. Text ranges, `class`, `disabled`,
+`hidden`, `title`, safe ordinary metadata attributes (`aria-*`, non-framework
+`data-*`, `alt`, `role`, `lang`, and `dir`), and CSS custom properties are
+compiler-owned and update from `Render()`. Existing `value`, `checked`, selected
+options, focus, and text selection are browser-owned after hydration and are not
+copied from later snapshots. Applications that eventually need controlled form
+properties will require an explicit ownership spelling rather than silently
+changing this default.
+
 Nested state structs, multiple list fields, request-only objects, and general
 post-constructor object graphs remain unsupported. These limits are explicit;
 there is no lifecycle API or leaked page-global component singleton.

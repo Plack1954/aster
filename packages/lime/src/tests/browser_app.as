@@ -68,6 +68,7 @@ private class PersistentTodoList
                     <label>
                         <span>Todo: {todo.title}</span>
                         <input value=todo.title disabled=todo.disabled />
+                        <input type="checkbox" checked=false />
                         <small hidden=todo.hidden>renamed detail</small>
                     </label>
                     <button
@@ -381,13 +382,13 @@ private class AsyncTodoComponent
     private async Task SaveSlow()
     {
         await Task.Delay(30);
-        this.status = "slow save";
+        this.status = "slow-save";
     }
 
     private async Task SaveFast()
     {
         await Task.Delay(1);
-        this.status = "fast save";
+        this.status = "fast-save";
     }
 
     private async Task FailSave()
@@ -399,7 +400,7 @@ private class AsyncTodoComponent
     public Html Render()
     {
         return <section class="async-todo-component">
-            <output name="asyncStatus">Status: {this.status}</output>
+            <output name="asyncStatus" aria-label=this.status --accent=this.status><strong>Status: </strong>{this.status}</output>
             <button type="button" onclick=this.SaveSlow>Save slowly</button>
             <button type="button" onclick=this.SaveFast>Save quickly</button>
             <button type="button" onclick=this.FailSave>Fail save</button>
@@ -731,8 +732,8 @@ public Html BrowserPage(Html browserLoader)
         <IsolatedCounter />
         <SeededCounter label="Alpha" initial=7 enabled=true />
         <SeededCounter label="Beta" initial=40 enabled=false />
-        <AsyncTodoComponent status="idle one" />
-        <AsyncTodoComponent status="idle two" />
+        <AsyncTodoComponent status="idle-one" />
+        <AsyncTodoComponent status="idle-two" />
         <section id="component-drop-probe">
             <output name="dropCount">0</output>
             <button type="button" onclick=ReadDroppedCounters>

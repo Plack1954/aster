@@ -276,10 +276,11 @@ static void check_projection_property(
                   expression->as.field.field);
         return;
     }
-    size_t length = 19U;
+    char compact_id[14];
+    size_t id_length = lang_projection_part_format(part_id, compact_id);
+    size_t length = id_length + 3U;
     char *binding = lang_arena_alloc(&checker->module->arena, length);
-    (void)snprintf(
-        binding, length, "%c:%016" PRIx64, kind, part_id);
+    (void)snprintf(binding, length, "%c:%s", kind, compact_id);
     property->projection_binding = binding;
 }
 
@@ -524,11 +525,13 @@ static void check_html_event_handler(
         const char *name = handler->as.function.params[parameter].name;
         char code = web_handler_type_code(
             handler_type->arguments[parameter - first_parameter]);
-        if (completion_projection_part(completion, name, &part_id))
+        if (completion_projection_part(completion, name, &part_id)) {
+            char compact_id[14];
+            (void)lang_projection_part_format(part_id, compact_id);
             offset += (size_t)snprintf(
                 binding + offset, length + 1U - offset,
-                "|%c:@%016" PRIx64, code, part_id);
-        else
+                "|%c:@%s", code, compact_id);
+        } else
             offset += (size_t)snprintf(
                 binding + offset, length + 1U - offset,
                 "|%c:%s", code, name);

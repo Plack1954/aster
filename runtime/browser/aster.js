@@ -421,12 +421,12 @@ function collectionFor(source, state) {
     return {controlled, collection};
 }
 
-const keyedPartKinds = ["t", "c", "d", "h", "a"];
+const keyedPartKinds = ["t", "c", "d", "h", "a", "s"];
 
 function keyedPartElements(region) {
     const elements = [region, ...region.querySelectorAll(
         "[data-aster-part-t], [data-aster-part-c], [data-aster-part-d], " +
-        "[data-aster-part-h], [data-aster-part-a]"
+        "[data-aster-part-h], [data-aster-part-a], [data-aster-part-s]"
     )];
     const keyed = region.matches("[data-aster-key]") ? region : null;
     const component = region.matches("[data-aster-component]")
@@ -437,6 +437,55 @@ function keyedPartElements(region) {
             ? element.closest("[data-aster-key]") === null
             : element.closest("[data-aster-key]") === keyed)
     );
+}
+
+function partRangeOwnerMatches(comment, region) {
+    const parent = comment.parentElement;
+    if (parent === null) return false;
+    const keyed = region.matches("[data-aster-key]") ? region : null;
+    const component = region.matches("[data-aster-component]")
+        ? region : region.closest("[data-aster-component]");
+    return parent.closest("[data-aster-component]") === component &&
+        (keyed === null
+            ? parent.closest("[data-aster-key]") === null
+            : parent.closest("[data-aster-key]") === keyed);
+}
+
+function partRanges(region) {
+    const starts = new Map();
+    const ranges = [];
+    const walker = document.createTreeWalker(region, NodeFilter.SHOW_COMMENT);
+    for (let comment = walker.nextNode(); comment !== null;
+         comment = walker.nextNode()) {
+        if (!partRangeOwnerMatches(comment, region)) continue;
+        const closing = comment.data.startsWith("/a:");
+        if (!closing && !comment.data.startsWith("a:")) continue;
+        const id = comment.data.slice(closing ? 3 : 2);
+        if (id === "") throw new Error("Aster range part ID is empty");
+        if (!closing) {
+            if (starts.has(id))
+                throw new Error(`Aster range part start is duplicated: ${id}`);
+            starts.set(id, comment);
+            continue;
+        }
+        const start = starts.get(id);
+        if (start === undefined || start.parentNode !== comment.parentNode)
+            throw new Error(`Aster range part layout is incompatible: ${id}`);
+        let text = "";
+        for (let node = start.nextSibling; node !== comment;
+             node = node?.nextSibling ?? null) {
+            if (node === null)
+                throw new Error(`Aster range part is unterminated: ${id}`);
+            text += node.textContent ?? "";
+        }
+        starts.delete(id);
+        ranges.push({id, start, end: comment, text});
+    }
+    if (starts.size !== 0)
+        throw new Error(
+            `Aster range part end is missing: ${starts.keys().next().value}`
+        );
+    return ranges;
 }
 
 function keyedPartPlan(retained, incoming) {
@@ -453,6 +502,15 @@ function keyedPartPlan(retained, incoming) {
             }
             targets.push(element);
         }
+    for (const range of partRanges(retained)) {
+        const identity = `r:${range.id}`;
+        let targets = existing.get(identity);
+        if (targets === undefined) {
+            targets = [];
+            existing.set(identity, targets);
+        }
+        targets.push(range);
+    }
     const updates = [];
     const incomingCounts = new Map();
     for (const element of keyedPartElements(incoming))
@@ -467,6 +525,15 @@ function keyedPartPlan(retained, incoming) {
                 throw new Error(`Aster retained keyed part is missing: ${identity}`);
             updates.push({kind, target, value: element});
         }
+    for (const range of partRanges(incoming)) {
+        const identity = `r:${range.id}`;
+        const index = incomingCounts.get(identity) ?? 0;
+        incomingCounts.set(identity, index + 1);
+        const target = existing.get(identity)?.[index];
+        if (target === undefined)
+            throw new Error(`Aster retained range part is missing: ${identity}`);
+        updates.push({kind: "r", target, value: range});
+    }
     for (const [identity, targets] of existing)
         if ((incomingCounts.get(identity) ?? 0) !== targets.length)
             throw new Error(
@@ -477,11 +544,35 @@ function keyedPartPlan(retained, incoming) {
 
 function applyKeyedPartPlan(updates) {
     for (const {kind, target, value} of updates) {
-        if (kind === "t") target.textContent = value.textContent;
+        if (kind === "r") {
+            while (target.start.nextSibling !== target.end)
+                target.start.nextSibling.remove();
+            if (value.text !== "")
+                target.end.before(document.createTextNode(value.text));
+        } else if (kind === "t") target.textContent = value.textContent;
         else if (kind === "c") target.className = value.className;
         else if (kind === "d") target.disabled = value.disabled;
         else if (kind === "h") target.hidden = value.hidden;
-        else if (kind === "a") target.title = value.title;
+        else if (kind === "a") {
+            const descriptor = value.dataset.asterPartA;
+            const separator = descriptor.indexOf("|");
+            if (separator < 0) {
+                target.title = value.title;
+            } else {
+                const name = descriptor.slice(separator + 1);
+                if (value.hasAttribute(name))
+                    target.setAttribute(name, value.getAttribute(name));
+                else
+                    target.removeAttribute(name);
+            }
+        } else if (kind === "s") {
+            const descriptor = value.dataset.asterPartS;
+            const separator = descriptor.indexOf("|");
+            if (separator < 0)
+                throw new Error("Aster CSS part is missing its property name");
+            const name = descriptor.slice(separator + 1);
+            target.style.setProperty(name, value.style.getPropertyValue(name));
+        }
     }
 }
 
@@ -515,13 +606,18 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
         }
         for (const plan of plans) applyKeyedPartPlan(plan);
         const next = new Map();
+        let cursor = controlled.firstElementChild;
         for (const child of incoming) {
             const key = child.dataset.asterKey;
             const existing = collection.get(key);
             let retained = child;
             if (existing !== undefined && existing.isConnected)
                 retained = existing;
-            controlled.append(retained);
+            if (retained === cursor) {
+                cursor = cursor.nextElementSibling;
+            } else {
+                controlled.insertBefore(retained, cursor);
+            }
             next.set(key, retained);
         }
         for (const [key, existing] of collection)

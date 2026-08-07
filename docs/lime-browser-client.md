@@ -268,8 +268,18 @@ boundaries. Async instance handlers use component-wide transition generations
 and pending-task leases: stale results are dropped, disconnected instances
 cannot render, and destruction is deferred until every task is drained. Task
 faults preserve the last committed DOM and do not poison sibling instances.
+Compiler part identity is a stable 64-bit hash encoded as at most 13 base-36
+characters in HTML, state schemas, event bindings, and compatibility Wasm
+batches; application field names are not used for matching.
+
+Dynamic text mixed with nested elements uses compiler-emitted comment ranges,
+so updates replace only the scalar text between markers and retain nested nodes.
+Safe metadata attributes and CSS custom properties are inferred parts as well.
+Form values, checked state, selection, focus, and caret state remain browser-owned
+unless a future explicit controlled-property spelling opts in.
+
 Structural and conditional whole-root changes, nested state structs, multiple
-list fields, text mixed with nested elements, and broader item attributes remain
+list fields, and URL-bearing or browser-mutable inferred attributes remain
 unsupported; explicit keyed commands can remain
 backend infrastructure rather than normal application syntax.
 
@@ -360,11 +370,11 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 12.0 ms versus Vue's 11.5 ms, updated every tenth
-row in 2.4 ms versus 4.4 ms, swapped two rows in 0.4 ms versus 3.4 ms, appended
-1,000 rows in 13.8 ms versus 8.8 ms, deleted one row in 0.4 ms versus 4.2 ms,
-and cleared 1,999 rows in 4.6 ms versus 7.3 ms. Aster's benchmark client was
-12.5 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
+created 1,000 keyed rows in 13.1 ms versus Vue's 9.2 ms, updated every tenth
+row in 2.7 ms versus 3.0 ms, swapped two rows in 0.2 ms versus 2.7 ms, appended
+1,000 rows in 12.7 ms versus 9.2 ms, deleted one row in 0.5 ms versus 4.4 ms,
+and cleared 1,999 rows in 4.9 ms versus 7.1 ms. Aster's benchmark client was
+13.8 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
 universal benchmark claims: Aster was not consistently faster, because Vue won
 bulk create and append.
 

@@ -283,10 +283,10 @@ static char projection_record_code(const IrType *type) {
 }
 
 static void projection_part_name(
-    const IrType *state, size_t field, char name[17]) {
+    const IrType *state, size_t field, char name[14]) {
     uint64_t part_id = lang_projection_part_id(
         state->module_name, state->name, field);
-    (void)snprintf(name, 17U, "%016" PRIx64, part_id);
+    (void)lang_projection_part_format(part_id, name);
 }
 
 static void emit_projection_record_size(
@@ -403,7 +403,7 @@ static void emit_projection_export_wrapper(
         char access[64];
         if (web_projection_state_type(field_type)) {
             for (size_t nested = 0U; nested < field_type->field_count; ++nested) {
-                char name[17];
+                char name[14];
                 projection_part_name(field_type, nested, name);
                 (void)snprintf(access, sizeof(access),
                                "result.f%zu.f%zu", field, nested);
@@ -413,7 +413,7 @@ static void emit_projection_export_wrapper(
                     name, access);
             }
         } else {
-            char name[17];
+            char name[14];
             const char *record_name = result->field_names[field];
             if (web_projection_state_type(result)) {
                 projection_part_name(result, field, name);
@@ -439,7 +439,7 @@ static void emit_projection_export_wrapper(
         char access[64];
         if (web_projection_state_type(field_type)) {
             for (size_t nested = 0U; nested < field_type->field_count; ++nested) {
-                char name[17];
+                char name[14];
                 projection_part_name(field_type, nested, name);
                 (void)snprintf(access, sizeof(access),
                                "result.f%zu.f%zu", field, nested);
@@ -449,7 +449,7 @@ static void emit_projection_export_wrapper(
                     name, access);
             }
         } else {
-            char name[17];
+            char name[14];
             const char *record_name = result->field_names[field];
             if (web_projection_state_type(result)) {
                 projection_part_name(result, field, name);

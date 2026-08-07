@@ -19,7 +19,13 @@ def projection_part(type_name, field_index):
             value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
     for byte in int(field_index).to_bytes(8, "little"):
         value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
-    return f"{value or 1:016x}"
+    value = value or 1
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    result = ""
+    while value:
+        result = digits[value % 36] + result
+        value //= 36
+    return result
 
 projection_html = """<!doctype html>
 <meta charset="utf-8">
@@ -44,19 +50,19 @@ projection_html = """<!doctype html>
 <section id="native-keyed-list-trial">
   <ul id="native-keyed-list">
     <li data-aster-key="native-1">
-      <label>Buy milk <input value="Buy milk"></label>
+      <label><!--a:{nativeTitle}-->Buy milk<!--/a:{nativeTitle}--> <input value="Buy milk"></label>
       <button type="button" name="key" value="native-1"
           aria-controls="native-keyed-list"
           data-aster-event="click|RemoveNativeTodo|h|s:key">Remove</button>
     </li>
     <li data-aster-key="native-2">
-      <label>Walk dog <input value="Walk dog"></label>
+      <label><!--a:{nativeTitle}-->Walk dog<!--/a:{nativeTitle}--> <input value="Walk dog"></label>
       <button type="button" name="key" value="native-2"
           aria-controls="native-keyed-list"
           data-aster-event="click|RemoveNativeTodo|h|s:key">Remove</button>
     </li>
     <li data-aster-key="native-3">
-      <label>Write Aster <input value="Write Aster"></label>
+      <label><!--a:{nativeTitle}-->Write Aster<!--/a:{nativeTitle}--> <input value="Write Aster"></label>
       <button type="button" name="key" value="native-3"
           aria-controls="native-keyed-list"
           data-aster-event="click|RemoveNativeTodo|h|s:key">Remove</button>
@@ -108,15 +114,15 @@ projection_html = """<!doctype html>
   </aside>
 </section>
 <section class="async-todo-component" data-aster-component="AsyncTodoComponent"
-    data-aster-component-param-0="s" data-aster-component-arg-0="idle one">
-  <output name="asyncStatus" data-aster-part-t="{asyncStatus}">Status: idle one</output>
+    data-aster-component-param-0="s" data-aster-component-arg-0="idle-one">
+  <output name="asyncStatus" aria-label="idle-one" style="--accent: idle-one" data-aster-part-a="{asyncStatus}|aria-label" data-aster-part-s="{asyncStatus}|--accent"><strong>Status: </strong><!--a:{asyncStatus}-->idle-one<!--/a:{asyncStatus}--></output>
   <button type="button" data-aster-event="click|AsyncTodoComponent_SaveSlow|V|x:AsyncTodoComponent">Save slowly</button>
   <button type="button" data-aster-event="click|AsyncTodoComponent_SaveFast|V|x:AsyncTodoComponent">Save quickly</button>
   <button type="button" data-aster-event="click|AsyncTodoComponent_FailSave|V|x:AsyncTodoComponent">Fail save</button>
 </section>
 <section class="async-todo-component" data-aster-component="AsyncTodoComponent"
-    data-aster-component-param-0="s" data-aster-component-arg-0="idle two">
-  <output name="asyncStatus" data-aster-part-t="{asyncStatus}">Status: idle two</output>
+    data-aster-component-param-0="s" data-aster-component-arg-0="idle-two">
+  <output name="asyncStatus" aria-label="idle-two" style="--accent: idle-two" data-aster-part-a="{asyncStatus}|aria-label" data-aster-part-s="{asyncStatus}|--accent"><strong>Status: </strong><!--a:{asyncStatus}-->idle-two<!--/a:{asyncStatus}--></output>
   <button type="button" data-aster-event="click|AsyncTodoComponent_SaveSlow|V|x:AsyncTodoComponent">Save slowly</button>
   <button type="button" data-aster-event="click|AsyncTodoComponent_SaveFast|V|x:AsyncTodoComponent">Save quickly</button>
   <button type="button" data-aster-event="click|AsyncTodoComponent_FailSave|V|x:AsyncTodoComponent">Fail save</button>
@@ -149,7 +155,7 @@ projection_html = """<!doctype html>
         data-aster-state-field-{persistentClass} data-aster-state-{persistentClass}=""
         data-aster-part-a="{persistentTooltip}"
         data-aster-state-field-{persistentTooltip} data-aster-state-{persistentTooltip}="First persistent todo">
-      <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="First persistent">Todo: First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
+      <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="First persistent">Todo: First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><input type="checkbox"><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
       <button type="button" name="key" value="persistent-1"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
@@ -162,7 +168,7 @@ projection_html = """<!doctype html>
         data-aster-state-field-{persistentClass} data-aster-state-{persistentClass}=""
         data-aster-part-a="{persistentTooltip}"
         data-aster-state-field-{persistentTooltip} data-aster-state-{persistentTooltip}="Server-loaded todo">
-      <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="Server loaded">Todo: Server loaded</span> <input value="Server loaded" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
+      <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="Server loaded">Todo: Server loaded</span> <input value="Server loaded" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><input type="checkbox"><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
       <button type="button" name="key" value="persistent-2"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
@@ -197,6 +203,9 @@ projection_html = projection_html.replace(
 )
 projection_html = projection_html.replace(
     "{asyncStatus}", projection_part("AsyncTodoComponent", 0)
+)
+projection_html = projection_html.replace(
+    "{nativeTitle}", projection_part("NativeTodo", 1)
 )
 for field_index, field_name in (
     (0, "persistentKey"),
@@ -275,16 +284,24 @@ try:
             '[data-aster-key="native-1"] input'
         )
         retained_input.fill("browser-owned edit")
+        retained_input.focus()
+        retained_input.evaluate("input => input.setSelectionRange(2, 9)")
         page.evaluate("""window.nativeRetained = [
             document.querySelector('[data-aster-key="native-1"]'),
             document.querySelector('[data-aster-key="native-3"]'),
             document.querySelector('[data-aster-key="native-1"] input')
         ]""")
-        page.get_by_text("Append native todo", exact=True).click()
+        page.get_by_text(
+            "Append native todo", exact=True
+        ).evaluate("button => button.click()")
         page.wait_for_function(
             "document.querySelector('[data-aster-key=\"native-4\"]')"
         )
         assert keyed.locator(":scope > li").count() == 4
+        assert retained_input.evaluate("input => document.activeElement === input")
+        assert retained_input.evaluate(
+            "input => [input.selectionStart, input.selectionEnd]"
+        ) == [2, 9]
         keyed.locator('[data-aster-key="native-2"] button').click()
         page.wait_for_function(
             "!document.querySelector('[data-aster-key=\"native-2\"]')"
@@ -349,15 +366,26 @@ try:
         assert async_components.count() == 2
         first_async = async_components.nth(0)
         second_async = async_components.nth(1)
+        page.evaluate("""window.asyncNestedIdentity = document.querySelector(
+            '.async-todo-component [name="asyncStatus"] strong')""")
         first_async.get_by_text("Save slowly", exact=True).click()
         first_async.get_by_text("Save quickly", exact=True).click()
         page.wait_for_function("""document.querySelector(
             '.async-todo-component [name="asyncStatus"]'
-        ).textContent === 'Status: fast save'""")
+        ).textContent === 'Status: fast-save'""")
         page.wait_for_timeout(50)
         assert first_async.locator(
             '[name="asyncStatus"]'
-        ).text_content() == "Status: fast save"
+        ).text_content() == "Status: fast-save"
+        assert first_async.locator('[name="asyncStatus"]').get_attribute(
+            "aria-label"
+        ) == "fast-save"
+        assert first_async.locator('[name="asyncStatus"]').evaluate(
+            "node => node.style.getPropertyValue('--accent').trim()"
+        ) == "fast-save"
+        assert page.evaluate("window.asyncNestedIdentity.isConnected")
+        assert page.evaluate("""window.asyncNestedIdentity === document.querySelector(
+            '.async-todo-component [name="asyncStatus"] strong')""")
         second_async.get_by_text("Fail save", exact=True).click()
         page.wait_for_timeout(20)
         assert len(errors) == 1 and "async component save failed" in errors[0]
@@ -373,7 +401,7 @@ try:
         assert async_components.count() == 1
         assert first_async.locator(
             '[name="asyncStatus"]'
-        ).text_content() == "Status: fast save"
+        ).text_content() == "Status: fast-save"
         assert errors == []
 
         failing_constructor = page.get_by_text(
@@ -441,12 +469,16 @@ try:
 
         persistent = page.locator("#persistent-todo-list")
         persistent_input = persistent.locator(
-            '[data-aster-key="persistent-1"] input'
+            '[data-aster-key="persistent-1"] input:not([type="checkbox"])'
+        )
+        persistent_checkbox = persistent.locator(
+            '[data-aster-key="persistent-1"] input[type="checkbox"]'
         )
         persistent_input.fill("persistent browser edit")
+        persistent_checkbox.check()
         page.evaluate("""window.persistentIdentity = [
             document.querySelector('[data-aster-key="persistent-1"]'),
-            document.querySelector('[data-aster-key="persistent-1"] input')
+            document.querySelector('[data-aster-key="persistent-1"] input:not([type="checkbox"])')
         ]""")
         first_persistent = persistent.locator(
             '[data-aster-key="persistent-1"]'
@@ -455,7 +487,9 @@ try:
             '[data-aster-key="persistent-2"]'
         )
         assert first_persistent.locator("[data-aster-project]").count() == 0
-        first_persistent.get_by_text("Rename", exact=True).click()
+        first_persistent.get_by_text(
+            "Rename", exact=True
+        ).evaluate("button => button.click()")
         assert first_persistent.locator(
             "[data-aster-part-t]"
         ).text_content() == "Todo: First persistent!"
@@ -472,9 +506,12 @@ try:
         assert second_persistent.get_attribute(
             "title"
         ) == "Server-loaded todo"
-        assert not second_persistent.locator("input").is_disabled()
+        assert not second_persistent.locator(
+            'input:not([type="checkbox"])'
+        ).is_disabled()
         assert not second_persistent.locator("small").is_hidden()
         assert persistent_input.input_value() == "persistent browser edit"
+        assert persistent_checkbox.is_checked()
         assert page.evaluate("""window.persistentIdentity.every(
             (node) => node.isConnected
         )""")
@@ -505,7 +542,9 @@ try:
         assert fourth_persistent.get_attribute(
             "title"
         ) == "Renamed persistent todo"
-        assert fourth_persistent.locator("input").is_disabled()
+        assert fourth_persistent.locator(
+            'input:not([type="checkbox"])'
+        ).is_disabled()
         assert fourth_persistent.locator("small").is_hidden()
         assert second_persistent.locator(
             "[data-aster-part-t]"

@@ -30,7 +30,8 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 12.5 KB gzip versus 41.9 KB for the compared Vue client after adding the
+- 13.8 KB gzip versus 41.9 KB for the compared Vue client after adding inferred
+  ranges, safe attribute/style parts, async component lifetime support, and the
   experimental batch decoder, keyed snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
@@ -423,7 +424,8 @@ The first prototype now exists behind deliberately experimental conventions:
   accessors;
 - the checker assigns each projected state field a stable 64-bit part ID from
   its module, state type, and declaration index; HTML markers, event inputs,
-  and packed batch records carry that ID rather than a field-name convention;
+  and packed batch records carry its compact base-36 encoding rather than a
+  field-name convention;
 - JavaScript validates the complete batch by part ID before mutating text,
   `disabled`, or `class` parts;
 - one drop export handles success and discarded results.
@@ -515,8 +517,10 @@ updates without a VDOM, public projection types, or DOM commands.
 This validates persistent Wasm-owned state, keyed structural snapshots, native
 item-local compiled updates, and one level of experimental nested transition
 lowering. Current limits are intentional: inferred keyed parts currently cover
-text-only mixed static/dynamic children plus `class`, `disabled`, `hidden`, and
-`title`; interactive constructor transfer is limited to Boolean, integer, and
+text-only mixed static/dynamic children, range-marked text mixed with retained
+nested elements, `class`, `disabled`, `hidden`, `title`, safe metadata
+attributes, and CSS custom properties; interactive constructor transfer is
+limited to Boolean, integer, and
 string parameters stored in matching fields; async class handlers use retained
 component leases and component-wide stale-result generations; and the older
 region-wide `ProjectionState`/`ProjectionTransition` prototype
@@ -524,12 +528,12 @@ remains experimental. SSR can now rebuild the first `List<T>` field from keyed
 HTML when `T` is a flat Boolean/integer/string struct, and uncontrolled `void`
 handlers can refresh scalar parts across their component root without crossing
 nested ownership boundaries. Nested state structs, multiple list fields,
-structural/conditional whole-root changes, text mixed with nested elements,
-broader attributes/styles, conditional item-local
+structural/conditional whole-root changes, controlled form properties,
+URL-bearing attributes, conditional item-local
 structure, and deeper recursive composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 12.5 KB gzip. A future production implementation should
+client from 8.8 KB to 13.8 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 

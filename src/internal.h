@@ -480,6 +480,7 @@ typedef enum DeclKind {
 } DeclKind;
 uint64_t lang_projection_part_id(
     const char *module_name, const char *type_name, size_t field_index);
+size_t lang_projection_part_format(uint64_t part_id, char output[14]);
 
 typedef struct FieldDecl {
     const char *name;

@@ -2201,7 +2201,9 @@ static void lower_instruction(IrBytecodeBuilder *builder,
                 builder, instruction->symbol,
                 instruction->symbol_length, instruction->span);
             (void)emit_instruction(
-                builder, OP_HTML_APPEND_CONSTANT_LOCAL,
+                builder, instruction->auxiliary != 0U
+                    ? OP_HTML_APPEND_RAW_CONSTANT_LOCAL
+                    : OP_HTML_APPEND_CONSTANT_LOCAL,
                 index, text, instruction->span);
             return;
         }

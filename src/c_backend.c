@@ -1518,6 +1518,26 @@ void c_backend_emit_instruction(CEmitter *emitter,
             return;
         }
         case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
+            if (instruction->auxiliary != 0U) {
+                if (emitter->render_direct) {
+                    c_backend_emit_direct_close_open(
+                        emitter, instruction->index);
+                    c_backend_emit_direct_builder_literal(
+                        output, instruction->symbol,
+                        instruction->symbol_length);
+                } else {
+                    fprintf(output,
+                            "    aster_html_append_html(l%" PRIu32
+                            ", aster_html_unsafe_raw((aster_str){",
+                            instruction->index);
+                    c_backend_emit_byte_string(
+                        output, instruction->symbol,
+                        instruction->symbol_length);
+                    fprintf(output, ", %zuU}));\n",
+                            instruction->symbol_length);
+                }
+                return;
+            }
             if (emitter->render_direct) {
                 c_backend_emit_direct_close_open(emitter, instruction->index);
                 if (c_backend_local_element_is_raw_text(
