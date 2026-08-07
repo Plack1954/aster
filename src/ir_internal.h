@@ -43,6 +43,9 @@ typedef struct IrBuilder {
 extern const Type ir_bool_type;
 extern const Type ir_str_type;
 extern const Type ir_string_type;
+extern const Type ir_unit_type;
+extern const Type ir_usize_type;
+extern const Type ir_string_builder_type;
 
 void *ir_resize(void *pointer, size_t count, size_t size);
 const char *ir_opcode_name(IrOpcode opcode);
@@ -70,6 +73,35 @@ uint32_t ir_find_local(IrBuilder *builder, size_t binding_id,
                        LangSpan span);
 uint32_t ir_find_function(const IrModule *ir, const Decl *decl);
 uint32_t ir_field_index(const Type *object_type, const char *name);
+uint32_t ir_static_field_index(
+    const IrModule *ir, const Decl *owner, const char *name);
+bool is_float_type(const Type *type);
+bool load_requires_clone(const Type *type);
+bool same_ir_type_identity(const Type *left, const Type *right);
+IrOpcode binary_opcode(TokenKind token, bool floating);
+IrValueId lower_try(IrBuilder *builder, const Expr *expr);
+bool expression_is_local_place(const Expr *expr);
+IrValueId lower_local_place_borrow(
+    IrBuilder *builder, const Expr *expr,
+    IrValueId *borrowed_values, size_t *borrowed_count);
+void discard_local_place_borrows(
+    IrBuilder *builder, const IrValueId *values,
+    size_t count, LangSpan span);
+IrValueId lower_call(IrBuilder *builder, const Expr *expr);
+IrValueId lower_logical_expr(
+    IrBuilder *builder, const Expr *expr, IrTypeId type);
+IrValueId load_conditional_result(
+    IrBuilder *builder, uint32_t result_local,
+    IrTypeId type, LangSpan span);
+IrValueId lower_if_expression(
+    IrBuilder *builder, const Expr *expr, IrTypeId type);
+IrValueId lower_match_expression(
+    IrBuilder *builder, const Expr *expr, IrTypeId type);
+IrValueId lower_owned_interpolation(
+    IrBuilder *builder, const Expr *expr);
+IrValueId emit_plain_clone(
+    IrBuilder *builder, const Type *value_type,
+    IrValueId source, LangSpan span);
 IrValueId ir_emit_unit(IrBuilder *builder, LangSpan span,
                        const Type *type);
 void ir_emit_cleanup(IrBuilder *builder, const CleanupPlan *plan,

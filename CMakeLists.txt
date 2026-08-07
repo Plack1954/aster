@@ -52,7 +52,11 @@ add_library(langlib
     src/checker_elements.c
     src/checker_generics.c
     src/checker_debug.c
-    src/ir.c
+    src/ir_core.c
+    src/ir_expression_support.c
+    src/ir_copy.c
+    src/ir_expressions.c
+    src/ir_module.c
     src/ir_statements.c
     src/ir_html.c
     src/ir_verify.c
