@@ -1,4 +1,5 @@
 #include "cli.h"
+#include "cli_parse.h"
 #include "lang/lang.h"
 
 #include <stdbool.h>
@@ -15,21 +16,6 @@
 #else
 #define ASTER_MODE_IS_DIRECTORY(mode) S_ISDIR(mode)
 #endif
-
-typedef int (*AsterCommandHandler)(
-    int argc, char **argv, FILE *output, FILE *error);
-
-typedef struct {
-    const char *name;
-    AsterCommandHandler handler;
-    void (*write_help)(FILE *stream);
-} AsterCommand;
-
-static bool is_help_option(const char *argument) {
-    return strcmp(argument, "-?") == 0 ||
-           strcmp(argument, "-h") == 0 ||
-           strcmp(argument, "--help") == 0;
-}
 
 static void write_driver_help(FILE *stream) {
     fputs(
@@ -116,64 +102,7 @@ static int run_project(const char *project, size_t argument_count,
     return status;
 }
 
-static int run_command(int argc, char **argv,
-                       FILE *output, FILE *error) {
-    const char *project = NULL;
-    int argument_start = argc;
-    for (int i = 2; i < argc; ++i) {
-        if (is_help_option(argv[i])) {
-            write_run_help(output);
-            return 0;
-        }
-        if (strcmp(argv[i], "--") == 0) {
-            argument_start = i + 1;
-            break;
-        }
-        if (strcmp(argv[i], "--project") == 0) {
-            if (++i == argc) {
-                fputs("Required argument missing for option: '--project'.\n\n",
-                      error);
-                write_run_help(error);
-                return 1;
-            }
-            project = argv[i];
-            continue;
-        }
-        const char prefix[] = "--project=";
-        if (strncmp(argv[i], prefix, sizeof(prefix) - 1U) == 0) {
-            project = argv[i] + sizeof(prefix) - 1U;
-            if (project[0] == '\0') {
-                fputs("Required argument missing for option: '--project'.\n\n",
-                      error);
-                write_run_help(error);
-                return 1;
-            }
-            continue;
-        }
-        argument_start = i;
-        break;
-    }
-    return run_project(
-        project, (size_t)(argc - argument_start),
-        (const char *const *)&argv[argument_start], error);
-}
-
-static int test_command(int argc, char **argv,
-                        FILE *output, FILE *error) {
-    const char *project = NULL;
-    for (int i = 2; i < argc; ++i) {
-        if (is_help_option(argv[i])) {
-            write_test_help(output);
-            return 0;
-        }
-        if (argv[i][0] == '-' || project != NULL) {
-            fprintf(error, "Unrecognized command or argument '%s'.\n\n",
-                    argv[i]);
-            write_test_help(error);
-            return 1;
-        }
-        project = argv[i];
-    }
+static int test_project(const char *project, FILE *error) {
     char *manifest = manifest_path(project);
     if (manifest == NULL) {
         fputs("Could not allocate the project path.\n", error);
@@ -182,17 +111,6 @@ static int test_command(int argc, char **argv,
     int status = lang_project_test(manifest);
     free(manifest);
     return status;
-}
-
-static const AsterCommand commands[] = {
-    {"run", run_command, write_run_help},
-    {"test", test_command, write_test_help},
-};
-
-static const AsterCommand *find_command(const char *name) {
-    for (size_t i = 0U; i < sizeof(commands) / sizeof(commands[0]); ++i)
-        if (strcmp(name, commands[i].name) == 0) return &commands[i];
-    return NULL;
 }
 
 static const char *operating_system_name(void) {
@@ -222,40 +140,55 @@ static int write_unknown_command(const char *name, FILE *error) {
 }
 
 int aster_cli_main(int argc, char **argv, FILE *output, FILE *error) {
-    if (argc <= 1) {
-        write_driver_help(output);
-        return 0;
-    }
-    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
-        fprintf(output, "%s\n", ASTER_VERSION);
-        return 0;
-    }
-    if (argc == 2 && strcmp(argv[1], "--info") == 0) {
-        fprintf(output,
-                "Aster:\n Version: %s\n\nRuntime Environment:\n OS: %s\n",
-                ASTER_VERSION, operating_system_name());
-        return 0;
-    }
-    if (argc == 2 && is_help_option(argv[1])) {
-        write_driver_help(output);
-        return 0;
-    }
-    if (strcmp(argv[1], "help") == 0) {
-        if (argc == 2) {
+    AsterCliInvocation parsed = aster_cli_parse(argc, argv);
+    int status = 0;
+    switch (parsed.action) {
+        case ASTER_CLI_DRIVER_HELP:
             write_driver_help(output);
-            return 0;
-        }
-        if (argc == 3) {
-            const AsterCommand *help_command = find_command(argv[2]);
-            if (help_command != NULL) {
-                help_command->write_help(output);
-                return 0;
-            }
-        }
-        return write_unknown_command("help", error);
+            break;
+        case ASTER_CLI_VERSION:
+            fprintf(output, "%s\n", ASTER_VERSION);
+            break;
+        case ASTER_CLI_INFO:
+            fprintf(output,
+                    "Aster:\n Version: %s\n\n"
+                    "Runtime Environment:\n OS: %s\n",
+                    ASTER_VERSION, operating_system_name());
+            break;
+        case ASTER_CLI_RUN:
+            status = run_project(
+                parsed.project, parsed.application_argument_count,
+                parsed.application_arguments, error);
+            break;
+        case ASTER_CLI_TEST:
+            status = test_project(parsed.project, error);
+            break;
+        case ASTER_CLI_RUN_HELP:
+            write_run_help(output);
+            break;
+        case ASTER_CLI_TEST_HELP:
+            write_test_help(output);
+            break;
+        case ASTER_CLI_UNKNOWN_COMMAND:
+            status = write_unknown_command(parsed.error_value, error);
+            break;
+        case ASTER_CLI_MISSING_PROJECT_ARGUMENT:
+            fputs("Required argument missing for option: '--project'.\n\n",
+                  error);
+            write_run_help(error);
+            status = 1;
+            break;
+        case ASTER_CLI_UNRECOGNIZED_TEST_ARGUMENT:
+            fprintf(error, "Unrecognized command or argument '%s'.\n\n",
+                    parsed.error_value);
+            write_test_help(error);
+            status = 1;
+            break;
+        case ASTER_CLI_OUT_OF_MEMORY:
+            fputs("Could not allocate command-line arguments.\n", error);
+            status = 1;
+            break;
     }
-    const AsterCommand *command = find_command(argv[1]);
-    if (command != NULL)
-        return command->handler(argc, argv, output, error);
-    return write_unknown_command(argv[1], error);
+    aster_cli_invocation_dispose(&parsed);
+    return status;
 }

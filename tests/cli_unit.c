@@ -1,4 +1,5 @@
 #include "cli.h"
+#include "cli_parse.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -60,10 +61,59 @@ static int expect_help_alias(void) {
     return valid ? 0 : 1;
 }
 
+static int expect_interleaved_run_options(void) {
+    char *arguments[] = {
+        "aster", "run", "first", "--project", "sample", "second"
+    };
+    AsterCliInvocation parsed = aster_cli_parse(6, arguments);
+    bool valid = parsed.action == ASTER_CLI_RUN &&
+                 strcmp(parsed.project, "sample") == 0 &&
+                 parsed.application_argument_count == 2U &&
+                 strcmp(parsed.application_arguments[0], "first") == 0 &&
+                 strcmp(parsed.application_arguments[1], "second") == 0;
+    aster_cli_invocation_dispose(&parsed);
+    return valid ? 0 : 1;
+}
+
+static int expect_option_separator(void) {
+    char *arguments[] = {
+        "aster", "run", "--", "--project", "literal"
+    };
+    AsterCliInvocation parsed = aster_cli_parse(5, arguments);
+    bool valid = parsed.action == ASTER_CLI_RUN &&
+                 parsed.project == NULL &&
+                 parsed.application_argument_count == 2U &&
+                 strcmp(parsed.application_arguments[0], "--project") == 0 &&
+                 strcmp(parsed.application_arguments[1], "literal") == 0;
+    aster_cli_invocation_dispose(&parsed);
+    return valid ? 0 : 1;
+}
+
+static int expect_late_help_option(void) {
+    char *arguments[] = {"aster", "run", "argument", "--help"};
+    AsterCliInvocation parsed = aster_cli_parse(4, arguments);
+    bool valid = parsed.action == ASTER_CLI_RUN_HELP;
+    aster_cli_invocation_dispose(&parsed);
+    return valid ? 0 : 1;
+}
+
+static int expect_test_argument_error(void) {
+    char *arguments[] = {"aster", "test", "one", "two"};
+    AsterCliInvocation parsed = aster_cli_parse(4, arguments);
+    bool valid = parsed.action == ASTER_CLI_UNRECOGNIZED_TEST_ARGUMENT &&
+                 strcmp(parsed.error_value, "two") == 0;
+    aster_cli_invocation_dispose(&parsed);
+    return valid ? 0 : 1;
+}
+
 int main(void) {
     int failures = 0;
     failures += expect_driver_help();
     failures += expect_missing_project_error();
     failures += expect_help_alias();
+    failures += expect_interleaved_run_options();
+    failures += expect_option_separator();
+    failures += expect_late_help_option();
+    failures += expect_test_argument_error();
     return failures == 0 ? 0 : 1;
 }

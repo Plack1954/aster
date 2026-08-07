@@ -171,7 +171,7 @@ add_executable(lang src/main.c)
 target_link_libraries(lang PRIVATE langlib aster_http_curl aster_crypto)
 lang_enable_warnings(lang)
 
-add_library(aster_cli STATIC src/cli.c)
+add_library(aster_cli STATIC src/cli.c src/cli_parse.c)
 target_include_directories(aster_cli PUBLIC src)
 target_compile_definitions(aster_cli PRIVATE
     ASTER_VERSION="${PROJECT_VERSION}")
@@ -1678,6 +1678,12 @@ add_test(NAME aster_cli_run_project_file
 set_tests_properties(aster_cli_run_project_file PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "file"
+)
+add_test(NAME aster_cli_run_interleaved_project_option
+    COMMAND aster run first --project tests/cli_project second)
+set_tests_properties(aster_cli_run_interleaved_project_option PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "first[\r\n]+second"
 )
 add_test(NAME aster_cli_run_current_project COMMAND aster run -- current)
 set_tests_properties(aster_cli_run_current_project PROPERTIES
