@@ -1218,3 +1218,26 @@ int lang_benchmark_file(const char *path, size_t iterations) {
     printf("  instructions/run: %" PRIu64 "\n", vm_instructions);
     return 0;
 }
+
+uint64_t lang_projection_part_id(
+    const char *module_name, const char *type_name, size_t field_index) {
+    uint64_t hash = UINT64_C(14695981039346656037);
+    const char *segments[] = {
+        module_name == NULL ? "" : module_name,
+        "::",
+        type_name == NULL ? "" : type_name
+    };
+    for (size_t segment = 0U; segment < 3U; ++segment)
+        for (const unsigned char *byte =
+                 (const unsigned char *)segments[segment];
+             *byte != 0U; ++byte) {
+            hash ^= *byte;
+            hash *= UINT64_C(1099511628211);
+        }
+    uint64_t index = (uint64_t)field_index;
+    for (size_t byte = 0U; byte < sizeof(index); ++byte) {
+        hash ^= (unsigned char)(index >> (byte * 8U));
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash == 0U ? 1U : hash;
+}

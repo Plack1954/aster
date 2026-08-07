@@ -1,5 +1,6 @@
 #include "checker_internal.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -160,6 +161,40 @@ static bool projection_batch_type(const Type *type) {
     return projection_state_type(type) || projection_transition_type(type);
 }
 
+static bool projection_field_part(
+    const Type *type, const char *field_name, uint64_t *part_id) {
+    if (!projection_state_type(type) || type->declaration == NULL)
+        return false;
+    const Decl *declaration = type->declaration;
+    for (size_t field = 0U;
+         field < declaration->as.structure.field_count; ++field)
+        if (strcmp(declaration->as.structure.fields[field].name,
+                   field_name) == 0) {
+            *part_id = lang_projection_part_id(
+                declaration->module_name,
+                declaration->as.structure.name, field);
+            return true;
+        }
+    return false;
+}
+
+static bool completion_projection_part(
+    const Type *completion, const char *field_name, uint64_t *part_id) {
+    if (projection_field_part(completion, field_name, part_id))
+        return true;
+    if (!projection_transition_type(completion) ||
+        completion->declaration == NULL)
+        return false;
+    const Decl *transition = completion->declaration;
+    for (size_t field = 0U;
+         field < transition->as.structure.field_count; ++field)
+        if (projection_field_part(
+                transition->as.structure.fields[field].checked_type,
+                field_name, part_id))
+            return true;
+    return false;
+}
+
 static bool web_handler_standard_html_type(
     const Type *type, const char *name) {
     return type->kind == TYPE_NAMED && type->declaration != NULL &&
@@ -232,10 +267,19 @@ static void check_projection_property(
                   property->name, type_display_name(checker, value));
         return;
     }
-    const char *field = expression->as.field.field;
-    size_t length = strlen(field) + 3U;
+    uint64_t part_id = 0U;
+    if (!projection_field_part(
+            expression->as.field.object->type,
+            expression->as.field.field, &part_id)) {
+        lang_diag(checker->diagnostics, expression->span,
+                  "projection field `%s` has no generated part identity",
+                  expression->as.field.field);
+        return;
+    }
+    size_t length = 19U;
     char *binding = lang_arena_alloc(&checker->module->arena, length);
-    (void)snprintf(binding, length, "%c:%s", kind, field);
+    (void)snprintf(
+        binding, length, "%c:%016" PRIx64, kind, part_id);
     property->projection_binding = binding;
 }
 
@@ -428,8 +472,13 @@ static void check_html_event_handler(
     if (owner != NULL)
         length += strlen(owner) * 2U + 4U;
     for (size_t parameter = first_parameter;
-         parameter < handler->as.function.param_count; ++parameter)
-        length += strlen(handler->as.function.params[parameter].name) + 3U;
+         parameter < handler->as.function.param_count; ++parameter) {
+        uint64_t part_id = 0U;
+        const char *name = handler->as.function.params[parameter].name;
+        length += completion_projection_part(
+                completion, name, &part_id)
+            ? 20U : strlen(name) + 3U;
+    }
     char *binding = lang_arena_alloc(
         &checker->module->arena, length + 1U);
     char result_code = completion->kind == TYPE_STRING
@@ -447,12 +496,20 @@ static void check_html_event_handler(
             binding, length + 1U, "%s|%s|%c",
             event_name, handler_name, result_code);
     for (size_t parameter = first_parameter;
-         parameter < handler->as.function.param_count; ++parameter)
-        offset += (size_t)snprintf(
-            binding + offset, length + 1U - offset, "|%c:%s",
-            web_handler_type_code(
-                handler_type->arguments[parameter - first_parameter]),
-            handler->as.function.params[parameter].name);
+         parameter < handler->as.function.param_count; ++parameter) {
+        uint64_t part_id = 0U;
+        const char *name = handler->as.function.params[parameter].name;
+        char code = web_handler_type_code(
+            handler_type->arguments[parameter - first_parameter]);
+        if (completion_projection_part(completion, name, &part_id))
+            offset += (size_t)snprintf(
+                binding + offset, length + 1U - offset,
+                "|%c:@%016" PRIx64, code, part_id);
+        else
+            offset += (size_t)snprintf(
+                binding + offset, length + 1U - offset,
+                "|%c:%s", code, name);
+    }
     property->event_binding = binding;
 }
 

@@ -281,6 +281,13 @@ static char projection_record_code(const IrType *type) {
     return 'o';
 }
 
+static void projection_part_name(
+    const IrType *state, size_t field, char name[17]) {
+    uint64_t part_id = lang_projection_part_id(
+        state->module_name, state->name, field);
+    (void)snprintf(name, 17U, "%016" PRIx64, part_id);
+}
+
 static void emit_projection_record_size(
     CEmitter *emitter, const IrType *type, const char *name,
     const char *access) {
@@ -344,16 +351,10 @@ static void emit_projection_export_wrapper(
             result->field_types[field]];
         if (web_projection_state_type(field_type)) {
             record_count += field_type->field_count;
-            for (size_t nested = 0U; nested < field_type->field_count; ++nested)
-                if (strlen(field_type->field_names[nested]) > 255U) {
-                    c_backend_unsupported(
-                        emitter, function->span,
-                        "projection-state field name");
-                    return;
-                }
         } else {
             ++record_count;
-            if (strlen(result->field_names[field]) > 255U) {
+            if (!web_projection_state_type(result) &&
+                strlen(result->field_names[field]) > 255U) {
                 c_backend_unsupported(
                     emitter, function->span,
                     "projection-state field name");
@@ -401,17 +402,25 @@ static void emit_projection_export_wrapper(
         char access[64];
         if (web_projection_state_type(field_type)) {
             for (size_t nested = 0U; nested < field_type->field_count; ++nested) {
+                char name[17];
+                projection_part_name(field_type, nested, name);
                 (void)snprintf(access, sizeof(access),
                                "result.f%zu.f%zu", field, nested);
                 emit_projection_record_size(
                     emitter,
                     &emitter->ir->types[field_type->field_types[nested]],
-                    field_type->field_names[nested], access);
+                    name, access);
             }
         } else {
+            char name[17];
+            const char *record_name = result->field_names[field];
+            if (web_projection_state_type(result)) {
+                projection_part_name(result, field, name);
+                record_name = name;
+            }
             (void)snprintf(access, sizeof(access), "result.f%zu", field);
             emit_projection_record_size(
-                emitter, field_type, result->field_names[field], access);
+                emitter, field_type, record_name, access);
         }
     }
     fputs("    aster_projection_batch *batch = malloc("
@@ -429,17 +438,25 @@ static void emit_projection_export_wrapper(
         char access[64];
         if (web_projection_state_type(field_type)) {
             for (size_t nested = 0U; nested < field_type->field_count; ++nested) {
+                char name[17];
+                projection_part_name(field_type, nested, name);
                 (void)snprintf(access, sizeof(access),
                                "result.f%zu.f%zu", field, nested);
                 emit_projection_record(
                     emitter,
                     &emitter->ir->types[field_type->field_types[nested]],
-                    field_type->field_names[nested], access);
+                    name, access);
             }
         } else {
+            char name[17];
+            const char *record_name = result->field_names[field];
+            if (web_projection_state_type(result)) {
+                projection_part_name(result, field, name);
+                record_name = name;
+            }
             (void)snprintf(access, sizeof(access), "result.f%zu", field);
             emit_projection_record(
-                emitter, field_type, result->field_names[field], access);
+                emitter, field_type, record_name, access);
         }
     }
     if (c_backend_type_needs_drop(emitter, function->return_type))

@@ -333,10 +333,10 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 11.1 ms versus Vue's 10.8 ms, updated every tenth
-row in 2.3 ms versus 4.2 ms, swapped two rows in 0.4 ms versus 2.8 ms, appended
-1,000 rows in 15.1 ms versus 8.4 ms, deleted one row in 0.4 ms versus 4.2 ms,
-and cleared 1,999 rows in 4.9 ms versus 7.1 ms. Aster's benchmark client was
+created 1,000 keyed rows in 11.3 ms versus Vue's 10.5 ms, updated every tenth
+row in 2.4 ms versus 4.4 ms, swapped two rows in 0.3 ms versus 2.5 ms, appended
+1,000 rows in 12.4 ms versus 8.1 ms, deleted one row in 0.3 ms versus 4.1 ms,
+and cleared 1,999 rows in 3.2 ms versus 7.3 ms. Aster's benchmark client was
 10.6 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
 universal benchmark claims: Aster was not consistently faster, because Vue won
 bulk create and append.

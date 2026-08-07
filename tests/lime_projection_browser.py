@@ -11,23 +11,33 @@ if len(sys.argv) != 2:
     raise SystemExit("usage: lime_projection_browser.py OUTPUT_DIRECTORY")
 
 directory = Path(sys.argv[1]).resolve()
-(directory / "projection.html").write_text("""<!doctype html>
+
+def projection_part(type_name, field_index):
+    value = 14695981039346656037
+    for segment in ("Tests::BrowserApp", "::", type_name):
+        for byte in segment.encode():
+            value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    for byte in int(field_index).to_bytes(8, "little"):
+        value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    return f"{value or 1:016x}"
+
+projection_html = """<!doctype html>
 <meta charset="utf-8">
 <section id="compiled-row-transition">
-  <output data-aster-project="t:selectedId">1</output>
-  <output data-aster-project="t:selectedLabel">Selected row 1</output>
+  <output data-aster-project="t:{selectedId}">1</output>
+  <output data-aster-project="t:{selectedLabel}">Selected row 1</output>
   <ul id="projection-row-list">
     <li id="projection-row-1" class="selected"
-        data-aster-project="c:firstClass">First row</li>
+        data-aster-project="c:{firstClass}">First row</li>
     <li id="projection-row-2" class=""
-        data-aster-project="c:secondClass">
+        data-aster-project="c:{secondClass}">
       Second row <input id="projection-row-input" value="server value">
     </li>
     <li id="projection-row-3" class=""
-        data-aster-project="c:thirdClass">Third row</li>
+        data-aster-project="c:{thirdClass}">Third row</li>
   </ul>
   <button type="button" aria-controls="projection-row-list"
-      data-aster-event="click|SelectSecondAndRemoveFirst|p|l:selectedId">
+      data-aster-event="click|SelectSecondAndRemoveFirst|p|l:@{selectedId}">
     Select second and remove first
   </button>
 </section>
@@ -112,7 +122,17 @@ import {hydrateAster} from "./aster.js";
 await hydrateAster({wasmUrl: "./browser_http_server.wasm"});
 window.asterReady = true;
 </script>
-""", encoding="utf-8")
+"""
+for field_index, field_name in enumerate((
+    "selectedId", "selectedLabel", "firstClass", "secondClass", "thirdClass"
+)):
+    projection_html = projection_html.replace(
+        "{" + field_name + "}",
+        projection_part("RowSelectionProjectionState", field_index)
+    )
+(directory / "projection.html").write_text(
+    projection_html, encoding="utf-8"
+)
 
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -145,11 +165,17 @@ try:
         ]""")
         page.get_by_text("Select second and remove first", exact=True).click()
         page.wait_for_function("!document.querySelector('#projection-row-1')")
+        selected_id_part = projection_part(
+            "RowSelectionProjectionState", 0
+        )
+        selected_label_part = projection_part(
+            "RowSelectionProjectionState", 1
+        )
         assert page.locator(
-            '[data-aster-project="t:selectedId"]'
+            f'[data-aster-project="t:{selected_id_part}"]'
         ).text_content().strip() == "2"
         assert page.locator(
-            '[data-aster-project="t:selectedLabel"]'
+            f'[data-aster-project="t:{selected_label_part}"]'
         ).text_content().strip() == "Selected row 2"
         assert page.locator("#projection-row-2").get_attribute(
             "class"

@@ -478,6 +478,9 @@ typedef struct Function {
 typedef enum DeclKind {
     DECL_FUNCTION, DECL_STRUCT, DECL_CLASS, DECL_ENUM, DECL_ALIAS, DECL_ELEMENT
 } DeclKind;
+uint64_t lang_projection_part_id(
+    const char *module_name, const char *type_name, size_t field_index);
+
 typedef struct FieldDecl {
     const char *name;
     const char *type_name;

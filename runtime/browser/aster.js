@@ -11,9 +11,12 @@ function targetsFor(scope, name) {
 function targetFor(scope, name) {
     const named = targetsFor(scope, name)[0];
     if (named !== undefined) return named;
-    for (const target of scope.querySelectorAll("[data-aster-project]")) {
-        const [, field] = target.dataset.asterProject.split(":");
-        if (field === name) return target;
+    if (name.startsWith("@")) {
+        const part = name.slice(1);
+        for (const target of scope.querySelectorAll("[data-aster-project]")) {
+            const [, targetPart] = target.dataset.asterProject.split(":");
+            if (targetPart === part) return target;
+        }
     }
     return null;
 }
@@ -424,14 +427,14 @@ function applyProjectionBatch(
             const descriptor = target.dataset.asterProject.split(":");
             if (descriptor.length !== 2)
                 throw new Error("Aster projection marker is malformed");
-            const [kind, field] = descriptor;
-            const record = recordsByName.get(field);
+            const [kind, part] = descriptor;
+            const record = recordsByName.get(part);
             if (record === undefined)
-                throw new Error(`Aster projection state field is missing: ${field}`);
+                throw new Error(`Aster projection part is missing: ${part}`);
             if ((kind === "d" && record.type !== "b") ||
                 (kind === "c" && record.type !== "o") ||
                 !["t", "d", "c"].includes(kind))
-                throw new Error(`Aster projection type mismatch: ${kind}:${field}`);
+                throw new Error(`Aster projection type mismatch: ${kind}:${part}`);
         }
         const controlled = controlledTarget(source);
         const removalKeys = new Set();
@@ -455,8 +458,8 @@ function applyProjectionBatch(
             }
             state.set(stateKey(type, name), value);
             for (const target of targets) {
-                const [kind, field] = target.dataset.asterProject.split(":");
-                if (field !== name) continue;
+                const [kind, part] = target.dataset.asterProject.split(":");
+                if (part !== name) continue;
                 if (kind === "t")
                     target.textContent = String(value);
                 else if (kind === "d")

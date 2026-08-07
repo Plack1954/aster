@@ -72,6 +72,22 @@ try {
     drop(failedTask);
 }
 
+function projectionPart(typeName, fieldIndex) {
+    let value = 14695981039346656037n;
+    for (const segment of ["Tests::BrowserApp", "::", typeName])
+        for (const byte of new TextEncoder().encode(segment)) {
+            value ^= BigInt(byte);
+            value = BigInt.asUintN(64, value * 1099511628211n);
+        }
+    let index = BigInt(fieldIndex);
+    for (let byte = 0; byte < 8; ++byte) {
+        value ^= (index >> BigInt(byte * 8)) & 255n;
+        value = BigInt.asUintN(64, value * 1099511628211n);
+    }
+    if (value === 0n) value = 1n;
+    return value.toString(16).padStart(16, "0");
+}
+
 const project = instance.exports.aster_export_IncreaseProjected;
 const batchData = instance.exports.aster_export_projection_batch_data;
 const batchLength = instance.exports.aster_export_projection_batch_length;
@@ -107,10 +123,16 @@ try {
         offset += payloadLength;
         records.set(name, value);
     }
-    if (offset !== length || records.get("count") !== 1n ||
-        records.get("disabled") !== false ||
-        records.get("summary") !== "Projected count: 1" ||
-        records.get("className") !== "positive")
+    const counterPart = (field) => projectionPart(
+        "CounterProjectionState", field
+    );
+    if (offset !== length || records.get(counterPart(0)) !== 1n ||
+        records.get(counterPart(1)) !== false ||
+        records.get(counterPart(2)) !== "Projected count: 1" ||
+        records.get(counterPart(3)) !== "positive" ||
+        [...records.keys()].some((name) =>
+            ["count", "disabled", "summary", "className"].includes(name)
+        ))
         throw new Error("compiled projection batch contents are wrong");
 } finally {
     batchDrop(batch);

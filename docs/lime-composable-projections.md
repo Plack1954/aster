@@ -421,14 +421,17 @@ The first prototype now exists behind deliberately experimental conventions:
 - synchronous handlers returning state, or a nested state-plus-effect
   transition, are lowered to one owned packed batch instead of flat aggregate
   accessors;
-- JavaScript validates the complete batch before mutating text, `disabled`, or
-  `class` parts;
+- the checker assigns each projected state field a stable 64-bit part ID from
+  its module, state type, and declaration index; HTML markers, event inputs,
+  and packed batch records carry that ID rather than a field-name convention;
+- JavaScript validates the complete batch by part ID before mutating text,
+  `disabled`, or `class` parts;
 - one drop export handles success and discarded results.
 
 The Lime browser fixture updates all three projection kinds and proves in Chrome
 that every projected DOM node retains identity. Its Node integration verifies
-that four state fields arrive in one batch and that no per-field result exports
-exist.
+that four state fields arrive in one batch, that source field names do not leak
+into batch record identities, and that no per-field result exports exist.
 
 A second Chrome trial now composes those scalar records with a standard
 `KeyedRemove` record in the same owned batch. Selecting the second row updates
@@ -479,8 +482,8 @@ and a browser-edited input value.
 The first fixture reconstructs its deterministic list in each handler. A newer
 class-component fixture closes that state gap without adding a component
 keyword or base class: a zero-argument constructor owns `List<Todo>` and
-`nextId` fields, `Render() -> Html` supplies native keyed HTML, and public bound
-methods mutate the retained Wasm object. JavaScript creates one object per
+`nextId` fields, `Render() -> Html` supplies native keyed HTML, and private
+bound methods mutate the retained Wasm object. JavaScript creates one object per
 compiler-marked DOM region and calls the generated drop ABI when that region is
 removed. Two successive appends produce distinct keys and a later removal sees
 the appended item, proving state persistence rather than deterministic
