@@ -193,6 +193,10 @@ int lang_run_file_args(const char *path, bool check_only,
  */
 int lang_project_run(const char *manifest_path, const char *target_name,
                      bool check_only);
+/* As `lang_project_run`, with application arguments for a binary target. */
+int lang_project_run_args(const char *manifest_path, const char *target_name,
+                          size_t argument_count,
+                          const char *const *arguments);
 /*
  * Runs a manifest binary/test target through the verified typed IR backend.
  * `manifest_path` and `target_name` are borrowed.

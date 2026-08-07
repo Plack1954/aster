@@ -586,6 +586,32 @@ int lang_project_run(const char *manifest_path, const char *target_name,
     return status;
 }
 
+int lang_project_run_args(const char *manifest_path, const char *target_name,
+                          size_t argument_count,
+                          const char *const *arguments) {
+    if (manifest_path == NULL) return 1;
+    Project project;
+    if (!parse_manifest(manifest_path, &project)) return 1;
+    const char *selected = target_name != NULL
+                         ? target_name : project.default_target;
+    if (selected == NULL) {
+        fprintf(stderr,
+                "error: no target specified and manifest has no default target\n");
+        project_free(&project);
+        return 1;
+    }
+    ProjectTarget *target = find_target(&project, selected);
+    if (target == NULL) {
+        fprintf(stderr, "error: unknown project target `%s`\n", selected);
+        project_free(&project);
+        return 1;
+    }
+    int status = run_target_args(
+        &project, target, "run-ir", argument_count, arguments);
+    project_free(&project);
+    return status;
+}
+
 int lang_project_run_ir(const char *manifest_path,
                         const char *target_name) {
     if (manifest_path == NULL) return 1;

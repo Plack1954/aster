@@ -171,7 +171,13 @@ add_executable(lang src/main.c)
 target_link_libraries(lang PRIVATE langlib aster_http_curl aster_crypto)
 lang_enable_warnings(lang)
 
-install(TARGETS lang RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+add_executable(aster src/main.c)
+target_compile_definitions(aster PRIVATE
+    ASTER_PUBLIC_CLI=1 ASTER_VERSION="${PROJECT_VERSION}")
+target_link_libraries(aster PRIVATE langlib aster_http_curl aster_crypto)
+lang_enable_warnings(aster)
+
+install(TARGETS aster RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY std/
     DESTINATION ${CMAKE_INSTALL_DATADIR}/aster/std
     FILES_MATCHING PATTERN "*.as")
@@ -1622,6 +1628,44 @@ set_tests_properties(benchmark_cli PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION
         "compiler(.|[\r\n])*VM(.|[\r\n])*instructions/run"
+)
+add_test(NAME aster_cli_version COMMAND aster --version)
+set_tests_properties(aster_cli_version PROPERTIES
+    PASS_REGULAR_EXPRESSION "^${PROJECT_VERSION}[\r\n]*$"
+)
+add_test(NAME aster_cli_help COMMAND aster --help)
+set_tests_properties(aster_cli_help PROPERTIES
+    PASS_REGULAR_EXPRESSION "Usage:(.|[\r\n])*Commands:(.|[\r\n])*run(.|[\r\n])*test"
+)
+add_test(NAME aster_cli_run_project_directory
+    COMMAND aster run --project tests/cli_project -- alpha --beta)
+set_tests_properties(aster_cli_run_project_directory PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "alpha[\r\n]+--beta"
+)
+add_test(NAME aster_cli_run_project_file
+    COMMAND aster run --project=tests/cli_project/aster.toml -- file)
+set_tests_properties(aster_cli_run_project_file PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "file"
+)
+add_test(NAME aster_cli_run_current_project COMMAND aster run -- current)
+set_tests_properties(aster_cli_run_current_project PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_project
+    PASS_REGULAR_EXPRESSION "current"
+)
+add_test(NAME aster_cli_test_project_directory
+    COMMAND aster test tests/cli_project)
+set_tests_properties(aster_cli_test_project_directory PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "aster test passed(.|[\r\n])*1 project tests, 0 failures"
+)
+add_test(NAME aster_cli_test_current_project COMMAND aster test)
+set_tests_properties(aster_cli_test_current_project PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_project
+    PASS_REGULAR_EXPRESSION
+        "aster test passed(.|[\r\n])*1 project tests, 0 failures"
 )
 add_test(NAME project_default_target
     COMMAND lang project run tests/project/aster.toml)

@@ -5,6 +5,196 @@
 #include <string.h>
 #include <time.h>
 
+#if defined(ASTER_PUBLIC_CLI)
+#include <sys/stat.h>
+#endif
+
+#if !defined(ASTER_VERSION)
+#define ASTER_VERSION "0.1.0"
+#endif
+
+#if defined(ASTER_PUBLIC_CLI)
+static void aster_driver_usage(FILE *stream) {
+    fputs(
+        "Usage:\n"
+        "  aster [options]\n"
+        "  aster [command] [options]\n\n"
+        "Options:\n"
+        "  --info          Display Aster information.\n"
+        "  --version       Display the Aster version.\n"
+        "  -h, --help      Show command line help.\n\n"
+        "Commands:\n"
+        "  run             Run source code without explicit compile commands.\n"
+        "  test            Run project tests.\n"
+        "  help            Show command line help.\n",
+        stream);
+}
+
+static void aster_run_usage(FILE *stream) {
+    fputs(
+        "Description:\n"
+        "  Runs source code without explicit compile commands.\n\n"
+        "Usage:\n"
+        "  aster run [options] [[--] <applicationArguments>...]\n\n"
+        "Options:\n"
+        "  --project <PATH>  The path to the project file or project directory.\n"
+        "  -h, --help        Show command line help.\n",
+        stream);
+}
+
+static void aster_test_usage(FILE *stream) {
+    fputs(
+        "Description:\n"
+        "  Runs project tests.\n\n"
+        "Usage:\n"
+        "  aster test [<PROJECT>] [options]\n\n"
+        "Arguments:\n"
+        "  <PROJECT>       The project file or project directory to test.\n\n"
+        "Options:\n"
+        "  -h, --help      Show command line help.\n",
+        stream);
+}
+
+static char *aster_manifest_path(const char *project_path) {
+    const char *path = project_path != NULL ? project_path : ".";
+    struct stat metadata;
+    bool directory = stat(path, &metadata) == 0 && S_ISDIR(metadata.st_mode);
+    if (!directory) {
+        size_t length = strlen(path) + 1U;
+        char *copy = malloc(length);
+        if (copy != NULL) memcpy(copy, path, length);
+        return copy;
+    }
+    size_t length = strlen(path);
+    bool separator = length != 0U &&
+        (path[length - 1U] == '/' || path[length - 1U] == '\\');
+    const char manifest[] = "aster.toml";
+    char *result = malloc(length + (separator ? 0U : 1U) + sizeof(manifest));
+    if (result == NULL) return NULL;
+    memcpy(result, path, length);
+    size_t output = length;
+    if (!separator) result[output++] = '/';
+    memcpy(result + output, manifest, sizeof(manifest));
+    return result;
+}
+
+static int aster_run_command(int argc, char **argv) {
+    const char *project = NULL;
+    int argument_start = argc;
+    for (int i = 2; i < argc; ++i) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            aster_run_usage(stdout);
+            return 0;
+        }
+        if (strcmp(argv[i], "--") == 0) {
+            argument_start = i + 1;
+            break;
+        }
+        if (strcmp(argv[i], "--project") == 0) {
+            if (++i == argc) {
+                fputs("Option '--project' expects a single argument.\n", stderr);
+                return 1;
+            }
+            project = argv[i];
+            continue;
+        }
+        const char prefix[] = "--project=";
+        if (strncmp(argv[i], prefix, sizeof(prefix) - 1U) == 0) {
+            project = argv[i] + sizeof(prefix) - 1U;
+            continue;
+        }
+        argument_start = i;
+        break;
+    }
+    char *manifest = aster_manifest_path(project);
+    if (manifest == NULL) {
+        fputs("Could not allocate the project path.\n", stderr);
+        return 1;
+    }
+    int status = lang_project_run_args(
+        manifest, NULL, (size_t)(argc - argument_start),
+        (const char *const *)&argv[argument_start]);
+    free(manifest);
+    return status;
+}
+
+static int aster_test_command(int argc, char **argv) {
+    const char *project = NULL;
+    for (int i = 2; i < argc; ++i) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            aster_test_usage(stdout);
+            return 0;
+        }
+        if (argv[i][0] == '-' || project != NULL) {
+            fprintf(stderr, "Unrecognized command or argument '%s'.\n", argv[i]);
+            return 1;
+        }
+        project = argv[i];
+    }
+    char *manifest = aster_manifest_path(project);
+    if (manifest == NULL) {
+        fputs("Could not allocate the project path.\n", stderr);
+        return 1;
+    }
+    int status = lang_project_test(manifest);
+    free(manifest);
+    return status;
+}
+
+static int aster_main(int argc, char **argv) {
+    if (argc == 1) {
+        aster_driver_usage(stdout);
+        return 0;
+    }
+    if (strcmp(argv[1], "--version") == 0 && argc == 2) {
+        puts(ASTER_VERSION);
+        return 0;
+    }
+    if (strcmp(argv[1], "--info") == 0 && argc == 2) {
+        printf("Aster:\n Version: %s\n\nRuntime Environment:\n OS: %s\n",
+               ASTER_VERSION,
+#if defined(_WIN32)
+               "Windows"
+#elif defined(__APPLE__)
+               "macOS"
+#elif defined(__linux__)
+               "Linux"
+#else
+               "Unknown"
+#endif
+        );
+        return 0;
+    }
+    if ((strcmp(argv[1], "-h") == 0 ||
+         strcmp(argv[1], "--help") == 0) && argc == 2) {
+        aster_driver_usage(stdout);
+        return 0;
+    }
+    if (strcmp(argv[1], "help") == 0) {
+        if (argc == 2) {
+            aster_driver_usage(stdout);
+            return 0;
+        }
+        if (argc == 3 && strcmp(argv[2], "run") == 0) {
+            aster_run_usage(stdout);
+            return 0;
+        }
+        if (argc == 3 && strcmp(argv[2], "test") == 0) {
+            aster_test_usage(stdout);
+            return 0;
+        }
+    }
+    if (strcmp(argv[1], "run") == 0) return aster_run_command(argc, argv);
+    if (strcmp(argv[1], "test") == 0) return aster_test_command(argc, argv);
+    fprintf(stderr, "The command could not be loaded, possibly because:\n"
+                    "  * You intended to execute an Aster program, but "
+                    "aster-%s does not exist.\n",
+                    argv[1]);
+    return 1;
+}
+#endif
+
+#if !defined(ASTER_PUBLIC_CLI)
 static void usage(FILE *stream) {
     fputs(
         "usage: lang <command> [file]\n"
@@ -196,11 +386,15 @@ static int benchmark(void) {
     status |= lang_benchmark_file("examples/benchmark_html.as", 100U);
     return status;
 }
+#endif
 
 int main(int argc, char **argv) {
     lang_configure_http_client_registrar(lang_register_http_client_natives);
     lang_configure_crypto_registrar(lang_register_crypto_natives);
     if (argc != 0) lang_set_executable_path(argv[0]);
+#if defined(ASTER_PUBLIC_CLI)
+    return aster_main(argc, argv);
+#else
     if (argc < 2) { usage(stderr); return 2; }
     if (strcmp(argv[1], "test") == 0) return run_tests();
     if (strcmp(argv[1], "repl") == 0) return repl();
@@ -270,4 +464,5 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "dump-bytecode") == 0) return lang_run_file(argv[2], true, "bytecode");
     usage(stderr);
     return 2;
+#endif
 }
