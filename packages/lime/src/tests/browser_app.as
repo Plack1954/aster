@@ -90,7 +90,7 @@ private class PersistentTodoList
         return <>{rows}</>;
     }
 
-    private Html AppendTodo()
+    private void AppendTodo()
     {
         string key = $"persistent-{this.nextId}";
         PersistentTodo todo = new()
@@ -104,10 +104,9 @@ private class PersistentTodoList
         };
         this.todos.Add(todo);
         this.nextId += 1;
-        return this.Rows();
     }
 
-    private Html RemoveTodo(string key)
+    private void RemoveTodo(string key)
     {
         for (nuint index = 0; index < this.todos.Count; index++)
         {
@@ -117,10 +116,9 @@ private class PersistentTodoList
                 break;
             }
         }
-        return this.Rows();
     }
 
-    private Html RenameTodo(string key)
+    private void RenameTodo(string key)
     {
         for (nuint index = 0; index < this.todos.Count; index++)
         {
@@ -133,16 +131,14 @@ private class PersistentTodoList
                 todo.hidden = true;
                 todo.tooltip = "Renamed persistent todo";
                 this.todos.Set(index, todo);
-                return this.Rows();
+                return;
             }
         }
-        return this.Rows();
     }
 
-    private Html ClearTodos()
+    private void ClearTodos()
     {
         this.todos.Clear();
-        return this.Rows();
     }
 
     public Html Render()

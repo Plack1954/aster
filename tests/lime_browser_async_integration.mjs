@@ -147,16 +147,21 @@ const componentDrop =
     instance.exports.aster_export_component_PersistentTodoList_drop;
 const componentAppend =
     instance.exports.aster_export_PersistentTodoList_AppendTodo;
+const componentRender =
+    instance.exports.aster_export_component_PersistentTodoList_render;
 const renderHtml = instance.exports.aster_export_html_render;
 if (typeof componentNew !== "function" ||
     typeof componentDrop !== "function" ||
-    typeof componentAppend !== "function")
+    typeof componentAppend !== "function" ||
+    typeof componentRender !== "function")
     throw new Error("persistent class component exports are incomplete");
 const component = Number(componentNew());
 try {
     for (const expected of ["persistent-3", "persistent-4"]) {
-        const html = Number(componentAppend(component));
-        const rendered = Number(renderHtml(html));
+        componentAppend(component);
+        const rendered = Number(renderHtml(
+            Number(componentRender(component))
+        ));
         try {
             const pointer = Number(stringData(rendered));
             const length = Number(stringLength(rendered));
@@ -179,10 +184,10 @@ try {
     new Uint8Array(memory.buffer, inputPointer, input.length).set(input);
     try {
         for (const expected of ["First persistent!", "First persistent!!"]) {
-            const renamed = Number(rename(
-                component, inputPointer, input.length
+            rename(component, inputPointer, input.length);
+            const rendered = Number(renderHtml(
+                Number(componentRender(component))
             ));
-            const rendered = Number(renderHtml(renamed));
             try {
                 const pointer = Number(stringData(rendered));
                 const length = Number(stringLength(rendered));
@@ -293,4 +298,4 @@ for (let attempt = 1n; attempt <= 2n; ++attempt) {
         throw new Error("failed component construction was not retried");
 }
 
-console.log("Lime browser keyed projections and class ownership verified");
+console.log("Lime browser void renders and class ownership verified");

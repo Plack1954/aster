@@ -30,7 +30,7 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 11.6 KB gzip versus 41.9 KB for the compared Vue client after adding the
+- 11.9 KB gzip versus 41.9 KB for the compared Vue client after adding the
   experimental batch decoder, keyed snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
@@ -497,9 +497,10 @@ projection declaration. `PersistentTodo` has ordinary `title`, `className`,
 `disabled`, `hidden`, and tooltip fields; `Rows()` uses ordinary
 `class=todo.className`, mixed text `<span>Todo: {todo.title}</span>`,
 `disabled=todo.disabled`, `hidden=todo.hidden`, and `title=todo.tooltip`.
-`RenameTodo` mutates the
-class-owned list and returns the same native keyed `Html` snapshot used for
-structural changes.
+`RenameTodo`, append, removal, and clear are ordinary `void` methods that only
+mutate the class-owned list. Because their controls name the keyed list with
+`aria-controls`, the runtime calls the generated `Render()` ABI and extracts
+that region as the next native snapshot.
 
 Inside a keyed row, the compiler marks eligible dynamic text, class, disabled,
 hidden, and `title` bindings with stable part IDs. Before moving or retaining nodes, the
@@ -518,13 +519,14 @@ text-only mixed static/dynamic children plus `class`, `disabled`, `hidden`, and
 `title`; interactive constructor transfer is limited to Boolean, integer, and
 string parameters stored in matching fields; class handlers are synchronous;
 and the older region-wide `ProjectionState`/`ProjectionTransition` prototype
-remains experimental. Arbitrary field/list state transfer, automatic class
-rerendering, async instance methods, text mixed with nested elements, broader
+remains experimental. Arbitrary field/list state transfer, automatic whole
+component rendering without a controlled region, async instance methods, text
+mixed with nested elements, broader
 attributes/styles, conditional item-local structure, and deeper recursive
 composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 11.6 KB gzip. A future production implementation should
+client from 8.8 KB to 11.9 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 

@@ -118,7 +118,8 @@ bool c_backend_function_needs_normal_variant(
     if (ir->functions[function_index].is_entry) return true;
     if (ir->functions[function_index].is_web_export)
         return true;
-    if (ir->functions[function_index].is_constructor &&
+    if ((ir->functions[function_index].is_constructor ||
+         ir->functions[function_index].is_component_render) &&
         ir->functions[function_index].owner_type != NULL)
         for (size_t method = 0U; method < ir->function_count; ++method)
             if (ir->functions[method].is_web_export &&
@@ -686,7 +687,24 @@ void c_backend_emit_web_component_abis(
                 "a browser class component without a supported constructor");
             continue;
         }
+        size_t render_index = ir->function_count;
+        for (size_t candidate = 0U;
+             candidate < ir->function_count; ++candidate)
+            if (ir->functions[candidate].is_component_render &&
+                ir->functions[candidate].owner_type != NULL &&
+                strcmp(ir->functions[candidate].owner_type,
+                       method->owner_type) == 0) {
+                render_index = candidate;
+                break;
+            }
+        if (render_index == ir->function_count) {
+            c_backend_unsupported(
+                emitter, method->span,
+                "a browser class component without Render()");
+            continue;
+        }
         const IrFunction *constructor = &ir->functions[constructor_index];
+        const IrFunction *render = &ir->functions[render_index];
         IrTypeId type_id = constructor->return_type;
         const IrType *type = &ir->types[type_id];
         c_backend_emit_type(emitter, type_id);
@@ -740,6 +758,14 @@ void c_backend_emit_web_component_abis(
                 fprintf(emitter->output, "p%zu", parameter);
         }
         fputs(");\n}\n", emitter->output);
+        c_backend_emit_type(emitter, render->return_type);
+        fputs(" aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_render(", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fprintf(emitter->output,
+                " value) {\n    return aster_fn_%zu(value);\n}\n",
+                render_index);
         fputs("void aster_export_component_", emitter->output);
         emit_web_identifier(emitter->output, method->owner_type);
         fputs("_drop(", emitter->output);

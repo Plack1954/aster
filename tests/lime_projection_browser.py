@@ -121,10 +121,10 @@ projection_html = """<!doctype html>
       <label><span data-aster-part-t="{persistentTitle}">Todo: First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}"><small data-aster-part-h="{persistentHidden}">renamed detail</small></label>
       <button type="button" name="key" value="persistent-1"
           aria-controls="persistent-todo-list"
-          data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
+          data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
       <button type="button" name="key" value="persistent-1"
           aria-controls="persistent-todo-list"
-          data-aster-event="click|PersistentTodoList_RenameTodo|h|x:PersistentTodoList|s:key">Rename</button>
+          data-aster-event="click|PersistentTodoList_RenameTodo|v|x:PersistentTodoList|s:key">Rename</button>
     </li>
     <li data-aster-key="persistent-2" class="" title="Second persistent todo"
         data-aster-part-c="{persistentClass}"
@@ -132,16 +132,16 @@ projection_html = """<!doctype html>
       <label><span data-aster-part-t="{persistentTitle}">Todo: Second persistent</span> <input value="Second persistent" data-aster-part-d="{persistentDisabled}"><small data-aster-part-h="{persistentHidden}">renamed detail</small></label>
       <button type="button" name="key" value="persistent-2"
           aria-controls="persistent-todo-list"
-          data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
+          data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
       <button type="button" name="key" value="persistent-2"
           aria-controls="persistent-todo-list"
-          data-aster-event="click|PersistentTodoList_RenameTodo|h|x:PersistentTodoList|s:key">Rename</button>
+          data-aster-event="click|PersistentTodoList_RenameTodo|v|x:PersistentTodoList|s:key">Rename</button>
     </li>
   </ul>
   <button type="button" aria-controls="persistent-todo-list"
-      data-aster-event="click|PersistentTodoList_AppendTodo|h|x:PersistentTodoList">Append persistent todo</button>
+      data-aster-event="click|PersistentTodoList_AppendTodo|v|x:PersistentTodoList">Append persistent todo</button>
   <button type="button" aria-controls="persistent-todo-list"
-      data-aster-event="click|PersistentTodoList_ClearTodos|h|x:PersistentTodoList">Clear persistent todos</button>
+      data-aster-event="click|PersistentTodoList_ClearTodos|v|x:PersistentTodoList">Clear persistent todos</button>
 </section>
 <script type="module">
 import {hydrateAster} from "./aster.js";
@@ -429,4 +429,4 @@ finally:
     server.shutdown()
     server.server_close()
 
-print("SSR constructor state, native keyed parts, and retained DOM verified")
+print("void component renders, SSR state, and retained keyed DOM verified")

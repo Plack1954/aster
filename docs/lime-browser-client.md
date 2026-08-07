@@ -246,18 +246,21 @@ host, and cleared without discarding the instance.
 
 Native keyed snapshots now update ordinary dynamic item content. Inside keyed
 HTML, the compiler assigns part IDs to text-only mixed static/dynamic content
-and dynamic `class`, `disabled`, `hidden`, and `title` bindings. A handler mutates
-ordinary todo fields and
-returns `Rows() -> Html`; the runtime validates incoming/retained part pairs and
-copies only those values into retained nodes. Repeated updates to the first row
-and an appended fourth row preserve sibling content, row identity, and a
-browser-owned input value. No `ProjectionState`, `project_*` property, or item
-command appears in this path. Scalar/string constructor state now transfers
-from SSR metadata into each Wasm instance; arbitrary fields, collections, and
-post-constructor server mutations do not yet transfer. Automatic rerendering,
-async methods, text mixed with nested elements, and broader item attributes
-remain unsupported; explicit keyed commands can remain backend infrastructure
-rather than normal application syntax.
+and dynamic `class`, `disabled`, `hidden`, and `title` bindings. A `void`
+handler mutates ordinary todo fields. For an instance handler with
+`aria-controls`, the runtime calls the generated component `Render()` ABI,
+extracts that keyed region, validates incoming/retained part pairs, and copies
+only those values into retained nodes. Repeated updates to the first row and an
+appended fourth row preserve sibling content, row identity, and a browser-owned
+input value. No `ProjectionState`, `project_*` property, item command, or
+`return Rows()` appears in this path.
+
+Scalar/string constructor state transfers from SSR metadata into each Wasm
+instance; arbitrary fields, collections, and post-constructor server mutations
+do not yet transfer. Automatic whole-component rendering without a controlled
+region, async methods, text mixed with nested elements, and broader item
+attributes remain unsupported; explicit keyed commands can remain backend
+infrastructure rather than normal application syntax.
 
 ### Virtual DOM control
 
@@ -346,11 +349,11 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 13.2 ms versus Vue's 9.2 ms, updated every tenth
-row in 2.8 ms versus 3.6 ms, swapped two rows in 0.5 ms versus 2.8 ms, appended
-1,000 rows in 14.7 ms versus 8.5 ms, deleted one row in 0.5 ms versus 2.7 ms,
-and cleared 1,999 rows in 5.6 ms versus 8.4 ms. Aster's benchmark client was
-11.6 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
+created 1,000 keyed rows in 11.3 ms versus Vue's 9.0 ms, updated every tenth
+row in 2.5 ms versus 4.0 ms, swapped two rows in 0.3 ms versus 2.9 ms, appended
+1,000 rows in 11.7 ms versus 8.0 ms, deleted one row in 0.4 ms versus 4.4 ms,
+and cleared 1,999 rows in 4.0 ms versus 7.0 ms. Aster's benchmark client was
+11.9 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
 universal benchmark claims: Aster was not consistently faster, because Vue won
 bulk create and append.
 

@@ -439,6 +439,42 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
     hydrateWithin(controlled);
 }
 
+function applyComponentSnapshot(
+    source, scope, state, owner, exports, memory, hydrateWithin
+) {
+    const controlled = controlledTarget(source);
+    if (controlled === null) return;
+    const handle = componentInstance(scope, owner, exports, memory);
+    const render = exports[`aster_export_component_${owner}_render`];
+    if (typeof render !== "function")
+        throw new Error(`Aster component render ABI is missing: ${owner}`);
+    const htmlHandle = Number(render(handle));
+    if (exports.aster_export_exception_pending() !== 0) {
+        if (htmlHandle !== 0)
+            dropUnusedResult(htmlHandle, "h", null, exports);
+        throw new Error(takePendingException(exports, memory));
+    }
+    const stringHandle = Number(exports.aster_export_html_render(htmlHandle));
+    const html = decodeOwnedString(stringHandle, exports, memory);
+    const range = document.createRange();
+    range.selectNode(scope);
+    const fragment = range.createContextualFragment(html);
+    const renderedScope = fragment.querySelector(
+        `[data-aster-component="${CSS.escape(owner)}"]`
+    ) ?? fragment.firstElementChild;
+    if (renderedScope === null)
+        throw new Error(`Aster component render root is missing: ${owner}`);
+    const controlledId = controlled.id;
+    const snapshot = renderedScope.id === controlledId
+        ? renderedScope
+        : renderedScope.querySelector(`#${CSS.escape(controlledId)}`);
+    if (snapshot === null)
+        throw new Error(
+            `Aster component controlled snapshot is missing: ${controlledId}`
+        );
+    applyKeyedHtml(source, state, snapshot.innerHTML, hydrateWithin);
+}
+
 function removeControlledKey(source, state, key) {
     const controlled = controlledTarget(source);
     if (controlled === null) return false;
@@ -928,6 +964,18 @@ export async function hydrateAster({wasmUrl, root = document}) {
                     swapControlledKeys(source, first, second);
                 } finally {
                     aggregateDrop(handle);
+                }
+            } else if (resultType === "v") {
+                const receiver = parameters.find(([type]) => type === "x");
+                if (receiver !== undefined) {
+                    try {
+                        applyComponentSnapshot(
+                            source, scope, state, receiver[1],
+                            instance.exports, memory, hydrateWithin
+                        );
+                    } catch (error) {
+                        reportHandlerError(error);
+                    }
                 }
             } else if (resultType === "b") {
                 const accepted = result !== 0;

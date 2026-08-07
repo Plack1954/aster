@@ -102,12 +102,19 @@ regions initialized with distinct string, integer, and Boolean values prove
 that Wasm starts from each region's SSR constructor state rather than a
 zero-argument reconstruction.
 
-Instance handlers are synchronous and must still return an ordinary supported
-browser result, such as the keyed `Html` snapshot. Transferring arbitrary
-class fields, lists, request-only objects, or post-constructor server mutations,
-automatic rerender after `void`, async instance methods, and nested component
-ownership remain unsupported. These limits are explicit; there is no lifecycle
-API or leaked page-global component singleton.
+A synchronous `void` instance handler with `aria-controls` now triggers the
+generated component `Render()` ABI automatically. The browser extracts that
+controlled keyed region from the fresh native HTML, validates its inferred
+parts, and applies the snapshot to retained nodes. The persistent todo handlers
+therefore only mutate `this.todos`; they no longer return `Rows()` or any DOM
+result. Render faults leave the old DOM in place and follow host error reporting.
+
+Handlers may still return other supported browser results when appropriate.
+Transferring arbitrary class fields, lists, request-only objects, or
+post-constructor server mutations, automatic whole-component rerender without a
+controlled region, async instance methods, and nested component ownership remain
+unsupported. These limits are explicit; there is no lifecycle API or leaked
+page-global component singleton.
 
 ## Value and identity rules
 
