@@ -4132,6 +4132,12 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     instruction->operands[0],
                     instruction->operands[1],
                     instruction->result);
+                if (strcmp(instruction->symbol, "List::Add") == 0)
+                    fprintf(output,
+                            "    ASTER_LIST_MUTATION(v%" PRIu32
+                            ", 1U, v%" PRIu32 "->length - 1U, 1U);\n",
+                            instruction->operands[0],
+                            instruction->operands[0]);
                 (void)vector_type;
                 return;
             }
@@ -4173,6 +4179,11 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    v%" PRIu32 "->length = 0U;\n"
                         "    v%" PRIu32 " = UINT8_C(0);\n",
                         instruction->operands[0], instruction->result);
+                if (strcmp(instruction->symbol, "List::Clear") == 0)
+                    fprintf(output,
+                            "    ASTER_LIST_MUTATION(v%" PRIu32
+                            ", 4U, 0U, 1U);\n",
+                            instruction->operands[0]);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4294,6 +4305,11 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->operands[0], instruction->operands[1],
                         instruction->operands[2], instruction->operands[0],
                         instruction->result);
+                fprintf(output,
+                        "    ASTER_LIST_MUTATION(v%" PRIu32
+                        ", 5U, (size_t)v%" PRIu32 ", 1U);\n",
+                        instruction->operands[0],
+                        instruction->operands[1]);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4324,6 +4340,11 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->operands[0], instruction->operands[1],
                         instruction->operands[0], instruction->operands[0],
                         instruction->result);
+                fprintf(output,
+                        "    ASTER_LIST_MUTATION(v%" PRIu32
+                        ", 3U, (size_t)v%" PRIu32 ", 1U);\n",
+                        instruction->operands[0],
+                        instruction->operands[1]);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4348,6 +4369,11 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    v%" PRIu32 " = UINT8_C(0);\n",
                         instruction->operands[0], instruction->operands[1],
                         instruction->operands[2], instruction->result);
+                fprintf(output,
+                        "    ASTER_LIST_MUTATION(v%" PRIu32
+                        ", 2U, (size_t)v%" PRIu32 ", 1U);\n",
+                        instruction->operands[0],
+                        instruction->operands[1]);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4448,6 +4474,11 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             instruction->operands[0],
                             instruction->operands[0]);
                 }
+                if (strcmp(instruction->symbol, "List::Remove") == 0)
+                    fprintf(output,
+                            "    ASTER_LIST_MUTATION(v%" PRIu32
+                            ", 255U, 0U, 1U);\n",
+                            instruction->operands[0]);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4533,6 +4564,10 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         target, instruction->result,
                         source, list_type, source,
                         instruction->result);
+                fprintf(output,
+                        "    ASTER_LIST_MUTATION(v%" PRIu32
+                        ", 255U, 0U, 1U);\n",
+                        target);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4615,6 +4650,11 @@ void c_backend_emit_instruction(CEmitter *emitter,
                               ? ");\n" : ";\n",
                           output);
                 }
+                if (!get)
+                    fprintf(output,
+                            "    ASTER_LIST_MUTATION(v%" PRIu32
+                            ", 255U, 0U, 1U);\n",
+                            source);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4663,6 +4703,10 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         "    }\n"
                         "    v%" PRIu32 " = UINT8_C(0);\n",
                         list, list, list, list, instruction->result);
+                fprintf(output,
+                        "    ASTER_LIST_MUTATION(v%" PRIu32
+                        ", 255U, 0U, 1U);\n",
+                        list);
                 return;
             }
             if (instruction->symbol != NULL &&
@@ -4904,6 +4948,10 @@ void c_backend_emit_instruction(CEmitter *emitter,
                             instruction->result, list, instruction->result,
                             instruction->result, instruction->result,
                             instruction->result);
+                    fprintf(output,
+                            "    ASTER_LIST_MUTATION(v%" PRIu32
+                            ", 255U, 0U, 1U);\n",
+                            list);
                     return;
                 }
                 fprintf(output,

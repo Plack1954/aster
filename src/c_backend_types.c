@@ -365,7 +365,11 @@ static bool emit_aggregate_type(
         c_backend_emit_type(emitter, type->element_type);
         fputs(" *data;\n"
               "    size_t length;\n"
-              "    size_t capacity;\n",
+              "    size_t capacity;\n"
+              "    aster_list_mutation *mutations;\n"
+              "    size_t mutation_count;\n"
+              "    size_t mutation_capacity;\n"
+              "    bool record_mutations;\n",
               emitter->output);
         fprintf(emitter->output,
                 "} aster_vec_%" PRIu32 ";\n\n", type_id);

@@ -519,6 +519,98 @@ static void emit_component_list_state_abi(
             list_field, list_field, list_field, list_field,
             list_field, list_field, list_field, list_field,
             list_field, list_field, list_field);
+
+    fputs("void aster_export_component_", emitter->output);
+    emit_web_identifier(emitter->output, owner);
+    fputs("_mutations_begin(", emitter->output);
+    c_backend_emit_type(emitter, class_type_id);
+    fprintf(emitter->output,
+            " value) {\n"
+            "    value->f%zu->mutation_count = 0U;\n"
+            "    value->f%zu->record_mutations = true;\n"
+            "}\n",
+            list_field, list_field);
+    fputs("size_t aster_export_component_", emitter->output);
+    emit_web_identifier(emitter->output, owner);
+    fputs("_mutations_end(", emitter->output);
+    c_backend_emit_type(emitter, class_type_id);
+    fprintf(emitter->output,
+            " value) {\n"
+            "    value->f%zu->record_mutations = false;\n"
+            "    return value->f%zu->mutation_count;\n"
+            "}\n",
+            list_field, list_field);
+    const char *mutation_fields[] = {"kind", "index", "count"};
+    const char *mutation_types[] = {"unsigned char", "size_t", "size_t"};
+    for (size_t field = 0U; field < 3U; ++field) {
+        fprintf(emitter->output, "%s aster_export_component_",
+                mutation_types[field]);
+        emit_web_identifier(emitter->output, owner);
+        fprintf(emitter->output, "_mutation_%s(", mutation_fields[field]);
+        c_backend_emit_type(emitter, class_type_id);
+        fprintf(emitter->output,
+                " value, size_t index) {\n"
+                "    if (index >= value->f%zu->mutation_count)\n"
+                "        aster_trap(\"component mutation index out of bounds\");\n"
+                "    return value->f%zu->mutations[index].%s;\n"
+                "}\n",
+                list_field, list_field, mutation_fields[field]);
+    }
+    fputs("size_t aster_export_component_", emitter->output);
+    emit_web_identifier(emitter->output, owner);
+    fputs("_state_count(", emitter->output);
+    c_backend_emit_type(emitter, class_type_id);
+    fprintf(emitter->output,
+            " value) { return value->f%zu->length; }\n",
+            list_field);
+    for (size_t field = 0U; field < item_type->field_count; ++field) {
+        const IrType *field_type = &ir->types[item_type->field_types[field]];
+        bool string_type = field_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+            field_type->name != NULL &&
+            strcmp(field_type->name, "string") == 0;
+        if (string_type) {
+            fputs("const unsigned char *aster_export_component_",
+                  emitter->output);
+            emit_web_identifier(emitter->output, owner);
+            fprintf(emitter->output,
+                    "_state_field_%zu_data(", field);
+            c_backend_emit_type(emitter, class_type_id);
+            fprintf(emitter->output,
+                    " value, size_t index) {\n"
+                    "    if (index >= value->f%zu->length)\n"
+                    "        aster_trap(\"component state index out of bounds\");\n"
+                    "    return value->f%zu->data[index].f%zu->data;\n"
+                    "}\n",
+                    list_field, list_field, field);
+            fputs("size_t aster_export_component_", emitter->output);
+            emit_web_identifier(emitter->output, owner);
+            fprintf(emitter->output,
+                    "_state_field_%zu_length(", field);
+            c_backend_emit_type(emitter, class_type_id);
+            fprintf(emitter->output,
+                    " value, size_t index) {\n"
+                    "    if (index >= value->f%zu->length)\n"
+                    "        aster_trap(\"component state index out of bounds\");\n"
+                    "    return value->f%zu->data[index].f%zu->length;\n"
+                    "}\n",
+                    list_field, list_field, field);
+        } else {
+            c_backend_emit_type(
+                emitter, item_type->field_types[field]);
+            fputs(" aster_export_component_", emitter->output);
+            emit_web_identifier(emitter->output, owner);
+            fprintf(emitter->output,
+                    "_state_field_%zu_value(", field);
+            c_backend_emit_type(emitter, class_type_id);
+            fprintf(emitter->output,
+                    " value, size_t index) {\n"
+                    "    if (index >= value->f%zu->length)\n"
+                    "        aster_trap(\"component state index out of bounds\");\n"
+                    "    return value->f%zu->data[index].f%zu;\n"
+                    "}\n",
+                    list_field, list_field, field);
+        }
+    }
 }
 
 void c_backend_emit_web_component_abis(
@@ -633,6 +725,19 @@ void c_backend_emit_web_component_abis(
         c_backend_emit_type(emitter, type_id);
         fprintf(emitter->output,
                 " value) {\n    return aster_fn_%zu(value);\n}\n",
+                render_index);
+        c_backend_emit_type(emitter, render->return_type);
+        fputs(" aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_render_skip(", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fprintf(emitter->output,
+                " value, size_t skip) {\n"
+                "    aster_html_skip_keyed_elements = skip;\n"
+                "    aster_html *result = aster_fn_%zu(value);\n"
+                "    aster_html_skip_keyed_elements = 0U;\n"
+                "    return result;\n"
+                "}\n",
                 render_index);
         emit_component_list_state_abi(
             emitter, method->owner_type, type_id, type);

@@ -374,21 +374,18 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-reached ready state in 17.6 ms versus Vue's 17.8 ms, created 1,000 keyed rows
-in 19.1 ms versus 11.5 ms, updated every tenth row in 33.9 ms versus 4.8 ms,
-swapped two rows in 31.8 ms versus 2.6 ms, appended 1,000 rows in 48.7 ms versus
-7.6 ms, deleted one row in 63.5 ms versus 4.3 ms, and cleared 1,999 rows in
-6.8 ms versus 6.7 ms. Latest async completion measured 6.1 ms versus 1.2 ms.
+reached ready state in 17.8 ms versus Vue's 20.7 ms, created 1,000 keyed rows
+in 15.0 ms versus 11.8 ms, updated every tenth row in 7.2 ms versus 5.1 ms,
+swapped two rows in 2.8 ms versus 2.7 ms, appended 1,000 rows in 13.1 ms versus
+8.2 ms, deleted one row in 5.1 ms versus 3.5 ms, and cleared 1,999 rows in
+7.5 ms versus 7.0 ms. Latest async completion measured 1.8 ms versus 1.3 ms.
 After garbage collection, ten iframe mount/unmount cycles retained about
 112.6 KB of Aster JS heap versus 148.4 KB for Vue; active Aster linear memory
-was 7.5 MB. Aster's benchmark client was 17.5 KB gzip versus Vue's 42.2 KB gzip.
-Migrating the benchmark from
-explicit structural results to whole retained class snapshots exposed a serious
-full-list render/planning cost; these measurements are retained as a regression
-baseline rather than presented as competitive update performance. They are
-smoke measurements, not universal benchmark claims. Vue won every structural
-operation except an effectively tied clear; Aster retained the size and
-mount/unmount heap advantages.
+was 5.4 MiB. Aster's benchmark client was 21.8 KB gzip versus Vue's 42.2 KB
+gzip. These are smoke measurements, not universal benchmark claims. Reorder
+and clear are now at parity, and delete is within 1.5x; Vue remains faster for
+sparse update and append. Aster retains the size and mount/unmount heap
+advantages.
 
 The detailed protocol, memory data, build latency, environment, and release
 result are recorded in
@@ -399,11 +396,13 @@ earlier contextual table parsing, Wasm memory limit, and eager collection-state
 problems. Address-sorted free blocks, coalescing, and top-of-heap reuse allow
 repeated create/clear cycles without exhausting the Wasm maximum.
 
-The remaining boundary is full-list work: ordinary class mutations currently
-render and plan the complete keyed collection. Public structural commands and
-projection batches have been removed. Performance work must therefore produce
-compiler-internal sparse deltas while preserving ordinary `List<T>` application
-code and retained browser-owned state.
+The compiler now journals collection mutations privately during component
+handlers. When the generated ABI and retained DOM prove a safe direct mapping,
+the browser applies sparse scalar updates and minimal keyed moves/removals; an
+append renders only the new keyed suffix. `Render()` still executes, and any
+transformed projection or unsupported mutation sequence falls back to the full
+snapshot reconciler. Application code remains ordinary `List<T>` code, and no
+public structural command or projection API has been restored.
 
 ## Means-testing applications
 

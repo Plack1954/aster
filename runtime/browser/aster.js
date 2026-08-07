@@ -547,25 +547,37 @@ function keyedPartPlan(retained, incoming) {
 function applyKeyedPartPlan(updates) {
     for (const {kind, target, value} of updates) {
         if (kind === "r") {
+            if (target.text === value.text) continue;
             while (target.start.nextSibling !== target.end)
                 target.start.nextSibling.remove();
             if (value.text !== "")
                 target.end.before(document.createTextNode(value.text));
-        } else if (kind === "t") target.textContent = value.textContent;
-        else if (kind === "c") target.className = value.className;
-        else if (kind === "d") target.disabled = value.disabled;
-        else if (kind === "h") target.hidden = value.hidden;
+        } else if (kind === "t") {
+            if (target.textContent !== value.textContent)
+                target.textContent = value.textContent;
+        } else if (kind === "c") {
+            if (target.className !== value.className)
+                target.className = value.className;
+        } else if (kind === "d") {
+            if (target.disabled !== value.disabled)
+                target.disabled = value.disabled;
+        } else if (kind === "h") {
+            if (target.hidden !== value.hidden)
+                target.hidden = value.hidden;
+        }
         else if (kind === "a") {
             const descriptor = value.dataset.asterPartA;
             const separator = descriptor.indexOf("|");
             if (separator < 0) {
-                target.title = value.title;
+                if (target.title !== value.title) target.title = value.title;
             } else {
                 const name = descriptor.slice(separator + 1);
-                if (value.hasAttribute(name))
-                    target.setAttribute(name, value.getAttribute(name));
-                else
-                    target.removeAttribute(name);
+                const next = value.getAttribute(name);
+                if (next === null) {
+                    if (target.hasAttribute(name)) target.removeAttribute(name);
+                } else if (target.getAttribute(name) !== next) {
+                    target.setAttribute(name, next);
+                }
             }
         } else if (kind === "s") {
             const descriptor = value.dataset.asterPartS;
@@ -573,19 +585,50 @@ function applyKeyedPartPlan(updates) {
             if (separator < 0)
                 throw new Error("Aster CSS part is missing its property name");
             const name = descriptor.slice(separator + 1);
-            target.style.setProperty(name, value.style.getPropertyValue(name));
+            const next = value.style.getPropertyValue(name);
+            if (target.style.getPropertyValue(name) !== next)
+                target.style.setProperty(name, next);
         }
     }
 }
 
-function applyKeyedHtml(source, state, html, hydrateWithin) {
+function stableSubsequenceIndices(positions) {
+    const tails = [];
+    const previous = new Int32Array(positions.length);
+    previous.fill(-1);
+    for (let index = 0; index < positions.length; ++index) {
+        const position = positions[index];
+        if (position < 0) continue;
+        let low = 0;
+        let high = tails.length;
+        while (low < high) {
+            const middle = (low + high) >>> 1;
+            if (positions[tails[middle]] < position) low = middle + 1;
+            else high = middle;
+        }
+        if (low !== 0) previous[index] = tails[low - 1];
+        tails[low] = index;
+    }
+    const stable = new Set();
+    for (let index = tails.at(-1) ?? -1; index >= 0;
+         index = previous[index])
+        stable.add(index);
+    return stable;
+}
+
+function applyKeyedHtml(
+    source, state, html, hydrateWithin, parsedContainer = null
+) {
     const destination = collectionFor(source, state);
     if (destination === null)
         throw new Error("Aster aggregate Html requires an aria-controls target");
     const {controlled, collection} = destination;
-    const range = document.createRange();
-    range.selectNodeContents(controlled);
-    const fragment = range.createContextualFragment(html);
+    let fragment = parsedContainer;
+    if (fragment === null) {
+        const range = document.createRange();
+        range.selectNodeContents(controlled);
+        fragment = range.createContextualFragment(html);
+    }
     const incoming = [...fragment.children];
     const keyedSnapshot = incoming.some(
         (child) => child.dataset.asterKey !== undefined
@@ -593,6 +636,7 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
         (child) => child.dataset.asterKey !== undefined
     );
     if (keyedSnapshot) {
+        const inserted = [];
         const incomingKeys = new Set();
         for (const child of incoming) {
             const key = child.dataset.asterKey;
@@ -603,62 +647,456 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
         const plans = [];
         for (const child of incoming) {
             const existing = collection.get(child.dataset.asterKey);
-            if (existing !== undefined && existing.isConnected)
+            if (existing !== undefined && existing.isConnected &&
+                !existing.isEqualNode(child))
                 plans.push(keyedPartPlan(existing, child));
         }
         for (const plan of plans) applyKeyedPartPlan(plan);
         const next = new Map();
-        let cursor = controlled.firstElementChild;
+        const retainedChildren = [];
         for (const child of incoming) {
             const key = child.dataset.asterKey;
             const existing = collection.get(key);
             let retained = child;
-            if (existing !== undefined && existing.isConnected)
+            if (existing !== undefined && existing.isConnected) {
                 retained = existing;
-            if (retained === cursor) {
-                cursor = cursor.nextElementSibling;
             } else {
-                controlled.insertBefore(retained, cursor);
+                inserted.push(child);
             }
             next.set(key, retained);
+            retainedChildren.push(retained);
         }
         for (const [key, existing] of collection)
             if (!next.has(key) && existing.parentElement === controlled)
                 existing.remove();
+        const currentIndices = new Map();
+        let currentIndex = 0;
+        for (const child of controlled.children)
+            currentIndices.set(child, currentIndex++);
+        const positions = retainedChildren.map(
+            (child) => currentIndices.get(child) ?? -1
+        );
+        const stable = stableSubsequenceIndices(positions);
+        let anchor = null;
+        for (let index = retainedChildren.length - 1; index >= 0; --index) {
+            const child = retainedChildren[index];
+            if (positions[index] < 0 || !stable.has(index))
+                controlled.insertBefore(child, anchor);
+            anchor = child;
+        }
         collection.clear();
         for (const [key, child] of next) collection.set(key, child);
+        for (const child of inserted) hydrateWithin(child);
     } else {
         for (const child of incoming) {
             const key = retainedKey(child);
             const existing = key === null ? null : collection.get(key);
             if (existing === null || existing === undefined ||
-                !existing.isConnected)
+                !existing.isConnected) {
                 controlled.append(child);
-            else
+                hydrateWithin(child);
+            } else {
                 existing.replaceWith(child);
+                hydrateWithin(child);
+            }
             if (key !== null) collection.set(key, child);
         }
     }
-    hydrateWithin(controlled);
 }
 
-function applyComponentSnapshot(
-    source, scope, state, owner, exports, memory, hydrateWithin
+function componentListSchema(scope) {
+    const encoded = scope.getAttribute("data-aster-component-list-state");
+    if (encoded === null) return null;
+    return encoded.split(",").map((field, index) => {
+        const separator = field.indexOf(":");
+        return {
+            index,
+            type: field.slice(0, separator),
+            id: field.slice(separator + 1)
+        };
+    });
+}
+
+function componentListFieldValue(
+    owner, handle, index, field, exports, memory
 ) {
-    const controlled = controlledTarget(source);
+    const prefix = `aster_export_component_${owner}_state_field_${field.index}`;
+    const data = exports[`${prefix}_data`];
+    if (typeof data === "function") {
+        const length = exports[`${prefix}_length`];
+        if (typeof length !== "function")
+            throw new Error(`Aster component state ABI is incomplete: ${owner}`);
+        const pointer = Number(data(handle, index));
+        const size = Number(length(handle, index));
+        return decoder.decode(new Uint8Array(memory.buffer, pointer, size));
+    }
+    const scalar = exports[`${prefix}_value`];
+    if (typeof scalar !== "function")
+        throw new Error(`Aster component state ABI is incomplete: ${owner}`);
+    const value = scalar(handle, index);
+    return field.type === "b" ? value !== 0 : String(value);
+}
+
+function keyedItemStateLayout(item, fields) {
+    const ids = new Set(fields.map((field) => field.id));
+    const fieldsById = new Map(fields.map((field) => [field.id, field]));
+    const targets = new Map(fields.map((field) => [field.id, []]));
+    const elements = keyedPartElements(item);
+    for (const element of elements)
+        for (const attribute of element.attributes) {
+            const prefix = "data-aster-state-field-";
+            if (!attribute.name.startsWith(prefix)) continue;
+            const id = attribute.name.slice(prefix.length);
+            if (ids.has(id)) targets.get(id).push(element);
+        }
+    for (const element of elements)
+        for (const kind of keyedPartKinds) {
+            const descriptor =
+                element.dataset[`asterPart${kind.toUpperCase()}`];
+            if (descriptor === undefined) continue;
+            const separator = descriptor.indexOf("|");
+            const id = separator < 0
+                ? descriptor : descriptor.slice(0, separator);
+            if (!ids.has(id) || targets.get(id).length === 0)
+                return null;
+            const field = fieldsById.get(id);
+            const stateName = `data-aster-state-${id}`;
+            const stateValue = field.type === "b"
+                ? element.hasAttribute(stateName)
+                : element.getAttribute(stateName);
+            if (stateValue === null) return null;
+            const text = field.type === "b"
+                ? (stateValue ? "true" : "false") : stateValue;
+            if (kind === "t" && element.textContent !== text) return null;
+            if (kind === "c" && element.className !== text) return null;
+            if (kind === "d" && element.disabled !== Boolean(stateValue))
+                return null;
+            if (kind === "h" && element.hidden !== Boolean(stateValue))
+                return null;
+            if (kind === "a") {
+                const name = separator < 0
+                    ? "title" : descriptor.slice(separator + 1);
+                if (element.getAttribute(name) !== text) return null;
+            }
+            if (kind === "s") {
+                if (separator < 0 ||
+                    element.style.getPropertyValue(
+                        descriptor.slice(separator + 1)
+                    ) !== text)
+                    return null;
+            }
+        }
+    // Mixed-content ranges may include literals or other transformations. The
+    // direct field updater only owns element parts, so retain the snapshot path
+    // whenever a keyed item contains a range part.
+    if (partRanges(item).length !== 0) return null;
+    return targets;
+}
+
+function applyStateField(field, value, targets) {
+    if (field.type === "k") return;
+    const text = field.type === "b"
+        ? (value ? "true" : "false") : String(value);
+    const stateName = `data-aster-state-${field.id}`;
+    for (const target of targets) {
+        if (field.type === "b") target.toggleAttribute(stateName, value);
+        else target.setAttribute(stateName, text);
+        const textPart = target.dataset.asterPartT;
+        if (textPart === field.id && target.textContent !== text)
+            target.textContent = text;
+        const classPart = target.dataset.asterPartC;
+        if (classPart === field.id && target.className !== text)
+            target.className = text;
+        const disabledPart = target.dataset.asterPartD;
+        if (disabledPart === field.id && target.disabled !== Boolean(value))
+            target.disabled = Boolean(value);
+        const hiddenPart = target.dataset.asterPartH;
+        if (hiddenPart === field.id && target.hidden !== Boolean(value))
+            target.hidden = Boolean(value);
+        const attributePart = target.dataset.asterPartA;
+        if (attributePart !== undefined) {
+            const separator = attributePart.indexOf("|");
+            const id = separator < 0
+                ? attributePart : attributePart.slice(0, separator);
+            if (id === field.id) {
+                const name = separator < 0
+                    ? "title" : attributePart.slice(separator + 1);
+                if (target.getAttribute(name) !== text)
+                    target.setAttribute(name, text);
+            }
+        }
+        const stylePart = target.dataset.asterPartS;
+        if (stylePart !== undefined) {
+            const separator = stylePart.indexOf("|");
+            const id = separator < 0
+                ? stylePart : stylePart.slice(0, separator);
+            if (id === field.id && separator >= 0) {
+                const name = stylePart.slice(separator + 1);
+                if (target.style.getPropertyValue(name) !== text)
+                    target.style.setProperty(name, text);
+            }
+        }
+    }
+}
+
+function reorderKeyedChildren(controlled, collection, keys) {
+    const children = keys.map((key) => collection.get(key));
+    if (children.some((child) => child === undefined || !child.isConnected))
+        return false;
+    const currentIndices = new Map();
+    let currentIndex = 0;
+    for (const child of controlled.children)
+        currentIndices.set(child, currentIndex++);
+    const positions = children.map(
+        (child) => currentIndices.get(child) ?? -1
+    );
+    const stable = stableSubsequenceIndices(positions);
+    let anchor = null;
+    for (let index = children.length - 1; index >= 0; --index) {
+        const child = children[index];
+        if (positions[index] < 0 || !stable.has(index))
+            controlled.insertBefore(child, anchor);
+        anchor = child;
+    }
+    collection.clear();
+    for (let index = 0; index < keys.length; ++index)
+        collection.set(keys[index], children[index]);
+    return true;
+}
+
+function applyComponentListMutations(
+    source, scope, state, owner, handle, mutationCount, exports, memory
+) {
+    if (mutationCount === 0) return false;
+    const schema = componentListSchema(scope);
+    const keyField = schema?.find((field) => field.type === "k");
+    const destination = collectionFor(source, state);
+    if (schema === null || keyField === undefined || destination === null)
+        return false;
+    const {controlled, collection} = destination;
+    const kindAccessor =
+        exports[`aster_export_component_${owner}_mutation_kind`];
+    const indexAccessor =
+        exports[`aster_export_component_${owner}_mutation_index`];
+    const amountAccessor =
+        exports[`aster_export_component_${owner}_mutation_count`];
+    const stateCount = exports[`aster_export_component_${owner}_state_count`];
+    if (typeof kindAccessor !== "function" ||
+        typeof indexAccessor !== "function" ||
+        typeof amountAccessor !== "function" ||
+        typeof stateCount !== "function")
+        return false;
+    const mutations = [];
+    for (let mutation = 0; mutation < mutationCount; ++mutation)
+        mutations.push({
+            kind: Number(kindAccessor(handle, mutation)),
+            index: Number(indexAccessor(handle, mutation)),
+            count: Number(amountAccessor(handle, mutation))
+        });
+    const kinds = new Set(mutations.map((mutation) => mutation.kind));
+    if (kinds.size !== 1) return false;
+    const kind = mutations[0].kind;
+    if (kind === 4) {
+        if (mutations.length !== 1) return false;
+        const children = [...controlled.children];
+        if (children.length !== collection.size || children.some((child) =>
+            child.dataset.asterKey === undefined ||
+            collection.get(child.dataset.asterKey) !== child
+        )) return false;
+        while (controlled.firstElementChild !== null)
+            controlled.firstElementChild.remove();
+        collection.clear();
+        state.delete(`snapshots:${controlled.id}`);
+        return true;
+    }
+    const keys = [...controlled.children].map(
+        (child) => child.dataset.asterKey
+    );
+    if (keys.some((key) => key === undefined)) return false;
+    if (kind === 3) {
+        for (const mutation of mutations) {
+            if (mutation.index > keys.length ||
+                mutation.count > keys.length - mutation.index)
+                return false;
+            keys.splice(mutation.index, mutation.count);
+        }
+        if (keys.some((key) => {
+            const child = collection.get(key);
+            return child === undefined || !child.isConnected;
+        })) return false;
+        const keep = new Set(keys);
+        for (const [key, child] of collection)
+            if (!keep.has(key) && child.parentElement === controlled)
+                child.remove();
+        state.delete(`snapshots:${controlled.id}`);
+        return reorderKeyedChildren(controlled, collection, keys);
+    }
+    if (kind !== 2) return false;
+    const count = Number(stateCount(handle));
+    if (count !== keys.length) return false;
+    const changed = new Set();
+    for (const mutation of mutations) {
+        if (mutation.count !== 1 || mutation.index >= count) return false;
+        const key = String(componentListFieldValue(
+            owner, handle, mutation.index, keyField, exports, memory
+        ));
+        if (!collection.has(key)) return false;
+        keys[mutation.index] = key;
+        changed.add(mutation.index);
+    }
+    if (new Set(keys).size !== keys.length) return false;
+    const layouts = new Map();
+    for (const index of changed) {
+        const item = collection.get(keys[index]);
+        const layout = keyedItemStateLayout(item, schema);
+        if (layout === null) return false;
+        layouts.set(index, layout);
+    }
+    const values = [];
+    for (const index of changed)
+        values.push({
+            index,
+            fields: schema.map((field) => ({
+                field,
+                value: componentListFieldValue(
+                    owner, handle, index, field, exports, memory
+                )
+            }))
+        });
+    for (const {index, fields} of values) {
+        for (const {field, value} of fields)
+            applyStateField(field, value, layouts.get(index).get(field.id));
+    }
+    state.delete(`snapshots:${controlled.id}`);
+    return reorderKeyedChildren(controlled, collection, keys);
+}
+
+function componentAppendPlan(
+    source, scope, state, owner, handle, mutationCount, exports, memory
+) {
+    if (mutationCount === 0) return null;
+    const destination = collectionFor(source, state);
+    const schema = componentListSchema(scope);
+    const keyField = schema?.find((field) => field.type === "k");
+    if (destination === null || schema === null || keyField === undefined)
+        return null;
+    const retainedChildren = [...destination.controlled.children];
+    if (retainedChildren.length !== destination.collection.size ||
+        retainedChildren.some((child) =>
+            child.dataset.asterKey === undefined ||
+            destination.collection.get(child.dataset.asterKey) !== child
+        )) return null;
+    const kind = exports[`aster_export_component_${owner}_mutation_kind`];
+    const index = exports[`aster_export_component_${owner}_mutation_index`];
+    const amount = exports[`aster_export_component_${owner}_mutation_count`];
+    const stateCount = exports[`aster_export_component_${owner}_state_count`];
+    const render = exports[`aster_export_component_${owner}_render_skip`];
+    if (typeof kind !== "function" || typeof index !== "function" ||
+        typeof amount !== "function" || typeof stateCount !== "function" ||
+        typeof render !== "function")
+        return null;
+    const start = destination.collection.size;
+    let expected = start;
+    for (let mutation = 0; mutation < mutationCount; ++mutation) {
+        if (Number(kind(handle, mutation)) !== 1 ||
+            Number(index(handle, mutation)) !== expected)
+            return null;
+        expected += Number(amount(handle, mutation));
+    }
+    if (Number(stateCount(handle)) !== expected || expected === start)
+        return null;
+    return {
+        controlled: destination.controlled,
+        collection: destination.collection,
+        schema,
+        keyField,
+        start,
+        count: expected - start,
+        owner,
+        handle,
+        exports,
+        memory
+    };
+}
+
+function componentDirectRenderSkip(mutation, exports) {
+    if (mutation === null || mutation.count === 0) return 0;
+    const owner = mutation.owner;
+    const kind = exports[`aster_export_component_${owner}_mutation_kind`];
+    const stateCount = exports[`aster_export_component_${owner}_state_count`];
+    if (typeof kind !== "function" || typeof stateCount !== "function")
+        return 0;
+    const first = Number(kind(mutation.handle, 0));
+    if (first !== 2 && first !== 3 && first !== 4) return 0;
+    for (let index = 1; index < mutation.count; ++index)
+        if (Number(kind(mutation.handle, index)) !== first) return 0;
+    return Number(stateCount(mutation.handle));
+}
+
+function applyComponentAppendSnapshot(
+    scope, state, html, plan, hydrateWithin
+) {
+    const range = document.createRange();
+    range.selectNode(scope);
+    const fragment = range.createContextualFragment(html);
+    const renderedScope = fragment.querySelector(
+        `[data-aster-component="${CSS.escape(plan.owner)}"]`
+    ) ?? fragment.firstElementChild;
+    if (renderedScope === null) return false;
+    const snapshot = renderedScope.id === plan.controlled.id
+        ? renderedScope
+        : renderedScope.querySelector(`#${CSS.escape(plan.controlled.id)}`);
+    if (snapshot === null) return false;
+    const children = [...snapshot.children];
+    if (children.length !== plan.count) return false;
+    const additions = [];
+    for (let offset = 0; offset < children.length; ++offset) {
+        const child = children[offset];
+        const key = child.dataset.asterKey;
+        const expected = String(componentListFieldValue(
+            plan.owner, plan.handle, plan.start + offset,
+            plan.keyField, plan.exports, plan.memory
+        ));
+        if (key === undefined || key === "" || key !== expected ||
+            plan.collection.has(key))
+            return false;
+        additions.push([key, child]);
+    }
+    hydrateWithin(snapshot);
+    const inserted = document.createDocumentFragment();
+    for (const [, child] of additions) inserted.append(child);
+    plan.controlled.append(inserted);
+    for (const [key, child] of additions) plan.collection.set(key, child);
+    state.delete(`snapshots:${plan.controlled.id}`);
+    return true;
+}
+
+function renderComponentHtml(scope, owner, exports, memory, skipKeyed = 0) {
     const component = componentInstance(scope, owner, exports, memory);
     const handle = component.handle;
-    const render = exports[`aster_export_component_${owner}_render`];
+    const render = skipKeyed === 0
+        ? exports[`aster_export_component_${owner}_render`]
+        : exports[`aster_export_component_${owner}_render_skip`];
     if (typeof render !== "function")
         throw new Error(`Aster component render ABI is missing: ${owner}`);
-    const htmlHandle = Number(render(handle));
+    const htmlHandle = Number(skipKeyed === 0
+        ? render(handle) : render(handle, skipKeyed));
     if (exports.aster_export_exception_pending() !== 0) {
         if (htmlHandle !== 0)
             dropUnusedResult(htmlHandle, "h", null, exports);
         throw new Error(takePendingException(exports, memory));
     }
     const stringHandle = Number(exports.aster_export_html_render(htmlHandle));
-    const html = decodeOwnedString(stringHandle, exports, memory);
+    return decodeOwnedString(stringHandle, exports, memory);
+}
+
+function applyComponentSnapshot(
+    source, scope, state, owner, exports, memory, hydrateWithin,
+    renderedHtml = null
+) {
+    const controlled = controlledTarget(source);
+    const html = renderedHtml ??
+        renderComponentHtml(scope, owner, exports, memory);
     const range = document.createRange();
     range.selectNode(scope);
     const fragment = range.createContextualFragment(html);
@@ -681,7 +1119,7 @@ function applyComponentSnapshot(
         throw new Error(
             `Aster component controlled snapshot is missing: ${controlledId}`
         );
-    applyKeyedHtml(source, state, snapshot.innerHTML, hydrateWithin);
+    applyKeyedHtml(source, state, "", hydrateWithin, snapshot);
 }
 
 function applyAggregateResult(
@@ -801,7 +1239,10 @@ export async function hydrateAster({wasmUrl, root = document}) {
 
     const bindingCache = new Map();
     function hydrateWithin(container) {
-      for (const source of container.querySelectorAll("[data-aster-event]")) {
+      const sources = container.matches?.("[data-aster-event]")
+          ? [container, ...container.querySelectorAll("[data-aster-event]")]
+          : container.querySelectorAll("[data-aster-event]");
+      for (const source of sources) {
         if (hydratedSources.has(source)) continue;
         const encodedBinding = source.dataset.asterEvent;
         let binding = bindingCache.get(encodedBinding);
@@ -868,6 +1309,7 @@ export async function hydrateAster({wasmUrl, root = document}) {
             const state = stateFor(scope);
             let marshalled;
             let result;
+            let componentMutation = null;
             let transitionComponent = null;
             let version = 0;
             let leaseHeld = false;
@@ -900,9 +1342,33 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 } else {
                     version = ++sourceTransitionVersion;
                 }
+                if (!asyncResult && resultType === "v") {
+                    const receiver = parameters.find(([type]) => type === "x");
+                    const component = marshalled.components[0] ?? null;
+                    if (receiver !== undefined && component !== null) {
+                        const prefix =
+                            `aster_export_component_${receiver[1]}_mutations`;
+                        const begin = instance.exports[`${prefix}_begin`];
+                        const end = instance.exports[`${prefix}_end`];
+                        if (typeof begin === "function" &&
+                            typeof end === "function") {
+                            begin(component.handle);
+                            componentMutation = {
+                                owner: receiver[1],
+                                handle: component.handle,
+                                count: 0,
+                                end
+                            };
+                        }
+                    }
+                }
                 try {
                     result = handler(...marshalled.args);
                 } finally {
+                    if (componentMutation !== null)
+                        componentMutation.count = Number(
+                            componentMutation.end(componentMutation.handle)
+                        );
                     for (const pointer of marshalled.allocations)
                         instance.exports.aster_export_memory_free(pointer);
                 }
@@ -994,10 +1460,47 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 const receiver = parameters.find(([type]) => type === "x");
                 if (receiver !== undefined) {
                     try {
-                        applyComponentSnapshot(
-                            source, scope, state, receiver[1],
-                            instance.exports, memory, hydrateWithin
+                        const appendPlan = componentMutation === null
+                            ? null : componentAppendPlan(
+                                source, scope, state,
+                                componentMutation.owner,
+                                componentMutation.handle,
+                                componentMutation.count,
+                                instance.exports, memory
+                            );
+                        const renderSkip = appendPlan?.start ??
+                            componentDirectRenderSkip(
+                                componentMutation, instance.exports
+                            );
+                        const html = renderComponentHtml(
+                            scope, receiver[1], instance.exports, memory,
+                            renderSkip
                         );
+                        const appended = appendPlan !== null &&
+                            applyComponentAppendSnapshot(
+                                scope, state, html, appendPlan, hydrateWithin
+                            );
+                        const applied = appended ||
+                            (componentMutation !== null &&
+                            applyComponentListMutations(
+                                source, scope, state,
+                                componentMutation.owner,
+                                componentMutation.handle,
+                                componentMutation.count,
+                                instance.exports, memory
+                            ));
+                        if (!applied) {
+                            const completeHtml = renderSkip === 0
+                                ? html : renderComponentHtml(
+                                    scope, receiver[1],
+                                    instance.exports, memory
+                                );
+                            applyComponentSnapshot(
+                                source, scope, state, receiver[1],
+                                instance.exports, memory, hydrateWithin,
+                                completeHtml
+                            );
+                        }
                     } catch (error) {
                         reportHandlerError(error);
                     }

@@ -64,6 +64,13 @@ A handler fault never commits a render. A `Render()` fault preserves the last
 committed DOM. Constructor, handler, render, decode, and destructor exception
 slots are consumed before another instance is invoked.
 
+The compiler and browser may optimize this rule with private mutation metadata.
+Such an optimization MUST still execute `Render()`, MUST validate that the
+retained keyed layout and raw field projections match the generated state ABI,
+and MUST fall back to normal snapshot reconciliation when it cannot prove an
+equivalent sparse update. This metadata is not an application-visible DOM
+command or reactive state API.
+
 Async instance transitions have one generation counter per component, not per
 button. Starting a newer transition makes older results stale. A pending task
 holds a component lease. Disconnect invalidates its generation immediately;

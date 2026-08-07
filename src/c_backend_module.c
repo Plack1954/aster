@@ -1024,6 +1024,7 @@ static void emit_drop_helper(
                 type->element_type);
         fputs(
             "        free((*value)->data);\n"
+            "        free((*value)->mutations);\n"
             "        free(*value);\n"
             "        *value = NULL;\n"
             "    }\n",
