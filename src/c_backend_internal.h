@@ -111,6 +111,21 @@ void emit_list_callback_call(
 void c_backend_emit_native_instruction(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction);
+bool c_backend_emit_native_runtime(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
+bool c_backend_emit_native_dictionary(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
+bool c_backend_emit_native_queue(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
+bool c_backend_emit_native_collections(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
+bool c_backend_emit_native_text(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
 void c_backend_emit_element_instruction(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction);

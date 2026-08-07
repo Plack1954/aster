@@ -60,6 +60,11 @@ add_library(langlib
     src/ir_bytecode.c
     src/c_backend.c
     src/c_backend_native.c
+    src/c_backend_native_runtime.c
+    src/c_backend_native_dictionary.c
+    src/c_backend_native_queue.c
+    src/c_backend_native_collections.c
+    src/c_backend_native_text.c
     src/c_backend_elements.c
     src/c_backend_operations.c
     src/c_backend_module.c
