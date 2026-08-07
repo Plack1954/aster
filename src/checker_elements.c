@@ -500,27 +500,89 @@ Type *check_element(Checker *checker, Expr *expr) {
     }
     Function *component =
         find_function(checker, expr->as.element.name, expr->span);
+    const Decl *component_decl = component != NULL
+        ? function_declaration(checker, component) : NULL;
     Decl *descriptor =
         find_element_declaration(checker, expr->as.element.name, expr->span);
-    if (descriptor != NULL)
+    Decl *class_component = NULL;
+    Decl *class_render = NULL;
+    Function *class_constructor = NULL;
+    bool multiple_class_constructors = false;
+    if (descriptor != NULL) {
         component = NULL;
+        component_decl = NULL;
+    } else if (component == NULL) {
+        Decl *candidate = find_type_declaration(
+            checker, expr->as.element.name, expr->span);
+        if (candidate != NULL && candidate->kind == DECL_CLASS &&
+            !candidate->as.structure.is_interface) {
+            class_component = candidate;
+            for (size_t member = 0U;
+                 member < candidate->as.structure.member_count; ++member) {
+                Decl *method = candidate->as.structure.members[member];
+                if (method->kind != DECL_FUNCTION) continue;
+                if (method->as.function.is_constructor) {
+                    if (component_decl == NULL) {
+                        component_decl = method;
+                        class_constructor = &method->as.function;
+                    }
+                    else
+                        multiple_class_constructors = true;
+                    continue;
+                }
+                const char *base = strrchr(method->as.function.name, ':');
+                base = base == NULL ? method->as.function.name : base + 1U;
+                if (strcmp(base, "Render") == 0 &&
+                    !method->as.function.is_static_member &&
+                    method->as.function.param_count == 1U &&
+                    strcmp(method->as.function.params[0].name, "this") == 0)
+                    class_render = method;
+            }
+            if (multiple_class_constructors) {
+                lang_diag(checker->diagnostics, expr->span,
+                          "class component `%s` must currently have exactly one constructor",
+                          expr->as.element.name);
+                component_decl = NULL;
+            } else if (component_decl == NULL) {
+                lang_diag(checker->diagnostics, expr->span,
+                          "class component `%s` requires an explicit constructor",
+                          expr->as.element.name);
+            }
+            if (class_render == NULL)
+                lang_diag(checker->diagnostics, expr->span,
+                          "class component `%s` requires `public Html Render()`",
+                          expr->as.element.name);
+            else if (!class_render->is_public)
+                lang_diag(checker->diagnostics, class_render->span,
+                          "class component `Render` must be public");
+            if (component_decl != NULL && class_render != NULL) {
+                component = class_constructor;
+                expr->as.element.class_constructor = component_decl;
+                expr->as.element.class_render = class_render;
+            }
+        }
+    }
     if (component == NULL && descriptor == NULL) {
-        lang_diag(checker->diagnostics, expr->span,
-                  "unknown element `%s`", expr->as.element.name);
+        if (class_component == NULL)
+            lang_diag(checker->diagnostics, expr->span,
+                      "unknown element `%s`", expr->as.element.name);
         return &type_error;
     }
     if (component != NULL) {
-        expr->resolved_decl = function_declaration(checker, component);
-        const char *component_module =
-            function_module_name(checker, component);
+        expr->resolved_decl = component_decl;
+        const char *component_module = class_component != NULL
+            ? class_component->module_name
+            : function_module_name(checker, component);
+        const Function *result_function = class_render != NULL
+            ? &class_render->as.function : component;
         Type *component_result = resolve_declared_type_in_module(
-            checker, component->return_type_syntax,
-            component->return_type, component->span,
+            checker, result_function->return_type_syntax,
+            result_function->return_type, result_function->span,
             component_module);
         if (component_result->kind != TYPE_HTML)
             lang_diag(checker->diagnostics, expr->span,
                       "component `%s` must return `Html`, found `%s`",
-                      component->name, component_result->name);
+                      expr->as.element.name, component_result->name);
         for (size_t i = 0U; i < expr->as.element.property_count; ++i) {
             ElementProperty *property = &expr->as.element.properties[i];
             if (property->css_custom_property) {

@@ -2109,6 +2109,19 @@ set_tests_properties(component_element_run PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "<h2>Ada</h2><strong>Administrator</strong>.*<h2>Lin</h2>"
 )
+add_test(NAME class_component_run COMMAND lang run tests/class_components.as)
+set_tests_properties(class_component_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "component dropped[
+]+<main><article><strong>Ada</strong></article></main>"
+)
+add_aster_generated_c_test(
+    class_component_generated_c tests/class_components.as class_component)
+add_test(NAME class_component_requires_render
+    COMMAND lang check tests/checker/class_component_requires_render.as)
+set_tests_properties(class_component_requires_render PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
 add_test(NAME loop_cleanup_run COMMAND lang run examples/loop_cleanup.as)
 set_tests_properties(loop_cleanup_run PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

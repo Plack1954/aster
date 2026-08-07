@@ -27,6 +27,45 @@ pointer and does not recursively embed a complete `Node`. Self-referential and
 mutually referential object graphs are consequently representable without a
 special indirection type.
 
+## Native HTML class components
+
+A class with one explicit constructor and a public zero-argument
+`Html Render()` method may be used in native HTML element position. Constructor
+parameter names become checked component properties:
+
+```aster
+private class GreetingCard
+{
+    private string name;
+
+    public GreetingCard(string value)
+    {
+        name = value;
+    }
+
+    public Html Render()
+    {
+        return <article>{name}</article>;
+    }
+}
+
+private Html Page()
+{
+    return <main><GreetingCard value="Ada" /></main>;
+}
+```
+
+The compiler constructs the class, calls `Render`, and deletes the temporary
+instance after its owned HTML has been produced. This gives SSR class components
+ordinary Aster construction and deterministic destruction without a base class,
+interface, lifecycle API, or `component` keyword.
+
+The initial implementation intentionally supports exactly one constructor;
+body children use an `Html children` constructor parameter just like a function
+component. Retaining the same class instance in browser Wasm across
+events is separate work; class element syntax must not be presented as
+persistent client state until that ownership path and fault cleanup are proven.
+
 ## Value and identity rules
 
 Structs and classes intentionally mean different things:

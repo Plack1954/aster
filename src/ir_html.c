@@ -439,10 +439,13 @@ static IrValueId lower_component_element(IrBuilder *builder,
             }
         }
     }
+    bool class_component = expr->as.element.class_render != NULL;
+    IrTypeId call_type = class_component
+        ? ir_intern_type(builder->module, component->checked_return_type)
+        : ir_intern_type(builder->module, expr->type);
     IrInstruction *call = ir_append_instruction(
         builder, IR_OP_CALL_DIRECT,
-        ir_intern_type(builder->module, expr->type),
-        operands, count, expr->span);
+        call_type, operands, count, expr->span);
     free(operands);
     if (call == NULL) {
         free(temporary_locals);
@@ -462,12 +465,68 @@ static IrValueId lower_component_element(IrBuilder *builder,
             call->argument_modes[parameter] =
                 target->parameters[parameter].mode;
     }
-    if (parent_local != IR_INVALID_ID &&
+    if (!class_component && parent_local != IR_INVALID_ID &&
         call->index < builder->module->function_count &&
         builder->module->functions[
             call->index].has_render_root)
         call->render_destination = parent_local;
     IrValueId call_result = call->result;
+    if (class_component) {
+        const Decl *render_decl = expr->as.element.class_render;
+        uint32_t instance_local = ir_add_synthetic_local(
+            builder, "<class-component>", call_type);
+        IrInstruction *store = ir_append_instruction(
+            builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+            &call_result, 1U, expr->span);
+        if (store != NULL) store->index = instance_local;
+        IrInstruction *receiver = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD, call_type,
+            NULL, 0U, expr->span);
+        if (receiver == NULL) {
+            free(temporary_locals);
+            return IR_INVALID_ID;
+        }
+        receiver->index = instance_local;
+        IrValueId render_receiver = receiver->result;
+        IrInstruction *render = ir_append_instruction(
+            builder, IR_OP_CALL_DIRECT,
+            ir_intern_type(builder->module, expr->type),
+            &render_receiver, 1U, expr->span);
+        if (render == NULL) {
+            free(temporary_locals);
+            return IR_INVALID_ID;
+        }
+        render->symbol = render_decl->as.function.name;
+        render->symbol_length = strlen(render->symbol);
+        render->index = ir_find_function(builder->module, render_decl);
+        if (render->index < builder->module->function_count) {
+            const IrFunction *target =
+                &builder->module->functions[render->index];
+            render->argument_mode_count = target->parameter_count;
+            if (target->parameter_count != 0U) {
+                render->argument_modes = ir_resize(
+                    NULL, target->parameter_count,
+                    sizeof(*render->argument_modes));
+                for (size_t parameter = 0U;
+                     parameter < target->parameter_count; ++parameter)
+                    render->argument_modes[parameter] =
+                        target->parameters[parameter].mode;
+            }
+            if (parent_local != IR_INVALID_ID && target->has_render_root)
+                render->render_destination = parent_local;
+        }
+        IrInstruction *delete_load = ir_append_instruction(
+            builder, IR_OP_LOCAL_LOAD, call_type,
+            NULL, 0U, expr->span);
+        if (delete_load != NULL) delete_load->index = instance_local;
+        IrValueId delete_value = delete_load != NULL
+            ? delete_load->result : IR_INVALID_ID;
+        IrInstruction *drop = ir_append_instruction(
+            builder, IR_OP_CLASS_DELETE, IR_INVALID_ID,
+            &delete_value, 1U, expr->span);
+        (void)drop;
+        call_result = render->result;
+    }
     for (size_t i = temporary_count; i > 0U; --i) {
         IrInstruction *drop = ir_append_instruction(
             builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,

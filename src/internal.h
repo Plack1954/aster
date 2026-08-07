@@ -346,6 +346,8 @@ struct Expr {
             LangSpan open_span;
             LangSpan close_span;
             CssStylesheet *css;
+            const struct Decl *class_constructor;
+            const struct Decl *class_render;
         } element;
     } as;
 };
