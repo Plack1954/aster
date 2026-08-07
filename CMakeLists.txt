@@ -104,6 +104,12 @@ add_library(langlib
     src/vm_fast.c
     src/vm_html.c
     src/vm_builtins.c
+    src/vm_builtin_core.c
+    src/vm_builtin_files.c
+    src/vm_builtin_paths.c
+    src/vm_builtin_bytes.c
+    src/vm_builtin_text.c
+    src/vm_builtin_unicode.c
     src/vm_verify.c
     src/http.c
     src/h2o_adapter.c
