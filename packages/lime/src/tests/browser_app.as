@@ -21,6 +21,8 @@ private struct PersistentTodo
     string title;
     string className;
     bool disabled;
+    bool hidden;
+    string tooltip;
 }
 
 private class PersistentTodoList
@@ -36,14 +38,18 @@ private class PersistentTodoList
             key = "persistent-1",
             title = "First persistent",
             className = "",
-            disabled = false
+            disabled = false,
+            hidden = false,
+            tooltip = "First persistent todo"
         });
         todos.Add(new()
         {
             key = "persistent-2",
             title = "Second persistent",
             className = "",
-            disabled = false
+            disabled = false,
+            hidden = false,
+            tooltip = "Second persistent todo"
         });
         nextId = 3;
     }
@@ -57,10 +63,12 @@ private class PersistentTodoList
                 <li
                     key=todo.key
                     class=todo.className
+                    title=todo.tooltip
                 >
                     <label>
-                        <span>{todo.title}</span>
+                        <span>Todo: {todo.title}</span>
                         <input value=todo.title disabled=todo.disabled />
+                        <small hidden=todo.hidden>renamed detail</small>
                     </label>
                     <button
                         type="button"
@@ -90,7 +98,9 @@ private class PersistentTodoList
             key = key,
             title = $"Persistent {this.nextId}",
             className = "",
-            disabled = false
+            disabled = false,
+            hidden = false,
+            tooltip = $"Persistent todo {this.nextId}"
         };
         this.todos.Add(todo);
         this.nextId += 1;
@@ -120,6 +130,8 @@ private class PersistentTodoList
                 todo.title = $"{todo.title}!";
                 todo.className = "renamed";
                 todo.disabled = true;
+                todo.hidden = true;
+                todo.tooltip = "Renamed persistent todo";
                 this.todos.Set(index, todo);
                 return this.Rows();
             }

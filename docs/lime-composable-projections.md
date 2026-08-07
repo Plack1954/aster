@@ -493,30 +493,34 @@ an owned exception result, after which the same instance remains callable and
 is still disposed normally.
 
 The persistent todo fixture now uses native keyed item parts without any
-projection declaration. `PersistentTodo` has ordinary `title`, `className`, and
-`disabled` fields; `Rows()` uses ordinary `class=todo.className`,
-`<span>{todo.title}</span>`, and `disabled=todo.disabled`. `RenameTodo` mutates
-the class-owned list and returns the same native keyed `Html` snapshot used for
+projection declaration. `PersistentTodo` has ordinary `title`, `className`,
+`disabled`, `hidden`, and tooltip fields; `Rows()` uses ordinary
+`class=todo.className`, mixed text `<span>Todo: {todo.title}</span>`,
+`disabled=todo.disabled`, `hidden=todo.hidden`, and `title=todo.tooltip`.
+`RenameTodo` mutates the
+class-owned list and returns the same native keyed `Html` snapshot used for
 structural changes.
 
-Inside a keyed row, the compiler marks eligible dynamic text, class, and
-disabled bindings with stable part IDs. Before moving or retaining nodes, the
+Inside a keyed row, the compiler marks eligible dynamic text, class, disabled,
+hidden, and `title` bindings with stable part IDs. Before moving or retaining nodes, the
 runtime validates every incoming/retained part pair. It then copies only those
 compiled values into retained nodes; it does not replace the row or copy an
 input's `value`. Renaming the first row twice and a dynamically appended fourth
-row changes only their text, class, and disabled parts. Sibling content,
-retained row/input identity, and a browser-edited input value survive. This
-proves ordinary native HTML snapshots can drive item-local updates without a
-VDOM, public projection types, or DOM commands.
+row changes only their compound text, class, disabled, hidden, and title parts.
+Sibling content, retained row/input identity, and a browser-edited input value
+survive. This proves ordinary native HTML snapshots can drive item-local
+updates without a VDOM, public projection types, or DOM commands.
 
 This validates persistent Wasm-owned state, keyed structural snapshots, native
 item-local compiled updates, and one level of experimental nested transition
 lowering. Current limits are intentional: inferred keyed parts currently cover
-a sole dynamic text child plus `class` and `disabled`; interactive class
-constructors take no arguments; class handlers are synchronous; and the older
-region-wide `ProjectionState`/`ProjectionTransition` prototype remains
-experimental. Server-state transfer, automatic rerendering, async instance
-methods, compound text ranges, broader attributes/styles, conditional
+text-only mixed static/dynamic children plus `class`, `disabled`, `hidden`, and
+`title`;
+interactive class constructors take no arguments; class handlers are
+synchronous; and the older region-wide
+`ProjectionState`/`ProjectionTransition` prototype remains experimental.
+Server-state transfer, automatic class rerendering, async instance methods,
+text mixed with nested elements, broader attributes/styles, conditional
 item-local structure, and deeper recursive composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison

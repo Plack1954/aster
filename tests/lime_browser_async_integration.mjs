@@ -192,10 +192,12 @@ try {
                 const part = (field) => projectionPart(
                     "PersistentTodo", field
                 );
-                if (!html.includes(expected) ||
+                if (!html.includes(`Todo: ${expected}`) ||
                     !html.includes(`data-aster-part-t=\"${part(1)}\"`) ||
                     !html.includes(`data-aster-part-c=\"${part(2)}\"`) ||
-                    !html.includes(`data-aster-part-d=\"${part(3)}\"`))
+                    !html.includes(`data-aster-part-d=\"${part(3)}\"`) ||
+                    !html.includes(`data-aster-part-h=\"${part(4)}\"`) ||
+                    !html.includes(`data-aster-part-a=\"${part(5)}\"`))
                     throw new Error("native keyed item parts were not emitted");
             } finally {
                 stringDrop(rendered);

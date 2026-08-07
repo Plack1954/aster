@@ -99,9 +99,10 @@ projection_html = """<!doctype html>
 </section>
 <section id="persistent-todo-component" data-aster-component="PersistentTodoList">
   <ul id="persistent-todo-list">
-    <li data-aster-key="persistent-1" class=""
-        data-aster-part-c="{persistentClass}">
-      <label><span data-aster-part-t="{persistentTitle}">First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}"></label>
+    <li data-aster-key="persistent-1" class="" title="First persistent todo"
+        data-aster-part-c="{persistentClass}"
+        data-aster-part-a="{persistentTooltip}">
+      <label><span data-aster-part-t="{persistentTitle}">Todo: First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}"><small data-aster-part-h="{persistentHidden}">renamed detail</small></label>
       <button type="button" name="key" value="persistent-1"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
@@ -109,9 +110,10 @@ projection_html = """<!doctype html>
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RenameTodo|h|x:PersistentTodoList|s:key">Rename</button>
     </li>
-    <li data-aster-key="persistent-2" class=""
-        data-aster-part-c="{persistentClass}">
-      <label><span data-aster-part-t="{persistentTitle}">Second persistent</span> <input value="Second persistent" data-aster-part-d="{persistentDisabled}"></label>
+    <li data-aster-key="persistent-2" class="" title="Second persistent todo"
+        data-aster-part-c="{persistentClass}"
+        data-aster-part-a="{persistentTooltip}">
+      <label><span data-aster-part-t="{persistentTitle}">Todo: Second persistent</span> <input value="Second persistent" data-aster-part-d="{persistentDisabled}"><small data-aster-part-h="{persistentHidden}">renamed detail</small></label>
       <button type="button" name="key" value="persistent-2"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
@@ -141,7 +143,9 @@ for field_index, field_name in enumerate((
 for field_index, field_name in (
     (1, "persistentTitle"),
     (2, "persistentClass"),
-    (3, "persistentDisabled")
+    (3, "persistentDisabled"),
+    (4, "persistentHidden"),
+    (5, "persistentTooltip")
 ):
     projection_html = projection_html.replace(
         "{" + field_name + "}",
@@ -325,14 +329,22 @@ try:
         first_persistent.get_by_text("Rename", exact=True).click()
         assert first_persistent.locator(
             "[data-aster-part-t]"
-        ).text_content() == "First persistent!"
+        ).text_content() == "Todo: First persistent!"
         assert first_persistent.get_attribute("class") == "renamed"
+        assert first_persistent.get_attribute(
+            "title"
+        ) == "Renamed persistent todo"
         assert persistent_input.is_disabled()
+        assert first_persistent.locator("small").is_hidden()
         assert second_persistent.locator(
             "[data-aster-part-t]"
-        ).text_content() == "Second persistent"
+        ).text_content() == "Todo: Second persistent"
         assert second_persistent.get_attribute("class") == ""
+        assert second_persistent.get_attribute(
+            "title"
+        ) == "Second persistent todo"
         assert not second_persistent.locator("input").is_disabled()
+        assert not second_persistent.locator("small").is_hidden()
         assert persistent_input.input_value() == "persistent browser edit"
         assert page.evaluate("""window.persistentIdentity.every(
             (node) => node.isConnected
@@ -340,7 +352,7 @@ try:
         first_persistent.get_by_text("Rename", exact=True).click()
         assert first_persistent.locator(
             "[data-aster-part-t]"
-        ).text_content() == "First persistent!!"
+        ).text_content() == "Todo: First persistent!!"
 
         persistent_append = page.get_by_text(
             "Append persistent todo", exact=True
@@ -359,12 +371,16 @@ try:
         fourth_persistent.get_by_text("Rename", exact=True).click()
         assert fourth_persistent.locator(
             "[data-aster-part-t]"
-        ).text_content() == "Persistent 4!"
+        ).text_content() == "Todo: Persistent 4!"
         assert fourth_persistent.get_attribute("class") == "renamed"
+        assert fourth_persistent.get_attribute(
+            "title"
+        ) == "Renamed persistent todo"
         assert fourth_persistent.locator("input").is_disabled()
+        assert fourth_persistent.locator("small").is_hidden()
         assert second_persistent.locator(
             "[data-aster-part-t]"
-        ).text_content() == "Second persistent"
+        ).text_content() == "Todo: Second persistent"
         assert persistent.locator(":scope > li").count() == 4
         persistent.locator(
             '[data-aster-key="persistent-3"]'

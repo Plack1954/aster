@@ -584,7 +584,9 @@ static uint64_t keyed_part_id(
     return lang_projection_part_id(
         builder->function->module_name,
         builder->function->name,
-        span.start * 4U + (size_t)(kind == 't' ? 1U : kind == 'c' ? 2U : 3U));
+        span.start * 8U + (size_t)(
+            kind == 't' ? 1U : kind == 'c' ? 2U : kind == 'd' ? 3U :
+            kind == 'h' ? 4U : 5U));
 }
 
 static void emit_keyed_part_marker(
@@ -610,8 +612,33 @@ static void emit_keyed_part_marker(
     set->index = local;
     set->symbol = kind == 't' ? "data-aster-part-t"
                 : kind == 'c' ? "data-aster-part-c"
-                              : "data-aster-part-d";
+                : kind == 'd' ? "data-aster-part-d"
+                : kind == 'h' ? "data-aster-part-h"
+                              : "data-aster-part-a";
     set->symbol_length = strlen(set->symbol);
+}
+
+static const Expr *keyed_text_part_expression(const Expr *element) {
+    const Expr *first_dynamic = NULL;
+    for (size_t item_index = 0U;
+         item_index < element->as.element.body_count; ++item_index) {
+        const ElementBodyItem *item = &element->as.element.body[item_index];
+        if (item->is_statement) return NULL;
+        if (item->is_static_text) continue;
+        const Expr *expression = item->as.expression;
+        if (expression->kind == EXPR_ELEMENT) return NULL;
+        if (expression->kind != EXPR_INTERPOLATION &&
+            expression->type != NULL &&
+            !(expression->type->kind == TYPE_STRING ||
+              expression->type->kind == TYPE_STR ||
+              expression->type->kind == TYPE_BOOL ||
+              expression->type->kind == TYPE_CHAR ||
+              (expression->type->kind >= TYPE_I8 &&
+               expression->type->kind <= TYPE_USIZE)))
+            return NULL;
+        if (first_dynamic == NULL) first_dynamic = expression;
+    }
+    return first_dynamic;
 }
 
 IrValueId ir_lower_element_with_parent(
@@ -738,6 +765,12 @@ IrValueId ir_lower_element_with_parent(
         else if (keyed_item && strcmp(property_name, "disabled") == 0)
             emit_keyed_part_marker(
                 builder, local, property->value, 'd', property->span);
+        else if (keyed_item && strcmp(property_name, "hidden") == 0)
+            emit_keyed_part_marker(
+                builder, local, property->value, 'h', property->span);
+        else if (keyed_item && strcmp(property_name, "title") == 0)
+            emit_keyed_part_marker(
+                builder, local, property->value, 'a', property->span);
     }
     bool custom_property_started = false;
     for (size_t i = 0U; i < expr->as.element.property_count; ++i) {
@@ -825,14 +858,11 @@ IrValueId ir_lower_element_with_parent(
             set->symbol_length = strlen(builder->function->css_scope_attribute);
         }
     }
-    if (keyed_item && expr->as.element.body_count == 1U) {
-        const ElementBodyItem *item = &expr->as.element.body[0];
-        if (!item->is_statement && !item->is_static_text &&
-            item->as.expression->kind != EXPR_ELEMENT)
-            emit_keyed_part_marker(
-                builder, local, item->as.expression,
-                't', item->as.expression->span);
-    }
+    const Expr *text_part = keyed_item
+        ? keyed_text_part_expression(expr) : NULL;
+    if (text_part != NULL)
+        emit_keyed_part_marker(
+            builder, local, text_part, 't', text_part->span);
     if (!push_element_context(builder, local, keyed_item, expr->span))
         return IR_INVALID_ID;
     for (size_t i = 0U; i < expr->as.element.body_count; ++i) {

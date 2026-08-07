@@ -16,13 +16,13 @@ A representative local run after fixing the failures exposed by this example:
 
 | operation | Aster retained DOM | Vue 3.5 runtime |
 |---|---:|---:|
-| create 1,000 keyed rows | 12.3 ms | **10.4 ms** |
-| update every tenth row | **3.0 ms** | 5.2 ms |
-| swap two rows | **0.6 ms** | 2.5 ms |
-| append 1,000 keyed rows | 14.9 ms | **8.6 ms** |
-| delete one middle row | **0.5 ms** | 4.3 ms |
-| clear 1,999 rows | **4.9 ms** | 7.2 ms |
-| client code, raw | **44.1 KB** | 111.9 KB |
+| create 1,000 keyed rows | 11.3 ms | **9.7 ms** |
+| update every tenth row | **2.6 ms** | 4.2 ms |
+| swap two rows | **0.4 ms** | 3.0 ms |
+| append 1,000 keyed rows | 13.7 ms | **8.2 ms** |
+| delete one middle row | **0.5 ms** | 4.0 ms |
+| clear 1,999 rows | **5.2 ms** | 7.2 ms |
+| client code, raw | **44.4 KB** | 111.9 KB |
 | client code, gzip | **11.3 KB** | 41.9 KB |
 
 Treat timings as local smoke measurements, not universal benchmark results.

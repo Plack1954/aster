@@ -72,6 +72,8 @@ grep -q 'click|PersistentTodoList_RenameTodo|h|x:PersistentTodoList|s:key' <<<"$
 grep -Eq 'data-aster-part-t="[0-9a-f]{16}"' <<<"$page"
 grep -Eq 'data-aster-part-c="[0-9a-f]{16}"' <<<"$page"
 grep -Eq 'data-aster-part-d="[0-9a-f]{16}"' <<<"$page"
+grep -Eq 'data-aster-part-h="[0-9a-f]{16}"' <<<"$page"
+grep -Eq 'data-aster-part-a="[0-9a-f]{16}"' <<<"$page"
 test "$(grep -o 'data-aster-component="IsolatedCounter"' <<<"$page" | wc -l)" -eq 2
 grep -q 'click|IsolatedCounter_Increment|l|x:IsolatedCounter|l:count' <<<"$page"
 test "$(grep -o 'name="value"' <<<"$page" | wc -l)" -ge 2

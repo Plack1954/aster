@@ -275,11 +275,12 @@ function collectionFor(source, state) {
     return {controlled, collection};
 }
 
-const keyedPartKinds = ["t", "c", "d"];
+const keyedPartKinds = ["t", "c", "d", "h", "a"];
 
 function keyedPartElements(item) {
     const elements = [item, ...item.querySelectorAll(
-        "[data-aster-part-t], [data-aster-part-c], [data-aster-part-d]"
+        "[data-aster-part-t], [data-aster-part-c], [data-aster-part-d], " +
+        "[data-aster-part-h], [data-aster-part-a]"
     )];
     return elements.filter(
         (element) => element.closest("[data-aster-key]") === item
@@ -327,6 +328,8 @@ function applyKeyedPartPlan(updates) {
         if (kind === "t") target.textContent = value.textContent;
         else if (kind === "c") target.className = value.className;
         else if (kind === "d") target.disabled = value.disabled;
+        else if (kind === "h") target.hidden = value.hidden;
+        else if (kind === "a") target.title = value.title;
     }
 }
 
