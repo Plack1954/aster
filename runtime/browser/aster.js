@@ -178,6 +178,12 @@ function validateAggregateProjections(source, scope, handlerName, fields) {
     }
 }
 
+function retainedKey(node) {
+    const key = node.dataset.asterKey;
+    if (key !== undefined) return key;
+    return node.id === "" ? null : node.id;
+}
+
 function collectionFor(source, state) {
     const controlled = controlledTarget(source);
     if (controlled === null) return null;
@@ -185,8 +191,14 @@ function collectionFor(source, state) {
     let collection = state.get(key);
     if (collection === undefined) {
         collection = new Map();
-        for (const child of controlled.children)
-            if (child.id !== "") collection.set(child.id, child);
+        for (const child of controlled.children) {
+            const key = retainedKey(child);
+            if (key !== null) {
+                if (collection.has(key))
+                    throw new Error(`Aster collection key is duplicated: ${key}`);
+                collection.set(key, child);
+            }
+        }
         state.set(key, collection);
     }
     return {controlled, collection};
@@ -200,13 +212,46 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
     const range = document.createRange();
     range.selectNodeContents(controlled);
     const fragment = range.createContextualFragment(html);
-    for (const child of [...fragment.children]) {
-        const existing = child.id === "" ? null : collection.get(child.id);
-        if (existing === null || existing === undefined || !existing.isConnected)
-            controlled.append(child);
-        else
-            existing.replaceWith(child);
-        if (child.id !== "") collection.set(child.id, child);
+    const incoming = [...fragment.children];
+    const keyedSnapshot = incoming.some(
+        (child) => child.dataset.asterKey !== undefined
+    ) || [...controlled.children].some(
+        (child) => child.dataset.asterKey !== undefined
+    );
+    if (keyedSnapshot) {
+        const incomingKeys = new Set();
+        for (const child of incoming) {
+            const key = child.dataset.asterKey;
+            if (key === undefined || key === "" || incomingKeys.has(key))
+                throw new Error("Aster keyed list contains a missing or duplicate key");
+            incomingKeys.add(key);
+        }
+        const next = new Map();
+        for (const child of incoming) {
+            const key = child.dataset.asterKey;
+            const existing = collection.get(key);
+            let retained = child;
+            if (existing !== undefined && existing.isConnected)
+                retained = existing;
+            controlled.append(retained);
+            next.set(key, retained);
+        }
+        for (const [key, existing] of collection)
+            if (!next.has(key) && existing.parentElement === controlled)
+                existing.remove();
+        collection.clear();
+        for (const [key, child] of next) collection.set(key, child);
+    } else {
+        for (const child of incoming) {
+            const key = retainedKey(child);
+            const existing = key === null ? null : collection.get(key);
+            if (existing === null || existing === undefined ||
+                !existing.isConnected)
+                controlled.append(child);
+            else
+                existing.replaceWith(child);
+            if (key !== null) collection.set(key, child);
+        }
     }
     hydrateWithin(controlled);
 }

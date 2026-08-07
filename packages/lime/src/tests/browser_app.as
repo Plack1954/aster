@@ -9,6 +9,12 @@ public struct TodoPatch
     Html item;
 }
 
+public struct NativeTodo
+{
+    string key;
+    string title;
+}
+
 public struct ReactiveCounterPatch
 {
     int value;
@@ -176,6 +182,76 @@ public KeyedRemove RemoveTodo(string key)
     return RemoveKey(key);
 }
 
+private List<NativeTodo> NativeTodos()
+{
+    List<NativeTodo> todos = new();
+    todos.Add(new() { key = "native-1", title = "Buy milk" });
+    todos.Add(new() { key = "native-2", title = "Walk dog" });
+    todos.Add(new() { key = "native-3", title = "Write Aster" });
+    return todos;
+}
+
+private Html NativeTodoRows(List<NativeTodo> todos)
+{
+    List<Html> rows = new();
+    foreach (NativeTodo todo in todos)
+    {
+        rows.Add(
+            <li key=todo.key>
+                <label>
+                    {todo.title}
+                    <input value=todo.title />
+                </label>
+                <button
+                    type="button"
+                    name="key"
+                    value=todo.key
+                    aria-controls="native-keyed-list"
+                    onclick=RemoveNativeTodo
+                >Remove</button>
+            </li>
+        );
+    }
+    return <>{rows}</>;
+}
+
+public Html RemoveNativeTodo(string key)
+{
+    List<NativeTodo> todos = NativeTodos();
+    for (nuint index = 0; index < todos.Count; index++)
+    {
+        if (todos[index].key == key)
+        {
+            todos.RemoveAt(index);
+            break;
+        }
+    }
+    return NativeTodoRows(todos);
+}
+
+public Html AppendNativeTodo()
+{
+    List<NativeTodo> todos = NativeTodos();
+    todos.Add(new() { key = "native-4", title = "Ship keyed lists" });
+    return NativeTodoRows(todos);
+}
+
+public Html MoveNativeTodo()
+{
+    List<NativeTodo> todos = NativeTodos();
+    NativeTodo last = todos[2];
+    todos.RemoveAt(2);
+    todos.Insert(0, last);
+    return NativeTodoRows(todos);
+}
+
+public Html ClearNativeTodos()
+{
+    List<NativeTodo> todos = NativeTodos();
+    todos.Clear();
+    return NativeTodoRows(todos);
+}
+
 private Html TodoItem(int id, string title)
 {
     string key = $"todo-{id}";
@@ -293,6 +369,25 @@ public Html BrowserPage(Html browserLoader)
                 aria-controls="projection-row-list"
                 onclick=SelectSecondAndRemoveFirst
             >Select second and remove first</button>
+        </section>
+        <section id="native-keyed-list-trial">
+            <h2>Native keyed list trial</h2>
+            <ul id="native-keyed-list">{NativeTodoRows(NativeTodos())}</ul>
+            <button
+                type="button"
+                aria-controls="native-keyed-list"
+                onclick=AppendNativeTodo
+            >Append native todo</button>
+            <button
+                type="button"
+                aria-controls="native-keyed-list"
+                onclick=MoveNativeTodo
+            >Move native todo</button>
+            <button
+                type="button"
+                aria-controls="native-keyed-list"
+                onclick=ClearNativeTodos
+            >Clear native todos</button>
         </section>
         <form
             id="reactive-query"

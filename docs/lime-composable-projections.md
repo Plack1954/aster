@@ -30,8 +30,8 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 9.7 KB gzip versus 41.9 KB for the compared Vue client after adding the
-  experimental batch decoder and structural batch validation;
+- 9.9 KB gzip versus 41.9 KB for the compared Vue client after adding the
+  experimental batch decoder, structural validation, and keyed snapshots;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
 
@@ -457,18 +457,44 @@ flattens the nested state and removal into the same owned batch. Initial state
 is now pure and no placeholder effect is needed. This supports the semantic
 split proposed above without exposing scalar DOM commands.
 
+A separate keyed-list prototype now accepts a compiler-only `key` property on
+ordinary native HTML:
+
+```aster
+foreach (NativeTodo todo in todos)
+{
+    rows.Add(<li key=todo.key>{todo.title}</li>);
+}
+```
+
+Handlers use normal `List<T>` operations and return the resulting native HTML
+snapshot. No `RemoveKey`, projection state, transition type, or DOM command is
+present in that path. The compiler emits retained identity metadata. For a
+controlled keyed collection, JavaScript validates unique keys, inserts new
+items, removes absent items, and moves retained items into snapshot order.
+Existing keyed nodes are never replaced. Chrome coverage exercises `Add`,
+`RemoveAt`, `Insert`, and `Clear` while preserving retained row/input identity
+and a browser-edited input value.
+
+This is the structural half of a native keyed-list model, not yet a complete
+stateful todo application. The fixture reconstructs its deterministic list in
+each handler. Browser-region state is not yet retained in Wasm across events,
+and existing item content is deliberately left untouched; changed item-local
+content still needs compiled projections. Those are now the two blocking pieces
+for a normal persistent keyed todo list.
+
 This validates one-batch scalar/structural composition and one level of nested
-transition lowering, not the temporary source syntax. Current prototype limits
+transition lowering, not the temporary projection syntax. Current prototype limits
 are intentional: projection handlers are synchronous, persistent state fields
 are flat Boolean/integer/string values, only `KeyedRemove` has been exercised,
 text initialization is still written as an ordinary child expression, and the
 `ProjectionState`/`ProjectionTransition` suffixes are markers rather than final
 region declarations. Async batches, effect collections, true keyed item-local
-plans, deeper recursive composition, and a final explicit state-boundary
-spelling remain to be designed.
+plans, Wasm-owned browser-region state, deeper recursive composition, and a
+final explicit state-boundary spelling remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 9.7 KB gzip. A future production implementation should
+client from 8.8 KB to 9.9 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 

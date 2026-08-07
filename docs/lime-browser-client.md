@@ -224,18 +224,18 @@ scroll state, and browser-owned element state. DOM morphing preserves more but
 introduces reconciliation machinery and can become a string-rendered VDOM in
 practice.
 
-The current keyed collection model is a useful middle ground: Aster constructs
-safe HTML for one item while the runtime preserves the collection and
-unaffected children. A todo trial now exercises removal of SSR content,
-insertion of a Wasm-rendered item, hydration of that item's remove handler, and
-its later removal while retaining the list node. No tree reconciliation or
-signal graph was needed. Removal now returns the explicit
-`Aster.Html.KeyedRemove` transition result rather than overloading every owned
-string result as a command. This makes intent and ownership visible in Aster
-and reserves a typed protocol for future keyed operations. `aria-controls`
-still identifies the collection, and compiler recognition of one nominal
-standard type is intentionally narrower than a general user-extensible patch
-protocol.
+The legacy keyed collection trial constructs safe HTML for one item and uses an
+explicit `Aster.Html.KeyedRemove` result. That proved the structural mechanism
+but is too low-level as an ordinary application model.
+
+The newer trial uses normal `List<T>` mutation and native HTML children carrying
+`key=todo.key`. Returning the resulting keyed snapshot inserts new keys, removes
+missing keys, and orders retained keys without replacing existing nodes. Chrome
+coverage exercises `Add`, `RemoveAt`, `Insert`, and `Clear`; retained rows and a
+browser-edited input survive. No tree VDOM or signal graph is involved. The
+remaining work is Wasm-owned region state and compiled item-local updates, after
+which the explicit keyed command can remain backend infrastructure rather than
+normal application syntax.
 
 ### Virtual DOM control
 
@@ -324,11 +324,11 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 11.0 ms versus Vue's 9.1 ms, updated every tenth
-row in 2.1 ms versus 4.4 ms, swapped two rows in 0.4 ms versus 3.5 ms, appended
-1,000 rows in 15.1 ms versus 7.9 ms, deleted one row in 0.4 ms versus 3.0 ms,
-and cleared 1,999 rows in 4.7 ms versus 6.7 ms. Aster's benchmark client was
-9.7 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
+created 1,000 keyed rows in 10.8 ms versus Vue's 9.0 ms, updated every tenth
+row in 2.2 ms versus 4.3 ms, swapped two rows in 0.4 ms versus 2.6 ms, appended
+1,000 rows in 12.6 ms versus 7.9 ms, deleted one row in 0.4 ms versus 4.3 ms,
+and cleared 1,999 rows in 3.9 ms versus 6.9 ms. Aster's benchmark client was
+9.9 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
 universal benchmark claims: Aster was not consistently faster, because Vue won
 bulk create and append.
 

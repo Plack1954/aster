@@ -31,6 +31,34 @@ directory = Path(sys.argv[1]).resolve()
     Select second and remove first
   </button>
 </section>
+<section id="native-keyed-list-trial">
+  <ul id="native-keyed-list">
+    <li data-aster-key="native-1">
+      <label>Buy milk <input value="Buy milk"></label>
+      <button type="button" name="key" value="native-1"
+          aria-controls="native-keyed-list"
+          data-aster-event="click|RemoveNativeTodo|h|s:key">Remove</button>
+    </li>
+    <li data-aster-key="native-2">
+      <label>Walk dog <input value="Walk dog"></label>
+      <button type="button" name="key" value="native-2"
+          aria-controls="native-keyed-list"
+          data-aster-event="click|RemoveNativeTodo|h|s:key">Remove</button>
+    </li>
+    <li data-aster-key="native-3">
+      <label>Write Aster <input value="Write Aster"></label>
+      <button type="button" name="key" value="native-3"
+          aria-controls="native-keyed-list"
+          data-aster-event="click|RemoveNativeTodo|h|s:key">Remove</button>
+    </li>
+  </ul>
+  <button type="button" aria-controls="native-keyed-list"
+      data-aster-event="click|AppendNativeTodo|h">Append native todo</button>
+  <button type="button" aria-controls="native-keyed-list"
+      data-aster-event="click|MoveNativeTodo|h">Move native todo</button>
+  <button type="button" aria-controls="native-keyed-list"
+      data-aster-event="click|ClearNativeTodos|h">Clear native todos</button>
+</section>
 <script type="module">
 import {hydrateAster} from "./aster.js";
 await hydrateAster({wasmUrl: "./browser_http_server.wasm"});
@@ -88,10 +116,45 @@ try:
                 document.querySelector('#projection-row-3'),
                 document.querySelector('#projection-row-input')
             ][index])""")
+        keyed = page.locator("#native-keyed-list")
+        retained_input = keyed.locator(
+            '[data-aster-key="native-1"] input'
+        )
+        retained_input.fill("browser-owned edit")
+        page.evaluate("""window.nativeRetained = [
+            document.querySelector('[data-aster-key="native-1"]'),
+            document.querySelector('[data-aster-key="native-3"]'),
+            document.querySelector('[data-aster-key="native-1"] input')
+        ]""")
+        page.get_by_text("Append native todo", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('[data-aster-key=\"native-4\"]')"
+        )
+        assert keyed.locator(":scope > li").count() == 4
+        keyed.locator('[data-aster-key="native-2"] button').click()
+        page.wait_for_function(
+            "!document.querySelector('[data-aster-key=\"native-2\"]')"
+        )
+        assert keyed.locator(":scope > li").count() == 2
+        page.get_by_text("Move native todo", exact=True).click()
+        page.wait_for_function("""document.querySelector(
+            '#native-keyed-list > li')?.dataset.asterKey === 'native-3'""")
+        assert keyed.locator(":scope > li").count() == 3
+        assert retained_input.input_value() == "browser-owned edit"
+        assert page.evaluate("""window.nativeRetained.every((node, index) =>
+            node === [
+                document.querySelector('[data-aster-key="native-1"]'),
+                document.querySelector('[data-aster-key="native-3"]'),
+                document.querySelector('[data-aster-key="native-1"] input')
+            ][index])""")
+        page.get_by_text("Clear native todos", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('#native-keyed-list').children.length === 0"
+        )
         assert not errors, errors
         browser.close()
 finally:
     server.shutdown()
     server.server_close()
 
-print("compiled projections composed with keyed removal and retained row identity")
+print("native keyed lists and compiled projections retained DOM identity")

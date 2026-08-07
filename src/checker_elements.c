@@ -734,6 +734,17 @@ Type *check_element(Checker *checker, Expr *expr) {
                 check_projection_property(checker, property);
                 continue;
             }
+            if (element_property_names_equal(property->name, "key")) {
+                Type *key_type = check_expr(checker, property->value);
+                if (!(key_type->kind == TYPE_STRING ||
+                      is_signed_integer(key_type) ||
+                      is_unsigned_integer(key_type)))
+                    lang_diag(checker->diagnostics, property->value->span,
+                              "keyed HTML identity must be a string or integer, found `%s`",
+                              type_display_name(checker, key_type));
+                property->keyed_identity = true;
+                continue;
+            }
             FieldDecl *declared = NULL;
             for (size_t p = 0U;
                  p < descriptor->as.element.property_count; ++p)

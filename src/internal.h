@@ -254,6 +254,7 @@ typedef struct ElementProperty {
     LangSpan span;
     bool borrow_interpolated_string;
     bool css_custom_property;
+    bool keyed_identity; /* Compiler-only retained collection identity. */
     const char *event_binding; /* Generated `event|handler|result|type:name...`. */
     const char *projection_binding; /* Experimental generated `kind:field`. */
 } ElementProperty;

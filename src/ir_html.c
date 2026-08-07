@@ -576,11 +576,13 @@ IrValueId ir_lower_element_with_parent(
             }
             continue;
         }
+        const char *property_name = property->keyed_identity
+            ? "data-aster-key" : property->name;
         if (property->value->kind ==
             EXPR_INTERPOLATION) {
             lower_interpolation_to_element(
                 builder, property->value, local,
-                property->name);
+                property_name);
             continue;
         }
         IrValueId value = ir_lower_expr(builder, property->value);
@@ -589,8 +591,8 @@ IrValueId ir_lower_element_with_parent(
             IR_INVALID_ID, &value, 1U, property->span);
         if (set != NULL) {
             set->index = local;
-            set->symbol = property->name;
-            set->symbol_length = strlen(property->name);
+            set->symbol = property_name;
+            set->symbol_length = strlen(property_name);
         }
     }
     bool custom_property_started = false;
