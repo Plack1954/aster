@@ -22,6 +22,48 @@ extern unsigned char __heap_base;
 static uintptr_t aster_wasm_heap_cursor;
 static aster_wasm_block *aster_wasm_free_list;
 
+static void aster_wasm_free_block(aster_wasm_block *block) {
+    aster_wasm_block **link = &aster_wasm_free_list;
+    aster_wasm_block *previous = NULL;
+    while (*link != NULL && (uintptr_t)*link < (uintptr_t)block) {
+        previous = *link;
+        link = &(*link)->next;
+    }
+    block->next = *link;
+    *link = block;
+    if (block->next != NULL &&
+        (unsigned char *)(block + 1) + block->size ==
+            (unsigned char *)block->next) {
+        block->size += sizeof(*block) + block->next->size;
+        block->next = block->next->next;
+    }
+    if (previous != NULL &&
+        (unsigned char *)(previous + 1) + previous->size ==
+            (unsigned char *)block) {
+        previous->size += sizeof(*block) + block->size;
+        previous->next = block->next;
+        block = previous;
+    }
+    for (;;) {
+        uintptr_t end = (uintptr_t)(block + 1) + block->size;
+        if (end != aster_wasm_heap_cursor) break;
+        aster_wasm_heap_cursor = (uintptr_t)block;
+        aster_wasm_block **remove = &aster_wasm_free_list;
+        while (*remove != NULL && *remove != block)
+            remove = &(*remove)->next;
+        if (*remove == block) *remove = block->next;
+        block = NULL;
+        for (aster_wasm_block *candidate = aster_wasm_free_list;
+             candidate != NULL; candidate = candidate->next)
+            if ((uintptr_t)(candidate + 1) + candidate->size ==
+                aster_wasm_heap_cursor) {
+                block = candidate;
+                break;
+            }
+        if (block == NULL) break;
+    }
+}
+
 static size_t aster_wasm_align(size_t size) {
     const size_t alignment = 8U;
     if (size > SIZE_MAX - (alignment - 1U)) return 0U;
@@ -50,8 +92,8 @@ void *malloc(size_t size) {
                 aster_wasm_block *split = (aster_wasm_block *)(
                     (unsigned char *)(block + 1) + size);
                 split->size = remainder - sizeof(*split);
-                split->next = aster_wasm_free_list;
-                aster_wasm_free_list = split;
+                split->next = NULL;
+                aster_wasm_free_block(split);
                 block->size = size;
             }
             return block + 1;
@@ -76,8 +118,7 @@ void *malloc(size_t size) {
 void free(void *pointer) {
     if (pointer == NULL) return;
     aster_wasm_block *block = (aster_wasm_block *)pointer - 1;
-    block->next = aster_wasm_free_list;
-    aster_wasm_free_list = block;
+    aster_wasm_free_block(block);
 }
 
 void *calloc(size_t count, size_t size) {

@@ -2,6 +2,39 @@ namespace BrowserCompare;
 
 using Aster.Html;
 
+private extern Task Task.Delay(int milliseconds);
+
+private class AsyncProbe
+{
+    private string status;
+
+    public AsyncProbe()
+    {
+        this.status = "idle";
+    }
+
+    private async Task CompleteSlow()
+    {
+        await Task.Delay(25);
+        this.status = "slow";
+    }
+
+    private async Task CompleteFast()
+    {
+        await Task.Delay(1);
+        this.status = "fast";
+    }
+
+    public Html Render()
+    {
+        return <section id="async-probe">
+            <output name="asyncStatus">{this.status}</output>
+            <button type="button" name="asyncSlow" onclick=this.CompleteSlow>Slow async</button>
+            <button type="button" name="asyncFast" onclick=this.CompleteFast>Fast async</button>
+        </section>;
+    }
+}
+
 private struct BenchmarkRow
 {
     string key;
@@ -106,6 +139,7 @@ private class BenchmarkTable
             <button type="button" name="swapAction" aria-controls="row-list" onclick=this.SwapRows>Swap rows</button>
             <button type="button" name="clearAction" aria-controls="row-list" onclick=this.ClearRows>Clear</button>
             <table><tbody id="row-list">{this.Rows()}</tbody></table>
+            <AsyncProbe />
         </main>;
     }
 }

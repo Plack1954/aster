@@ -30,7 +30,7 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 15.1 KB gzip versus 41.9 KB for the compared Vue client after adding inferred
+- 17.5 KB gzip versus 42.2 KB for the compared Vue client after adding inferred
   ranges, safe attribute/style parts, async component lifetime support, keyed
   snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;

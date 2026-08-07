@@ -5,6 +5,13 @@ createApp({
         const rows = ref([]);
         const updated = ref(new Set());
         let nextId = 0;
+        const asyncStatus = ref("idle");
+        let asyncVersion = 0;
+        const completeAsync = async (delay, status) => {
+            const version = ++asyncVersion;
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            if (version === asyncVersion) asyncStatus.value = status;
+        };
         const make = (count) => Array.from(
             {length: count}, () => nextId++
         );
@@ -58,7 +65,19 @@ createApp({
                         onClick: () => remove(id)
                     }, "Delete")])
                 ]))
-            )])
+            )]),
+            h("section", {id: "async-probe"}, [
+                h("output", {name: "asyncStatus"}, asyncStatus.value),
+                h("button", {
+                    id: "async-slow",
+                    onClick: () => completeAsync(25, "slow")
+                }, "Slow async"),
+                h("button", {
+                    id: "async-fast",
+                    onClick: () => completeAsync(1, "fast")
+                }, "Fast async")
+            ])
         ]);
     }
 }).mount("#app");
+globalThis.benchmarkReady = performance.now();

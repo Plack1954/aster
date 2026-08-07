@@ -374,39 +374,36 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 32.7 ms versus Vue's 11.3 ms, updated every tenth
-row in 43.8 ms versus 4.4 ms, swapped two rows in 44.3 ms versus 2.6 ms,
-appended 1,000 rows in 134.6 ms versus 8.0 ms, deleted one row in 116.0 ms
-versus 4.2 ms, and cleared 1,999 rows in 7.7 ms versus 7.4 ms. Aster's benchmark
-client was 15.1 KB gzip versus Vue's 41.9 KB gzip. Migrating the benchmark from
+reached ready state in 17.6 ms versus Vue's 17.8 ms, created 1,000 keyed rows
+in 19.1 ms versus 11.5 ms, updated every tenth row in 33.9 ms versus 4.8 ms,
+swapped two rows in 31.8 ms versus 2.6 ms, appended 1,000 rows in 48.7 ms versus
+7.6 ms, deleted one row in 63.5 ms versus 4.3 ms, and cleared 1,999 rows in
+6.8 ms versus 6.7 ms. Latest async completion measured 6.1 ms versus 1.2 ms.
+After garbage collection, ten iframe mount/unmount cycles retained about
+112.6 KB of Aster JS heap versus 148.4 KB for Vue; active Aster linear memory
+was 7.5 MB. Aster's benchmark client was 17.5 KB gzip versus Vue's 42.2 KB gzip.
+Migrating the benchmark from
 explicit structural results to whole retained class snapshots exposed a serious
 full-list render/planning cost; these measurements are retained as a regression
 baseline rather than presented as competitive update performance. They are
-smoke measurements, not
-universal benchmark claims: Aster was not consistently faster, because Vue won
-bulk create and append.
+smoke measurements, not universal benchmark claims. Vue won every structural
+operation except an effectively tied clear; Aster retained the size and
+mount/unmount heap advantages.
 
-The comparison also gives a hard capability boundary. Aster now handles bulk
-keyed creation, append, sparse replacement, removal, clear, and two-key swap.
-It does not yet provide arbitrary class/style/attribute bindings, sparse update
-while preserving every updated row's browser-owned state, or nested patch
-composition. Vue supports those operations today. The retained model is proven
-for its listed operations, not as a general Vue replacement.
+The detailed protocol, memory data, build latency, environment, and release
+result are recorded in
+[`lime-final-measurement.md`](lime-final-measurement.md).
 
-The comparison found and fixed three concrete problems: context-free parsing
-could not insert table rows, a 1 MB Wasm maximum trapped at 1,000 rows, and
-eager per-row collection initialization made creation take roughly 140 ms.
-Contextual fragment parsing, a growable 16 MB maximum, and lazy collection
-initialization brought creation down to roughly 11 ms without increasing the
-initial Wasm allocation.
+The comparison found and fixed allocator fragmentation in addition to the
+earlier contextual table parsing, Wasm memory limit, and eager collection-state
+problems. Address-sorted free blocks, coalescing, and top-of-heap reuse allow
+repeated create/clear cycles without exhausting the Wasm maximum.
 
-Clear and swap remain small, explicit keyed operations. Selection revealed a
-less elegant boundary: changing classes while persisting the selected key needs
-multiple composed effects, but the browser ABI currently returns one flat
-scalar, aggregate, or operation. Adding a nominal command type for every DOM
-effect would become an ad-hoc command language. Work should stop at that point
-and design composable checked patches or statically compiled bindings instead;
-the current model must not claim arbitrary Vue-style binding support.
+The remaining boundary is full-list work: ordinary class mutations currently
+render and plan the complete keyed collection. Public structural commands and
+projection batches have been removed. Performance work must therefore produce
+compiler-internal sparse deltas while preserving ordinary `List<T>` application
+code and retained browser-owned state.
 
 ## Means-testing applications
 
@@ -436,7 +433,12 @@ focus and selection, and hundreds or thousands of keyed rows.
 
 ### Complete application
 
-A browser-enhanced issue tracker is a useful candidate: filtering, creation,
+The completed server-loaded todo proof is documented in
+[`lime-final-application-proof.md`](lime-final-application-proof.md). It covers
+two instances, keyed mutations, async success/failure/detachment, browser-owned
+input state, nested children, and exact root disposal.
+
+A browser-enhanced issue tracker remains a useful broader candidate: filtering, creation,
 validation, optimistic status changes, navigation, sessions, server fallback,
 and API requests exercise substantially more than an isolated demo.
 
