@@ -100,6 +100,87 @@ private class PersistentTodoList
     }
 }
 
+private class IsolatedCounter
+{
+    private int count;
+    private static int droppedCount;
+
+    public IsolatedCounter()
+    {
+        this.count = 0;
+    }
+
+    ~IsolatedCounter()
+    {
+        droppedCount += 1;
+    }
+
+    public static int Dropped => droppedCount;
+
+    private int Increment(int count)
+    {
+        this.count += 1;
+        return this.count;
+    }
+
+    private int Fail(int count)
+    {
+        this.count += 10;
+        throw new Exception("isolated component failure");
+    }
+
+    public Html Render()
+    {
+        return <section class="isolated-counter">
+            <output name="count">0</output>
+            <button type="button" onclick=this.Increment>
+                Increment isolated counter
+            </button>
+            <button type="button" onclick=this.Fail>
+                Fail isolated counter
+            </button>
+        </section>;
+    }
+}
+
+public int ReadDroppedCounters(int dropCount)
+{
+    return IsolatedCounter.Dropped;
+}
+
+private class FailingConstructorComponent
+{
+    private static int attempts;
+
+    public FailingConstructorComponent()
+    {
+        attempts += 1;
+        throw new Exception("component construction failure");
+    }
+
+    public static int Attempts => attempts;
+
+    private int Touch(int value)
+    {
+        return value + 1;
+    }
+
+    public Html Render()
+    {
+        return <section>
+            <output name="value">0</output>
+            <button type="button" onclick=this.Touch>
+                Construct failing component
+            </button>
+        </section>;
+    }
+}
+
+public int ReadConstructionAttempts(int constructionAttempts)
+{
+    return FailingConstructorComponent.Attempts;
+}
+
 public struct ReactiveCounterPatch
 {
     int value;
@@ -456,6 +537,18 @@ public Html BrowserPage(Html browserLoader)
             >Select second and remove first</button>
         </section>
         <PersistentTodoList />
+        <IsolatedCounter />
+        <IsolatedCounter />
+        <section id="component-drop-probe">
+            <output name="dropCount">0</output>
+            <button type="button" onclick=ReadDroppedCounters>
+                Read dropped counters
+            </button>
+            <output name="constructionAttempts">0</output>
+            <button type="button" onclick=ReadConstructionAttempts>
+                Read construction attempts
+            </button>
+        </section>
         <section id="native-keyed-list-trial">
             <h2>Native keyed list trial</h2>
             <ul id="native-keyed-list">{NativeTodoRows(NativeTodos())}</ul>

@@ -30,7 +30,7 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 10.4 KB gzip versus 41.9 KB for the compared Vue client after adding the
+- 10.6 KB gzip versus 41.9 KB for the compared Vue client after adding the
   experimental batch decoder, keyed snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
@@ -484,7 +484,10 @@ methods mutate the retained Wasm object. JavaScript creates one object per
 compiler-marked DOM region and calls the generated drop ABI when that region is
 removed. Two successive appends produce distinct keys and a later removal sees
 the appended item, proving state persistence rather than deterministic
-reconstruction.
+reconstruction. Two same-class regions additionally prove isolated handles and
+exactly-once destruction. A throwing synchronous handler publishes and clears
+an owned exception result, after which the same instance remains callable and
+is still disposed normally.
 
 This validates persistent Wasm-owned state, keyed structural snapshots, and
 one level of nested transition lowering, not the temporary projection syntax.
@@ -497,7 +500,7 @@ effect collections, true keyed item-local plans, and deeper recursive
 composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 10.4 KB gzip. A future production implementation should
+client from 8.8 KB to 10.6 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 

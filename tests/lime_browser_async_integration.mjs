@@ -153,4 +153,64 @@ try {
     componentDrop(component);
 }
 
-console.log("Lime browser async, projections, and class state verified");
+const counterNew = instance.exports.aster_export_component_IsolatedCounter_new;
+const counterDrop = instance.exports.aster_export_component_IsolatedCounter_drop;
+const counterIncrement = instance.exports.aster_export_IsolatedCounter_Increment;
+const counterFail = instance.exports.aster_export_IsolatedCounter_Fail;
+const exceptionPending = instance.exports.aster_export_exception_pending;
+const exceptionTake = instance.exports.aster_export_exception_take;
+const droppedCounters = instance.exports.aster_export_ReadDroppedCounters;
+if ([counterNew, counterDrop, counterIncrement, counterFail,
+     exceptionPending, exceptionTake, droppedCounters].some(
+    (value) => typeof value !== "function"
+)) throw new Error("class component fault or disposal exports are incomplete");
+const counter = Number(counterNew());
+if (counterIncrement(counter, 0n) !== 1n ||
+    counterIncrement(counter, 1n) !== 2n)
+    throw new Error("class component instance state was not retained");
+counterFail(counter, 2n);
+if (exceptionPending() !== 1)
+    throw new Error("browser handler exception was not published");
+const exception = Number(exceptionTake());
+try {
+    const pointer = Number(stringData(exception));
+    const length = Number(stringLength(exception));
+    const message = new TextDecoder().decode(
+        new Uint8Array(memory.buffer, pointer, length)
+    );
+    if (message !== "isolated component failure")
+        throw new Error(`unexpected component failure: ${message}`);
+} finally {
+    stringDrop(exception);
+}
+if (exceptionPending() !== 0 || counterIncrement(counter, 2n) !== 13n)
+    throw new Error("class component did not survive its handler fault");
+counterDrop(counter);
+if (droppedCounters(0n) !== 1n)
+    throw new Error("class component destructor did not run exactly once");
+
+const failingNew = instance.exports
+    .aster_export_component_FailingConstructorComponent_new;
+const constructionAttempts =
+    instance.exports.aster_export_ReadConstructionAttempts;
+for (let attempt = 1n; attempt <= 2n; ++attempt) {
+    const failedHandle = Number(failingNew());
+    if (failedHandle !== 0 || exceptionPending() !== 1)
+        throw new Error("failed component construction leaked a handle");
+    const failure = Number(exceptionTake());
+    try {
+        const pointer = Number(stringData(failure));
+        const length = Number(stringLength(failure));
+        const message = new TextDecoder().decode(
+            new Uint8Array(memory.buffer, pointer, length)
+        );
+        if (message !== "component construction failure")
+            throw new Error(`unexpected constructor failure: ${message}`);
+    } finally {
+        stringDrop(failure);
+    }
+    if (constructionAttempts(0n) !== attempt)
+        throw new Error("failed component construction was not retried");
+}
+
+console.log("Lime browser async, projections, and class ownership verified");

@@ -43,6 +43,13 @@ function targetValue(source, scope, type, name) {
     return value;
 }
 
+function reportHandlerError(error) {
+    if (typeof globalThis.reportError === "function")
+        globalThis.reportError(error);
+    else
+        queueMicrotask(() => { throw error; });
+}
+
 function eventScope(source, root) {
     return source.closest("[data-aster-component]") ??
         source.closest("form") ?? source.closest("[id]") ?? root;
@@ -75,7 +82,7 @@ function stateValue(source, scope, state, type, name) {
     return value;
 }
 
-function componentInstance(scope, owner, exports) {
+function componentInstance(scope, owner, exports, memory) {
     let components = activeComponents.get(scope);
     if (components === undefined) {
         components = new Map();
@@ -88,9 +95,13 @@ function componentInstance(scope, owner, exports) {
         if (typeof create !== "function" || typeof drop !== "function")
             throw new Error(`Aster component ABI is missing: ${owner}`);
         const handle = Number(create());
+        if (exports.aster_export_exception_pending() !== 0) {
+            const message = takePendingException(exports, memory);
+            throw new Error(message);
+        }
         if (handle === 0)
             throw new Error(`Aster component construction failed: ${owner}`);
-        component = {handle, drop};
+        component = {handle, drop, exports, memory};
         components.set(owner, component);
     }
     return component.handle;
@@ -99,7 +110,14 @@ function componentInstance(scope, owner, exports) {
 function dropDisconnectedComponents() {
     for (const [scope, components] of activeComponents) {
         if (scope.isConnected) continue;
-        for (const {handle, drop} of components.values()) drop(handle);
+        for (const component of components.values()) {
+            const {handle, drop, exports, memory} = component;
+            drop(handle);
+            if (exports.aster_export_exception_pending() !== 0)
+                reportHandlerError(new Error(
+                    takePendingException(exports, memory)
+                ));
+        }
         activeComponents.delete(scope);
         islandStates.delete(scope);
     }
@@ -110,7 +128,7 @@ function marshalArguments(source, scope, state, parameters, exports, memory) {
     const allocations = [];
     for (const [type, name] of parameters) {
         if (type === "x") {
-            args.push(componentInstance(scope, name, exports));
+            args.push(componentInstance(scope, name, exports, memory));
             continue;
         }
         const value = stateValue(source, scope, state, type, name);
@@ -126,6 +144,11 @@ function marshalArguments(source, scope, state, parameters, exports, memory) {
         allocations.push(pointer);
     }
     return {args, allocations};
+}
+
+function takePendingException(exports, memory) {
+    const handle = Number(exports.aster_export_exception_take());
+    return decodeOwnedString(handle, exports, memory);
 }
 
 function decodeOwnedString(handle, exports, memory) {
@@ -181,9 +204,10 @@ function updateBooleanState(source, scope, name, value) {
 function commitScalarState(
     source, scope, state, resultType, parameters, result
 ) {
-    if (parameters.length === 0 || parameters[0][0] !== resultType)
+    const parameter = parameters.find(([type]) => type !== "x");
+    if (parameter === undefined || parameter[0] !== resultType)
         return false;
-    const [, name] = parameters[0];
+    const [, name] = parameter;
     const value = resultType === "b" ? (result !== 0 ? 1 : 0) : result;
     state.set(stateKey(resultType, name), value);
     if (resultType === "b")
@@ -507,17 +531,19 @@ async function awaitBrowserTask(
 }
 
 function dropUnusedResult(result, resultType, aggregateDrop, exports) {
+    const handle = Number(result);
+    if (handle === 0) return;
     if (resultType === "o") {
-        exports.aster_export_string_drop(Number(result));
+        exports.aster_export_string_drop(handle);
     } else if (resultType === "h") {
         const rendered = Number(
-            exports.aster_export_html_render(Number(result))
+            exports.aster_export_html_render(handle)
         );
         exports.aster_export_string_drop(rendered);
     } else if (["a", "r", "c", "w"].includes(resultType)) {
-        aggregateDrop(Number(result));
+        aggregateDrop(handle);
     } else if (resultType === "p") {
-        exports.aster_export_projection_batch_drop(Number(result));
+        exports.aster_export_projection_batch_drop(handle);
     }
 }
 
@@ -624,15 +650,31 @@ export async function hydrateAster({wasmUrl, root = document}) {
             const form = source.closest("form");
             const scope = eventScope(source, root);
             const state = stateFor(scope);
-            const marshalled = marshalArguments(
-                source, scope, state, parameters, instance.exports, memory
-            );
+            let marshalled;
             let result;
             try {
-                result = handler(...marshalled.args);
-            } finally {
-                for (const pointer of marshalled.allocations)
-                    instance.exports.aster_export_memory_free(pointer);
+                marshalled = marshalArguments(
+                    source, scope, state, parameters,
+                    instance.exports, memory
+                );
+                try {
+                    result = handler(...marshalled.args);
+                } finally {
+                    for (const pointer of marshalled.allocations)
+                        instance.exports.aster_export_memory_free(pointer);
+                }
+                if (instance.exports.aster_export_exception_pending() !== 0) {
+                    const message = takePendingException(
+                        instance.exports, memory
+                    );
+                    dropUnusedResult(
+                        result, resultType, aggregateDrop, instance.exports
+                    );
+                    throw new Error(message);
+                }
+            } catch (error) {
+                reportHandlerError(error);
+                return;
             }
             // Synchronous forms retain ordinary submission when the Aster
             // transition traps before returning. An asynchronous transition
@@ -674,10 +716,14 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 );
                 if (eventName === "submit" && form !== null) {
                     updateSubmission(form, message);
-                } else if (parameters.length !== 0 &&
-                           parameters[0][0] === "s") {
-                    const [, name] = parameters[0];
-                    updateText(scope, name, message);
+                } else {
+                    const parameter = parameters.find(
+                        ([type]) => type !== "x"
+                    );
+                    if (parameter !== undefined && parameter[0] === "s") {
+                        const [, name] = parameter;
+                        updateText(scope, name, message);
+                    }
                 }
             } else if (resultType === "h") {
                 const stringHandle = Number(

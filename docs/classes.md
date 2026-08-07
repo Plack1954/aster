@@ -78,6 +78,18 @@ calls, and drops it when the region disconnects from the DOM. Successive events
 therefore observe the same owned fields. A Chrome trial appends two keyed rows,
 removes one of the newly appended rows, and preserves a browser-edited input;
 the second append proves that `nextId` and the list survived the first event.
+A separate trial renders two instances of one counter class, mutates them to
+independent values, removes each region, and observes a static destructor count
+of exactly one per retained object.
+
+Synchronous exceptions cross an explicit owned exception ABI rather than
+leaving the generated C exception slot pending. The browser takes and frees the
+message, reports the error to the host, and retains the component object. The
+trial mutates an instance, throws, then successfully invokes it again before
+removal; its destructor still runs exactly once. A constructor-fault trial
+returns no handle, clears the owned exception, and retries construction on the
+next event rather than caching partial state. Input allocations and unused
+owned results follow the same event cleanup path.
 
 The initial browser slice requires a zero-argument constructor so SSR and Wasm
 can initialize the same deterministic state independently. Instance handlers

@@ -54,6 +54,7 @@ bool c_backend_web_exports_use_tasks(
 bool c_backend_web_exports_use_projection_batches(
     const IrModule *ir, size_t entry);
 void c_backend_emit_web_string_abi(FILE *output);
+void c_backend_emit_web_exception_abi(FILE *output);
 bool c_backend_web_exports_use_html_result(
     const IrModule *ir, size_t entry);
 void c_backend_emit_web_html_abi(FILE *output);

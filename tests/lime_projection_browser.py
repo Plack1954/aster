@@ -59,6 +59,34 @@ directory = Path(sys.argv[1]).resolve()
   <button type="button" aria-controls="native-keyed-list"
       data-aster-event="click|ClearNativeTodos|h">Clear native todos</button>
 </section>
+<section class="isolated-counter" data-aster-component="IsolatedCounter">
+  <output name="count">0</output>
+  <button type="button"
+      data-aster-event="click|IsolatedCounter_Increment|l|x:IsolatedCounter|l:count">Increment isolated counter</button>
+  <button type="button"
+      data-aster-event="click|IsolatedCounter_Fail|l|x:IsolatedCounter|l:count">Fail isolated counter</button>
+</section>
+<section class="isolated-counter" data-aster-component="IsolatedCounter">
+  <output name="count">0</output>
+  <button type="button"
+      data-aster-event="click|IsolatedCounter_Increment|l|x:IsolatedCounter|l:count">Increment isolated counter</button>
+  <button type="button"
+      data-aster-event="click|IsolatedCounter_Fail|l|x:IsolatedCounter|l:count">Fail isolated counter</button>
+</section>
+<section id="failing-constructor-component"
+    data-aster-component="FailingConstructorComponent">
+  <output name="value">0</output>
+  <button type="button"
+      data-aster-event="click|FailingConstructorComponent_Touch|l|x:FailingConstructorComponent|l:value">Construct failing component</button>
+</section>
+<section id="component-drop-probe">
+  <output name="dropCount">0</output>
+  <button type="button"
+      data-aster-event="click|ReadDroppedCounters|l|l:dropCount">Read dropped counters</button>
+  <output name="constructionAttempts">0</output>
+  <button type="button"
+      data-aster-event="click|ReadConstructionAttempts|l|l:constructionAttempts">Read construction attempts</button>
+</section>
 <section id="persistent-todo-component" data-aster-component="PersistentTodoList">
   <ul id="persistent-todo-list">
     <li data-aster-key="persistent-1">
@@ -172,6 +200,69 @@ try:
             "document.querySelector('#native-keyed-list').children.length === 0"
         )
 
+        failing_constructor = page.get_by_text(
+            "Construct failing component", exact=True
+        )
+        for attempt in range(2):
+            failing_constructor.click()
+            page.wait_for_timeout(50)
+            assert len(errors) == 1 and (
+                "component construction failure" in errors[0]
+            )
+            errors.clear()
+        page.get_by_text("Read construction attempts", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('[name=\"constructionAttempts\"]')"
+            ".textContent === '2'"
+        )
+
+        counters = page.locator(".isolated-counter")
+        first_counter = counters.nth(0)
+        second_counter = counters.nth(1)
+        first_counter.get_by_text(
+            "Increment isolated counter", exact=True
+        ).click()
+        first_counter.get_by_text(
+            "Increment isolated counter", exact=True
+        ).click()
+        second_counter.get_by_text(
+            "Increment isolated counter", exact=True
+        ).click()
+        assert first_counter.locator('[name="count"]').text_content() == "2"
+        assert second_counter.locator('[name="count"]').text_content() == "1"
+        first_counter.get_by_text(
+            "Fail isolated counter", exact=True
+        ).click()
+        page.wait_for_timeout(50)
+        assert len(errors) == 1 and "isolated component failure" in errors[0]
+        errors.clear()
+        first_counter.get_by_text(
+            "Increment isolated counter", exact=True
+        ).click()
+        assert first_counter.locator('[name="count"]').text_content() == "13"
+
+        first_counter.evaluate("component => component.remove()")
+        page.wait_for_timeout(0)
+        drop_probe = page.get_by_text("Read dropped counters", exact=True)
+        drop_probe.click()
+        page.wait_for_function(
+            "document.querySelector('[name=\"dropCount\"]').textContent === '1'"
+        )
+        assert counters.count() == 1
+        remaining_counter = counters.nth(0)
+        remaining_counter.get_by_text(
+            "Increment isolated counter", exact=True
+        ).click()
+        assert remaining_counter.locator(
+            '[name="count"]'
+        ).text_content() == "2"
+        remaining_counter.evaluate("component => component.remove()")
+        page.wait_for_timeout(0)
+        drop_probe.click()
+        page.wait_for_function(
+            "document.querySelector('[name=\"dropCount\"]').textContent === '2'"
+        )
+
         persistent = page.locator("#persistent-todo-list")
         persistent_input = persistent.locator(
             '[data-aster-key="persistent-1"] input'
@@ -207,4 +298,4 @@ finally:
     server.shutdown()
     server.server_close()
 
-print("persistent class components and keyed lists retained DOM identity")
+print("class isolation, fault recovery, disposal, and keyed DOM verified")

@@ -236,12 +236,15 @@ browser-edited input survive. No tree VDOM or signal graph is involved.
 
 Interactive native-HTML class components now provide the first Wasm-owned
 region state. A zero-argument constructor initializes ordinary fields, bound
-methods mutate the same object across events, and a generated component ABI
-drops it when its compiler-marked DOM region disconnects. Two successive appends
-and removal of an appended item prove persistence. Constructor-state transfer,
-automatic rerendering, async methods, and compiled item-local updates remain
-unsupported; the explicit keyed command can already remain backend
-infrastructure rather than normal application syntax.
+methods mutate the same object across events, and a generated component ABI drops it when its compiler-marked DOM region
+disconnects. Two successive appends and removal of an appended item prove
+persistence. Two instances of the same class also retain isolated counters;
+removing each region produces exactly one destructor call while the remaining
+instance stays usable. A synchronous handler fault is transferred through an
+owned exception ABI, reported by the host, and cleared without discarding the
+instance. Constructor-state transfer, automatic rerendering, async methods, and
+compiled item-local updates remain unsupported; the explicit keyed command can
+already remain backend infrastructure rather than normal application syntax.
 
 ### Virtual DOM control
 
@@ -330,11 +333,11 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 11.1 ms versus Vue's 8.7 ms, updated every tenth
-row in 2.4 ms versus 4.5 ms, swapped two rows in 0.4 ms versus 2.6 ms, appended
-1,000 rows in 13.9 ms versus 8.0 ms, deleted one row in 0.3 ms versus 4.3 ms,
-and cleared 1,999 rows in 4.3 ms versus 6.7 ms. Aster's benchmark client was
-10.4 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
+created 1,000 keyed rows in 11.1 ms versus Vue's 10.8 ms, updated every tenth
+row in 2.3 ms versus 4.2 ms, swapped two rows in 0.4 ms versus 2.8 ms, appended
+1,000 rows in 15.1 ms versus 8.4 ms, deleted one row in 0.4 ms versus 4.2 ms,
+and cleared 1,999 rows in 4.9 ms versus 7.1 ms. Aster's benchmark client was
+10.6 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
 universal benchmark claims: Aster was not consistently faster, because Vue won
 bulk create and append.
 

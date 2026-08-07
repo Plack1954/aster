@@ -1278,9 +1278,20 @@ static bool c_emit_module(const IrModule *ir,
     for (size_t function = 0U;
          function < ir->function_count; ++function)
         if (c_backend_function_is_entry_module_export(
-                ir, function, entry))
+                ir, function, entry)) {
             c_backend_mark_function(
                 &emitter, (IrFunctionId)function);
+            const char *owner = ir->functions[function].owner_type;
+            if (owner == NULL) continue;
+            for (size_t candidate = 0U;
+                 candidate < ir->function_count; ++candidate)
+                if (ir->functions[candidate].is_constructor &&
+                    ir->functions[candidate].owner_type != NULL &&
+                    strcmp(ir->functions[candidate].owner_type, owner) == 0 &&
+                    ir->functions[candidate].parameter_count == 0U)
+                    c_backend_mark_function(
+                        &emitter, (IrFunctionId)candidate);
+        }
     bool needs_async = false;
     for (size_t f = 0U; f < ir->function_count; ++f)
         if (emitter.reachable_functions[f] &&
@@ -1436,8 +1447,18 @@ static bool c_emit_module(const IrModule *ir,
             c_backend_emit_public_aggregate_accessors(&emitter, function);
         }
     c_backend_emit_web_component_abis(&emitter, entry);
-    if (c_backend_web_exports_use_strings(ir, entry))
+    bool has_web_exports = false;
+    for (size_t function = 0U;
+         function < ir->function_count; ++function)
+        if (c_backend_function_is_entry_module_export(
+                ir, function, entry)) {
+            has_web_exports = true;
+            break;
+        }
+    if (has_web_exports) {
+        c_backend_emit_web_exception_abi(output);
         c_backend_emit_web_string_abi(output);
+    }
     if (c_backend_web_exports_use_tasks(ir, entry))
         c_backend_emit_web_task_abi(output);
     if (c_backend_web_exports_use_html_result(ir, entry))

@@ -118,6 +118,14 @@ bool c_backend_function_needs_normal_variant(
     if (ir->functions[function_index].is_entry) return true;
     if (ir->functions[function_index].is_web_export)
         return true;
+    if (ir->functions[function_index].is_constructor &&
+        ir->functions[function_index].owner_type != NULL)
+        for (size_t method = 0U; method < ir->function_count; ++method)
+            if (ir->functions[method].is_web_export &&
+                ir->functions[method].owner_type != NULL &&
+                strcmp(ir->functions[method].owner_type,
+                       ir->functions[function_index].owner_type) == 0)
+                return true;
     for (size_t t = 0U; t < ir->type_count; ++t)
         if (emitter->used_types[t] &&
             ir->types[t].destructor_function == function_index)
@@ -733,6 +741,28 @@ bool c_backend_web_exports_use_tasks(
             ir->functions[function].is_async)
             return true;
     return false;
+}
+
+void c_backend_emit_web_exception_abi(FILE *output) {
+    fputs(
+        "int aster_export_exception_pending(void);\n"
+        "aster_string *aster_export_exception_take(void);\n"
+        "int aster_export_exception_pending(void) {\n"
+        "    return aster_exception_pending ? 1 : 0;\n"
+        "}\n"
+        "aster_string *aster_export_exception_take(void) {\n"
+        "    if (!aster_exception_pending) return NULL;\n"
+        "    aster_string *message = aster_exception_message;\n"
+        "    aster_exception_message = NULL;\n"
+        "    aster_exception_type = NULL;\n"
+        "    aster_exception_pending = false;\n"
+        "    if (message == NULL)\n"
+        "        message = aster_string_from((aster_str){\n"
+        "            (const unsigned char *)\"browser handler failed\", 22U\n"
+        "        });\n"
+        "    return message;\n"
+        "}\n\n",
+        output);
 }
 
 void c_backend_emit_web_string_abi(FILE *output) {
