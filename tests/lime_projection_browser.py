@@ -183,8 +183,9 @@ projection_html = """<!doctype html>
       data-aster-event="click|PersistentTodoList_ClearTodos|v|x:PersistentTodoList">Clear persistent todos</button>
 </section>
 <script type="module">
-import {hydrateAster} from "./aster.js";
+import {disposeAsterRoot, hydrateAster} from "./aster.js";
 await hydrateAster({wasmUrl: "./browser_http_server.wasm"});
+window.disposeAsterRoot = disposeAsterRoot;
 window.asterReady = true;
 </script>
 """
@@ -562,6 +563,16 @@ try:
             "component => component.remove()"
         )
         page.wait_for_timeout(0)
+        page.evaluate("window.disposeAsterRoot(document)")
+        page.wait_for_timeout(0)
+        page.get_by_text("Read async component drops", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('[name=\"asyncDropCount\"]')"
+            ".textContent === '2'"
+        )
+        page.evaluate("window.disposeAsterRoot(document)")
+        page.get_by_text("Read async component drops", exact=True).click()
+        assert page.locator('[name="asyncDropCount"]').text_content() == "2"
         assert not errors, errors
         browser.close()
 finally:

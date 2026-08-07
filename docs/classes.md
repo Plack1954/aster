@@ -130,7 +130,10 @@ until all tasks have settled and their results have been dropped. A successful
 `Task`/`void` completion follows the same automatic render rule as a synchronous
 `void` handler; a fault reports through the host and preserves the previous DOM.
 The browser runtime does not currently cancel host work, but detached work is
-safely drained without a stale DOM write.
+safely drained without a stale DOM write. `disposeAsterRoot(root)` disconnects
+the root observer, invalidates every retained instance owned by that root, and
+runs each destructor immediately or after its final pending lease. Repeated root
+teardown is idempotent.
 
 Inferred parts have explicit ownership. Text ranges, `class`, `disabled`,
 `hidden`, `title`, safe ordinary metadata attributes (`aria-*`, non-framework

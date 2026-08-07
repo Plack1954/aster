@@ -3,6 +3,7 @@ const decoder = new TextDecoder();
 const islandStates = new WeakMap();
 const hydratedSources = new WeakSet();
 const activeComponents = new Map();
+const hydrationRoots = new Map();
 
 function targetsFor(scope, name) {
     return scope.querySelectorAll(`[name="${CSS.escape(name)}"]`);
@@ -264,16 +265,20 @@ function componentInstance(scope, owner, exports, memory) {
     return component;
 }
 
+function detachComponentScope(scope, components) {
+    for (const component of components.values()) {
+        component.disconnected = true;
+        component.transitionVersion += 1;
+        if (component.pending === 0) disposeComponent(component);
+    }
+    activeComponents.delete(scope);
+    islandStates.delete(scope);
+}
+
 function dropDisconnectedComponents() {
     for (const [scope, components] of activeComponents) {
         if (scope.isConnected) continue;
-        for (const component of components.values()) {
-            component.disconnected = true;
-            component.transitionVersion += 1;
-            if (component.pending === 0) disposeComponent(component);
-        }
-        activeComponents.delete(scope);
-        islandStates.delete(scope);
+        detachComponentScope(scope, components);
     }
 }
 
@@ -935,7 +940,23 @@ function updateSubmission(form, message) {
     if (error !== null) error.hidden = accepted;
 }
 
+export function disposeAsterRoot(root = document) {
+    const hydration = hydrationRoots.get(root);
+    if (hydration !== undefined) {
+        hydration.observer?.disconnect();
+        hydrationRoots.delete(root);
+    }
+    for (const [scope, components] of [...activeComponents]) {
+        const owned = root instanceof Document
+            ? root.documentElement?.contains(scope) === true
+            : scope === root || root.contains(scope);
+        if (owned) detachComponentScope(scope, components);
+    }
+}
+
 export async function hydrateAster({wasmUrl, root = document}) {
+    if (hydrationRoots.has(root))
+        throw new Error("Aster root is already hydrated");
     let memory;
     const imports = {
         aster: {
@@ -1242,6 +1263,9 @@ export async function hydrateAster({wasmUrl, root = document}) {
             dropDisconnectedComponents
         );
         componentObserver.observe(observedRoot, {childList: true, subtree: true});
+        hydrationRoots.set(root, {observer: componentObserver});
+    } else {
+        hydrationRoots.set(root, {observer: null});
     }
     hydrateWithin(root);
     return instance;
