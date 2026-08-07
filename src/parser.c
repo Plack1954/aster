@@ -1856,6 +1856,7 @@ static Decl *parse_struct_decl(
         if (is_interface && member_private)
             lang_diag(parser->diagnostics, member_start.span,
                       "interface members are public");
+        bool member_async = parser_accept(parser, TOK_ASYNC);
         bool member_static = parser_accept(parser, TOK_STATIC);
         bool member_abstract = parser_accept(parser, TOK_ABSTRACT);
         member_abstract = member_abstract || is_interface;
@@ -1880,7 +1881,7 @@ static Decl *parse_struct_decl(
                           "interfaces cannot declare destructors");
             if (member_visibility || member_static || member_readonly ||
                 member_abstract || member_virtual || member_override ||
-                member_sealed)
+                member_sealed || member_async)
                 lang_diag(parser->diagnostics, member_start.span,
                           "class destructors do not declare modifiers");
             if (strcmp(member->as.function.params[0].type_name,
@@ -1921,6 +1922,9 @@ static Decl *parse_struct_decl(
                 if (member_static)
                     lang_diag(parser->diagnostics, member_start.span,
                               "constructors cannot be static");
+                if (member_async)
+                    lang_diag(parser->diagnostics, member_start.span,
+                              "constructors cannot be async");
                 if (is_interface)
                     lang_diag(parser->diagnostics, member_start.span,
                               "interfaces cannot declare constructors");
@@ -1945,9 +1949,13 @@ static Decl *parse_struct_decl(
                     member_public,
                     member_visibility || is_class || is_interface,
                     is_class || is_interface);
+                member->as.function.is_async = member_async;
                 parser_array_push(&members, &member);
                 continue;
             }
+            if (member_async)
+                lang_diag(parser->diagnostics, member_start.span,
+                          "async member must be a method");
             if (parser_accept(parser, TOK_FAT_ARROW)) {
                 Expr *value = parser_parse_expression(parser);
                 Token end = parser_expect(

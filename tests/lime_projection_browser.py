@@ -107,6 +107,20 @@ projection_html = """<!doctype html>
         data-aster-event="click|NestedCounter_Increment|l|x:NestedCounter|l:count">Increment nested counter</button>
   </aside>
 </section>
+<section class="async-todo-component" data-aster-component="AsyncTodoComponent"
+    data-aster-component-param-0="s" data-aster-component-arg-0="idle one">
+  <output name="asyncStatus" data-aster-part-t="{asyncStatus}">Status: idle one</output>
+  <button type="button" data-aster-event="click|AsyncTodoComponent_SaveSlow|V|x:AsyncTodoComponent">Save slowly</button>
+  <button type="button" data-aster-event="click|AsyncTodoComponent_SaveFast|V|x:AsyncTodoComponent">Save quickly</button>
+  <button type="button" data-aster-event="click|AsyncTodoComponent_FailSave|V|x:AsyncTodoComponent">Fail save</button>
+</section>
+<section class="async-todo-component" data-aster-component="AsyncTodoComponent"
+    data-aster-component-param-0="s" data-aster-component-arg-0="idle two">
+  <output name="asyncStatus" data-aster-part-t="{asyncStatus}">Status: idle two</output>
+  <button type="button" data-aster-event="click|AsyncTodoComponent_SaveSlow|V|x:AsyncTodoComponent">Save slowly</button>
+  <button type="button" data-aster-event="click|AsyncTodoComponent_SaveFast|V|x:AsyncTodoComponent">Save quickly</button>
+  <button type="button" data-aster-event="click|AsyncTodoComponent_FailSave|V|x:AsyncTodoComponent">Fail save</button>
+</section>
 <section id="failing-constructor-component"
     data-aster-component="FailingConstructorComponent">
   <output name="value">0</output>
@@ -123,6 +137,9 @@ projection_html = """<!doctype html>
   <output name="constructionAttempts">0</output>
   <button type="button"
       data-aster-event="click|ReadConstructionAttempts|l|l:constructionAttempts">Read construction attempts</button>
+  <output name="asyncDropCount">0</output>
+  <button type="button"
+      data-aster-event="click|ReadAsyncComponentDrops|l|l:asyncDropCount">Read async component drops</button>
 </section>
 <section id="persistent-todo-component" data-aster-component="PersistentTodoList"
     data-aster-component-list-state="k:{persistentKey},s:{persistentTitle},s:{persistentClass},b:{persistentDisabled},b:{persistentHidden},s:{persistentTooltip}">
@@ -177,6 +194,9 @@ projection_html = projection_html.replace(
 )
 projection_html = projection_html.replace(
     "{seededCount}", projection_part("SeededCounter", 3)
+)
+projection_html = projection_html.replace(
+    "{asyncStatus}", projection_part("AsyncTodoComponent", 0)
 )
 for field_index, field_name in (
     (0, "persistentKey"),
@@ -324,6 +344,37 @@ try:
         assert seeded.nth(0).locator(
             ':scope > [name="count"]'
         ).text_content() == "44"
+
+        async_components = page.locator(".async-todo-component")
+        assert async_components.count() == 2
+        first_async = async_components.nth(0)
+        second_async = async_components.nth(1)
+        first_async.get_by_text("Save slowly", exact=True).click()
+        first_async.get_by_text("Save quickly", exact=True).click()
+        page.wait_for_function("""document.querySelector(
+            '.async-todo-component [name="asyncStatus"]'
+        ).textContent === 'Status: fast save'""")
+        page.wait_for_timeout(50)
+        assert first_async.locator(
+            '[name="asyncStatus"]'
+        ).text_content() == "Status: fast save"
+        second_async.get_by_text("Fail save", exact=True).click()
+        page.wait_for_timeout(20)
+        assert len(errors) == 1 and "async component save failed" in errors[0]
+        errors.clear()
+        second_async.get_by_text("Save slowly", exact=True).click()
+        second_async.evaluate("component => component.remove()")
+        page.wait_for_timeout(60)
+        page.get_by_text("Read async component drops", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('[name=\"asyncDropCount\"]')"
+            ".textContent === '1'"
+        )
+        assert async_components.count() == 1
+        assert first_async.locator(
+            '[name="asyncStatus"]'
+        ).text_content() == "Status: fast save"
+        assert errors == []
 
         failing_constructor = page.get_by_text(
             "Construct failing component", exact=True
@@ -478,4 +529,4 @@ finally:
     server.shutdown()
     server.server_close()
 
-print("SSR list state, nested ownership, and component renders verified")
+print("async component lifetime, SSR state, and nested ownership verified")

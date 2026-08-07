@@ -361,6 +361,57 @@ public struct RowSelectionProjectionTransition
 
 private extern Task Task.Delay(int milliseconds);
 
+private class AsyncTodoComponent
+{
+    private string status;
+    private static int dropped;
+
+    public AsyncTodoComponent(string status)
+    {
+        this.status = status;
+    }
+
+    ~AsyncTodoComponent()
+    {
+        dropped += 1;
+    }
+
+    public static int Dropped => dropped;
+
+    private async Task SaveSlow()
+    {
+        await Task.Delay(30);
+        this.status = "slow save";
+    }
+
+    private async Task SaveFast()
+    {
+        await Task.Delay(1);
+        this.status = "fast save";
+    }
+
+    private async Task FailSave()
+    {
+        await Task.Delay(1);
+        throw new Exception("async component save failed");
+    }
+
+    public Html Render()
+    {
+        return <section class="async-todo-component">
+            <output name="asyncStatus">Status: {this.status}</output>
+            <button type="button" onclick=this.SaveSlow>Save slowly</button>
+            <button type="button" onclick=this.SaveFast>Save quickly</button>
+            <button type="button" onclick=this.FailSave>Fail save</button>
+        </section>;
+    }
+}
+
+public int ReadAsyncComponentDrops(int asyncDropCount)
+{
+    return AsyncTodoComponent.Dropped;
+}
+
 public int Increment(int count)
 {
     return count + 1;
@@ -680,6 +731,8 @@ public Html BrowserPage(Html browserLoader)
         <IsolatedCounter />
         <SeededCounter label="Alpha" initial=7 enabled=true />
         <SeededCounter label="Beta" initial=40 enabled=false />
+        <AsyncTodoComponent status="idle one" />
+        <AsyncTodoComponent status="idle two" />
         <section id="component-drop-probe">
             <output name="dropCount">0</output>
             <button type="button" onclick=ReadDroppedCounters>
@@ -692,6 +745,10 @@ public Html BrowserPage(Html browserLoader)
             <output name="constructionAttempts">0</output>
             <button type="button" onclick=ReadConstructionAttempts>
                 Read construction attempts
+            </button>
+            <output name="asyncDropCount">0</output>
+            <button type="button" onclick=ReadAsyncComponentDrops>
+                Read async component drops
             </button>
         </section>
         <section id="native-keyed-list-trial">

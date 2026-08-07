@@ -264,9 +264,13 @@ fixture data.
 
 A `void` handler without `aria-controls` rerenders inferred scalar parts across
 the component root while excluding nested component and keyed-item ownership
-boundaries. Structural and conditional whole-root changes, nested state structs,
-multiple list fields, async methods, text mixed with nested elements, and
-broader item attributes remain unsupported; explicit keyed commands can remain
+boundaries. Async instance handlers use component-wide transition generations
+and pending-task leases: stale results are dropped, disconnected instances
+cannot render, and destruction is deferred until every task is drained. Task
+faults preserve the last committed DOM and do not poison sibling instances.
+Structural and conditional whole-root changes, nested state structs, multiple
+list fields, text mixed with nested elements, and broader item attributes remain
+unsupported; explicit keyed commands can remain
 backend infrastructure rather than normal application syntax.
 
 ### Virtual DOM control

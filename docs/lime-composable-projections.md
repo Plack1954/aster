@@ -517,14 +517,15 @@ item-local compiled updates, and one level of experimental nested transition
 lowering. Current limits are intentional: inferred keyed parts currently cover
 text-only mixed static/dynamic children plus `class`, `disabled`, `hidden`, and
 `title`; interactive constructor transfer is limited to Boolean, integer, and
-string parameters stored in matching fields; class handlers are synchronous;
-and the older region-wide `ProjectionState`/`ProjectionTransition` prototype
+string parameters stored in matching fields; async class handlers use retained
+component leases and component-wide stale-result generations; and the older
+region-wide `ProjectionState`/`ProjectionTransition` prototype
 remains experimental. SSR can now rebuild the first `List<T>` field from keyed
 HTML when `T` is a flat Boolean/integer/string struct, and uncontrolled `void`
 handlers can refresh scalar parts across their component root without crossing
 nested ownership boundaries. Nested state structs, multiple list fields,
-structural/conditional whole-root changes, async instance methods, text mixed
-with nested elements, broader attributes/styles, conditional item-local
+structural/conditional whole-root changes, text mixed with nested elements,
+broader attributes/styles, conditional item-local
 structure, and deeper recursive composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison

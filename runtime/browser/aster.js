@@ -194,6 +194,29 @@ function restoreComponentListState(scope, owner, handle, exports, memory) {
     }
 }
 
+function disposeComponent(component) {
+    if (component.disposed) return;
+    component.disposed = true;
+    const {handle, drop, exports, memory} = component;
+    drop(handle);
+    if (exports.aster_export_exception_pending() !== 0)
+        reportHandlerError(new Error(takePendingException(exports, memory)));
+}
+
+function retainComponent(component) {
+    if (component.disposed || component.disconnected)
+        throw new Error("Aster component is no longer active");
+    component.pending += 1;
+}
+
+function releaseComponent(component) {
+    if (component.pending === 0)
+        throw new Error("Aster component pending-task lease underflow");
+    component.pending -= 1;
+    if (component.pending === 0 && component.disconnected)
+        disposeComponent(component);
+}
+
 function componentInstance(scope, owner, exports, memory) {
     let components = activeComponents.get(scope);
     if (components === undefined) {
@@ -230,22 +253,24 @@ function componentInstance(scope, owner, exports, memory) {
                 takePendingException(exports, memory);
             throw error;
         }
-        component = {handle, drop, exports, memory};
+        component = {
+            handle, drop, exports, memory, pending: 0,
+            transitionVersion: 0, disconnected: false, disposed: false
+        };
         components.set(owner, component);
     }
-    return component.handle;
+    if (component.disposed || component.disconnected)
+        throw new Error(`Aster component is no longer active: ${owner}`);
+    return component;
 }
 
 function dropDisconnectedComponents() {
     for (const [scope, components] of activeComponents) {
         if (scope.isConnected) continue;
         for (const component of components.values()) {
-            const {handle, drop, exports, memory} = component;
-            drop(handle);
-            if (exports.aster_export_exception_pending() !== 0)
-                reportHandlerError(new Error(
-                    takePendingException(exports, memory)
-                ));
+            component.disconnected = true;
+            component.transitionVersion += 1;
+            if (component.pending === 0) disposeComponent(component);
         }
         activeComponents.delete(scope);
         islandStates.delete(scope);
@@ -255,9 +280,12 @@ function dropDisconnectedComponents() {
 function marshalArguments(source, scope, state, parameters, exports, memory) {
     const args = [];
     const allocations = [];
+    const components = [];
     for (const [type, name] of parameters) {
         if (type === "x") {
-            args.push(componentInstance(scope, name, exports, memory));
+            const component = componentInstance(scope, name, exports, memory);
+            args.push(component.handle);
+            components.push(component);
             continue;
         }
         const value = stateValue(source, scope, state, type, name);
@@ -272,7 +300,7 @@ function marshalArguments(source, scope, state, parameters, exports, memory) {
         args.push(pointer, bytes.length);
         allocations.push(pointer);
     }
-    return {args, allocations};
+    return {args, allocations, components};
 }
 
 function takePendingException(exports, memory) {
@@ -520,7 +548,8 @@ function applyComponentSnapshot(
     source, scope, state, owner, exports, memory, hydrateWithin
 ) {
     const controlled = controlledTarget(source);
-    const handle = componentInstance(scope, owner, exports, memory);
+    const component = componentInstance(scope, owner, exports, memory);
+    const handle = component.handle;
     const render = exports[`aster_export_component_${owner}_render`];
     if (typeof render !== "function")
         throw new Error(`Aster component render ABI is missing: ${owner}`);
@@ -896,19 +925,45 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 `Aster keyed removal target is missing: ${handlerName}`
             );
 
-        let transitionVersion = 0;
+        let sourceTransitionVersion = 0;
         source.addEventListener(eventName, async (event) => {
-            const version = ++transitionVersion;
             const form = source.closest("form");
             const scope = eventScope(source, root);
             const state = stateFor(scope);
             let marshalled;
             let result;
+            let transitionComponent = null;
+            let version = 0;
+            let leaseHeld = false;
+            let leaseReleased = false;
+            const releaseLease = () => {
+                if (!leaseHeld || leaseReleased || marshalled === undefined)
+                    return;
+                leaseReleased = true;
+                for (const component of new Set(marshalled.components))
+                    releaseComponent(component);
+            };
+            const transitionIsCurrent = () => transitionComponent === null
+                ? version === sourceTransitionVersion && source.isConnected
+                : version === transitionComponent.transitionVersion &&
+                    !transitionComponent.disconnected &&
+                    !transitionComponent.disposed && scope.isConnected;
             try {
                 marshalled = marshalArguments(
                     source, scope, state, parameters,
                     instance.exports, memory
                 );
+                if (asyncResult) {
+                    transitionComponent = marshalled.components[0] ?? null;
+                    version = transitionComponent === null
+                        ? ++sourceTransitionVersion
+                        : ++transitionComponent.transitionVersion;
+                    for (const component of new Set(marshalled.components))
+                        retainComponent(component);
+                    leaseHeld = true;
+                } else {
+                    version = ++sourceTransitionVersion;
+                }
                 try {
                     result = handler(...marshalled.args);
                 } finally {
@@ -925,6 +980,7 @@ export async function hydrateAster({wasmUrl, root = document}) {
                     throw new Error(message);
                 }
             } catch (error) {
+                releaseLease();
                 reportHandlerError(error);
                 return;
             }
@@ -942,21 +998,24 @@ export async function hydrateAster({wasmUrl, root = document}) {
                         Number(result), taskResult, instance.exports, memory
                     );
                 } catch (error) {
-                    if (version === transitionVersion) throw error;
+                    if (transitionIsCurrent()) reportHandlerError(error);
+                    releaseLease();
                     return;
                 } finally {
-                    if (version === transitionVersion) {
+                    if (transitionIsCurrent()) {
                         source.removeAttribute("aria-busy");
                         if (disables) source.disabled = wasDisabled;
                     }
                 }
-                if (version !== transitionVersion) {
+                if (!transitionIsCurrent()) {
                     dropUnusedResult(
                         result, resultType, aggregateDrop, instance.exports
                     );
+                    releaseLease();
                     return;
                 }
             }
+            try {
             if (resultType === "p") {
                 applyProjectionBatch(
                     Number(result), source, scope, state,
@@ -1071,6 +1130,11 @@ export async function hydrateAster({wasmUrl, root = document}) {
                 commitScalarState(
                     source, scope, state, resultType, parameters, result
                 );
+            } catch (error) {
+                reportHandlerError(error);
+            } finally {
+                releaseLease();
+            }
         });
         hydratedSources.add(source);
       }

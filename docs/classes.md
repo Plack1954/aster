@@ -122,8 +122,17 @@ parts across the component root. Part matching excludes nested component and
 keyed-item ownership boundaries. Structural or conditional whole-component
 changes still require a bounded controlled region. Nested instances are not
 replaced by parent part updates and are disposed when an ancestor disconnects,
-but conditional nested mounting is not yet implemented. Nested state structs,
-multiple list fields, request-only objects, async instance methods, and general
+but conditional nested mounting is not yet implemented. Async instance handlers are supported. Starting an async handler acquires a
+pending-task lease on its retained component. A newer transition on any handler
+in the same component makes older completion results stale. Disconnect marks the
+instance unusable immediately, suppresses rendering, and defers its destructor
+until all tasks have settled and their results have been dropped. A successful
+`Task`/`void` completion follows the same automatic render rule as a synchronous
+`void` handler; a fault reports through the host and preserves the previous DOM.
+The browser runtime does not currently cancel host work, but detached work is
+safely drained without a stale DOM write.
+
+Nested state structs, multiple list fields, request-only objects, and general
 post-constructor object graphs remain unsupported. These limits are explicit;
 there is no lifecycle API or leaked page-global component singleton.
 

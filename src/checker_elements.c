@@ -356,10 +356,6 @@ static void check_html_event_handler(
         lang_diag(checker->diagnostics, property->value->span,
                   "event handler `%s` must be public",
                   handler->as.function.name);
-    if (handler->as.function.owner_type != NULL &&
-        handler->as.function.is_async)
-        lang_diag(checker->diagnostics, property->value->span,
-                  "browser class component handlers are synchronous in the initial prototype");
     if (handler->as.function.owner_type != NULL) {
         Decl *owner = find_type_declaration(
             checker, handler->as.function.owner_type,
