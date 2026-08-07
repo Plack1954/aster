@@ -1,10 +1,12 @@
 #include "ir_internal.h"
 
+#include <inttypes.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static bool push_element_context(IrBuilder *builder, uint32_t local,
-                                 LangSpan span) {
+                                 bool keyed_item, LangSpan span) {
     if (builder->element_count >=
         sizeof(builder->elements) / sizeof(builder->elements[0])) {
         lang_diag(builder->diagnostics, span,
@@ -13,7 +15,7 @@ static bool push_element_context(IrBuilder *builder, uint32_t local,
         return false;
     }
     builder->elements[builder->element_count++] =
-        (IrElementContext){local, builder->loop_count};
+        (IrElementContext){local, builder->loop_count, keyed_item};
     return true;
 }
 
@@ -195,7 +197,7 @@ static IrValueId lower_element_body(IrBuilder *builder,
         builder, result_type, name, IR_INVALID_ID,
         expr->as.element.open_span);
     if (local == UINT32_MAX ||
-        !push_element_context(builder, local, expr->span))
+        !push_element_context(builder, local, false, expr->span))
         return IR_INVALID_ID;
     for (size_t i = 0U; i < expr->as.element.body_count; ++i) {
         const ElementBodyItem *item = &expr->as.element.body[i];
@@ -562,6 +564,56 @@ static void record_static_css(IrBuilder *builder, const Expr *expr) {
     };
 }
 
+static uint64_t keyed_part_id(
+    IrBuilder *builder, const Expr *expression, char kind, LangSpan span) {
+    if (expression != NULL && expression->kind == EXPR_FIELD &&
+        expression->as.field.object->type != NULL &&
+        expression->as.field.object->type->declaration != NULL) {
+        const Decl *declaration =
+            expression->as.field.object->type->declaration;
+        if (declaration->kind == DECL_STRUCT ||
+            declaration->kind == DECL_CLASS)
+            for (size_t field = 0U;
+                 field < declaration->as.structure.field_count; ++field)
+                if (strcmp(declaration->as.structure.fields[field].name,
+                           expression->as.field.field) == 0)
+                    return lang_projection_part_id(
+                        declaration->module_name,
+                        declaration->as.structure.name, field);
+    }
+    return lang_projection_part_id(
+        builder->function->module_name,
+        builder->function->name,
+        span.start * 4U + (size_t)(kind == 't' ? 1U : kind == 'c' ? 2U : 3U));
+}
+
+static void emit_keyed_part_marker(
+    IrBuilder *builder, uint32_t local, const Expr *expression,
+    char kind, LangSpan span) {
+    uint64_t part_id = keyed_part_id(
+        builder, expression, kind, span);
+    char *identifier = lang_arena_alloc(
+        &builder->module->lowering_module->arena, 17U);
+    (void)snprintf(identifier, 17U, "%016" PRIx64, part_id);
+    IrInstruction *constant = ir_append_instruction(
+        builder, IR_OP_CONST_STRING,
+        ir_intern_type(builder->module, &ir_str_type),
+        NULL, 0U, span);
+    if (constant == NULL) return;
+    constant->symbol = identifier;
+    constant->symbol_length = 16U;
+    IrValueId value = constant->result;
+    IrInstruction *set = ir_append_instruction(
+        builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+        IR_INVALID_ID, &value, 1U, span);
+    if (set == NULL) return;
+    set->index = local;
+    set->symbol = kind == 't' ? "data-aster-part-t"
+                : kind == 'c' ? "data-aster-part-c"
+                              : "data-aster-part-d";
+    set->symbol_length = strlen(set->symbol);
+}
+
 IrValueId ir_lower_element_with_parent(
     IrBuilder *builder, const Expr *expr, uint32_t parent_local) {
     record_static_css(builder, expr);
@@ -571,6 +623,12 @@ IrValueId ir_lower_element_with_parent(
             builder, expr, resolved, parent_local);
 
     IrTypeId result_type = ir_intern_type(builder->module, expr->type);
+    bool keyed_item = builder->element_count != 0U &&
+        builder->elements[builder->element_count - 1U].keyed_item;
+    for (size_t property = 0U;
+         property < expr->as.element.property_count; ++property)
+        if (expr->as.element.properties[property].keyed_identity)
+            keyed_item = true;
     bool class_render_root = builder->element_count == 0U &&
         builder->function->is_component_render;
     const char *name =
@@ -674,6 +732,12 @@ IrValueId ir_lower_element_with_parent(
             set->symbol = property_name;
             set->symbol_length = strlen(property_name);
         }
+        if (keyed_item && strcmp(property_name, "class") == 0)
+            emit_keyed_part_marker(
+                builder, local, property->value, 'c', property->span);
+        else if (keyed_item && strcmp(property_name, "disabled") == 0)
+            emit_keyed_part_marker(
+                builder, local, property->value, 'd', property->span);
     }
     bool custom_property_started = false;
     for (size_t i = 0U; i < expr->as.element.property_count; ++i) {
@@ -761,7 +825,15 @@ IrValueId ir_lower_element_with_parent(
             set->symbol_length = strlen(builder->function->css_scope_attribute);
         }
     }
-    if (!push_element_context(builder, local, expr->span))
+    if (keyed_item && expr->as.element.body_count == 1U) {
+        const ElementBodyItem *item = &expr->as.element.body[0];
+        if (!item->is_statement && !item->is_static_text &&
+            item->as.expression->kind != EXPR_ELEMENT)
+            emit_keyed_part_marker(
+                builder, local, item->as.expression,
+                't', item->as.expression->span);
+    }
+    if (!push_element_context(builder, local, keyed_item, expr->span))
         return IR_INVALID_ID;
     for (size_t i = 0U; i < expr->as.element.body_count; ++i) {
         const ElementBodyItem *item = &expr->as.element.body[i];

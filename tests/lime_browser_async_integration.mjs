@@ -182,41 +182,23 @@ try {
             const renamed = Number(rename(
                 component, inputPointer, input.length
             ));
+            const rendered = Number(renderHtml(renamed));
             try {
-                const pointer = Number(batchData(renamed));
-                const length = Number(batchLength(renamed));
-                const bytes = new Uint8Array(memory.buffer, pointer, length);
-                const view = new DataView(memory.buffer, pointer, length);
-                const records = new Map();
-                let offset = 0;
-                for (let record = 0;
-                     record < Number(batchCount(renamed)); ++record) {
-                    const type = String.fromCharCode(bytes[offset]);
-                    const nameLength = bytes[offset + 1];
-                    const payloadLength = view.getUint32(offset + 4, true);
-                    offset += 8;
-                    const part = new TextDecoder().decode(
-                        bytes.subarray(offset, offset + nameLength)
-                    );
-                    offset += nameLength;
-                    const value = type === "b"
-                        ? bytes[offset] !== 0
-                        : new TextDecoder().decode(bytes.subarray(
-                            offset, offset + payloadLength
-                        ));
-                    offset += payloadLength;
-                    records.set(part, value);
-                }
-                const part = (field) => projectionPart(
-                    "PersistentTodoTitleProjectionState", field
+                const pointer = Number(stringData(rendered));
+                const length = Number(stringLength(rendered));
+                const html = new TextDecoder().decode(
+                    new Uint8Array(memory.buffer, pointer, length)
                 );
-                if (offset !== length || records.size !== 3 ||
-                    records.get(part(0)) !== expected ||
-                    records.get(part(1)) !== "renamed" ||
-                    records.get(part(2)) !== true)
-                    throw new Error("keyed item projection state was lost");
+                const part = (field) => projectionPart(
+                    "PersistentTodo", field
+                );
+                if (!html.includes(expected) ||
+                    !html.includes(`data-aster-part-t=\"${part(1)}\"`) ||
+                    !html.includes(`data-aster-part-c=\"${part(2)}\"`) ||
+                    !html.includes(`data-aster-part-d=\"${part(3)}\"`))
+                    throw new Error("native keyed item parts were not emitted");
             } finally {
-                batchDrop(renamed);
+                stringDrop(rendered);
             }
         }
     } finally {

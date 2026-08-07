@@ -68,7 +68,10 @@ grep -q 'data-aster-key="native-1"' <<<"$page"
 grep -q 'data-aster-event="click|RemoveNativeTodo|h|s:key"' <<<"$page"
 grep -q 'data-aster-component="PersistentTodoList"' <<<"$page"
 grep -q 'click|PersistentTodoList_AppendTodo|h|x:PersistentTodoList' <<<"$page"
-grep -q 'click|PersistentTodoList_RenameTodo|p|x:PersistentTodoList|s:key' <<<"$page"
+grep -q 'click|PersistentTodoList_RenameTodo|h|x:PersistentTodoList|s:key' <<<"$page"
+grep -Eq 'data-aster-part-t="[0-9a-f]{16}"' <<<"$page"
+grep -Eq 'data-aster-part-c="[0-9a-f]{16}"' <<<"$page"
+grep -Eq 'data-aster-part-d="[0-9a-f]{16}"' <<<"$page"
 test "$(grep -o 'data-aster-component="IsolatedCounter"' <<<"$page" | wc -l)" -eq 2
 grep -q 'click|IsolatedCounter_Increment|l|x:IsolatedCounter|l:count' <<<"$page"
 test "$(grep -o 'name="value"' <<<"$page" | wc -l)" -ge 2

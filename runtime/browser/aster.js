@@ -275,6 +275,61 @@ function collectionFor(source, state) {
     return {controlled, collection};
 }
 
+const keyedPartKinds = ["t", "c", "d"];
+
+function keyedPartElements(item) {
+    const elements = [item, ...item.querySelectorAll(
+        "[data-aster-part-t], [data-aster-part-c], [data-aster-part-d]"
+    )];
+    return elements.filter(
+        (element) => element.closest("[data-aster-key]") === item
+    );
+}
+
+function keyedPartPlan(retained, incoming) {
+    const existing = new Map();
+    for (const element of keyedPartElements(retained))
+        for (const kind of keyedPartKinds) {
+            const id = element.dataset[`asterPart${kind.toUpperCase()}`];
+            if (id === undefined) continue;
+            const identity = `${kind}:${id}`;
+            let targets = existing.get(identity);
+            if (targets === undefined) {
+                targets = [];
+                existing.set(identity, targets);
+            }
+            targets.push(element);
+        }
+    const updates = [];
+    const incomingCounts = new Map();
+    for (const element of keyedPartElements(incoming))
+        for (const kind of keyedPartKinds) {
+            const id = element.dataset[`asterPart${kind.toUpperCase()}`];
+            if (id === undefined) continue;
+            const identity = `${kind}:${id}`;
+            const index = incomingCounts.get(identity) ?? 0;
+            incomingCounts.set(identity, index + 1);
+            const target = existing.get(identity)?.[index];
+            if (target === undefined)
+                throw new Error(`Aster retained keyed part is missing: ${identity}`);
+            updates.push({kind, target, value: element});
+        }
+    for (const [identity, targets] of existing)
+        if ((incomingCounts.get(identity) ?? 0) !== targets.length)
+            throw new Error(
+                `Aster incoming keyed snapshot omitted retained part: ${identity}`
+            );
+    return updates;
+}
+
+function applyKeyedPartPlan(updates) {
+    for (const {kind, target, value} of updates) {
+        if (kind === "t") target.textContent = value.textContent;
+        else if (kind === "c") target.className = value.className;
+        else if (kind === "d") target.disabled = value.disabled;
+    }
+}
+
 function applyKeyedHtml(source, state, html, hydrateWithin) {
     const destination = collectionFor(source, state);
     if (destination === null)
@@ -297,6 +352,13 @@ function applyKeyedHtml(source, state, html, hydrateWithin) {
                 throw new Error("Aster keyed list contains a missing or duplicate key");
             incomingKeys.add(key);
         }
+        const plans = [];
+        for (const child of incoming) {
+            const existing = collection.get(child.dataset.asterKey);
+            if (existing !== undefined && existing.isConnected)
+                plans.push(keyedPartPlan(existing, child));
+        }
+        for (const plan of plans) applyKeyedPartPlan(plan);
         const next = new Map();
         for (const child of incoming) {
             const key = child.dataset.asterKey;

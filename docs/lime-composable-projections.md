@@ -30,7 +30,7 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 10.8 KB gzip versus 41.9 KB for the compared Vue client after adding the
+- 11.3 KB gzip versus 41.9 KB for the compared Vue client after adding the
   experimental batch decoder, keyed snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
@@ -492,29 +492,35 @@ exactly-once destruction. A throwing synchronous handler publishes and clears
 an owned exception result, after which the same instance remains callable and
 is still disposed normally.
 
-The persistent todo fixture now composes keyed identity with generated part
-IDs. Each todo stores an experimental projection state for title, class, and
-input-disabled state, and its `RenameTodo` button sits inside the keyed row. For
-an event originating in a keyed item, the runtime validates and applies
-matching parts only within that item; its scalar cache is namespaced by both
-collection and key. Renaming the first row twice and a dynamically appended
-fourth row changes only those text, class, and property parts. Sibling content,
-retained row/input identity, and a browser-edited input value survive. This
-proves item-local content updates do not require row replacement or tree
-reconciliation.
+The persistent todo fixture now uses native keyed item parts without any
+projection declaration. `PersistentTodo` has ordinary `title`, `className`, and
+`disabled` fields; `Rows()` uses ordinary `class=todo.className`,
+`<span>{todo.title}</span>`, and `disabled=todo.disabled`. `RenameTodo` mutates
+the class-owned list and returns the same native keyed `Html` snapshot used for
+structural changes.
 
-This validates persistent Wasm-owned state, keyed structural snapshots,
-item-local compiled updates, and one level of nested transition lowering, not
-the temporary projection syntax. Current prototype limits are intentional:
-interactive class constructors take no arguments, class handlers are
-synchronous, projection state fields are flat Boolean/integer/string values,
-and `ProjectionState`/`ProjectionTransition` suffixes remain experimental.
-Server-state transfer, automatic class rerendering, async instance methods,
-effect collections, final native item-plan lowering, and deeper recursive
-composition remain to be designed.
+Inside a keyed row, the compiler marks eligible dynamic text, class, and
+disabled bindings with stable part IDs. Before moving or retaining nodes, the
+runtime validates every incoming/retained part pair. It then copies only those
+compiled values into retained nodes; it does not replace the row or copy an
+input's `value`. Renaming the first row twice and a dynamically appended fourth
+row changes only their text, class, and disabled parts. Sibling content,
+retained row/input identity, and a browser-edited input value survive. This
+proves ordinary native HTML snapshots can drive item-local updates without a
+VDOM, public projection types, or DOM commands.
+
+This validates persistent Wasm-owned state, keyed structural snapshots, native
+item-local compiled updates, and one level of experimental nested transition
+lowering. Current limits are intentional: inferred keyed parts currently cover
+a sole dynamic text child plus `class` and `disabled`; interactive class
+constructors take no arguments; class handlers are synchronous; and the older
+region-wide `ProjectionState`/`ProjectionTransition` prototype remains
+experimental. Server-state transfer, automatic rerendering, async instance
+methods, compound text ranges, broader attributes/styles, conditional
+item-local structure, and deeper recursive composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 10.8 KB gzip. A future production implementation should
+client from 8.8 KB to 11.3 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 

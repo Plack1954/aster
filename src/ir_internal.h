@@ -12,6 +12,7 @@ typedef struct IrLoop {
 typedef struct IrElementContext {
     uint32_t local;
     size_t loop_depth;
+    bool keyed_item;
 } IrElementContext;
 
 typedef struct IrExceptionContext {
