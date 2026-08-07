@@ -67,13 +67,21 @@ function stateFor(scope) {
     return state;
 }
 
-function stateKey(type, name) {
-    return `${type}:${name}`;
+function keyedSourceIdentity(source) {
+    const item = source.closest("[data-aster-key]");
+    if (item === null) return null;
+    const collection = item.parentElement?.id ?? "";
+    return `${collection}/${item.dataset.asterKey}`;
+}
+
+function stateKey(type, name, source) {
+    const key = keyedSourceIdentity(source);
+    return key === null ? `${type}:${name}` : `${type}:${name}@${key}`;
 }
 
 function stateValue(source, scope, state, type, name) {
     if (type === "s") return targetValue(source, scope, type, name);
-    const key = stateKey(type, name);
+    const key = stateKey(type, name, source);
     if (state.has(key)) return state.get(key);
     let value;
     const ariaName = `aria-${name.replaceAll("_", "-")}`;
@@ -212,7 +220,7 @@ function commitScalarState(
         return false;
     const [, name] = parameter;
     const value = resultType === "b" ? (result !== 0 ? 1 : 0) : result;
-    state.set(stateKey(resultType, name), value);
+    state.set(stateKey(resultType, name, source), value);
     if (resultType === "b")
         updateBooleanState(source, scope, name, value !== 0);
     else
@@ -365,6 +373,17 @@ function aggregateString(
     return decodeOwnedString(Number(field.accessor(handle)), exports, memory);
 }
 
+function projectionTargets(source, scope) {
+    const item = source.closest("[data-aster-key]");
+    if (item === null || !scope.contains(item))
+        return [...scope.querySelectorAll("[data-aster-project]")];
+    const targets = item.matches("[data-aster-project]") ? [item] : [];
+    targets.push(...item.querySelectorAll("[data-aster-project]"));
+    return targets.filter(
+        (target) => target.closest("[data-aster-key]") === item
+    );
+}
+
 function applyProjectionBatch(
     handle, source, scope, state, exports, memory
 ) {
@@ -418,7 +437,7 @@ function applyProjectionBatch(
         if (offset !== length)
             throw new Error("Aster projection batch has trailing data");
 
-        const targets = [...scope.querySelectorAll("[data-aster-project]")];
+        const targets = projectionTargets(source, scope);
         const recordsByName = new Map(
             records.filter((record) => record.type !== "r")
                 .map((record) => [record.name, record])
@@ -456,7 +475,7 @@ function applyProjectionBatch(
                     );
                 continue;
             }
-            state.set(stateKey(type, name), value);
+            state.set(stateKey(type, name, source), value);
             for (const target of targets) {
                 const [kind, part] = target.dataset.asterProject.split(":");
                 if (part !== name) continue;
@@ -497,7 +516,7 @@ function applyAggregateResult(
                 const value = decodeOwnedString(
                     Number(accessor(handle)), exports, memory
                 );
-                state.set(stateKey(type, name), value);
+                state.set(stateKey(type, name, source), value);
                 updateText(scope, name, value);
             } else {
                 const value = accessor(handle);

@@ -99,17 +99,23 @@ projection_html = """<!doctype html>
 </section>
 <section id="persistent-todo-component" data-aster-component="PersistentTodoList">
   <ul id="persistent-todo-list">
-    <li data-aster-key="persistent-1">
-      <label>First persistent <input value="First persistent"></label>
+    <li data-aster-key="persistent-1" class=""
+        data-aster-project="c:{persistentClass}">
+      <label><span data-aster-project="t:{persistentTitle}">First persistent</span> <input value="First persistent" data-aster-project="d:{persistentDisabled}"></label>
       <button type="button" name="key" value="persistent-1"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
+      <button type="button" name="key" value="persistent-1"
+          data-aster-event="click|PersistentTodoList_RenameTodo|p|x:PersistentTodoList|s:key">Rename</button>
     </li>
-    <li data-aster-key="persistent-2">
-      <label>Second persistent <input value="Second persistent"></label>
+    <li data-aster-key="persistent-2" class=""
+        data-aster-project="c:{persistentClass}">
+      <label><span data-aster-project="t:{persistentTitle}">Second persistent</span> <input value="Second persistent" data-aster-project="d:{persistentDisabled}"></label>
       <button type="button" name="key" value="persistent-2"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
+      <button type="button" name="key" value="persistent-2"
+          data-aster-event="click|PersistentTodoList_RenameTodo|p|x:PersistentTodoList|s:key">Rename</button>
     </li>
   </ul>
   <button type="button" aria-controls="persistent-todo-list"
@@ -129,6 +135,13 @@ for field_index, field_name in enumerate((
     projection_html = projection_html.replace(
         "{" + field_name + "}",
         projection_part("RowSelectionProjectionState", field_index)
+    )
+for field_index, field_name in enumerate((
+    "persistentTitle", "persistentClass", "persistentDisabled"
+)):
+    projection_html = projection_html.replace(
+        "{" + field_name + "}",
+        projection_part("PersistentTodoTitleProjectionState", field_index)
     )
 (directory / "projection.html").write_text(
     projection_html, encoding="utf-8"
@@ -294,6 +307,36 @@ try:
             '[data-aster-key="persistent-1"] input'
         )
         persistent_input.fill("persistent browser edit")
+        page.evaluate("""window.persistentIdentity = [
+            document.querySelector('[data-aster-key="persistent-1"]'),
+            document.querySelector('[data-aster-key="persistent-1"] input')
+        ]""")
+        first_persistent = persistent.locator(
+            '[data-aster-key="persistent-1"]'
+        )
+        second_persistent = persistent.locator(
+            '[data-aster-key="persistent-2"]'
+        )
+        first_persistent.get_by_text("Rename", exact=True).click()
+        assert first_persistent.locator(
+            '[data-aster-project^="t:"]'
+        ).text_content() == "First persistent!"
+        assert first_persistent.get_attribute("class") == "renamed"
+        assert persistent_input.is_disabled()
+        assert second_persistent.locator(
+            '[data-aster-project^="t:"]'
+        ).text_content() == "Second persistent"
+        assert second_persistent.get_attribute("class") == ""
+        assert not second_persistent.locator("input").is_disabled()
+        assert persistent_input.input_value() == "persistent browser edit"
+        assert page.evaluate("""window.persistentIdentity.every(
+            (node) => node.isConnected
+        )""")
+        first_persistent.get_by_text("Rename", exact=True).click()
+        assert first_persistent.locator(
+            '[data-aster-project^="t:"]'
+        ).text_content() == "First persistent!!"
+
         persistent_append = page.get_by_text(
             "Append persistent todo", exact=True
         )
@@ -305,10 +348,22 @@ try:
         page.wait_for_function(
             "document.querySelector('[data-aster-key=\"persistent-4\"]')"
         )
+        fourth_persistent = persistent.locator(
+            '[data-aster-key="persistent-4"]'
+        )
+        fourth_persistent.get_by_text("Rename", exact=True).click()
+        assert fourth_persistent.locator(
+            '[data-aster-project^="t:"]'
+        ).text_content() == "Persistent 4!"
+        assert fourth_persistent.get_attribute("class") == "renamed"
+        assert fourth_persistent.locator("input").is_disabled()
+        assert second_persistent.locator(
+            '[data-aster-project^="t:"]'
+        ).text_content() == "Second persistent"
         assert persistent.locator(":scope > li").count() == 4
         persistent.locator(
-            '[data-aster-key="persistent-3"] button'
-        ).click()
+            '[data-aster-key="persistent-3"]'
+        ).get_by_text("Remove", exact=True).click()
         page.wait_for_function(
             "!document.querySelector('[data-aster-key=\"persistent-3\"]')"
         )
@@ -324,4 +379,4 @@ finally:
     server.shutdown()
     server.server_close()
 
-print("class isolation, fault recovery, disposal, and keyed DOM verified")
+print("keyed item projections, class ownership, and retained DOM verified")

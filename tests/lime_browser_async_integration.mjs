@@ -171,6 +171,57 @@ try {
             stringDrop(rendered);
         }
     }
+    const rename = instance.exports.aster_export_PersistentTodoList_RenameTodo;
+    const input = new TextEncoder().encode("persistent-1");
+    const inputPointer = Number(
+        instance.exports.aster_export_memory_alloc(input.length)
+    );
+    new Uint8Array(memory.buffer, inputPointer, input.length).set(input);
+    try {
+        for (const expected of ["First persistent!", "First persistent!!"]) {
+            const renamed = Number(rename(
+                component, inputPointer, input.length
+            ));
+            try {
+                const pointer = Number(batchData(renamed));
+                const length = Number(batchLength(renamed));
+                const bytes = new Uint8Array(memory.buffer, pointer, length);
+                const view = new DataView(memory.buffer, pointer, length);
+                const records = new Map();
+                let offset = 0;
+                for (let record = 0;
+                     record < Number(batchCount(renamed)); ++record) {
+                    const type = String.fromCharCode(bytes[offset]);
+                    const nameLength = bytes[offset + 1];
+                    const payloadLength = view.getUint32(offset + 4, true);
+                    offset += 8;
+                    const part = new TextDecoder().decode(
+                        bytes.subarray(offset, offset + nameLength)
+                    );
+                    offset += nameLength;
+                    const value = type === "b"
+                        ? bytes[offset] !== 0
+                        : new TextDecoder().decode(bytes.subarray(
+                            offset, offset + payloadLength
+                        ));
+                    offset += payloadLength;
+                    records.set(part, value);
+                }
+                const part = (field) => projectionPart(
+                    "PersistentTodoTitleProjectionState", field
+                );
+                if (offset !== length || records.size !== 3 ||
+                    records.get(part(0)) !== expected ||
+                    records.get(part(1)) !== "renamed" ||
+                    records.get(part(2)) !== true)
+                    throw new Error("keyed item projection state was lost");
+            } finally {
+                batchDrop(renamed);
+            }
+        }
+    } finally {
+        instance.exports.aster_export_memory_free(inputPointer);
+    }
 } finally {
     componentDrop(component);
 }
@@ -235,4 +286,4 @@ for (let attempt = 1n; attempt <= 2n; ++attempt) {
         throw new Error("failed component construction was not retried");
 }
 
-console.log("Lime browser async, projections, and class ownership verified");
+console.log("Lime browser keyed projections and class ownership verified");

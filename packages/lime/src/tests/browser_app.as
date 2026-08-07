@@ -15,27 +15,70 @@ public struct NativeTodo
     string title;
 }
 
+private struct PersistentTodoTitleProjectionState
+{
+    string title;
+    string className;
+    bool disabled;
+}
+
+private struct PersistentTodo
+{
+    string key;
+    PersistentTodoTitleProjectionState state;
+}
+
 private class PersistentTodoList
 {
-    private List<NativeTodo> todos;
+    private List<PersistentTodo> todos;
     private int nextId;
 
     public PersistentTodoList()
     {
         todos = new();
-        todos.Add(new() { key = "persistent-1", title = "First persistent" });
-        todos.Add(new() { key = "persistent-2", title = "Second persistent" });
+        todos.Add(new()
+        {
+            key = "persistent-1",
+            state = new()
+            {
+                title = "First persistent",
+                className = "",
+                disabled = false
+            }
+        });
+        todos.Add(new()
+        {
+            key = "persistent-2",
+            state = new()
+            {
+                title = "Second persistent",
+                className = "",
+                disabled = false
+            }
+        });
         nextId = 3;
     }
 
     private Html Rows()
     {
         List<Html> rows = new();
-        foreach (NativeTodo todo in todos)
+        foreach (PersistentTodo todo in todos)
         {
             rows.Add(
-                <li key=todo.key>
-                    <label>{todo.title}<input value=todo.title /></label>
+                <li
+                    key=todo.key
+                    class=todo.state.className
+                    project_class=todo.state.className
+                >
+                    <label>
+                        <span project_text=todo.state.title>
+                            {todo.state.title}
+                        </span>
+                        <input
+                            value=todo.state.title
+                            project_disabled=todo.state.disabled
+                        />
+                    </label>
                     <button
                         type="button"
                         name="key"
@@ -43,6 +86,12 @@ private class PersistentTodoList
                         aria-controls="persistent-todo-list"
                         onclick=this.RemoveTodo
                     >Remove</button>
+                    <button
+                        type="button"
+                        name="key"
+                        value=todo.key
+                        onclick=this.RenameTodo
+                    >Rename</button>
                 </li>
             );
         }
@@ -52,10 +101,15 @@ private class PersistentTodoList
     private Html AppendTodo()
     {
         string key = $"persistent-{this.nextId}";
-        NativeTodo todo = new()
+        PersistentTodo todo = new()
         {
             key = key,
-            title = $"Persistent {this.nextId}"
+            state = new()
+            {
+                title = $"Persistent {this.nextId}",
+                className = "",
+                disabled = false
+            }
         };
         this.todos.Add(todo);
         this.nextId += 1;
@@ -73,6 +127,27 @@ private class PersistentTodoList
             }
         }
         return this.Rows();
+    }
+
+    private PersistentTodoTitleProjectionState RenameTodo(string key)
+    {
+        for (nuint index = 0; index < this.todos.Count; index++)
+        {
+            if (this.todos[index].key == key)
+            {
+                PersistentTodo todo = this.todos[index];
+                PersistentTodoTitleProjectionState state = new()
+                {
+                    title = $"{todo.state.title}!",
+                    className = "renamed",
+                    disabled = true
+                };
+                todo.state = state;
+                this.todos.Set(index, todo);
+                return todo.state;
+            }
+        }
+        return new() { title = "", className = "", disabled = false };
     }
 
     private Html ClearTodos()
