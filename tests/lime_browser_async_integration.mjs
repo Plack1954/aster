@@ -210,6 +210,29 @@ try {
     componentDrop(component);
 }
 
+const seededNew = instance.exports.aster_export_component_SeededCounter_new;
+const seededDrop = instance.exports.aster_export_component_SeededCounter_drop;
+const seededIncrement = instance.exports.aster_export_SeededCounter_Increment;
+const seedBytes = new TextEncoder().encode("Node seed");
+const seedPointer = Number(
+    instance.exports.aster_export_memory_alloc(seedBytes.length)
+);
+new Uint8Array(memory.buffer, seedPointer, seedBytes.length).set(seedBytes);
+let seededCounter;
+try {
+    seededCounter = Number(seededNew(
+        seedPointer, seedBytes.length, 12n, 1
+    ));
+} finally {
+    instance.exports.aster_export_memory_free(seedPointer);
+}
+try {
+    if (seededIncrement(seededCounter, 12n) !== 13n)
+        throw new Error("component constructor state was not transferred");
+} finally {
+    seededDrop(seededCounter);
+}
+
 const counterNew = instance.exports.aster_export_component_IsolatedCounter_new;
 const counterDrop = instance.exports.aster_export_component_IsolatedCounter_drop;
 const counterIncrement = instance.exports.aster_export_IsolatedCounter_Increment;

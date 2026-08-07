@@ -83,6 +83,22 @@ projection_html = """<!doctype html>
   <button type="button"
       data-aster-event="click|IsolatedCounter_Fail|l|x:IsolatedCounter|l:count">Fail isolated counter</button>
 </section>
+<section class="seeded-counter" data-aster-component="SeededCounter"
+    data-aster-component-param-0="s" data-aster-component-arg-0="Alpha"
+    data-aster-component-param-1="l" data-aster-component-arg-1="7"
+    data-aster-component-param-2="b" data-aster-component-arg-2>
+  <strong>Alpha</strong><output name="count">7</output>
+  <button type="button"
+      data-aster-event="click|SeededCounter_Increment|l|x:SeededCounter|l:count">Increment seeded counter</button>
+</section>
+<section class="seeded-counter" data-aster-component="SeededCounter"
+    data-aster-component-param-0="s" data-aster-component-arg-0="Beta"
+    data-aster-component-param-1="l" data-aster-component-arg-1="40"
+    data-aster-component-param-2="b">
+  <strong>Beta</strong><output name="count">40</output>
+  <button type="button"
+      data-aster-event="click|SeededCounter_Increment|l|x:SeededCounter|l:count">Increment seeded counter</button>
+</section>
 <section id="failing-constructor-component"
     data-aster-component="FailingConstructorComponent">
   <output name="value">0</output>
@@ -247,6 +263,19 @@ try:
             "document.querySelector('#native-keyed-list').children.length === 0"
         )
 
+        seeded = page.locator(".seeded-counter")
+        assert seeded.count() == 2
+        assert seeded.nth(0).locator("strong").text_content() == "Alpha"
+        assert seeded.nth(1).locator("strong").text_content() == "Beta"
+        seeded.nth(0).get_by_text(
+            "Increment seeded counter", exact=True
+        ).click()
+        seeded.nth(1).get_by_text(
+            "Increment seeded counter", exact=True
+        ).click()
+        assert seeded.nth(0).locator('[name="count"]').text_content() == "8"
+        assert seeded.nth(1).locator('[name="count"]').text_content() == "42"
+
         failing_constructor = page.get_by_text(
             "Construct failing component", exact=True
         )
@@ -400,4 +429,4 @@ finally:
     server.shutdown()
     server.server_close()
 
-print("native keyed item parts, class ownership, and retained DOM verified")
+print("SSR constructor state, native keyed parts, and retained DOM verified")

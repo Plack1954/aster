@@ -30,7 +30,7 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 11.3 KB gzip versus 41.9 KB for the compared Vue client after adding the
+- 11.6 KB gzip versus 41.9 KB for the compared Vue client after adding the
   experimental batch decoder, keyed snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
@@ -515,16 +515,16 @@ This validates persistent Wasm-owned state, keyed structural snapshots, native
 item-local compiled updates, and one level of experimental nested transition
 lowering. Current limits are intentional: inferred keyed parts currently cover
 text-only mixed static/dynamic children plus `class`, `disabled`, `hidden`, and
-`title`;
-interactive class constructors take no arguments; class handlers are
-synchronous; and the older region-wide
-`ProjectionState`/`ProjectionTransition` prototype remains experimental.
-Server-state transfer, automatic class rerendering, async instance methods,
-text mixed with nested elements, broader attributes/styles, conditional
-item-local structure, and deeper recursive composition remain to be designed.
+`title`; interactive constructor transfer is limited to Boolean, integer, and
+string parameters stored in matching fields; class handlers are synchronous;
+and the older region-wide `ProjectionState`/`ProjectionTransition` prototype
+remains experimental. Arbitrary field/list state transfer, automatic class
+rerendering, async instance methods, text mixed with nested elements, broader
+attributes/styles, conditional item-local structure, and deeper recursive
+composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 11.3 KB gzip. A future production implementation should
+client from 8.8 KB to 11.6 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 

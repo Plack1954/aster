@@ -91,13 +91,23 @@ returns no handle, clears the owned exception, and retries construction on the
 next event rather than caching partial state. Input allocations and unused
 owned results follow the same event cleanup path.
 
-The initial browser slice requires a zero-argument constructor so SSR and Wasm
-can initialize the same deterministic state independently. Instance handlers
-are synchronous and must still return an ordinary supported browser result,
-such as the keyed `Html` snapshot. Transferring constructor arguments or
-server-loaded state, automatic rerender after `void`, async instance methods,
-and nested component ownership remain unsupported. These limits are explicit;
-there is no lifecycle API or leaked page-global component singleton.
+Interactive constructors may now take Boolean, integer, and `string`
+parameters when the class stores each parameter in a same-named, same-typed
+field. SSR writes typed, escaped constructor metadata on the compiler-owned
+component root. This metadata is browser-visible and must not contain secrets.
+On the first event, JavaScript owns temporary string input buffers, calls the
+generated constructor ABI with those values, clears any
+constructor fault, and caches only a successful object. Two `SeededCounter`
+regions initialized with distinct string, integer, and Boolean values prove
+that Wasm starts from each region's SSR constructor state rather than a
+zero-argument reconstruction.
+
+Instance handlers are synchronous and must still return an ordinary supported
+browser result, such as the keyed `Html` snapshot. Transferring arbitrary
+class fields, lists, request-only objects, or post-constructor server mutations,
+automatic rerender after `void`, async instance methods, and nested component
+ownership remain unsupported. These limits are explicit; there is no lifecycle
+API or leaked page-global component singleton.
 
 ## Value and identity rules
 

@@ -93,6 +93,44 @@ function stateValue(source, scope, state, type, name) {
     return value;
 }
 
+function componentConstructorArguments(scope, exports, memory) {
+    const args = [];
+    const allocations = [];
+    try {
+        for (let index = 0; ; ++index) {
+            const type = scope.getAttribute(
+                `data-aster-component-param-${index}`
+            );
+            if (type === null) break;
+            const name = `data-aster-component-arg-${index}`;
+            if (type === "b") {
+                args.push(scope.hasAttribute(name) ? 1 : 0);
+            } else if (type === "l") {
+                args.push(BigInt(scope.getAttribute(name) ?? "0"));
+            } else if (type === "s") {
+                const bytes = encoder.encode(scope.getAttribute(name) ?? "");
+                const pointer = Number(
+                    exports.aster_export_memory_alloc(bytes.length)
+                );
+                if (pointer === 0)
+                    throw new Error("Aster component input allocation failed");
+                new Uint8Array(memory.buffer, pointer, bytes.length).set(bytes);
+                args.push(pointer, bytes.length);
+                allocations.push(pointer);
+            } else {
+                throw new Error(
+                    `Aster component parameter type is unknown: ${type}`
+                );
+            }
+        }
+        return {args, allocations};
+    } catch (error) {
+        for (const pointer of allocations)
+            exports.aster_export_memory_free(pointer);
+        throw error;
+    }
+}
+
 function componentInstance(scope, owner, exports, memory) {
     let components = activeComponents.get(scope);
     if (components === undefined) {
@@ -105,7 +143,16 @@ function componentInstance(scope, owner, exports, memory) {
         const drop = exports[`aster_export_component_${owner}_drop`];
         if (typeof create !== "function" || typeof drop !== "function")
             throw new Error(`Aster component ABI is missing: ${owner}`);
-        const handle = Number(create());
+        const constructor = componentConstructorArguments(
+            scope, exports, memory
+        );
+        let handle;
+        try {
+            handle = Number(create(...constructor.args));
+        } finally {
+            for (const pointer of constructor.allocations)
+                exports.aster_export_memory_free(pointer);
+        }
         if (exports.aster_export_exception_pending() !== 0) {
             const message = takePendingException(exports, memory);
             throw new Error(message);

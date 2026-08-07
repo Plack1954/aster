@@ -618,6 +618,90 @@ static void emit_keyed_part_marker(
     set->symbol_length = strlen(set->symbol);
 }
 
+static void emit_component_constructor_markers(
+    IrBuilder *builder, uint32_t local, LangSpan span) {
+    const IrFunction *constructor = NULL;
+    for (size_t function = 0U;
+         function < builder->module->function_count; ++function) {
+        const IrFunction *candidate = &builder->module->functions[function];
+        if (candidate->is_constructor && candidate->owner_type != NULL &&
+            strcmp(candidate->owner_type,
+                   builder->function->owner_type) == 0) {
+            constructor = candidate;
+            break;
+        }
+    }
+    if (constructor == NULL ||
+        builder->function->parameter_count == 0U)
+        return;
+    const IrType *instance = &builder->module->types[
+        builder->function->parameters[0].type];
+    for (size_t parameter = 0U;
+         parameter < constructor->parameter_count; ++parameter) {
+        size_t field = instance->field_count;
+        for (size_t candidate = 0U;
+             candidate < instance->field_count; ++candidate)
+            if (strcmp(instance->field_names[candidate],
+                       constructor->parameters[parameter].name) == 0) {
+                field = candidate;
+                break;
+            }
+        if (field == instance->field_count) continue;
+        const IrType *type = &builder->module->types[
+            constructor->parameters[parameter].type];
+        char code = type->shape == IR_TYPE_BOOL ? 'b'
+                  : type->shape == IR_TYPE_SIGNED_INT ||
+                    type->shape == IR_TYPE_UNSIGNED_INT ? 'l' : 's';
+        char *type_name = lang_arena_alloc(
+            &builder->module->lowering_module->arena, 64U);
+        char *value_name = lang_arena_alloc(
+            &builder->module->lowering_module->arena, 64U);
+        (void)snprintf(type_name, 64U,
+                       "data-aster-component-param-%zu", parameter);
+        (void)snprintf(value_name, 64U,
+                       "data-aster-component-arg-%zu", parameter);
+        IrInstruction *type_value = ir_append_instruction(
+            builder, IR_OP_CONST_STRING,
+            ir_intern_type(builder->module, &ir_str_type),
+            NULL, 0U, span);
+        if (type_value != NULL) {
+            char *encoded = lang_arena_alloc(
+                &builder->module->lowering_module->arena, 2U);
+            encoded[0] = code;
+            encoded[1] = '\0';
+            type_value->symbol = encoded;
+            type_value->symbol_length = 1U;
+            IrValueId marker = type_value->result;
+            IrInstruction *set_type = ir_append_instruction(
+                builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+                IR_INVALID_ID, &marker, 1U, span);
+            if (set_type != NULL) {
+                set_type->index = local;
+                set_type->symbol = type_name;
+                set_type->symbol_length = strlen(type_name);
+            }
+        }
+        IrInstruction *load = ir_append_instruction(
+            builder, IR_OP_LOCAL_FIELD_GET,
+            constructor->parameters[parameter].type,
+            NULL, 0U, span);
+        if (load == NULL) continue;
+        load->index = 0U;
+        load->auxiliary = (uint32_t)field;
+        load->symbol = instance->field_names[field];
+        load->symbol_length = strlen(load->symbol);
+        IrValueId value = load->result;
+        IrInstruction *set_value = ir_append_instruction(
+            builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+            IR_INVALID_ID, &value, 1U, span);
+        if (set_value != NULL) {
+            set_value->index = local;
+            set_value->symbol = value_name;
+            set_value->symbol_length = strlen(value_name);
+        }
+    }
+}
+
 static const Expr *keyed_text_part_expression(const Expr *element) {
     const Expr *first_dynamic = NULL;
     for (size_t item_index = 0U;
@@ -683,6 +767,8 @@ IrValueId ir_lower_element_with_parent(
                 set->symbol_length = strlen(set->symbol);
             }
         }
+        emit_component_constructor_markers(
+            builder, local, expr->span);
     }
     for (size_t i = 0U; i < expr->as.element.property_count; ++i) {
         const ElementProperty *property =

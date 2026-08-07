@@ -364,15 +364,42 @@ static void check_html_event_handler(
         Decl *owner = find_type_declaration(
             checker, handler->as.function.owner_type,
             property->value->span);
-        bool zero_argument_constructor = false;
+        bool supported_constructor = false;
         if (owner != NULL && owner->kind == DECL_CLASS)
             for (size_t member = 0U;
                  member < owner->as.structure.member_count; ++member) {
                 Decl *candidate = owner->as.structure.members[member];
                 if (candidate->kind != DECL_FUNCTION) continue;
-                if (candidate->as.function.is_constructor &&
-                    candidate->as.function.param_count == 0U)
-                    zero_argument_constructor = true;
+                if (candidate->as.function.is_constructor) {
+                    supported_constructor = true;
+                    for (size_t parameter = 0U;
+                         parameter < candidate->as.function.param_count;
+                         ++parameter) {
+                        const Param *param =
+                            &candidate->as.function.params[parameter];
+                        bool matching_field = false;
+                        for (size_t field = 0U;
+                             field < owner->as.structure.field_count; ++field) {
+                            FieldDecl *field_decl =
+                                &owner->as.structure.fields[field];
+                            if (strcmp(field_decl->name, param->name) != 0)
+                                continue;
+                            Type *field_type =
+                                resolve_declared_type_in_module(
+                                    checker, field_decl->type_syntax,
+                                    field_decl->type_name,
+                                    field_decl->span,
+                                    owner->module_name);
+                            matching_field = field_type != NULL &&
+                                field_type->kind == param->checked_type->kind;
+                        }
+                        if (!web_handler_parameter_type(
+                                param->checked_type) ||
+                            param->checked_type->kind == TYPE_UNIT ||
+                            !matching_field)
+                            supported_constructor = false;
+                    }
+                }
                 const char *base = strrchr(
                     candidate->as.function.name, ':');
                 base = base == NULL
@@ -381,9 +408,9 @@ static void check_html_event_handler(
                     candidate->as.function
                         .is_interactive_component_render = true;
             }
-        if (!zero_argument_constructor)
+        if (!supported_constructor)
             lang_diag(checker->diagnostics, property->value->span,
-                      "interactive class component `%s` requires a zero-argument constructor",
+                      "interactive class component `%s` requires scalar/string constructor parameters with matching fields",
                       handler->as.function.owner_type);
     }
     handler->as.function.is_web_handler = true;

@@ -676,15 +676,14 @@ void c_backend_emit_web_component_abis(
             if (ir->functions[candidate].is_constructor &&
                 ir->functions[candidate].owner_type != NULL &&
                 strcmp(ir->functions[candidate].owner_type,
-                       method->owner_type) == 0 &&
-                ir->functions[candidate].parameter_count == 0U) {
+                       method->owner_type) == 0) {
                 constructor_index = candidate;
                 break;
             }
         if (constructor_index == ir->function_count) {
             c_backend_unsupported(
                 emitter, method->span,
-                "a browser class component without a zero-argument constructor");
+                "a browser class component without a supported constructor");
             continue;
         }
         const IrFunction *constructor = &ir->functions[constructor_index];
@@ -693,8 +692,54 @@ void c_backend_emit_web_component_abis(
         c_backend_emit_type(emitter, type_id);
         fputs(" aster_export_component_", emitter->output);
         emit_web_identifier(emitter->output, method->owner_type);
-        fputs("_new(void) {\n    return aster_fn_", emitter->output);
-        fprintf(emitter->output, "%zu();\n}\n", constructor_index);
+        fputs("_new(", emitter->output);
+        if (constructor->parameter_count == 0U) {
+            fputs("void", emitter->output);
+        } else {
+            for (size_t parameter = 0U;
+                 parameter < constructor->parameter_count; ++parameter) {
+                if (parameter != 0U) fputs(", ", emitter->output);
+                const IrType *parameter_type = &ir->types[
+                    constructor->parameters[parameter].type];
+                if (web_parameter_is_string(parameter_type))
+                    fprintf(emitter->output,
+                            "const unsigned char *p%zu_data, size_t p%zu_length",
+                            parameter, parameter);
+                else {
+                    c_backend_emit_type(
+                        emitter, constructor->parameters[parameter].type);
+                    fprintf(emitter->output, " p%zu", parameter);
+                }
+            }
+        }
+        fputs(") {\n", emitter->output);
+        for (size_t parameter = 0U;
+             parameter < constructor->parameter_count; ++parameter) {
+            const IrType *parameter_type = &ir->types[
+                constructor->parameters[parameter].type];
+            if (parameter_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+                strcmp(parameter_type->name, "string") == 0)
+                fprintf(emitter->output,
+                        "    aster_string *p%zu_value = aster_string_from("
+                        "(aster_str){p%zu_data, p%zu_length});\n",
+                        parameter, parameter, parameter);
+        }
+        fprintf(emitter->output, "    return aster_fn_%zu(", constructor_index);
+        for (size_t parameter = 0U;
+             parameter < constructor->parameter_count; ++parameter) {
+            if (parameter != 0U) fputs(", ", emitter->output);
+            const IrType *parameter_type = &ir->types[
+                constructor->parameters[parameter].type];
+            if (parameter_type->shape == IR_TYPE_STRING_VIEW)
+                fprintf(emitter->output,
+                        "(aster_str){p%zu_data, p%zu_length}",
+                        parameter, parameter);
+            else if (web_parameter_is_string(parameter_type))
+                fprintf(emitter->output, "p%zu_value", parameter);
+            else
+                fprintf(emitter->output, "p%zu", parameter);
+        }
+        fputs(");\n}\n", emitter->output);
         fputs("void aster_export_component_", emitter->output);
         emit_web_identifier(emitter->output, method->owner_type);
         fputs("_drop(", emitter->output);

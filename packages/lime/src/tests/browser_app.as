@@ -207,6 +207,46 @@ private class IsolatedCounter
     }
 }
 
+private class SeededCounter
+{
+    private string label;
+    private int initial;
+    private bool enabled;
+    private int count;
+
+    public SeededCounter(string label, int initial, bool enabled)
+    {
+        this.label = label;
+        this.initial = initial;
+        this.enabled = enabled;
+        this.count = initial;
+    }
+
+    private int Increment(int count)
+    {
+        if (this.enabled)
+        {
+            this.count += 1;
+        }
+        else
+        {
+            this.count += 2;
+        }
+        return this.count;
+    }
+
+    public Html Render()
+    {
+        return <section class="seeded-counter">
+            <strong>{this.label}</strong>
+            <output name="count">{this.initial}</output>
+            <button type="button" onclick=this.Increment>
+                Increment seeded counter
+            </button>
+        </section>;
+    }
+}
+
 public int ReadDroppedCounters(int dropCount)
 {
     return IsolatedCounter.Dropped;
@@ -603,6 +643,8 @@ public Html BrowserPage(Html browserLoader)
         <PersistentTodoList />
         <IsolatedCounter />
         <IsolatedCounter />
+        <SeededCounter label="Alpha" initial=7 enabled=true />
+        <SeededCounter label="Beta" initial=40 enabled=false />
         <section id="component-drop-probe">
             <output name="dropCount">0</output>
             <button type="button" onclick=ReadDroppedCounters>

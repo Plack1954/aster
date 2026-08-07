@@ -985,7 +985,7 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
     set_tests_properties(lime_browser_async_wasm PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
-            "native keyed item parts, class ownership, and retained DOM verified"
+            "SSR constructor state, native keyed parts, and retained DOM verified"
         TIMEOUT 60)
     add_test(NAME browser_compare_wasm
         COMMAND bash tests/browser_compare_wasm.sh
@@ -2117,6 +2117,16 @@ set_tests_properties(class_component_run PROPERTIES
 )
 add_aster_generated_c_test(
     class_component_generated_c tests/class_components.as class_component)
+add_test(NAME class_component_state_transfer_run
+    COMMAND lang run tests/class_component_state_transfer.as)
+set_tests_properties(class_component_state_transfer_run PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "data-aster-component-arg-0=\"A&amp;B\".*data-aster-component-arg-1=\"9\".*<strong>A&amp;B</strong>"
+)
+add_aster_generated_c_test(
+    class_component_state_transfer_generated_c
+    tests/class_component_state_transfer.as class_component_state_transfer)
 add_test(NAME class_component_requires_render
     COMMAND lang check tests/checker/class_component_requires_render.as)
 set_tests_properties(class_component_requires_render PROPERTIES

@@ -235,8 +235,8 @@ coverage exercises `Add`, `RemoveAt`, `Insert`, and `Clear`; retained rows and a
 browser-edited input survive. No tree VDOM or signal graph is involved.
 
 Interactive native-HTML class components now provide the first Wasm-owned
-region state. A zero-argument constructor initializes ordinary fields, bound
-methods mutate the same object across events, and a generated component ABI
+region state. A constructor initializes ordinary fields, bound methods mutate
+the same object across events, and a generated component ABI
 drops it when its compiler-marked DOM region disconnects. Two successive
 appends and removal of an appended item prove persistence. Two instances of the
 same class also retain isolated counters; removing each region produces exactly
@@ -252,10 +252,12 @@ returns `Rows() -> Html`; the runtime validates incoming/retained part pairs and
 copies only those values into retained nodes. Repeated updates to the first row
 and an appended fourth row preserve sibling content, row identity, and a
 browser-owned input value. No `ProjectionState`, `project_*` property, or item
-command appears in this path. Constructor-state transfer, automatic rerendering,
-async methods, text mixed with nested elements, and broader item attributes remain
-unsupported; explicit keyed commands can remain backend infrastructure rather
-than normal application syntax.
+command appears in this path. Scalar/string constructor state now transfers
+from SSR metadata into each Wasm instance; arbitrary fields, collections, and
+post-constructor server mutations do not yet transfer. Automatic rerendering,
+async methods, text mixed with nested elements, and broader item attributes
+remain unsupported; explicit keyed commands can remain backend infrastructure
+rather than normal application syntax.
 
 ### Virtual DOM control
 
@@ -344,11 +346,11 @@ These capabilities are likely to reveal the real state-management pressure.
 
 [`examples/browser_compare`](../examples/browser_compare/) is now the concrete
 capability and performance check. In a representative local Chrome run, Aster
-created 1,000 keyed rows in 11.3 ms versus Vue's 9.7 ms, updated every tenth
-row in 2.6 ms versus 4.2 ms, swapped two rows in 0.4 ms versus 3.0 ms, appended
-1,000 rows in 13.7 ms versus 8.2 ms, deleted one row in 0.5 ms versus 4.0 ms,
-and cleared 1,999 rows in 5.2 ms versus 7.2 ms. Aster's benchmark client was
-11.3 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
+created 1,000 keyed rows in 13.2 ms versus Vue's 9.2 ms, updated every tenth
+row in 2.8 ms versus 3.6 ms, swapped two rows in 0.5 ms versus 2.8 ms, appended
+1,000 rows in 14.7 ms versus 8.5 ms, deleted one row in 0.5 ms versus 2.7 ms,
+and cleared 1,999 rows in 5.6 ms versus 8.4 ms. Aster's benchmark client was
+11.6 KB gzip versus Vue's 41.9 KB gzip. These are smoke measurements, not
 universal benchmark claims: Aster was not consistently faster, because Vue won
 bulk create and append.
 

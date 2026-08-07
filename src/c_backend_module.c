@@ -1287,8 +1287,7 @@ static bool c_emit_module(const IrModule *ir,
                  candidate < ir->function_count; ++candidate)
                 if (ir->functions[candidate].is_constructor &&
                     ir->functions[candidate].owner_type != NULL &&
-                    strcmp(ir->functions[candidate].owner_type, owner) == 0 &&
-                    ir->functions[candidate].parameter_count == 0U)
+                    strcmp(ir->functions[candidate].owner_type, owner) == 0)
                     c_backend_mark_function(
                         &emitter, (IrFunctionId)candidate);
         }
