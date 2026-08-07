@@ -74,6 +74,23 @@ static AsterCliInvocation parse_test(int argc, char **argv) {
     return result;
 }
 
+static AsterCliInvocation parse_restore(int argc, char **argv) {
+    AsterCliInvocation result = invocation(ASTER_CLI_RESTORE);
+    for (int i = 2; i < argc; ++i) {
+        if (is_help_option(argv[i])) {
+            result.action = ASTER_CLI_RESTORE_HELP;
+            return result;
+        }
+        if (argv[i][0] == '-' || result.project != NULL) {
+            result.action = ASTER_CLI_UNRECOGNIZED_RESTORE_ARGUMENT;
+            result.error_value = argv[i];
+            return result;
+        }
+        result.project = argv[i];
+    }
+    return result;
+}
+
 AsterCliInvocation aster_cli_parse(int argc, char **argv) {
     if (argc <= 1) return invocation(ASTER_CLI_DRIVER_HELP);
     if (argc == 2 && strcmp(argv[1], "--version") == 0)
@@ -88,12 +105,16 @@ AsterCliInvocation aster_cli_parse(int argc, char **argv) {
             return invocation(ASTER_CLI_RUN_HELP);
         if (argc == 3 && strcmp(argv[2], "test") == 0)
             return invocation(ASTER_CLI_TEST_HELP);
+        if (argc == 3 && strcmp(argv[2], "restore") == 0)
+            return invocation(ASTER_CLI_RESTORE_HELP);
         AsterCliInvocation result = invocation(ASTER_CLI_UNKNOWN_COMMAND);
         result.error_value = "help";
         return result;
     }
     if (strcmp(argv[1], "run") == 0) return parse_run(argc, argv);
     if (strcmp(argv[1], "test") == 0) return parse_test(argc, argv);
+    if (strcmp(argv[1], "restore") == 0)
+        return parse_restore(argc, argv);
     AsterCliInvocation result = invocation(ASTER_CLI_UNKNOWN_COMMAND);
     result.error_value = argv[1];
     return result;

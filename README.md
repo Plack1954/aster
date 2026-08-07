@@ -87,7 +87,7 @@ The Wasm client is one optional Aster Web capability, not Aster Web's
 identity. It adds
 typed interaction to ordinary server-rendered HTML while preserving progressive
 enhancement. The same native HTML and checked Aster code renders on the server
-and handles browser events through WebAssembly. `lang project build-web` emits
+and handles browser events through WebAssembly. The internal browser build emits
 an optimized Wasm module, the small generic browser runtime, and a target
 loader alongside the server application.
 
@@ -189,8 +189,8 @@ cc -std=c17 -O2 hello.c -o hello
 Manifest projects support named binary, library, and test targets:
 
 ```sh
-./build/lang project run examples/issue_tracker/aster.toml render
-./build/lang project test examples/testing_project/aster.toml
+./build/aster run --project examples/issue_tracker/Render.asproj
+./build/aster test examples/testing_project/Tests.asproj
 ```
 
 ## Design

@@ -14,13 +14,13 @@ if len(sys.argv) != 3:
 lang = Path(sys.argv[1]).resolve()
 directory = Path(sys.argv[2]).resolve()
 page_html = subprocess.run(
-    [str(lang), "project", "run", "packages/aster_web/aster.toml", "final_todo_proof"],
+    [str(lang), "project", "run", "packages/aster_web/FinalTodoProof.asproj"],
     check=True, capture_output=True, text=True
 ).stdout
 page_html += """
 <script type="module">
 import {disposeAsterRoot, hydrateAster} from './aster.js';
-await hydrateAster({wasmUrl: './final_todo_proof.wasm'});
+await hydrateAster({wasmUrl: './Aster.Web.FinalTodoProof.wasm'});
 window.disposeAsterRoot = disposeAsterRoot;
 window.asterReady = true;
 </script>

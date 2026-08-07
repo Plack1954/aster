@@ -1,0 +1,5 @@
+name = "Stdlib.Path.Test"
+output_type = "exe"
+source_root = "src"
+entry = "App.Main"
+stdlib = "../../std"

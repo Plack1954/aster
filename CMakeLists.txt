@@ -234,14 +234,13 @@ function(add_aster_generated_c_test name source_file output_basename)
     aster_limit_generated_c_test(${name})
 endfunction()
 
-function(add_aster_generated_project_test name manifest_file target_name)
+function(add_aster_generated_project_test name project_file)
     add_test(NAME ${name}
         COMMAND ${CMAKE_COMMAND}
             -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
             -DC_COMPILER=${CMAKE_C_COMPILER}
             -DC_COMPILER_ID=${CMAKE_C_COMPILER_ID}
-            -DMANIFEST_FILE=${manifest_file}
-            -DTARGET_NAME=${target_name}
+            -DPROJECT_FILE=${project_file}
             -DOUTPUT_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}
             -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
             -DINCLUDE_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -799,7 +798,7 @@ if(ASTER_ENABLE_SQLITE_TESTS AND SQLite3_FOUND)
     aster_sqlite_application_surface)
     add_test(NAME issue_tracker_render
         COMMAND lang project run
-            examples/issue_tracker/aster.toml render)
+            examples/issue_tracker/Render.asproj)
     set_tests_properties(issue_tracker_render PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
@@ -807,7 +806,7 @@ if(ASTER_ENABLE_SQLITE_TESTS AND SQLite3_FOUND)
     )
     add_test(NAME issue_tracker_tests
         COMMAND lang project test
-            examples/issue_tracker/aster.toml)
+            examples/issue_tracker/Tests.asproj)
     set_tests_properties(issue_tracker_tests PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
@@ -815,7 +814,7 @@ if(ASTER_ENABLE_SQLITE_TESTS AND SQLite3_FOUND)
     )
     add_test(NAME issue_tracker_application_proof
         COMMAND lang project run
-            examples/issue_tracker/aster.toml proof)
+            examples/issue_tracker/Proof.asproj)
     set_tests_properties(issue_tracker_application_proof PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
@@ -1667,20 +1666,28 @@ add_test(NAME aster_cli_unknown_command
         -DASTER_EXECUTABLE=$<TARGET_FILE:aster>
         -DCASE=unknown-command
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_cli_failure.cmake)
+add_test(NAME aster_cli_ambiguous_project
+    COMMAND ${CMAKE_COMMAND}
+        -DASTER_EXECUTABLE=$<TARGET_FILE:aster>
+        -DCASE=ambiguous-project
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_cli_failure.cmake)
+set_tests_properties(aster_cli_ambiguous_project PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 add_test(NAME aster_cli_run_project_directory
-    COMMAND aster run --project tests/cli_project -- alpha --beta)
+    COMMAND aster run --project tests/cli_project/App.asproj -- alpha --beta)
 set_tests_properties(aster_cli_run_project_directory PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "alpha[\r\n]+--beta"
 )
 add_test(NAME aster_cli_run_project_file
-    COMMAND aster run --project=tests/cli_project/aster.toml -- file)
+    COMMAND aster run --project=tests/cli_project/App.asproj -- file)
 set_tests_properties(aster_cli_run_project_file PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "file"
 )
 add_test(NAME aster_cli_run_interleaved_project_option
-    COMMAND aster run first --project tests/cli_project second)
+    COMMAND aster run first --project tests/cli_project/App.asproj second)
 set_tests_properties(aster_cli_run_interleaved_project_option PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "first[\r\n]+second"
@@ -1691,7 +1698,7 @@ set_tests_properties(aster_cli_run_current_project PROPERTIES
     PASS_REGULAR_EXPRESSION "current"
 )
 add_test(NAME aster_cli_test_project_directory
-    COMMAND aster test tests/cli_project)
+    COMMAND aster test tests/cli_project_tests)
 set_tests_properties(aster_cli_test_project_directory PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION
@@ -1699,34 +1706,53 @@ set_tests_properties(aster_cli_test_project_directory PROPERTIES
 )
 add_test(NAME aster_cli_test_current_project COMMAND aster test)
 set_tests_properties(aster_cli_test_current_project PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_project
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_project_tests
     PASS_REGULAR_EXPRESSION
         "aster test passed(.|[\r\n])*1 project tests, 0 failures"
 )
-add_test(NAME project_default_target
-    COMMAND lang project run tests/project/aster.toml)
-set_tests_properties(project_default_target PROPERTIES
+add_test(NAME aster_cli_restore_local_graph
+    COMMAND aster restore tests/local_dependency)
+set_tests_properties(aster_cli_restore_local_graph PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "Restored tests/local_dependency/App.asproj"
+)
+add_test(NAME project_reference_cycle_rejected
+    COMMAND lang project restore tests/project/CycleA.asproj)
+set_tests_properties(project_reference_cycle_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME project_executable_reference_rejected
+    COMMAND lang project restore
+        tests/project/InvalidExecutableReference.asproj)
+set_tests_properties(project_executable_reference_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE
+)
+add_test(NAME project_run
+    COMMAND lang project run tests/project/App.asproj)
+set_tests_properties(project_run PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "84"
 )
-add_test(NAME project_library_target_check
-    COMMAND lang project check tests/project/aster.toml math)
-set_tests_properties(project_library_target_check PROPERTIES
+add_test(NAME project_library_check
+    COMMAND lang project check tests/project/Math.asproj)
+set_tests_properties(project_library_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME project_local_dependency_run
-    COMMAND lang project run tests/local_dependency/aster.toml app)
+    COMMAND lang project run tests/local_dependency/App.asproj)
 set_tests_properties(project_local_dependency_run PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "local dependency"
 )
 add_test(NAME project_local_dependency_emit_c
-    COMMAND lang project emit-c tests/local_dependency/aster.toml app)
+    COMMAND lang project emit-c tests/local_dependency/App.asproj)
 set_tests_properties(project_local_dependency_emit_c PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_library_check
-    COMMAND lang project check packages/aster_web/aster.toml library)
+    COMMAND lang project check packages/aster_web/Aster.Web.asproj)
 set_tests_properties(aster_web_library_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -1739,42 +1765,42 @@ if(ASTER_PYTHON_EXECUTABLE)
     )
 endif()
 add_test(NAME aster_web_current_http_check
-    COMMAND lang project check packages/aster_web/aster.toml current_http)
+    COMMAND lang project check packages/aster_web/CurrentHttp.asproj)
 set_tests_properties(aster_web_current_http_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_h2o_check
-    COMMAND lang project check packages/aster_web/aster.toml h2o)
+    COMMAND lang project check packages/aster_web/H2O.asproj)
 set_tests_properties(aster_web_h2o_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_forms_check
-    COMMAND lang project check packages/aster_web/aster.toml forms)
+    COMMAND lang project check packages/aster_web/Forms.asproj)
 set_tests_properties(aster_web_forms_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_sessions_check
-    COMMAND lang project check packages/aster_web/aster.toml sessions)
+    COMMAND lang project check packages/aster_web/Sessions.asproj)
 set_tests_properties(aster_web_sessions_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_static_check
-    COMMAND lang project check packages/aster_web/aster.toml static)
+    COMMAND lang project check packages/aster_web/Static.asproj)
 set_tests_properties(aster_web_static_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_content_check
-    COMMAND lang project check packages/aster_web/aster.toml content)
+    COMMAND lang project check packages/aster_web/Content.asproj)
 set_tests_properties(aster_web_content_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_markdown_check
-    COMMAND lang project check packages/aster_web/aster.toml markdown)
+    COMMAND lang project check packages/aster_web/Markdown.asproj)
 set_tests_properties(aster_web_markdown_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME aster_web_smoke
-    COMMAND lang project test packages/aster_web/aster.toml)
+    COMMAND lang project test packages/aster_web/Smoke.Tests.asproj)
 set_tests_properties(aster_web_smoke PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "Aster Web"
@@ -1789,96 +1815,88 @@ if(UNIX)
     )
 endif()
 add_test(NAME aster_web_blog_fixture_c_backend
-    COMMAND lang project emit-c packages/aster_web/aster.toml blog_fixture_server)
+    COMMAND lang project emit-c packages/aster_web/BlogFixtureServer.asproj)
 set_tests_properties(aster_web_blog_fixture_c_backend PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_aster_generated_project_test(
     aster_web_c_backend
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
-    smoke
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/Smoke.Tests.asproj
         "-DEXPECTED_OUTPUT=<h1>Stateful Aster Web</h1>\n<p>Stateful Aster Web:missing</p>\n<section><h1>Aster Web</h1><p>Small, explicit, and written in Aster.</p></section>\n<article>first-post</article>\n<p>two words!:new</p>\n<h1>Method not allowed</h1>\n/\n")
 add_aster_generated_project_test(
     aster_web_async_response_c_backend
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
-    async_response
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/AsyncResponse.asproj
         "-DEXPECTED_OUTPUT=200\n200\n<article><h1>Async Aster Web response</h1></article>\n<article><h1>Async Aster Web response</h1></article>\n")
 add_aster_generated_project_test(
     project_c_backend_compile_and_run
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/project/aster.toml
-    app
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/project/App.asproj
         "-DEXPECTED_OUTPUT=84\n")
 add_aster_generated_project_test(
     docs_server_c_backend_compile_and_run
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/docs_server/aster.toml
-    render)
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/docs_server/Render.asproj)
 if(ASTER_ENABLE_SQLITE_TESTS AND SQLite3_FOUND)
     add_aster_generated_project_test(
     issue_tracker_c_backend_compile_and_run
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/aster.toml
-    render)
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/Render.asproj)
     add_aster_generated_project_test(
     issue_tracker_proof_c_backend_compile_and_run
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/aster.toml
-    proof
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/Proof.asproj
             "-DEXPECTED_OUTPUT=configuration and file processing passed\nvalidation and SQLite passed\nrouting and typed HTML passed\n")
     add_aster_generated_project_test(
     issue_tracker_generated_c_http_integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/aster.toml
-    integration_server
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/issue_tracker/IntegrationServer.asproj
             -DDRIVER_EXECUTABLE=$<TARGET_FILE:generated_http_integration_test>)
     set_tests_properties(
         issue_tracker_generated_c_http_integration PROPERTIES
         RESOURCE_LOCK issue_tracker_integration_database)
 endif()
-add_test(NAME project_test_targets
-    COMMAND lang project test tests/project/aster.toml)
-set_tests_properties(project_test_targets PROPERTIES
+add_test(NAME project_test
+    COMMAND lang project test tests/project/Tests.asproj)
+set_tests_properties(project_test PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PASS_REGULAR_EXPRESSION "\\[pass\\] smoke"
+    PASS_REGULAR_EXPRESSION "\\[pass\\] Project.Model.Tests"
 )
 add_aster_generated_project_test(
     aster_web_sessions_c_backend
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
-    sessions_smoke
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/Sessions.Tests.asproj
     -DCRYPTO_LIBRARY=$<TARGET_FILE:aster_crypto>
     -DOPENSSL_CRYPTO_LINK_LIBRARY=${OPENSSL_CRYPTO_LIBRARY})
 set_tests_properties(aster_web_sessions_c_backend PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME project_whole_namespace_using
-    COMMAND lang project check tests/project/aster.toml bad_selective)
+    COMMAND lang project check tests/project/BadSelective.asproj)
 set_tests_properties(project_whole_namespace_using PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME project_module_path_identity
-    COMMAND lang project check tests/project/aster.toml bad_module)
+    COMMAND lang project check tests/project/BadModule.asproj)
 set_tests_properties(project_module_path_identity PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE
 )
 add_test(NAME project_generic_canonical_identity
-    COMMAND lang project run tests/project/aster.toml generic_app)
+    COMMAND lang project run tests/project/GenericApp.asproj)
 set_tests_properties(project_generic_canonical_identity PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "22[\r\n]+14[\r\n]+3[\r\n]+5"
 )
 add_test(NAME docs_server_render
-    COMMAND lang project run examples/docs_server/aster.toml render)
+    COMMAND lang project run examples/docs_server/Render.asproj)
 set_tests_properties(docs_server_render PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION "configuration parsed(.|[\r\n])*documentation directory traversed[\r\n]+static asset loaded"
 )
 add_test(NAME docs_server_check
-    COMMAND lang project check examples/docs_server/aster.toml server)
+    COMMAND lang project check examples/docs_server/Server.asproj)
 set_tests_properties(docs_server_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME docs_server_aster_tests
-    COMMAND lang project test examples/docs_server/aster.toml)
+    COMMAND lang project test examples/docs_server/Tests.asproj)
 set_tests_properties(docs_server_aster_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PASS_REGULAR_EXPRESSION "\\[pass\\] smoke"
+    PASS_REGULAR_EXPRESSION "\\[pass\\] Aster.Docs.Tests"
 )
 add_test(NAME html_run COMMAND lang run examples/html.as)
 set_tests_properties(html_run PROPERTIES
@@ -2141,12 +2159,12 @@ set_tests_properties(text_utility_application PROPERTIES
 add_test(
     NAME aster_testing_project
     COMMAND lang project test
-        examples/testing_project/aster.toml
+        examples/testing_project/Tests.asproj
 )
 set_tests_properties(aster_testing_project PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION
-        "\\[pass\\][\r\n]+addition[\r\n]+\\[pass\\][\r\n]+greeting.*\\[pass\\] suite.*1 project tests, 0 failures"
+        "\\[pass\\][\r\n]+addition[\r\n]+\\[pass\\][\r\n]+greeting.*\\[pass\\] Aster.Testing.Example.*1 project tests, 0 failures"
 )
 add_test(
     NAME aster_testing_failure_output
@@ -2857,8 +2875,7 @@ set_tests_properties(aster_web_current_http_vm_integration PROPERTIES
 )
 add_aster_generated_project_test(
     aster_web_current_http_c_integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
-    current_http_server
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/CurrentHttpServer.asproj
         -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_http_integration_test>)
 set_tests_properties(aster_web_current_http_c_integration PROPERTIES
     TIMEOUT 120
@@ -2875,8 +2892,7 @@ set_tests_properties(aster_web_async_current_http_vm_integration PROPERTIES
 )
 add_aster_generated_project_test(
     aster_web_async_current_http_c_integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
-    async_http_server
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/AsyncHttpServer.asproj
         -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_async_http_integration_test>)
 set_tests_properties(aster_web_async_current_http_c_integration PROPERTIES
     TIMEOUT 120
@@ -2895,8 +2911,7 @@ if(LANG_HAVE_H2O AND UNIX)
     )
     add_aster_generated_project_test(
     aster_web_h2o_c_integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
-    h2o_http_server
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/H2OHttpServer.asproj
             -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_h2o_integration_test>
             "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}\;${ASTER_H2O_LIBRARY}")
     set_tests_properties(aster_web_h2o_c_integration PROPERTIES

@@ -187,36 +187,26 @@ int lang_emit_c_site_file(const char *path, const char *css_directory);
 int lang_run_file_args(const char *path, bool check_only,
                        const char *dump_kind, size_t argument_count,
                        const char *const *arguments);
-/*
- * Loads `manifest_path`, resolves `target_name` (or the manifest default when
- * NULL), and checks or runs it. All string arguments are borrowed.
- */
-int lang_project_run(const char *manifest_path, const char *target_name,
-                     bool check_only);
-/* As `lang_project_run`, with application arguments for a binary target. */
-int lang_project_run_args(const char *manifest_path, const char *target_name,
-                          size_t argument_count,
+/* Loads and checks or runs one `.asproj`. `project_path` is borrowed. */
+int lang_project_run(const char *project_path, bool check_only);
+/* As `lang_project_run`, with application arguments for an executable. */
+int lang_project_run_args(const char *project_path, size_t argument_count,
                           const char *const *arguments);
-/*
- * Runs a manifest binary/test target through the verified typed IR backend.
- * `manifest_path` and `target_name` are borrowed.
- */
-int lang_project_run_ir(const char *manifest_path, const char *target_name);
-/* Emits a complete manifest target through a native backend. */
-int lang_project_emit_c(const char *manifest_path,
-                        const char *target_name);
-int lang_project_emit_c_site(const char *manifest_path,
-                             const char *target_name,
+/* Runs an executable project through the verified typed IR backend. */
+int lang_project_run_ir(const char *project_path);
+/* Emits a complete project through a native backend. */
+int lang_project_emit_c(const char *project_path);
+int lang_project_emit_c_site(const char *project_path,
                              const char *css_directory);
-int lang_project_build_web(const char *manifest_path,
-                           const char *output_directory,
-                           const char *target_name);
-/* Runs an SSG binary target with `output_directory` as its sole argument. */
-int lang_project_build_site(const char *manifest_path,
-                            const char *output_directory,
-                            const char *target_name);
-/* Checks and executes every manifest target whose kind is `test`. */
-int lang_project_test(const char *manifest_path);
+int lang_project_build_web(const char *project_path,
+                           const char *output_directory);
+/* Runs an SSG project with `output_directory` as its sole argument. */
+int lang_project_build_site(const char *project_path,
+                            const char *output_directory);
+/* Checks and executes one test project. */
+int lang_project_test(const char *project_path);
+/* Validates the complete local project-reference graph. */
+int lang_project_restore(const char *project_path);
 /* `name`, `text`, and `dump_kind` are borrowed for the complete call. */
 int lang_run_text(const char *name, const char *text, bool check_only,
                   const char *dump_kind);

@@ -1,0 +1,4 @@
+name = "Aster.Routing.Imperative"
+output_type = "exe"
+source_root = "src"
+entry = "Variants.Imperative"

@@ -20,7 +20,7 @@ The command writes exactly one `site-<content-hash>.css` into the supplied
 directory. Generated HTML references it as `/assets/site-<content-hash>.css`.
 The filename and bytes are deterministic. Normal `emit-c` remains the optional
 inline mode, matching VM development behavior. Manifest targets use
-`lang project emit-c-site aster.toml public/assets [TARGET]`.
+`lang project emit-c-site Application.asproj public/assets`.
 
 Executable lowering consumes verified typed IR. The IR owns parameter, ABI,
 type-policy, aggregate, async, render, static-CSS, and native-call metadata.

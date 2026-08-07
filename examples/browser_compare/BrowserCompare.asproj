@@ -1,0 +1,5 @@
+name = "BrowserCompare"
+output_type = "web"
+source_root = "."
+entry = "BrowserCompare"
+browser_entry = "BrowserCompare"

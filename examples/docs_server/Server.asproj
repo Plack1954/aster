@@ -1,0 +1,4 @@
+name = "Aster.Docs.Server"
+output_type = "exe"
+source_root = "src"
+entry = "App.Server"

@@ -1,0 +1,4 @@
+name = "Aster.Docs.Tests"
+output_type = "test"
+source_root = "src"
+entry = "App.Tests"

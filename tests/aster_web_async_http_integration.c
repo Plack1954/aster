@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
         if (strcmp(argv[1], "vm") == 0) {
             (void)setvbuf(stdout, NULL, _IONBF, 0);
             _exit(lang_project_run_ir(
-                "packages/aster_web/aster.toml", "async_http_server"));
+                "packages/aster_web/AsyncHttpServer.asproj"));
         }
         execl(argv[1], argv[1], (char *)NULL);
         _exit(10);

@@ -1,0 +1,4 @@
+name = "Cli.Test.App"
+output_type = "exe"
+source_root = "src"
+entry = "App.Main"

@@ -10,12 +10,14 @@ dist_dir="$example_dir/dist"
 rm -rf "$build_dir" "$dist_dir"
 mkdir -p "$build_dir" "$dist_dir"
 build_start=$(date +%s%N)
-"$lang" project build-web "$example_dir/aster.toml" "$dist_dir" compare
+"$lang" project build-web \
+    "$example_dir/BrowserCompare.asproj" "$dist_dir"
 build_end=$(date +%s%N)
 incremental_start=$(date +%s%N)
-"$lang" project build-web "$example_dir/aster.toml" "$dist_dir" compare >/dev/null
+"$lang" project build-web \
+    "$example_dir/BrowserCompare.asproj" "$dist_dir" >/dev/null
 incremental_end=$(date +%s%N)
-cc -std=c17 -O2 "$dist_dir/compare-server.c" -o "$build_dir/server"
+cc -std=c17 -O2 "$dist_dir/BrowserCompare-server.c" -o "$build_dir/server"
 {
     printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Aster comparison</title>'
     "$build_dir/server"
@@ -24,7 +26,7 @@ cc -std=c17 -O2 "$dist_dir/compare-server.c" -o "$build_dir/server"
 cat >"$dist_dir/compare.js" <<'EOF'
 import { hydrateAster } from "./aster.js";
 globalThis.benchmarkAster = await hydrateAster({
-    wasmUrl: new URL("./compare.wasm", import.meta.url)
+    wasmUrl: new URL("./BrowserCompare.wasm", import.meta.url)
 });
 globalThis.benchmarkReady = performance.now();
 EOF
@@ -34,14 +36,14 @@ curl -fsSL \
     -o "$dist_dir/vue.js"
 cp "$example_dir/vue-app.js" "$example_dir/vue.html" "$dist_dir/"
 
-node "$example_dir/verify.mjs" "$dist_dir/compare.wasm"
+node "$example_dir/verify.mjs" "$dist_dir/BrowserCompare.wasm"
 python3 "$example_dir/benchmark.py" "$dist_dir"
 
-aster_raw=$(wc -c <"$dist_dir/compare.wasm")
+aster_raw=$(wc -c <"$dist_dir/BrowserCompare.wasm")
 aster_raw=$((aster_raw + $(wc -c <"$dist_dir/aster.js") + $(wc -c <"$dist_dir/compare.js")))
 vue_raw=$(wc -c <"$dist_dir/vue.js")
 vue_raw=$((vue_raw + $(wc -c <"$dist_dir/vue-app.js")))
-aster_gzip=$({ gzip -c -9 "$dist_dir/compare.wasm"; gzip -c -9 "$dist_dir/aster.js"; gzip -c -9 "$dist_dir/compare.js"; } | wc -c)
+aster_gzip=$({ gzip -c -9 "$dist_dir/BrowserCompare.wasm"; gzip -c -9 "$dist_dir/aster.js"; gzip -c -9 "$dist_dir/compare.js"; } | wc -c)
 vue_gzip=$({ gzip -c -9 "$dist_dir/vue.js"; gzip -c -9 "$dist_dir/vue-app.js"; } | wc -c)
 printf 'Aster client: %d bytes raw, %d bytes gzip\n' "$aster_raw" "$aster_gzip"
 printf 'Vue client:   %d bytes raw, %d bytes gzip\n' "$vue_raw" "$vue_gzip"

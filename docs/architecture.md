@@ -29,7 +29,7 @@ boundary with operating-system facilities and established C libraries.
 
 ```sh
 lang emit-c app.as > app.c
-lang project emit-c aster.toml app > app.c
+lang project emit-c App.asproj > app.c
 ```
 
 GCC or Clang remains responsible for machine optimization, register

@@ -1,0 +1,4 @@
+name = "Aster.IssueTracker.IntegrationServer"
+output_type = "exe"
+source_root = "src"
+entry = "App.IntegrationServer"

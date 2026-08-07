@@ -1,8 +1,0 @@
-name = "wasm_counter"
-source_root = "."
-default_target = "counter"
-
-[target.counter]
-kind = "bin"
-entry = "Counter"
-browser_entry = "Counter"

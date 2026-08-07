@@ -10,7 +10,7 @@ sanitize=${6:-off}
 
 mkdir -p "$output_directory"
 "$lang" project build-web \
-    packages/aster_web/aster.toml "$output_directory" browser_http_server
+    packages/aster_web/BrowserHttpServer.asproj "$output_directory"
 
 compile_flags=(
     -std=c17
@@ -31,7 +31,7 @@ if [[ "$sanitize" == on ]]; then
     )
 fi
 "$c_compiler" "${compile_flags[@]}" \
-    "$output_directory/browser_http_server-server.c" \
+    "$output_directory/Aster.Web.BrowserHttpServer-server.c" \
     "$runtime_library" "$sqlite_library" \
     -o "$output_directory/browser-server"
 
@@ -90,13 +90,13 @@ grep -q 'data-aster-event="input|ProjectQuery|a|s:query"' <<<"$page"
 grep -q 'data-aster-event="input|ProjectQueryLater|A|s:query"' <<<"$page"
 grep -q 'data-aster-event="click|RemoveTodo|r|s:key"' <<<"$page"
 test "$(curl -fsS \
-    "http://127.0.0.1:${port}/browser/browser_http_server.wasm" |
+    "http://127.0.0.1:${port}/browser/Aster.Web.BrowserHttpServer.wasm" |
     wc -c)" -gt 0
 curl -fsS "http://127.0.0.1:${port}/browser/aster.js" |
     grep -q 'hydrateAster'
 loader=$(curl -fsS \
-    "http://127.0.0.1:${port}/browser/browser_http_server.js")
-grep -q 'browser_http_server.wasm' <<<"$loader"
+    "http://127.0.0.1:${port}/browser/Aster.Web.BrowserHttpServer.js")
+grep -q 'Aster.Web.BrowserHttpServer.wasm' <<<"$loader"
 grep -q 'new URL' <<<"$loader"
 curl -fsS -X POST \
     -H 'Content-Type: application/x-www-form-urlencoded' \

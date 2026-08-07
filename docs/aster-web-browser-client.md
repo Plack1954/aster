@@ -28,15 +28,15 @@ than the application platform.
 
 ## Existing Browser 0.1 foundation
 
-A binary project target may declare a `browser_entry`. `lang project
-build-web` currently:
+A web project declares a `browser_entry`. The internal `lang project
+build-web` harness currently:
 
-1. emits portable server C from the ordinary target entry;
+1. emits portable server C from the project entry;
 2. compiles the browser entry through portable C to freestanding `wasm32`;
 3. exports only checked handlers referenced by native HTML event properties;
 4. writes the optimized Wasm module;
 5. copies the generic `aster.js` runtime;
-6. writes a tiny target loader.
+6. writes a tiny project loader.
 
 `Aster.Web.Browser` provides typed browser-asset paths, a loader element, and normal
 static responses for those generated files.

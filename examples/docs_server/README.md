@@ -18,10 +18,10 @@ page, site, server, render, and test modules. It uses:
 From the repository root:
 
 ```sh
-./build/lang project run examples/docs_server/aster.toml render
-./build/lang project check examples/docs_server/aster.toml server
-./build/lang project test examples/docs_server/aster.toml
-./build/lang project run examples/docs_server/aster.toml server
+./build/aster run --project examples/docs_server/Render.asproj
+./build/lang project check examples/docs_server/Server.asproj
+./build/aster test examples/docs_server/Tests.asproj
+./build/aster run --project examples/docs_server/Server.asproj
 ```
 
 The server prints its selected port. It remains blocking; each connection is

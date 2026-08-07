@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
         (void)setvbuf(stdout, NULL, _IONBF, 0);
         if (strcmp(argv[1], "vm") == 0)
             _exit(lang_project_run_ir(
-                "packages/aster_web/aster.toml", "h2o_http_server"));
+                "packages/aster_web/H2OHttpServer.asproj"));
         execl(argv[1], argv[1], (char *)NULL);
         _exit(24);
     }

@@ -53,7 +53,7 @@ Then build an application target:
 
 ```sh
 ./tools/build_aster_web_h2o_app.sh \
-    /path/to/site/aster.toml production_server \
+    /path/to/site/ProductionServer.asproj \
     /path/to/release server
 ```
 

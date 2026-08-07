@@ -124,7 +124,7 @@ int main()
         }
     }
     switch (BrowserAssets(
-        assetDirectory, "/browser", "browser_http_server"
+        assetDirectory, "/browser", "Aster.Web.BrowserHttpServer"
     ))
     {
         case Result.Err(error): {

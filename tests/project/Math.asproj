@@ -1,0 +1,4 @@
+name = "Project.Model.Math"
+output_type = "library"
+source_root = "src"
+entry = "Lib.Math"

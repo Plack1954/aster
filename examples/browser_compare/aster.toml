@@ -1,8 +1,0 @@
-name = "browser_compare"
-source_root = "."
-default_target = "compare"
-
-[target.compare]
-kind = "bin"
-entry = "BrowserCompare"
-browser_entry = "BrowserCompare"

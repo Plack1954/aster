@@ -135,8 +135,7 @@ int main(int argc, char **argv) {
         (void)close(descriptors[1]);
         (void)setvbuf(stdout, NULL, _IONBF, 0);
         _exit(lang_project_run(
-            "examples/docs_server/aster.toml",
-            "integration_server", false));
+            "examples/docs_server/IntegrationServer.asproj", false));
     }
     (void)close(descriptors[1]);
     FILE *ports = fdopen(descriptors[0], "r");

@@ -17,14 +17,14 @@ pages, so there is no separate SSG route list.
 Build static files:
 
 ```sh
-./build/lang project build-site packages/aster_web/aster.toml public blog_fixture
+./build/lang project build-site packages/aster_web/BlogFixture.asproj public
 ```
 
 Check the generated-C server target:
 
 ```sh
-./build/lang project check packages/aster_web/aster.toml blog_fixture_server
-./build/lang project emit-c packages/aster_web/aster.toml blog_fixture_server > blog.c
+./build/lang project check packages/aster_web/BlogFixtureServer.asproj
+./build/lang project emit-c packages/aster_web/BlogFixtureServer.asproj > blog.c
 ```
 
 The fixture covers a home route, post index, one parameterized post route,

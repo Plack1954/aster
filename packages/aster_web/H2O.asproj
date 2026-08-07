@@ -1,0 +1,4 @@
+name = "Aster.Web.H2O.Check"
+output_type = "library"
+source_root = "src"
+entry = "Aster.Web.H2O"

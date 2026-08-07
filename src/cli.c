@@ -12,8 +12,10 @@
 #endif
 
 #if defined(_WIN32)
+#include <windows.h>
 #define ASTER_MODE_IS_DIRECTORY(mode) (((mode) & _S_IFMT) == _S_IFDIR)
 #else
+#include <dirent.h>
 #define ASTER_MODE_IS_DIRECTORY(mode) S_ISDIR(mode)
 #endif
 
@@ -29,6 +31,7 @@ static void write_driver_help(FILE *stream) {
         "Commands:\n"
         "  run             Run source code without explicit compile commands.\n"
         "  test            Run project tests.\n"
+        "  restore         Restore project dependencies.\n"
         "  help            Show command line help.\n",
         stream);
 }
@@ -61,6 +64,19 @@ static void write_test_help(FILE *stream) {
         stream);
 }
 
+static void write_restore_help(FILE *stream) {
+    fputs(
+        "Description:\n"
+        "  Aster Restore Command\n\n"
+        "Usage:\n"
+        "  aster restore [<ROOT>] [options]\n\n"
+        "Arguments:\n"
+        "  <ROOT>          The project file or project directory to restore.\n\n"
+        "Options:\n"
+        "  -?, -h, --help  Show command line help.\n",
+        stream);
+}
+
 static char *copy_string(const char *value) {
     size_t length = strlen(value) + 1U;
     char *copy = malloc(length);
@@ -68,48 +84,104 @@ static char *copy_string(const char *value) {
     return copy;
 }
 
-static char *manifest_path(const char *project_path) {
+static bool has_suffix(const char *value, const char *suffix) {
+    size_t value_length = strlen(value);
+    size_t suffix_length = strlen(suffix);
+    return value_length >= suffix_length &&
+           strcmp(value + value_length - suffix_length, suffix) == 0;
+}
+
+static char *join_path(const char *directory, const char *name) {
+    size_t length = strlen(directory);
+    bool separator = length != 0U &&
+        directory[length - 1U] != '/' && directory[length - 1U] != '\\';
+    size_t size = length + (separator ? 1U : 0U) + strlen(name) + 1U;
+    char *path = malloc(size);
+    if (path == NULL) return NULL;
+    (void)snprintf(path, size, "%s%s%s", directory,
+                   separator ? "/" : "", name);
+    return path;
+}
+
+static char *discover_directory_project(
+    const char *directory, FILE *error) {
+    char *match = NULL;
+    size_t matches = 0U;
+#if defined(_WIN32)
+    char *pattern = join_path(directory, "*.asproj");
+    if (pattern == NULL) return NULL;
+    WIN32_FIND_DATAA data;
+    HANDLE search = FindFirstFileA(pattern, &data);
+    free(pattern);
+    if (search != INVALID_HANDLE_VALUE) {
+        do {
+            if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0U)
+                continue;
+            ++matches;
+            if (matches == 1U) match = join_path(directory, data.cFileName);
+        } while (FindNextFileA(search, &data) != 0);
+        (void)FindClose(search);
+    }
+#else
+    DIR *entries = opendir(directory);
+    if (entries == NULL) {
+        fprintf(error, "Could not open project directory '%s'.\n", directory);
+        return NULL;
+    }
+    struct dirent *entry = NULL;
+    while ((entry = readdir(entries)) != NULL) {
+        if (!has_suffix(entry->d_name, ".asproj")) continue;
+        ++matches;
+        if (matches == 1U) match = join_path(directory, entry->d_name);
+    }
+    (void)closedir(entries);
+#endif
+    if (matches == 1U && match != NULL) return match;
+    free(match);
+    if (matches == 0U)
+        fprintf(error, "Could not find a project in '%s'.\n", directory);
+    else
+        fprintf(error,
+                "More than one project was found in '%s'. Specify which "
+                "project file to use.\n", directory);
+    return NULL;
+}
+
+static char *project_file_path(const char *project_path, FILE *error) {
     const char *path = project_path != NULL ? project_path : ".";
     struct stat metadata;
-    if (stat(path, &metadata) != 0 ||
-        !ASTER_MODE_IS_DIRECTORY(metadata.st_mode))
+    if (stat(path, &metadata) != 0) {
+        fprintf(error, "The project path does not exist: %s.\n", path);
+        return NULL;
+    }
+    if (!ASTER_MODE_IS_DIRECTORY(metadata.st_mode))
         return copy_string(path);
-
-    size_t length = strlen(path);
-    bool has_separator = length != 0U &&
-        (path[length - 1U] == '/' || path[length - 1U] == '\\');
-    const char manifest[] = "aster.toml";
-    char *result = malloc(
-        length + (has_separator ? 0U : 1U) + sizeof(manifest));
-    if (result == NULL) return NULL;
-    memcpy(result, path, length);
-    size_t output = length;
-    if (!has_separator) result[output++] = '/';
-    memcpy(result + output, manifest, sizeof(manifest));
-    return result;
+    return discover_directory_project(path, error);
 }
 
 static int run_project(const char *project, size_t argument_count,
                        const char *const *arguments, FILE *error) {
-    char *manifest = manifest_path(project);
-    if (manifest == NULL) {
-        fputs("Could not allocate the project path.\n", error);
-        return 1;
-    }
+    char *project_file = project_file_path(project, error);
+    if (project_file == NULL) return 1;
     int status = lang_project_run_args(
-        manifest, NULL, argument_count, arguments);
-    free(manifest);
+        project_file, argument_count, arguments);
+    free(project_file);
     return status;
 }
 
 static int test_project(const char *project, FILE *error) {
-    char *manifest = manifest_path(project);
-    if (manifest == NULL) {
-        fputs("Could not allocate the project path.\n", error);
-        return 1;
-    }
-    int status = lang_project_test(manifest);
-    free(manifest);
+    char *project_file = project_file_path(project, error);
+    if (project_file == NULL) return 1;
+    int status = lang_project_test(project_file);
+    free(project_file);
+    return status;
+}
+
+static int restore_project(const char *project, FILE *error) {
+    char *project_file = project_file_path(project, error);
+    if (project_file == NULL) return 1;
+    int status = lang_project_restore(project_file);
+    free(project_file);
     return status;
 }
 
@@ -163,11 +235,17 @@ int aster_cli_main(int argc, char **argv, FILE *output, FILE *error) {
         case ASTER_CLI_TEST:
             status = test_project(parsed.project, error);
             break;
+        case ASTER_CLI_RESTORE:
+            status = restore_project(parsed.project, error);
+            break;
         case ASTER_CLI_RUN_HELP:
             write_run_help(output);
             break;
         case ASTER_CLI_TEST_HELP:
             write_test_help(output);
+            break;
+        case ASTER_CLI_RESTORE_HELP:
+            write_restore_help(output);
             break;
         case ASTER_CLI_UNKNOWN_COMMAND:
             status = write_unknown_command(parsed.error_value, error);
@@ -182,6 +260,12 @@ int aster_cli_main(int argc, char **argv, FILE *output, FILE *error) {
             fprintf(error, "Unrecognized command or argument '%s'.\n\n",
                     parsed.error_value);
             write_test_help(error);
+            status = 1;
+            break;
+        case ASTER_CLI_UNRECOGNIZED_RESTORE_ARGUMENT:
+            fprintf(error, "Unrecognized command or argument '%s'.\n\n",
+                    parsed.error_value);
+            write_restore_help(error);
             status = 1;
             break;
         case ASTER_CLI_OUT_OF_MEMORY:

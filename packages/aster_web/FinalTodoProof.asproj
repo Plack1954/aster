@@ -1,0 +1,5 @@
+name = "Aster.Web.FinalTodoProof"
+output_type = "web"
+source_root = "src"
+entry = "Tests.FinalTodoApp"
+browser_entry = "Tests.FinalTodoApp"

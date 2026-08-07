@@ -385,6 +385,6 @@ The Minimal API restructuring mission is specified in
 ## Verify
 
 ```sh
-./build/lang project check packages/aster_web/aster.toml library
-./build/lang project test packages/aster_web/aster.toml
+./build/lang project check packages/aster_web/Aster.Web.asproj
+./build/aster test packages/aster_web/Smoke.Tests.asproj
 ```

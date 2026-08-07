@@ -1,0 +1,7 @@
+name = "Project.CycleB"
+output_type = "library"
+source_root = "src"
+entry = "Lib.Math"
+
+[project_references]
+"Project.CycleA" = "CycleA.asproj"

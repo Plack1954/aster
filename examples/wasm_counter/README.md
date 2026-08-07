@@ -2,7 +2,7 @@
 
 This is the executable coverage application for Aster Web Browser 0.1. Native
 Aster HTML is server rendered through the primary C backend and hydrated with
-state transitions compiled from the same Aster project target to browser
+state transitions compiled from the same Aster web project to browser
 WebAssembly.
 
 There is no second component syntax and no handwritten hydration marker:
@@ -58,8 +58,8 @@ for removal, reorder, and clear operations.
 
 `build.sh` exercises the normal web-project workflow:
 
-1. run `lang project build-web` for the manifest target;
-2. emit portable server C from the target entry;
+1. run the internal `lang project build-web` harness for `Counter.asproj`;
+2. emit portable server C from the project entry;
 3. compile the browser entry through portable C to freestanding `wasm32`;
 4. discover and export stable Aster entry points;
 5. copy the reusable runtime and generate the tiny application loader;

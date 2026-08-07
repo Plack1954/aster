@@ -1,0 +1,7 @@
+name = "Local.Dependency.App"
+output_type = "exe"
+source_root = "src"
+entry = "App.Main"
+
+[project_references]
+Dependency = "package/Dependency.asproj"

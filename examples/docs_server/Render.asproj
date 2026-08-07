@@ -1,0 +1,4 @@
+name = "Aster.Docs.Render"
+output_type = "exe"
+source_root = "src"
+entry = "App.Render"

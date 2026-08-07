@@ -1,0 +1,4 @@
+name = "Project.Model.BadSelective"
+output_type = "library"
+source_root = "src"
+entry = "Checks.SelectiveError"

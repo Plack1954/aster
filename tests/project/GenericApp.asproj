@@ -1,0 +1,4 @@
+name = "Project.Model.GenericApp"
+output_type = "exe"
+source_root = "src"
+entry = "App.GenericMain"

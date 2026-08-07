@@ -1,0 +1,4 @@
+name = "Aster.Routing.Router"
+output_type = "exe"
+source_root = "src"
+entry = "Variants.Router"

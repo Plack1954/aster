@@ -1,0 +1,4 @@
+name = "Cli.Test.Tests"
+output_type = "test"
+source_root = "../cli_project/src"
+entry = "Tests.Smoke"

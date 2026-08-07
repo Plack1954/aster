@@ -26,17 +26,18 @@ static void usage(FILE *stream) {
         "  repl                   interactive expression runner\n"
         "  test                   run the integration suite\n"
         "  bench                  run a small front-end benchmark\n"
-        "  project run MANIFEST [TARGET]   run a project target\n"
-        "  project run-ir MANIFEST [TARGET] explicit typed-IR alias\n"
-        "  project check MANIFEST [TARGET] check a project target\n"
-        "  project emit-c MANIFEST [TARGET] emit a target as C17\n"
-        "  project emit-c-site MANIFEST ASSET_DIR [TARGET]\n"
-        "                                  emit C17 plus external CSS\n"
-        "  project build-web MANIFEST OUTPUT_DIR [TARGET]\n"
-        "                                  build server C and browser Wasm\n"
-        "  project build-site MANIFEST OUTPUT_DIR [TARGET]\n"
-        "                                  materialize a static site\n"
-        "  project test MANIFEST           run project test targets\n",
+        "  project run PROJECT      run an executable `.asproj`\n"
+        "  project run-ir PROJECT   explicit typed-IR alias\n"
+        "  project check PROJECT    check one `.asproj`\n"
+        "  project emit-c PROJECT   emit a project as C17\n"
+        "  project emit-c-site PROJECT ASSET_DIR\n"
+        "                            emit C17 plus external CSS\n"
+        "  project build-web PROJECT OUTPUT_DIR\n"
+        "                            build server C and browser Wasm\n"
+        "  project build-site PROJECT OUTPUT_DIR\n"
+        "                            materialize a static site\n"
+        "  project test PROJECT     run one test project\n"
+        "  project restore PROJECT  validate project references\n",
         stream);
 }
 
@@ -208,35 +209,31 @@ int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "emit-c-runtime") == 0)
         return lang_c_emit_runtime(stdout) ? 0 : 1;
     if (strcmp(argv[1], "project") == 0) {
-        if (argc >= 5 && argc <= 6 &&
+        if (argc == 5 &&
             strcmp(argv[2], "build-web") == 0)
-            return lang_project_build_web(
-                argv[3], argv[4], argc == 6 ? argv[5] : NULL);
-        if (argc >= 5 && argc <= 6 &&
+            return lang_project_build_web(argv[3], argv[4]);
+        if (argc == 5 &&
             strcmp(argv[2], "build-site") == 0)
-            return lang_project_build_site(
-                argv[3], argv[4], argc == 6 ? argv[5] : NULL);
-        if (argc >= 5 && argc <= 6 &&
+            return lang_project_build_site(argv[3], argv[4]);
+        if (argc == 5 &&
             strcmp(argv[2], "emit-c-site") == 0)
-            return lang_project_emit_c_site(
-                argv[3], argc == 6 ? argv[5] : NULL, argv[4]);
-        if (argc >= 4 && argc <= 5 &&
+            return lang_project_emit_c_site(argv[3], argv[4]);
+        if (argc == 4 &&
             (strcmp(argv[2], "run") == 0 ||
              strcmp(argv[2], "run-ir") == 0 ||
              strcmp(argv[2], "emit-c") == 0 ||
              strcmp(argv[2], "check") == 0)) {
             if (strcmp(argv[2], "run-ir") == 0)
-                return lang_project_run_ir(
-                    argv[3], argc == 5 ? argv[4] : NULL);
+                return lang_project_run_ir(argv[3]);
             if (strcmp(argv[2], "emit-c") == 0)
-                return lang_project_emit_c(
-                    argv[3], argc == 5 ? argv[4] : NULL);
+                return lang_project_emit_c(argv[3]);
             return lang_project_run(
-                argv[3], argc == 5 ? argv[4] : NULL,
-                strcmp(argv[2], "check") == 0);
+                argv[3], strcmp(argv[2], "check") == 0);
         }
         if (argc == 4 && strcmp(argv[2], "test") == 0)
             return lang_project_test(argv[3]);
+        if (argc == 4 && strcmp(argv[2], "restore") == 0)
+            return lang_project_restore(argv[3]);
         usage(stderr);
         return 2;
     }

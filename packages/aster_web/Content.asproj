@@ -1,0 +1,4 @@
+name = "Aster.Web.Content.Check"
+output_type = "library"
+source_root = "src"
+entry = "Aster.Web.Content"

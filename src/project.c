@@ -1,5 +1,6 @@
 #if !defined(_WIN32)
 #define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 #endif
 
 #include "internal.h"
@@ -23,39 +24,32 @@
 #define ASTER_BROWSER_RUNTIME_DIR "runtime/browser"
 #endif
 
-typedef enum ProjectTargetKind {
-    PROJECT_TARGET_BIN,
-    PROJECT_TARGET_LIB,
-    PROJECT_TARGET_TEST
-} ProjectTargetKind;
+typedef enum ProjectOutputType {
+    PROJECT_OUTPUT_EXE,
+    PROJECT_OUTPUT_LIBRARY,
+    PROJECT_OUTPUT_TEST,
+    PROJECT_OUTPUT_WEB
+} ProjectOutputType;
 
-typedef struct ProjectTarget {
-    char *name;
-    char *entry;
-    char *browser_entry;
-    ProjectTargetKind kind;
-    bool has_kind;
-} ProjectTarget;
-
-typedef struct ProjectDependency {
+typedef struct ProjectReference {
     char *name;
     char *path;
-    char *source_root;
-} ProjectDependency;
+} ProjectReference;
 
 typedef struct Project {
     char *name;
     char *root;
     char *source_root;
     char *stdlib_root;
-    char *default_target;
-    ProjectTarget *targets;
-    size_t target_count;
-    size_t target_capacity;
-    ProjectDependency *dependencies;
+    char *entry;
+    char *browser_entry;
+    ProjectOutputType output_type;
+    bool has_output_type;
+    ProjectReference *references;
+    size_t reference_count;
+    size_t reference_capacity;
     const char **dependency_roots;
     size_t dependency_count;
-    size_t dependency_capacity;
 } Project;
 
 static void *project_resize(void *pointer, size_t size) {
@@ -88,6 +82,11 @@ static void trim_right(char *text) {
 
 static char *directory_of(const char *path) {
     const char *slash = strrchr(path, '/');
+#if defined(_WIN32)
+    const char *backslash = strrchr(path, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash))
+        slash = backslash;
+#endif
     if (slash == NULL) return project_strndup(".", 1U);
     if (slash == path) return project_strndup("/", 1U);
     return project_strndup(path, (size_t)(slash - path));
@@ -111,93 +110,83 @@ static void project_free(Project *project) {
     free(project->root);
     free(project->source_root);
     free(project->stdlib_root);
-    free(project->default_target);
-    for (size_t i = 0U; i < project->target_count; ++i) {
-        free(project->targets[i].name);
-        free(project->targets[i].entry);
-        free(project->targets[i].browser_entry);
+    free(project->entry);
+    free(project->browser_entry);
+    for (size_t i = 0U; i < project->reference_count; ++i) {
+        free(project->references[i].name);
+        free(project->references[i].path);
     }
-    for (size_t i = 0U; i < project->dependency_count; ++i) {
-        free(project->dependencies[i].name);
-        free(project->dependencies[i].path);
-        free(project->dependencies[i].source_root);
-    }
-    free(project->dependencies);
+    free(project->references);
+    for (size_t i = 0U; i < project->dependency_count; ++i)
+        free((char *)project->dependency_roots[i]);
     free(project->dependency_roots);
-    free(project->targets);
     memset(project, 0, sizeof(*project));
 }
 
-static bool valid_dependency_name(const char *name) {
+static bool valid_project_name(const char *name) {
     if (name == NULL || *name == '\0') return false;
+    bool segment_has_character = false;
     for (const unsigned char *byte = (const unsigned char *)name;
-         *byte != 0U; ++byte)
-        if (isalnum(*byte) == 0 && *byte != '_' && *byte != '-')
+         *byte != 0U; ++byte) {
+        if (*byte == '.') {
+            if (!segment_has_character) return false;
+            segment_has_character = false;
+        } else if (isalnum(*byte) != 0 || *byte == '_' || *byte == '-') {
+            segment_has_character = true;
+        } else {
             return false;
-    return true;
+        }
+    }
+    return segment_has_character;
 }
 
-static bool add_dependency(Project *project, const char *name, char *path,
-                           const char *manifest, size_t line) {
-    if (!valid_dependency_name(name)) {
+static bool has_suffix(const char *value, const char *suffix) {
+    size_t value_length = strlen(value);
+    size_t suffix_length = strlen(suffix);
+    return value_length >= suffix_length &&
+           strcmp(value + value_length - suffix_length, suffix) == 0;
+}
+
+static bool add_reference(Project *project, const char *name, char *path,
+                          const char *manifest, size_t line) {
+    if (!valid_project_name(name)) {
         fprintf(stderr,
-                "error: invalid dependency name `%s`\n  --> %s:%zu\n",
+                "error: invalid project reference name `%s`\n"
+                "  --> %s:%zu\n",
                 name, manifest, line);
         free(path);
         return false;
     }
-    for (size_t i = 0U; i < project->dependency_count; ++i)
-        if (strcmp(project->dependencies[i].name, name) == 0) {
+    if (!has_suffix(path, ".asproj")) {
+        fprintf(stderr,
+                "error: project reference `%s` must name an `.asproj` file\n"
+                "  --> %s:%zu\n", name, manifest, line);
+        free(path);
+        return false;
+    }
+    for (size_t i = 0U; i < project->reference_count; ++i)
+        if (strcmp(project->references[i].name, name) == 0) {
             fprintf(stderr,
-                    "error: duplicate dependency `%s`\n  --> %s:%zu\n",
+                    "error: duplicate project reference `%s`\n"
+                    "  --> %s:%zu\n",
                     name, manifest, line);
             free(path);
             return false;
         }
-    if (project->dependency_count == project->dependency_capacity) {
-        size_t capacity = project->dependency_capacity == 0U
-                        ? 4U : project->dependency_capacity * 2U;
-        project->dependencies = project_resize(
-            project->dependencies,
-            capacity * sizeof(*project->dependencies));
-        project->dependency_capacity = capacity;
+    if (project->reference_count == project->reference_capacity) {
+        size_t capacity = project->reference_capacity == 0U
+                        ? 4U : project->reference_capacity * 2U;
+        project->references = project_resize(
+            project->references,
+            capacity * sizeof(*project->references));
+        project->reference_capacity = capacity;
     }
-    ProjectDependency *dependency =
-        &project->dependencies[project->dependency_count++];
-    *dependency = (ProjectDependency){
+    ProjectReference *reference =
+        &project->references[project->reference_count++];
+    *reference = (ProjectReference){
         .name=project_strndup(name, strlen(name)), .path=path
     };
     return true;
-}
-
-static ProjectTarget *find_target(Project *project, const char *name) {
-    for (size_t i = 0U; i < project->target_count; ++i)
-        if (strcmp(project->targets[i].name, name) == 0)
-            return &project->targets[i];
-    return NULL;
-}
-
-static ProjectTarget *add_target(Project *project, const char *name,
-                                 const char *path, size_t line) {
-    if (find_target(project, name) != NULL) {
-        fprintf(stderr,
-                "error: duplicate target `%s`\n  --> %s:%zu\n",
-                name, path, line);
-        return NULL;
-    }
-    if (project->target_count == project->target_capacity) {
-        size_t capacity = project->target_capacity == 0U
-                        ? 4U : project->target_capacity * 2U;
-        project->targets = project_resize(
-            project->targets, capacity * sizeof(*project->targets));
-        project->target_capacity = capacity;
-    }
-    ProjectTarget *target = &project->targets[project->target_count++];
-    *target = (ProjectTarget){
-        .name=project_strndup(name, strlen(name)),
-        .kind=PROJECT_TARGET_BIN
-    };
-    return target;
 }
 
 static char *parse_string_value(char *value, const char *path, size_t line) {
@@ -233,29 +222,33 @@ static bool assign_owned(char **slot, char *value, const char *key,
     return true;
 }
 
-static bool parse_target_kind(ProjectTarget *target, char *value,
+static bool parse_output_type(Project *project, char *value,
                               const char *path, size_t line) {
-    if (target->has_kind) {
+    if (project->has_output_type) {
         fprintf(stderr,
-                "error: duplicate target key `kind`\n  --> %s:%zu\n",
+                "error: duplicate manifest key `output_type`\n"
+                "  --> %s:%zu\n",
                 path, line);
         free(value);
         return false;
     }
-    if (strcmp(value, "bin") == 0)
-        target->kind = PROJECT_TARGET_BIN;
-    else if (strcmp(value, "lib") == 0)
-        target->kind = PROJECT_TARGET_LIB;
+    if (strcmp(value, "exe") == 0)
+        project->output_type = PROJECT_OUTPUT_EXE;
+    else if (strcmp(value, "library") == 0)
+        project->output_type = PROJECT_OUTPUT_LIBRARY;
     else if (strcmp(value, "test") == 0)
-        target->kind = PROJECT_TARGET_TEST;
+        project->output_type = PROJECT_OUTPUT_TEST;
+    else if (strcmp(value, "web") == 0)
+        project->output_type = PROJECT_OUTPUT_WEB;
     else {
         fprintf(stderr,
-                "error: target kind must be `bin`, `lib`, or `test`\n"
+                "error: output_type must be `exe`, `library`, `test`, "
+                "or `web`\n"
                 "  --> %s:%zu\n", path, line);
         free(value);
         return false;
     }
-    target->has_kind = true;
+    project->has_output_type = true;
     free(value);
     return true;
 }
@@ -279,18 +272,21 @@ static bool valid_module_name(const char *name) {
     return !need_identifier;
 }
 
-static bool parse_manifest_internal(
-    const char *path, Project *project, bool resolve_dependencies) {
+static bool parse_project_file(const char *path, Project *project) {
     memset(project, 0, sizeof(*project));
+    if (!has_suffix(path, ".asproj")) {
+        fprintf(stderr, "error: project file must use `.asproj`: `%s`\n",
+                path);
+        return false;
+    }
     project->root = directory_of(path);
     LangSource source = {0};
     if (!lang_source_load(path, &source)) {
-        fprintf(stderr, "error: cannot load project manifest `%s`\n", path);
+        fprintf(stderr, "error: cannot load project `%s`\n", path);
         project_free(project);
         return false;
     }
-    ProjectTarget *section_target = NULL;
-    bool dependencies_section = false;
+    bool references_section = false;
     char *cursor = source.text;
     size_t line_number = 0U;
     bool ok = true;
@@ -317,34 +313,17 @@ static bool parse_manifest_internal(
         if (*line == '\0') continue;
         size_t length = strlen(line);
         if (line[0] == '[') {
-            if (strcmp(line, "[dependencies]") == 0) {
-                section_target = NULL;
-                dependencies_section = true;
+            if (strcmp(line, "[project_references]") == 0) {
+                references_section = true;
                 continue;
             }
-            if (length < 10U || line[length - 1U] != ']' ||
-                strncmp(line, "[target.", 8U) != 0) {
-                fprintf(stderr,
-                        "error: expected `[dependencies]` or `[target.NAME]`\n"
-                        "  --> %s:%zu\n",
-                        path, line_number);
-                ok = false;
-                break;
-            }
-            line[length - 1U] = '\0';
-            const char *name = line + 8U;
-            if (!valid_module_name(name) || strchr(name, '.') != NULL) {
-                fprintf(stderr,
-                        "error: invalid target name `%s`\n  --> %s:%zu\n",
-                        name, path, line_number);
-                ok = false;
-                break;
-            }
-            section_target = add_target(
-                project, name, path, line_number);
-            dependencies_section = false;
-            ok = section_target != NULL;
-            continue;
+            (void)length;
+            fprintf(stderr,
+                    "error: expected `[project_references]`\n"
+                    "  --> %s:%zu\n",
+                    path, line_number);
+            ok = false;
+            break;
         }
         char *equals = strchr(line, '=');
         if (equals == NULL) {
@@ -363,22 +342,44 @@ static bool parse_manifest_internal(
             ok = false;
             break;
         }
-        if (dependencies_section) {
-            ok = add_dependency(
-                project, key, value, path, line_number);
-        } else if (section_target == NULL) {
+        if (references_section) {
+            char *quoted_key = NULL;
+            size_t key_length = strlen(key);
+            if (key_length >= 2U && key[0] == '"' &&
+                key[key_length - 1U] == '"') {
+                quoted_key = project_strndup(
+                    key + 1U, key_length - 2U);
+                key = quoted_key;
+            } else if (strchr(key, '.') != NULL) {
+                fprintf(stderr,
+                        "error: dotted project reference names must be "
+                        "quoted TOML keys\n  --> %s:%zu\n",
+                        path, line_number);
+                free(value);
+                ok = false;
+                continue;
+            }
+            ok = add_reference(project, key, value, path, line_number);
+            free(quoted_key);
+        } else {
             if (strcmp(key, "name") == 0)
                 ok = assign_owned(
                     &project->name, value, key, path, line_number);
+            else if (strcmp(key, "output_type") == 0)
+                ok = parse_output_type(
+                    project, value, path, line_number);
             else if (strcmp(key, "source_root") == 0)
                 ok = assign_owned(
                     &project->source_root, value, key, path, line_number);
+            else if (strcmp(key, "entry") == 0)
+                ok = assign_owned(
+                    &project->entry, value, key, path, line_number);
+            else if (strcmp(key, "browser_entry") == 0)
+                ok = assign_owned(
+                    &project->browser_entry, value, key, path, line_number);
             else if (strcmp(key, "stdlib") == 0)
                 ok = assign_owned(
                     &project->stdlib_root, value, key, path, line_number);
-            else if (strcmp(key, "default_target") == 0)
-                ok = assign_owned(
-                    &project->default_target, value, key, path, line_number);
             else {
                 fprintf(stderr,
                         "error: unknown project key `%s`\n  --> %s:%zu\n",
@@ -386,22 +387,6 @@ static bool parse_manifest_internal(
                 free(value);
                 ok = false;
             }
-        } else if (strcmp(key, "kind") == 0) {
-            ok = parse_target_kind(
-                section_target, value, path, line_number);
-        } else if (strcmp(key, "entry") == 0) {
-            ok = assign_owned(
-                &section_target->entry, value, key, path, line_number);
-        } else if (strcmp(key, "browser_entry") == 0) {
-            ok = assign_owned(
-                &section_target->browser_entry,
-                value, key, path, line_number);
-        } else {
-            fprintf(stderr,
-                    "error: unknown target key `%s`\n  --> %s:%zu\n",
-                    key, path, line_number);
-            free(value);
-            ok = false;
         }
     }
     lang_source_free(&source);
@@ -409,39 +394,31 @@ static bool parse_manifest_internal(
         project_free(project);
         return false;
     }
-    if (project->name == NULL || project->source_root == NULL ||
-        project->target_count == 0U) {
+    if (project->name == NULL || !valid_project_name(project->name) ||
+        project->source_root == NULL || project->entry == NULL ||
+        !project->has_output_type) {
         fprintf(stderr,
-                "error: manifest requires `name`, `source_root`, and at least one target\n");
+                "error: project requires valid `name`, `output_type`, "
+                "`source_root`, and `entry`\n");
         project_free(project);
         return false;
     }
-    for (size_t i = 0U; i < project->target_count; ++i)
-        if (project->targets[i].entry == NULL ||
-            !valid_module_name(project->targets[i].entry)) {
-            fprintf(stderr,
-                    "error: target `%s` requires a valid namespace `entry`\n",
-                    project->targets[i].name);
-            project_free(project);
-            return false;
-        }
-    for (size_t i = 0U; i < project->target_count; ++i) {
-        ProjectTarget *target = &project->targets[i];
-        if (target->browser_entry != NULL &&
-            (!valid_module_name(target->browser_entry) ||
-             target->kind != PROJECT_TARGET_BIN)) {
-            fprintf(stderr,
-                    "error: target `%s` browser_entry requires a valid namespace and bin kind\n",
-                    target->name);
-            project_free(project);
-            return false;
-        }
-    }
-    if (project->default_target != NULL &&
-        find_target(project, project->default_target) == NULL) {
+    if (!valid_module_name(project->entry)) {
         fprintf(stderr,
-                "error: default target `%s` is not declared\n",
-                project->default_target);
+                "error: project `entry` must be a valid namespace\n");
+        project_free(project);
+        return false;
+    }
+    if (project->output_type == PROJECT_OUTPUT_WEB) {
+        if (!valid_module_name(project->browser_entry)) {
+            fputs("error: web project requires a valid `browser_entry`\n",
+                  stderr);
+            project_free(project);
+            return false;
+        }
+    } else if (project->browser_entry != NULL) {
+        fputs("error: `browser_entry` is valid only for a web project\n",
+              stderr);
         project_free(project);
         return false;
     }
@@ -455,47 +432,176 @@ static bool parse_manifest_internal(
         free(project->stdlib_root);
         project->stdlib_root = full_stdlib_root;
     }
-    if (resolve_dependencies && project->dependency_count != 0U) {
-        project->dependency_roots = project_resize(
-            NULL, project->dependency_count *
-                sizeof(*project->dependency_roots));
-        for (size_t i = 0U; i < project->dependency_count; ++i) {
-            ProjectDependency *dependency = &project->dependencies[i];
-            char *directory = join_path(project->root, dependency->path);
-            char *manifest = join_path(directory, "aster.toml");
-            Project package;
-            if (!parse_manifest_internal(manifest, &package, false)) {
-                fprintf(stderr,
-                        "error: cannot load local dependency `%s` from `%s`\n",
-                        dependency->name, directory);
-                free(manifest);
-                free(directory);
-                project_free(project);
-                return false;
-            }
-            if (strcmp(package.name, dependency->name) != 0) {
-                fprintf(stderr,
-                        "error: dependency `%s` points to package `%s`\n",
-                        dependency->name, package.name);
-                project_free(&package);
-                free(manifest);
-                free(directory);
-                project_free(project);
-                return false;
-            }
-            dependency->source_root = project_strndup(
-                package.source_root, strlen(package.source_root));
-            project->dependency_roots[i] = dependency->source_root;
-            project_free(&package);
-            free(manifest);
-            free(directory);
-        }
-    }
     return true;
 }
 
-static bool parse_manifest(const char *path, Project *project) {
-    return parse_manifest_internal(path, project, true);
+typedef enum ProjectVisitState {
+    PROJECT_VISITING,
+    PROJECT_VISITED
+} ProjectVisitState;
+
+typedef struct ProjectGraphNode {
+    char *name;
+    char *path;
+    ProjectVisitState state;
+} ProjectGraphNode;
+
+typedef struct ProjectGraph {
+    ProjectGraphNode *nodes;
+    size_t count;
+    size_t capacity;
+} ProjectGraph;
+
+static void project_graph_free(ProjectGraph *graph) {
+    for (size_t i = 0U; i < graph->count; ++i) {
+        free(graph->nodes[i].name);
+        free(graph->nodes[i].path);
+    }
+    free(graph->nodes);
+    memset(graph, 0, sizeof(*graph));
+}
+
+static char *canonical_project_path(const char *path) {
+#if defined(_WIN32)
+    char *resolved = _fullpath(NULL, path, 0U);
+#else
+    char *resolved = realpath(path, NULL);
+#endif
+    return resolved != NULL
+         ? resolved : project_strndup(path, strlen(path));
+}
+
+static ProjectGraphNode *project_graph_find_path(
+    ProjectGraph *graph, const char *path) {
+    for (size_t i = 0U; i < graph->count; ++i)
+        if (strcmp(graph->nodes[i].path, path) == 0)
+            return &graph->nodes[i];
+    return NULL;
+}
+
+static ProjectGraphNode *project_graph_find_name(
+    ProjectGraph *graph, const char *name) {
+    for (size_t i = 0U; i < graph->count; ++i)
+        if (strcmp(graph->nodes[i].name, name) == 0)
+            return &graph->nodes[i];
+    return NULL;
+}
+
+static ProjectGraphNode *project_graph_add(
+    ProjectGraph *graph, const char *name, char *path) {
+    if (graph->count == graph->capacity) {
+        size_t capacity = graph->capacity == 0U
+                        ? 8U : graph->capacity * 2U;
+        graph->nodes = project_resize(
+            graph->nodes, capacity * sizeof(*graph->nodes));
+        graph->capacity = capacity;
+    }
+    ProjectGraphNode *node = &graph->nodes[graph->count++];
+    *node = (ProjectGraphNode){
+        .name=project_strndup(name, strlen(name)),
+        .path=path,
+        .state=PROJECT_VISITING
+    };
+    return node;
+}
+
+static void project_add_dependency_root(Project *root, const char *path) {
+    root->dependency_roots = project_resize(
+        root->dependency_roots,
+        (root->dependency_count + 1U) *
+            sizeof(*root->dependency_roots));
+    root->dependency_roots[root->dependency_count++] =
+        project_strndup(path, strlen(path));
+}
+
+static bool resolve_project_references(
+    Project *owner, Project *root, ProjectGraph *graph);
+
+static bool resolve_project_reference(
+    const Project *owner, const ProjectReference *reference,
+    Project *root, ProjectGraph *graph) {
+    char *referenced_path = join_path(owner->root, reference->path);
+    Project referenced;
+    if (!parse_project_file(referenced_path, &referenced)) {
+        fprintf(stderr,
+                "error: cannot load project reference `%s` from `%s`\n",
+                reference->name, referenced_path);
+        free(referenced_path);
+        return false;
+    }
+    if (strcmp(reference->name, referenced.name) != 0) {
+        fprintf(stderr,
+                "error: project reference `%s` points to project `%s`\n",
+                reference->name, referenced.name);
+        project_free(&referenced);
+        free(referenced_path);
+        return false;
+    }
+    if (referenced.output_type != PROJECT_OUTPUT_LIBRARY) {
+        fprintf(stderr,
+                "error: project reference `%s` must reference a library\n",
+                reference->name);
+        project_free(&referenced);
+        free(referenced_path);
+        return false;
+    }
+    char *canonical = canonical_project_path(referenced_path);
+    free(referenced_path);
+    ProjectGraphNode *path_node = project_graph_find_path(graph, canonical);
+    if (path_node != NULL) {
+        if (path_node->state == PROJECT_VISITING) {
+            fprintf(stderr,
+                    "error: project reference cycle reaches `%s`\n",
+                    referenced.name);
+            free(canonical);
+            project_free(&referenced);
+            return false;
+        }
+        free(canonical);
+        project_free(&referenced);
+        return true;
+    }
+    ProjectGraphNode *name_node = project_graph_find_name(
+        graph, referenced.name);
+    if (name_node != NULL) {
+        fprintf(stderr,
+                "error: duplicate project identity `%s` at `%s` and `%s`\n",
+                referenced.name, name_node->path, canonical);
+        free(canonical);
+        project_free(&referenced);
+        return false;
+    }
+    ProjectGraphNode *node = project_graph_add(
+        graph, referenced.name, canonical);
+    project_add_dependency_root(root, referenced.source_root);
+    bool ok = resolve_project_references(
+        &referenced, root, graph);
+    if (ok) node->state = PROJECT_VISITED;
+    project_free(&referenced);
+    return ok;
+}
+
+static bool resolve_project_references(
+    Project *owner, Project *root, ProjectGraph *graph) {
+    for (size_t i = 0U; i < owner->reference_count; ++i)
+        if (!resolve_project_reference(
+                owner, &owner->references[i], root, graph))
+            return false;
+    return true;
+}
+
+static bool parse_project(const char *path, Project *project) {
+    if (!parse_project_file(path, project)) return false;
+    ProjectGraph graph = {0};
+    char *canonical = canonical_project_path(path);
+    ProjectGraphNode *root_node = project_graph_add(
+        &graph, project->name, canonical);
+    bool ok = resolve_project_references(
+        project, project, &graph);
+    if (ok) root_node->state = PROJECT_VISITED;
+    project_graph_free(&graph);
+    if (!ok) project_free(project);
+    return ok;
 }
 
 static char *module_file_path(const Project *project,
@@ -522,35 +628,35 @@ static char *module_file_path(const Project *project,
     return path;
 }
 
-static int run_target(const Project *project, const ProjectTarget *target,
-                      bool check_only, const char *dump_kind) {
-    if (!check_only && target->kind == PROJECT_TARGET_LIB) {
+static int run_project_output(const Project *project, bool check_only,
+                              const char *dump_kind) {
+    if (!check_only && project->output_type == PROJECT_OUTPUT_LIBRARY) {
         fprintf(stderr,
-                "error: library target `%s` can be checked but not run\n",
-                target->name);
+                "error: library project `%s` cannot be run\n",
+                project->name);
         return 1;
     }
-    char *entry_path = module_file_path(project, target->entry);
+    char *entry_path = module_file_path(project, project->entry);
     int status = lang_run_file_with_roots(
         entry_path, project->source_root,
         project->dependency_roots, project->dependency_count,
         project->root, project->stdlib_root,
-        check_only, dump_kind, target->kind != PROJECT_TARGET_LIB);
+        check_only, dump_kind,
+        project->output_type != PROJECT_OUTPUT_LIBRARY);
     free(entry_path);
     return status;
 }
 
-static int run_target_args(
-    const Project *project, const ProjectTarget *target,
-    const char *dump_kind, size_t argument_count,
+static int run_project_output_args(
+    const Project *project, const char *dump_kind, size_t argument_count,
     const char *const *arguments) {
-    if (target->kind != PROJECT_TARGET_BIN) {
+    if (project->output_type != PROJECT_OUTPUT_EXE &&
+        project->output_type != PROJECT_OUTPUT_WEB) {
         fprintf(stderr,
-                "error: site build target `%s` must have bin kind\n",
-                target->name);
+                "error: project `%s` is not runnable\n", project->name);
         return 1;
     }
-    char *entry_path = module_file_path(project, target->entry);
+    char *entry_path = module_file_path(project, project->entry);
     int status = lang_run_file_with_roots_args(
         entry_path, project->source_root,
         project->dependency_roots, project->dependency_count,
@@ -560,156 +666,79 @@ static int run_target_args(
     return status;
 }
 
-int lang_project_run(const char *manifest_path, const char *target_name,
-                     bool check_only) {
-    if (manifest_path == NULL) return 1;
+int lang_project_run(const char *project_path, bool check_only) {
+    if (project_path == NULL) return 1;
     Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    const char *selected = target_name != NULL
-                         ? target_name : project.default_target;
-    if (selected == NULL) {
-        fprintf(stderr,
-                "error: no target specified and manifest has no default target\n");
-        project_free(&project);
-        return 1;
-    }
-    ProjectTarget *target = find_target(&project, selected);
-    if (target == NULL) {
-        fprintf(stderr, "error: unknown project target `%s`\n", selected);
-        project_free(&project);
-        return 1;
-    }
-    int status = run_target(
-        &project, target, check_only,
+    if (!parse_project(project_path, &project)) return 1;
+    int status = run_project_output(
+        &project, check_only,
         check_only ? NULL : "run-ir");
     project_free(&project);
     return status;
 }
 
-int lang_project_run_args(const char *manifest_path, const char *target_name,
-                          size_t argument_count,
+int lang_project_run_args(const char *project_path, size_t argument_count,
                           const char *const *arguments) {
-    if (manifest_path == NULL) return 1;
+    if (project_path == NULL) return 1;
     Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    const char *selected = target_name != NULL
-                         ? target_name : project.default_target;
-    if (selected == NULL) {
-        fprintf(stderr,
-                "error: no target specified and manifest has no default target\n");
-        project_free(&project);
-        return 1;
-    }
-    ProjectTarget *target = find_target(&project, selected);
-    if (target == NULL) {
-        fprintf(stderr, "error: unknown project target `%s`\n", selected);
-        project_free(&project);
-        return 1;
-    }
-    int status = run_target_args(
-        &project, target, "run-ir", argument_count, arguments);
+    if (!parse_project(project_path, &project)) return 1;
+    int status = run_project_output_args(
+        &project, "run-ir", argument_count, arguments);
     project_free(&project);
     return status;
 }
 
-int lang_project_run_ir(const char *manifest_path,
-                        const char *target_name) {
-    if (manifest_path == NULL) return 1;
+int lang_project_run_ir(const char *project_path) {
+    if (project_path == NULL) return 1;
     Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    const char *selected = target_name != NULL
-                         ? target_name : project.default_target;
-    if (selected == NULL) {
-        fprintf(stderr,
-                "error: no target specified and manifest has no default target\n");
-        project_free(&project);
-        return 1;
-    }
-    ProjectTarget *target = find_target(&project, selected);
-    if (target == NULL) {
-        fprintf(stderr, "error: unknown project target `%s`\n", selected);
-        project_free(&project);
-        return 1;
-    }
-    int status = run_target(&project, target, false, "run-ir");
+    if (!parse_project(project_path, &project)) return 1;
+    int status = run_project_output(&project, false, "run-ir");
     project_free(&project);
     return status;
 }
 
-int lang_project_build_site(const char *manifest_path,
-                            const char *output_directory,
-                            const char *target_name) {
-    if (manifest_path == NULL || output_directory == NULL) return 1;
+int lang_project_build_site(const char *project_path,
+                            const char *output_directory) {
+    if (project_path == NULL || output_directory == NULL) return 1;
     Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    const char *selected = target_name != NULL
-                         ? target_name : project.default_target;
-    if (selected == NULL) {
-        fprintf(stderr,
-                "error: no target specified and manifest has no default target\n");
-        project_free(&project);
-        return 1;
-    }
-    ProjectTarget *target = find_target(&project, selected);
-    if (target == NULL) {
-        fprintf(stderr, "error: unknown project target `%s`\n", selected);
-        project_free(&project);
-        return 1;
-    }
+    if (!parse_project(project_path, &project)) return 1;
     const char *arguments[] = {output_directory};
-    int status = run_target_args(
-        &project, target, "run-ir", 1U, arguments);
+    int status = run_project_output_args(
+        &project, "run-ir", 1U, arguments);
     project_free(&project);
     return status;
 }
 
-static int emit_project_target(const char *manifest_path,
-                               const char *target_name,
+static int emit_project_output(const char *project_path,
                                const char *backend,
                                const char *css_directory) {
-    if (manifest_path == NULL) return 1;
+    if (project_path == NULL) return 1;
     Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    const char *selected = target_name != NULL
-                         ? target_name : project.default_target;
-    if (selected == NULL) {
-        fprintf(stderr,
-                "error: no target specified and manifest has no default target\n");
-        project_free(&project);
-        return 1;
-    }
-    ProjectTarget *target = find_target(&project, selected);
-    if (target == NULL) {
-        fprintf(stderr, "error: unknown project target `%s`\n", selected);
-        project_free(&project);
-        return 1;
-    }
+    if (!parse_project(project_path, &project)) return 1;
     int status;
     if (css_directory == NULL) {
-        status = run_target(&project, target, true, backend);
+        status = run_project_output(&project, true, backend);
     } else {
-        char *entry_path = module_file_path(&project, target->entry);
+        char *entry_path = module_file_path(&project, project.entry);
         status = lang_emit_c_site_with_roots(
             entry_path, project.source_root,
             project.dependency_roots, project.dependency_count,
             project.root, project.stdlib_root,
-            css_directory, target->kind != PROJECT_TARGET_LIB);
+            css_directory,
+            project.output_type != PROJECT_OUTPUT_LIBRARY);
         free(entry_path);
     }
     project_free(&project);
     return status;
 }
 
-int lang_project_emit_c(const char *manifest_path,
-                        const char *target_name) {
-    return emit_project_target(manifest_path, target_name, "c", NULL);
+int lang_project_emit_c(const char *project_path) {
+    return emit_project_output(project_path, "c", NULL);
 }
 
-int lang_project_emit_c_site(const char *manifest_path,
-                             const char *target_name,
+int lang_project_emit_c_site(const char *project_path,
                              const char *css_directory) {
-    return emit_project_target(
-        manifest_path, target_name, "c", css_directory);
+    return emit_project_output(project_path, "c", css_directory);
 }
 
 static const char *browser_tool(const char *variable,
@@ -897,19 +926,13 @@ static int browser_emit_entry(const Project *project,
     return status;
 }
 
-int lang_project_build_web(const char *manifest_path,
-                           const char *output_directory,
-                           const char *target_name) {
-    if (manifest_path == NULL || output_directory == NULL) return 1;
+int lang_project_build_web(const char *project_path,
+                           const char *output_directory) {
+    if (project_path == NULL || output_directory == NULL) return 1;
     Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    const char *selected = target_name != NULL
-                         ? target_name : project.default_target;
-    ProjectTarget *target = selected != NULL
-                          ? find_target(&project, selected) : NULL;
-    if (target == NULL || target->browser_entry == NULL) {
-        fprintf(stderr,
-                "error: web build target requires `browser_entry`\n");
+    if (!parse_project(project_path, &project)) return 1;
+    if (project.output_type != PROJECT_OUTPUT_WEB) {
+        fputs("error: browser build requires a web project\n", stderr);
         project_free(&project);
         return 1;
     }
@@ -919,19 +942,19 @@ int lang_project_build_web(const char *manifest_path,
     }
 
     char *server_c = browser_output_path(
-        output_directory, target->name, "-server.c");
+        output_directory, project.name, "-server.c");
     char *browser_c = browser_output_path(
-        output_directory, target->name, "-browser.c");
+        output_directory, project.name, "-browser.c");
     char *browser_o = browser_output_path(
-        output_directory, target->name, "-browser.o");
+        output_directory, project.name, "-browser.o");
     char *runtime_o = browser_output_path(
-        output_directory, target->name, "-runtime.o");
+        output_directory, project.name, "-runtime.o");
     char *unoptimized = browser_output_path(
-        output_directory, target->name, ".raw.wasm");
+        output_directory, project.name, ".raw.wasm");
     char *wasm = browser_output_path(
-        output_directory, target->name, ".wasm");
+        output_directory, project.name, ".wasm");
     char *loader = browser_output_path(
-        output_directory, target->name, ".js");
+        output_directory, project.name, ".js");
     char *runtime_js = join_path(output_directory, "aster.js");
     const char *runtime_root_env = getenv("ASTER_BROWSER_RUNTIME_DIR");
     const char *runtime_root = runtime_root_env != NULL &&
@@ -941,10 +964,10 @@ int lang_project_build_web(const char *manifest_path,
     char *runtime_c = join_path(runtime_root, "wasm_libc.c");
     char *runtime_include = join_path(runtime_root, "include");
     char *runtime_js_source = join_path(runtime_root, "aster.js");
-    int result = browser_emit_entry(&project, target->entry, server_c);
+    int result = browser_emit_entry(&project, project.entry, server_c);
     if (result == 0)
         result = browser_emit_entry(
-            &project, target->browser_entry, browser_c);
+            &project, project.browser_entry, browser_c);
 
     const char *clang = browser_tool("ASTER_WASM_CLANG", "clang");
     char *resource = result == 0 ? browser_clang_resource(clang) : NULL;
@@ -1027,7 +1050,7 @@ int lang_project_build_web(const char *manifest_path,
                 "import { hydrateAster } from \"./aster.js\";\n"
                 "await hydrateAster({ wasmUrl: "
                 "new URL(\"./%s.wasm\", import.meta.url) });\n",
-                target->name) >= 0;
+                project.name) >= 0;
         if (application_loader != NULL &&
             fclose(application_loader) != 0)
             loader_ok = false;
@@ -1041,8 +1064,8 @@ int lang_project_build_web(const char *manifest_path,
         (void)remove(browser_o);
         (void)remove(runtime_o);
         (void)remove(unoptimized);
-        printf("built web target `%s`: %s, %s, %s, %s\n",
-               target->name, server_c, wasm, runtime_js, loader);
+        printf("built web project `%s`: %s, %s, %s, %s\n",
+               project.name, server_c, wasm, runtime_js, loader);
     }
 
     if (export_flags != NULL)
@@ -1068,27 +1091,28 @@ int lang_project_build_web(const char *manifest_path,
     return result;
 }
 
-int lang_project_test(const char *manifest_path) {
-    if (manifest_path == NULL) return 1;
+int lang_project_test(const char *project_path) {
+    if (project_path == NULL) return 1;
     Project project;
-    if (!parse_manifest(manifest_path, &project)) return 1;
-    size_t tests = 0U;
-    int failures = 0;
-    for (size_t i = 0U; i < project.target_count; ++i) {
-        if (project.targets[i].kind != PROJECT_TARGET_TEST) continue;
-        ++tests;
-        int status = run_target(
-            &project, &project.targets[i], false, "run-ir");
-        printf("[%s] %s\n",
-               status == 0 ? "pass" : "FAIL",
-               project.targets[i].name);
-        if (status != 0) ++failures;
+    if (!parse_project(project_path, &project)) return 1;
+    if (project.output_type != PROJECT_OUTPUT_TEST) {
+        fprintf(stderr, "error: project `%s` is not a test project\n",
+                project.name);
+        project_free(&project);
+        return 1;
     }
-    if (tests == 0U) {
-        fputs("error: project declares no test targets\n", stderr);
-        failures = 1;
-    }
-    printf("%zu project tests, %d failures\n", tests, failures);
+    int status = run_project_output(&project, false, "run-ir");
+    printf("[%s] %s\n", status == 0 ? "pass" : "FAIL", project.name);
+    printf("1 project tests, %d failures\n", status == 0 ? 0 : 1);
     project_free(&project);
-    return failures == 0 ? 0 : 1;
+    return status;
+}
+
+int lang_project_restore(const char *project_path) {
+    if (project_path == NULL) return 1;
+    Project project;
+    if (!parse_project(project_path, &project)) return 1;
+    printf("  Restored %s\n", project_path);
+    project_free(&project);
+    return 0;
 }

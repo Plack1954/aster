@@ -1,0 +1,4 @@
+name = "Aster.Web.CurrentHttpServer"
+output_type = "exe"
+source_root = "src"
+entry = "Tests.CurrentHttpServer"

@@ -19,7 +19,7 @@ cmake -S . -B "$build_dir" \
 cmake --build "$build_dir" -j 4
 
 "$build_dir/lang" project emit-c \
-    examples/issue_tracker/aster.toml integration_server \
+    examples/issue_tracker/IntegrationServer.asproj \
     > "$build_dir/issue_tracker_integration.c"
 "$cc_bin" -std=c17 -O2 -DNDEBUG -I include \
     "$build_dir/issue_tracker_integration.c" \

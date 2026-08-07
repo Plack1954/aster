@@ -1,0 +1,5 @@
+name = "Counter"
+output_type = "web"
+source_root = "."
+entry = "Counter"
+browser_entry = "Counter"

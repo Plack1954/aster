@@ -12,7 +12,7 @@ cleanup() {
 trap cleanup EXIT
 
 "$lang" project build-site \
-    packages/aster_web/aster.toml "$site_directory" ssg_smoke
+    packages/aster_web/SsgSmoke.asproj "$site_directory"
 
 test -f "$site_directory/index.html"
 test -f "$site_directory/about/index.html"
@@ -35,14 +35,14 @@ cmp packages/aster_web/test_assets/icons/mark.svg \
 
 async_directory="$site_directory/async"
 "$lang" project build-site \
-    packages/aster_web/aster.toml "$async_directory" async_ssg_smoke
+    packages/aster_web/AsyncSsgSmoke.asproj "$async_directory"
 test -f "$async_directory/index.html"
 test -f "$async_directory/404.html"
 grep -q '<h1>Async static page</h1>' "$async_directory/index.html"
 
 blog_directory="$site_directory/blog"
 "$lang" project build-site \
-    packages/aster_web/aster.toml "$blog_directory/" blog_fixture
+    packages/aster_web/BlogFixture.asproj "$blog_directory/"
 
 test -f "$blog_directory/index.html"
 test -f "$blog_directory/blog/index.html"

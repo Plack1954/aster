@@ -139,7 +139,7 @@ Use:
 lang dump-ir examples/arithmetic.as
 lang dump-ir-bytecode examples/arithmetic.as
 lang run-ir examples/arithmetic.as
-lang project run-ir examples/docs_server/aster.toml render
+lang project run-ir examples/docs_server/Render.asproj
 ```
 
 `run` and its explicit `run-ir` alias lower verified typed IR into the existing

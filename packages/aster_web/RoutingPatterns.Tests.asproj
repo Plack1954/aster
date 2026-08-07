@@ -1,0 +1,4 @@
+name = "Aster.Web.RoutingPatterns.Tests"
+output_type = "test"
+source_root = "src"
+entry = "Tests.RoutingPatterns"

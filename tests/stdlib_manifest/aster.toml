@@ -1,8 +1,0 @@
-name = "stdlib-path-test"
-source_root = "src"
-stdlib = "../../std"
-default_target = "app"
-
-[target.app]
-kind = "bin"
-entry = "App.Main"

@@ -1,0 +1,4 @@
+name = "Aster.Web.AsyncSsgSmoke"
+output_type = "exe"
+source_root = "src"
+entry = "Tests.AsyncSsgSmoke"

@@ -3,11 +3,11 @@
 A small SQLite-backed, server-rendered Aster application.
 
 ```text
-./build/lang project run examples/issue_tracker/aster.toml render
-./build/lang project run examples/issue_tracker/aster.toml proof
-./build/lang project run examples/issue_tracker/aster.toml integration_server
-./build/lang project test examples/issue_tracker/aster.toml
-./build/lang project run examples/issue_tracker/aster.toml server
+./build/aster run --project examples/issue_tracker/Render.asproj
+./build/aster run --project examples/issue_tracker/Proof.asproj
+./build/aster run --project examples/issue_tracker/IntegrationServer.asproj
+./build/aster test examples/issue_tracker/Tests.asproj
+./build/aster run --project examples/issue_tracker/Server.asproj
 ```
 
 The server listens on `127.0.0.1:8081` and stores application data in

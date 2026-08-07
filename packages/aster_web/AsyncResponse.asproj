@@ -1,0 +1,4 @@
+name = "Aster.Web.AsyncResponse"
+output_type = "exe"
+source_root = "src"
+entry = "Tests.AsyncResponse"

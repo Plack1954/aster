@@ -10,7 +10,7 @@ dist_dir="$example_dir/dist"
 mkdir -p "$build_dir" "$dist_dir"
 
 "$lang" project build-web \
-    "$example_dir/aster.toml" "$dist_dir" counter
+    "$example_dir/Counter.asproj" "$dist_dir"
 
 cc -std=c17 -O2 "$dist_dir/counter-server.c" \
     -o "$build_dir/counter-server"

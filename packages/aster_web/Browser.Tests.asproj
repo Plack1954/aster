@@ -1,0 +1,4 @@
+name = "Aster.Web.Browser.Tests"
+output_type = "test"
+source_root = "src"
+entry = "Tests.BrowserSmoke"

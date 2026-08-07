@@ -1,0 +1,4 @@
+name = "Dependency"
+output_type = "library"
+source_root = "src"
+entry = "Dependency.Message"

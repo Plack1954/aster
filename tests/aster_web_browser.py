@@ -185,7 +185,7 @@ projection_html = """<!doctype html>
 </section>
 <script type="module">
 import {disposeAsterRoot, hydrateAster} from "./aster.js";
-await hydrateAster({wasmUrl: "./browser_http_server.wasm"});
+await hydrateAster({wasmUrl: "./Aster.Web.BrowserHttpServer.wasm"});
 window.disposeAsterRoot = disposeAsterRoot;
 window.asterReady = true;
 </script>

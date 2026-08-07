@@ -159,7 +159,7 @@ This writes `public/assets/site-<hash>.css`; the generated program renders one
 style position. The content hash and concatenation order are deterministic.
 There is no runtime CSS parsing or construction. Use ordinary `emit-c` when an
 inline stylesheet is preferable. Projects use
-`project emit-c-site MANIFEST ASSET_DIR [TARGET]`.
+`project emit-c-site PROJECT ASSET_DIR`.
 
 Qualified names use normal namespace path syntax. After `using Aster.Html;`,
 both `<Html.section>...</Html.section>` and

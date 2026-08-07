@@ -1,132 +1,140 @@
-# Projects and targets
+# Aster project and package model
 
-Aster 0.2 introduces a deliberately small project manifest. It is not a
-package registry or dependency-version solver. A manifest defines one source
-root and named binary, library, and test targets:
+Status: normative.
 
-```toml
-name = "example"
-source_root = "src"
-default_target = "app"
-stdlib = "../toolchain/std"
+This document defines the Aster project boundary, local project references,
+and the constraints that the future Aster Packages system must preserve.
+Compiler tests and implementation details do not override this contract.
 
-[target.app]
-kind = "bin"
-entry = "app.main"
-browser_entry = "app.browser"
+## Project identity
 
-[target.core]
-kind = "lib"
-entry = "core.lib"
+An Aster project is one `.asproj` file and produces one logical output. The
+project filename is meaningful and normally matches the project name:
 
-[target.smoke]
-kind = "test"
-entry = "tests.smoke"
+```text
+Shop/Shop.asproj
+Shop.Tests/Shop.Tests.asproj
+Aster.Web/Aster.Web.asproj
 ```
 
-`stdlib` is optional and is resolved relative to the manifest. It pins a
-project to an explicit standard-library tree; omit it for normal toolchain
+`.asproj` files use TOML syntax. Aster source files continue to use `.as`.
+There is no generic `aster.toml` project filename, named target, default target,
+or public target-selection option.
+
+The supported project keys are:
+
+```toml
+name = "Shop"
+output_type = "exe"
+source_root = "src"
+entry = "Shop.Program"
+```
+
+`name`, `output_type`, `source_root`, and `entry` are required.
+`source_root` is relative to the `.asproj` file. `entry` is the namespace whose
+module supplies the project entry point or public library root.
+
+The output types are:
+
+- `exe`: a runnable application;
+- `library`: a reusable Aster library;
+- `test`: an executable test project;
+- `web`: one deployable Aster Web application.
+
+A web project additionally requires `browser_entry`:
+
+```toml
+name = "Shop.Web"
+output_type = "web"
+source_root = "src"
+entry = "Shop.Server"
+browser_entry = "Shop.Browser"
+```
+
+The server program, browser Wasm, JavaScript loader, styles, and static assets
+are physical artifacts of one logical web output. They are not separate CLI
+targets.
+
+`stdlib` may be set to an explicit standard-library tree for toolchain tests
+and controlled bootstrapping. Normal projects omit it and use toolchain
 discovery.
 
-Project commands are:
+## Project references
 
-```sh
-lang project run aster.toml
-lang project run aster.toml app
-lang project run-ir aster.toml app
-lang project check aster.toml core
-lang project emit-c aster.toml app > app.c
-lang project build-web aster.toml build/web app
-lang project build-site aster.toml public site
-lang project test aster.toml
-```
-
-Local packages are declared by path relative to the manifest:
+Local source dependencies are explicit `.asproj` references:
 
 ```toml
-[dependencies]
-aster_web = "../orange/packages/aster_web"
+[project_references]
+"Aster.Web" = "../Aster.Web/Aster.Web.asproj"
+"Shop.Core" = "../Shop.Core/Shop.Core.asproj"
 ```
 
-The dependency directory must contain its own `aster.toml`, and the key must
-match that manifest's `name`. Project namespace lookup checks the
-application's source root first and then its declared direct dependencies.
-No source copying or symlinked module tree is required.
+The key must equal the referenced project's declared `name`. Names containing
+dots are quoted because an unquoted dot has structural meaning in TOML. Paths
+are relative to the referring `.asproj`. A referenced project must have
+`output_type = "library"`.
 
-## Standard-library discovery
+Restore validates the complete reference graph before compilation. It rejects
+missing projects, name mismatches, duplicate project identities, cycles, and
+references to executable, test, or web projects. Graph traversal is
+deterministic.
 
-The compiler resolves the physical `std` tree independently of the process
-working directory. The first applicable source wins:
-
-1. a path configured through `lang_set_stdlib_path`;
-2. the `ASTER_STDLIB_PATH` environment variable;
-3. the manifest's optional `stdlib` path;
-4. a `std` directory at the project root;
-5. executable-relative bundle and installation layouts, including
-   `../share/aster/std` from `<prefix>/bin/lang`;
-6. the configured installation or development path;
-7. `./std` as a legacy compatibility fallback.
-
-Explicit API, environment, and manifest paths are authoritative. If one is
-invalid, compilation reports that path instead of silently falling through to
-a different standard library.
-
-The mapping from a PascalCase namespace to a snake_case file path is deterministic:
+Project references provide source namespaces to the compiler without copying
+or symlinking source trees. Namespace-to-file mapping remains deterministic:
 
 ```text
-source_root + App.Main → source_root/app/main.as
-source_root + Aster.Web.CurrentHttp → source_root/aster/web/current_http.as
+source_root + Shop.Program → source_root/shop/program.as
+source_root + Aster.Web.Html → source_root/aster/web/html.as
 ```
 
-Every project file must declare the namespace implied by its path. A used
-declaration must be public, and project-mode lookup only exposes direct
-dependencies. Legacy single-file commands retain their historical relative
-behavior for compatibility.
+## CLI contract
 
-Whole-namespace using declarations expose public names and may have an alias:
+The Aster CLI follows the corresponding .NET CLI command names and option
+names. Project arguments accept either a `.asproj` path or a directory. A
+directory must contain exactly one `.asproj`; zero or multiple candidates are
+errors.
 
 ```text
-using Math.Operations;
-using Ops = Math.Operations;
-
-var first = Operations.calculate();
-var second = Ops.calculate();
+aster restore [PROJECT]
+aster run --project <PROJECT> [-- applicationArguments...]
+aster test [PROJECT]
 ```
 
-Selective item imports are intentionally not part of the language.
+`restore` validates local project references. When remote packages are added,
+the same command will also resolve and materialize them. `run` accepts only an
+`exe` or `web` project. `test` accepts only a `test` project.
 
-Library targets are checkable but not directly runnable. `project run` and
-`project test` use the verified typed IR and IR-to-bytecode adapter.
-`project run-ir` is an explicit alias useful in backend tests. Every form uses
-the same manifest, source-root, namespace mapping, and entrypoint rules.
+Build, run, test, and publish must consume one shared resolved project graph.
+No command may implement a second dependency resolver. Build and publish are
+not considered implemented until they produce honest physical outputs.
 
-`project build-site` runs the selected binary target through typed IR with the
-output directory exposed as its sole `std.process` argument. A Aster Web SSG target
-uses that argument with `SiteBuild`; the command remains an ordinary project
-execution convention rather than introducing a compiler-owned page model.
+## Aster Packages boundary
 
-`project emit-c` loads the complete target module graph and emits one C17
-translation unit. This is the primary native project path; compile it with the
-host C compiler and link any explicitly required system libraries.
+The package system is called Aster Packages until a different name is chosen.
+It is Aster-native: it does not use NuGet packages, the NuGet server protocol,
+or NuGet package compatibility.
 
-A binary target may optionally declare `browser_entry`. `project build-web`
-then treats the ordinary target as one deployable web unit: it emits
-`TARGET-server.c` from `entry`, compiles `browser_entry` through generated C to
-an optimized `TARGET.wasm`, and writes the generic `aster.js` runtime plus a
-tiny target loader. Clang, wasm-ld, and wasm-opt are explicit build-tool
-requirements. The browser compilation is freestanding and exports only the
-checked Aster handlers referenced by native event properties. Server-only
-targets and `project emit-c` are unchanged.
+Remote package-reference syntax is deliberately unspecified. This document
+does not reserve a table name, version-range grammar, lock-file name, registry
+protocol, or archive format. Those choices require a separate package-system
+design and must not be inferred from the local-project syntax.
 
-Targets using only the self-contained generated runtime need only a C17
-compiler. Targets calling registered file, directory, HTTP, or SQLite
-mechanisms also include `include/lang/lang.h` and link against `langlib` plus
-the relevant system library. The generated-C project tests are the canonical
-warning-clean examples of this linking contract.
+Local project references and restored package references must enter the same
+project graph and namespace-loading path. Package management is not a separate
+build system.
 
-`lang project test` executes every target whose kind is `test`, reports each
-target, and returns failure if any target returns nonzero. Tests within a
-target can use `std.testing`: case functions return `TestResult`,
-`TestRecord` accumulates a `TestSummary`, and `TestFinish` turns the summary
-into the target's exit status. The example under
-`examples/testing_project` demonstrates this pattern.
+A future reproducible package design is expected to pin exact transitive
+versions and integrity hashes for applications while allowing libraries to
+declare compatible dependency ranges. The concrete lock-file behavior,
+version-range grammar, registry protocol, archive format, signing policy, and
+publishing workflow remain deliberately unspecified until the local graph and
+real application proof are complete.
+
+## Solution and IDE boundary
+
+A solution groups projects; it does not change project semantics. Startup
+projects, multiple startup projects, solution configurations, and IDE layout
+belong to solution or user settings rather than `.asproj` target declarations.
+
+The future Aster IDE must invoke the public CLI and consume the same project
+graph. An IDE-only compiler or restore path is non-conforming.

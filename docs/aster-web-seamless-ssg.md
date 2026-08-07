@@ -56,7 +56,8 @@ shape:
 - directory-style HTML routes produce `index.html`;
 - the real configured 404 fallback produces root `404.html`;
 - duplicate URLs and output-file collisions are diagnosed;
-- `lang project build-site` exposes the output directory to an ordinary target
+- the internal `lang project build-site` harness exposes the output directory
+  to an ordinary web project
   rather than introducing a compiler-owned page model.
 
 The external Nook application demonstrated one route graph across VM SSR,

@@ -1,0 +1,7 @@
+name = "Project.InvalidExecutableReference"
+output_type = "exe"
+source_root = "src"
+entry = "App.Main"
+
+[project_references]
+"Project.Model.App" = "App.asproj"

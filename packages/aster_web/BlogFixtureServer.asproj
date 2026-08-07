@@ -1,0 +1,4 @@
+name = "Aster.Web.BlogFixtureServer"
+output_type = "exe"
+source_root = "src"
+entry = "Examples.Blog.Server"

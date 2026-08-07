@@ -87,7 +87,7 @@ endif()
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env --unset=ASTER_STDLIB_PATH
             "${LANG_EXECUTABLE}" project check
-            "${SOURCE_DIR}/tests/stdlib_manifest/aster.toml"
+            "${SOURCE_DIR}/tests/stdlib_manifest/App.asproj"
     WORKING_DIRECTORY "${TEST_ROOT}/work"
     RESULT_VARIABLE RESULT_CODE
     OUTPUT_VARIABLE RESULT_OUTPUT

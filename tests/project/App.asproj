@@ -1,0 +1,4 @@
+name = "Project.Model.App"
+output_type = "exe"
+source_root = "src"
+entry = "App.Main"

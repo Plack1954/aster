@@ -1,0 +1,5 @@
+name = "Aster.Web.BrowserHttpServer"
+output_type = "web"
+source_root = "src"
+entry = "Tests.BrowserHttpServer"
+browser_entry = "Tests.BrowserApp"

@@ -11,10 +11,10 @@ Aster syntax:
 Run each from the repository root:
 
 ```sh
-./build/lang project run examples/routing_experiments/aster.toml imperative
-./build/lang project run examples/routing_experiments/aster.toml router
-./build/lang project run examples/routing_experiments/aster.toml pages
-./build/lang project run examples/routing_experiments/aster.toml hybrid
+./build/aster run --project examples/routing_experiments/Imperative.asproj
+./build/aster run --project examples/routing_experiments/Router.asproj
+./build/aster run --project examples/routing_experiments/Pages.asproj
+./build/aster run --project examples/routing_experiments/Hybrid.asproj
 ```
 
 The page registry is checked in deliberately. It registers discovered literal

@@ -106,6 +106,15 @@ static int expect_test_argument_error(void) {
     return valid ? 0 : 1;
 }
 
+static int expect_restore_project(void) {
+    char *arguments[] = {"aster", "restore", "App.asproj"};
+    AsterCliInvocation parsed = aster_cli_parse(3, arguments);
+    bool valid = parsed.action == ASTER_CLI_RESTORE &&
+                 strcmp(parsed.project, "App.asproj") == 0;
+    aster_cli_invocation_dispose(&parsed);
+    return valid ? 0 : 1;
+}
+
 int main(void) {
     int failures = 0;
     failures += expect_driver_help();
@@ -115,5 +124,6 @@ int main(void) {
     failures += expect_option_separator();
     failures += expect_late_help_option();
     failures += expect_test_argument_error();
+    failures += expect_restore_project();
     return failures == 0 ? 0 : 1;
 }

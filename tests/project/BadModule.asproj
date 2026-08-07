@@ -1,0 +1,4 @@
+name = "Project.Model.BadModule"
+output_type = "library"
+source_root = "src"
+entry = "Checks.WrongModule"
