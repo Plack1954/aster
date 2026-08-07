@@ -59,6 +59,7 @@ add_library(langlib
     src/checker_call_lists.inc
     src/checker_call_memory_unions.inc
     src/checker_types.c
+    src/checker_type_semantics.c
     src/checker_elements.c
     src/checker_generics.c
     src/checker_debug.c
@@ -69,6 +70,7 @@ add_library(langlib
     src/ir_module.c
     src/ir_statements.c
     src/ir_html.c
+    src/ir_verify_signatures.c
     src/ir_verify.c
     src/ir_debug.c
     src/ir_bytecode_emit.c
@@ -101,6 +103,11 @@ add_library(langlib
     src/vm_async.c
     src/vm_values.c
     src/vm_builtin_exec.c
+    src/vm_builtin_exec_core.inc
+    src/vm_builtin_exec_lists.inc
+    src/vm_builtin_exec_dictionaries.inc
+    src/vm_builtin_exec_queues.inc
+    src/vm_builtin_exec_text.inc
     src/vm_fast.c
     src/vm_html.c
     src/vm_builtins.c
