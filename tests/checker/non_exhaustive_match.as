@@ -1,4 +1,4 @@
-union State {
+private union State {
     Ready(long),
     Empty,
 }

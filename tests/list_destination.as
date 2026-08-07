@@ -1,12 +1,12 @@
 using System.Text;
 
-union Badge
+private union Badge
 {
     None,
     Text(string),
 }
 
-struct Article
+private struct Article
 {
     string title;
     List<string> tags;

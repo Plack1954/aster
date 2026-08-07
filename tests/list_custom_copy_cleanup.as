@@ -1,4 +1,4 @@
-struct ListResource {
+private struct ListResource {
     Arena storage;
     long id;
 

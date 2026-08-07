@@ -1,11 +1,11 @@
-struct UniqueProjection {
+private struct UniqueProjection {
     long value;
 
     private UniqueProjection(
         const ref UniqueProjection other) = delete;
 }
 
-struct ProjectionBox {
+private struct ProjectionBox {
     UniqueProjection value;
     long marker;
 }

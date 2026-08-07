@@ -57,7 +57,7 @@ int main()
     if (box.Value != 8) { return 5; }
     return 0;
 }
-struct Box
+private struct Box
 {
     int Value;
 }

@@ -102,7 +102,7 @@ represented as:
 ```c
 typedef struct aster_type_N aster_type_N;
 
-struct aster_type_N {
+private struct aster_type_N {
     uint32_t _type_id;
     int64_t f0;
     aster_type_N *f1;
@@ -217,7 +217,7 @@ receiver is captured by the resulting delegate, so later calls use the same
 object:
 
 ```csharp
-delegate long Operation(long amount);
+private delegate long Operation(long amount);
 
 private class Counter
 {

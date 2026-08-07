@@ -1,4 +1,4 @@
-struct Pair {
+private struct Pair {
     long first;
     long second;
 }

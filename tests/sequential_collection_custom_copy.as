@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-struct SequenceCopyItem {
+private struct SequenceCopyItem {
     long value;
 
     public SequenceCopyItem(const ref SequenceCopyItem other) {

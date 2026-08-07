@@ -2,7 +2,7 @@ namespace Types.CloneIsolation;
 
 using Types.Dep;
 
-struct Resource {
+private struct Resource {
     long id;
 }
 

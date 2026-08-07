@@ -4,7 +4,7 @@ using Lime;
 using Lime.OpenApi;
 using System.Text.Json;
 
-struct ApplicationOwner
+private struct ApplicationOwner
 {
     WebApplication Value;
 }

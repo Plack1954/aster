@@ -1,4 +1,4 @@
-struct ListCopyItem {
+private struct ListCopyItem {
     long value;
 
     public ListCopyItem(const ref ListCopyItem other) {

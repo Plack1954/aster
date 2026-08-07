@@ -1,4 +1,4 @@
-delegate T Transformer<T>(T value);
+private delegate T Transformer<T>(T value);
 
 private int Increment(int value) {
     return value + 1;

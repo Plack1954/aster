@@ -1,6 +1,6 @@
-delegate int Operation();
+private delegate int Operation();
 
-struct OperationHolder
+private struct OperationHolder
 {
     Operation operation;
 }

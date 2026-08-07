@@ -1,8 +1,8 @@
-struct User {
+private struct User {
     string name;
 }
 
-struct Box<T> {
+private struct Box<T> {
     T value;
 }
 

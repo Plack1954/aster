@@ -533,6 +533,7 @@ typedef struct Decl {
             const char *name;
             const char *target;
             TypeSyntax *target_syntax;
+            bool is_delegate;
         } alias;
         struct {
             const char *name;

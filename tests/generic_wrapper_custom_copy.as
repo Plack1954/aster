@@ -1,4 +1,4 @@
-struct GenericItem {
+private struct GenericItem {
     long value;
 
     public GenericItem(const ref GenericItem other) {
@@ -6,7 +6,7 @@ struct GenericItem {
     }
 }
 
-struct CopyBox<T> {
+private struct CopyBox<T> {
     T value;
 }
 

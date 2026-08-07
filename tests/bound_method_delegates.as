@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 
-delegate long Operation(long amount);
-delegate void Consumer(long value);
+private delegate long Operation(long amount);
+private delegate void Consumer(long value);
 
 private class Counter
 {

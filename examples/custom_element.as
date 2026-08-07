@@ -1,6 +1,6 @@
 using Aster.Html;
 
-element Html notice {
+private element Html notice {
     string tone;
     Html children;
 }

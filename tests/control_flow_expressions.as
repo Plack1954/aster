@@ -1,4 +1,4 @@
-union Choice {
+private union Choice {
     Number(long),
     Empty,
 }

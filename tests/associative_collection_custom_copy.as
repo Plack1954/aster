@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-struct AssociationCopyItem {
+private struct AssociationCopyItem {
     long value;
 
     public AssociationCopyItem(const ref AssociationCopyItem other) {

@@ -1,4 +1,4 @@
-struct Point {
+private struct Point {
     long x;
     long y;
 }
@@ -7,7 +7,7 @@ private long Point.sum(Point self, long offset) {
     return self.x + self.y + offset;
 }
 
-struct Counter {
+private struct Counter {
     long value;
 }
 

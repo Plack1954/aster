@@ -1,4 +1,4 @@
-struct Pair<A, B> {
+private struct Pair<A, B> {
     A first;
     B second;
 }

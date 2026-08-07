@@ -1,4 +1,4 @@
-struct ArrayItem {
+private struct ArrayItem {
     long value;
 
     public ArrayItem(const ref ArrayItem other) {

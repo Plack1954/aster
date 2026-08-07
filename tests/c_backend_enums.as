@@ -1,14 +1,14 @@
-union State {
+private union State {
     Empty,
     Value(int),
 }
 
-union Maybe<T> {
+private union Maybe<T> {
     None,
     Some(T),
 }
 
-enum Phase {
+private enum Phase {
     Start,
     Done,
 }

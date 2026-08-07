@@ -2,7 +2,7 @@ namespace Types.Main;
 
 using Types.TypeDep;
 
-struct Resource {
+private struct Resource {
     long id;
 }
 

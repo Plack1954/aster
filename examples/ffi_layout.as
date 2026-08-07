@@ -1,4 +1,4 @@
-extern struct CPoint {
+private extern struct CPoint {
     float x;
     float y;
 }

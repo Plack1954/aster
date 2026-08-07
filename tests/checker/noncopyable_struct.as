@@ -1,4 +1,4 @@
-struct Owner {
+private struct Owner {
     Arena arena;
 }
 

@@ -1,6 +1,6 @@
 private extern Task Task.Delay(int milliseconds);
 
-struct Tracked
+private struct Tracked
 {
     int Value;
 }

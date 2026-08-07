@@ -2,7 +2,7 @@ private extern NativeHandle NativeHandleOpenId(long id);
 private extern long NativeHandleId(NativeHandle handle);
 private extern long NativeHandleDropLog();
 
-struct ArticleResource {
+private struct ArticleResource {
     NativeHandle handle;
 }
 

@@ -3096,13 +3096,30 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
     }
     for (size_t i = 0U; i < module->count; ++i) {
         Decl *decl = module->decls[i];
-        if (decl->kind == DECL_CLASS && !decl->has_explicit_visibility) {
-            const char *kind = decl->as.structure.is_interface
-                ? "interface" : "class";
+        if (decl->has_explicit_visibility) continue;
+        const char *kind = NULL;
+        const char *name = NULL;
+        if (decl->kind == DECL_CLASS) {
+            kind = decl->as.structure.is_interface ? "interface" : "class";
+            name = decl->as.structure.name;
+        } else if (decl->kind == DECL_STRUCT) {
+            kind = "struct";
+            name = decl->as.structure.name;
+        } else if (decl->kind == DECL_ENUM) {
+            kind = decl->as.enumeration.is_union ? "union" : "enum";
+            name = decl->as.enumeration.name;
+        } else if (decl->kind == DECL_ELEMENT) {
+            kind = "element";
+            name = decl->as.element.name;
+        } else if (decl->kind == DECL_ALIAS && decl->as.alias.is_delegate) {
+            kind = "delegate";
+            name = decl->as.alias.name;
+        }
+        if (kind != NULL) {
             LangDiagnostic *diagnostic = lang_diag(
                 diagnostics, decl->span,
                 "%s `%s` must begin with `public` or `private`",
-                kind, decl->as.structure.name);
+                kind, name);
             lang_diag_help(
                 diagnostic,
                 "use `private` for a module-local declaration or `public` for an exported declaration");

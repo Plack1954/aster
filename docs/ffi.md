@@ -49,7 +49,7 @@ An extern function may accept an Aster delegate. This first C-callback boundary
 is deliberately call-scoped:
 
 ```aster
-delegate long Transform(long value);
+private delegate long Transform(long value);
 
 private extern long NativeApply(long value, Transform callback);
 

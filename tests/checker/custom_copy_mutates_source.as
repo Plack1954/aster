@@ -1,4 +1,4 @@
-struct InvalidCopy {
+private struct InvalidCopy {
     long value;
 
     public InvalidCopy(const ref InvalidCopy other) {

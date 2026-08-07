@@ -2372,6 +2372,7 @@ static Decl *parse_delegate_decl(Parser *parser, Token start) {
 
     decl->as.alias.target = function_type;
     decl->as.alias.target_syntax = function_syntax;
+    decl->as.alias.is_delegate = true;
     decl->span = (LangSpan){
         start.span.file, start.span.start, end.span.end
     };

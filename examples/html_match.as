@@ -1,6 +1,6 @@
 using Aster.Html;
 
-union ViewState {
+private union ViewState {
     Ready(string),
     Empty,
 }

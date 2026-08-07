@@ -1,4 +1,4 @@
-struct Counter {
+private struct Counter {
     int value;
 
     public readonly void InvalidIncrement() {

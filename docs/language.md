@@ -70,11 +70,11 @@ unmodified spelling `int main()`. Writing `public int main()` or
 `private int main()` is an error. The former `pub` abbreviation is not valid
 for functions.
 
-Top-level classes and interfaces likewise require explicit visibility.
-`public class`/`public interface` export the declaration, while `private`
-keeps it module-local; a bare class or interface declaration is rejected.
-Aster does not use C#'s implicit `internal` default or provide an `internal`
-keyword.
+Top-level named declarations likewise require explicit visibility. `class`,
+`interface`, `struct`, `enum`, `union`, `delegate`, and `element` must begin
+with `public` or `private`. `public` exports the declaration and `private` keeps
+it module-local; a bare declaration is rejected. Aster does not use C#'s
+implicit `internal` default or provide an `internal` keyword.
 
 Non-`void` functions require an explicit `return`; ordinary function bodies
 do not have implicit tail returns.
@@ -375,7 +375,7 @@ single `const ref T` parameter is a non-owning immutable reference to the
 source, while the constructor initializes an independent destination:
 
 ```aster
-struct BufferOwner {
+private struct BufferOwner {
     Arena storage;
 
     public BufferOwner(const ref BufferOwner other) {
@@ -393,7 +393,7 @@ well-defined. The source cannot be mutated through `const ref`.
 A unique owner can reject copying instead:
 
 ```aster
-struct UniqueOwner {
+private struct UniqueOwner {
     Arena storage;
 
     private UniqueOwner(const ref UniqueOwner other) = delete;
@@ -662,12 +662,12 @@ unwinding owning locals. It performs no implicit error conversion.
 User-defined structs and unions may declare type parameters:
 
 ```text
-struct Pair<A, B> {
+private struct Pair<A, B> {
     A first;
     B second;
 }
 
-union Maybe<T> {
+private union Maybe<T> {
     None,
     Some(T),
 }
@@ -716,7 +716,7 @@ defined a cross-language generic ABI.
 Language functions and bound class methods are copyable typed values:
 
 ```text
-delegate long Operation(long value);
+private delegate long Operation(long value);
 
 private long apply(long value, Operation operation) {
     return operation(value);

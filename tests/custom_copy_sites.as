@@ -1,4 +1,4 @@
-struct CopyProbe {
+private struct CopyProbe {
     long generation;
 
     public CopyProbe(const ref CopyProbe other) {
@@ -6,7 +6,7 @@ struct CopyProbe {
     }
 }
 
-struct CopyBox {
+private struct CopyBox {
     CopyProbe value;
     long marker;
 }

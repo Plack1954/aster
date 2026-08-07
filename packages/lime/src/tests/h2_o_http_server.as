@@ -43,7 +43,7 @@ private class TestState
     }
 }
 
-struct ServerLifetime
+private struct ServerLifetime
 {
     WebApplication Application;
     TestState State;

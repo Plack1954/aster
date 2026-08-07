@@ -1,4 +1,4 @@
-union Value
+private union Value
 {
     Number(long),
     Empty,

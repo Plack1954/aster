@@ -1,12 +1,12 @@
 private extern NativeHandle NativeHandleOpenId(long id);
 private extern long NativeHandleDropLog();
 
-struct Handles {
+private struct Handles {
     NativeHandle first;
     NativeHandle second;
 }
 
-union Resource {
+private union Resource {
     Handle(NativeHandle),
     Empty,
 }

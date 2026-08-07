@@ -12,7 +12,7 @@ using Aster.Html;
 using System.IO;
 using System.Text;
 
-struct ApplicationOwner
+private struct ApplicationOwner
 {
     WebApplication Value;
 }
@@ -197,7 +197,7 @@ private class SiteState
     }
 }
 
-struct SiteStateOwner
+private struct SiteStateOwner
 {
     SiteState Value;
 }
@@ -1434,7 +1434,7 @@ private bool EndpointMetadataWorks()
     return true;
 }
 
-struct BoundArticle
+private struct BoundArticle
 {
     string title;
     int revision;

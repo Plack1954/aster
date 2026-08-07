@@ -1,10 +1,10 @@
-struct UniqueItem {
+private struct UniqueItem {
     long value;
 
     private UniqueItem(const ref UniqueItem other) = delete;
 }
 
-struct UniqueWrapper {
+private struct UniqueWrapper {
     UniqueItem item;
 }
 

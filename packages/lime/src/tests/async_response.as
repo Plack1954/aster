@@ -3,7 +3,7 @@ namespace Tests.AsyncResponse;
 using Lime;
 using Aster.Html;
 
-struct ApplicationOwner
+private struct ApplicationOwner
 {
     WebApplication Value;
 }

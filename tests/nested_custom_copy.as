@@ -1,4 +1,4 @@
-struct InnerValue {
+private struct InnerValue {
     long value;
 
     public InnerValue(const ref InnerValue other) {
@@ -6,11 +6,11 @@ struct InnerValue {
     }
 }
 
-struct MiddleValue {
+private struct MiddleValue {
     InnerValue inner;
 }
 
-struct OuterValue {
+private struct OuterValue {
     MiddleValue middle;
 }
 

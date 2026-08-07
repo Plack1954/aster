@@ -110,7 +110,7 @@ A repository is an ordinary Aster struct containing a `Database` and ordinary
 methods containing SQL. It does not inherit from framework infrastructure:
 
 ```aster
-struct PostRepository
+private struct PostRepository
 {
     Database Database;
 }

@@ -1,4 +1,4 @@
-struct UniqueListItem {
+private struct UniqueListItem {
     long value;
 
     private UniqueListItem(const ref UniqueListItem other) = delete;

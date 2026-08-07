@@ -1,13 +1,13 @@
-struct Pair<A, B> {
+private struct Pair<A, B> {
     A first;
     B second;
 }
 
-struct Box<T> {
+private struct Box<T> {
     T value;
 }
 
-union Maybe<T> {
+private union Maybe<T> {
     None,
     Some(T),
 }

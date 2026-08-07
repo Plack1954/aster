@@ -310,7 +310,7 @@ public struct TimeOnly {
     }
 }
 
-struct DateParts
+private struct DateParts
 {
     int year;
     int month;

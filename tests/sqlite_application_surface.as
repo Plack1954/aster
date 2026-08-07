@@ -1,7 +1,7 @@
 using Aster.Data.Sqlite;
 using System.IO;
 
-struct Entry
+private struct Entry
 {
     long Id;
     string Name;

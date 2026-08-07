@@ -1,4 +1,4 @@
-struct Resource {
+private struct Resource {
     long id;
 }
 

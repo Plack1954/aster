@@ -1,4 +1,4 @@
-struct CountedValue {
+private struct CountedValue {
     long value;
 
     public CountedValue(const ref CountedValue other) {

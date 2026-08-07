@@ -1,6 +1,6 @@
 using Aster.Html;
 
-struct PageData
+private struct PageData
 {
     List<int> Values;
 }

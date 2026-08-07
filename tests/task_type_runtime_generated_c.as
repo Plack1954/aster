@@ -1,4 +1,4 @@
-union DeferredValue
+private union DeferredValue
 {
     Ready(int),
     Pending(Task<int>),

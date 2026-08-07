@@ -1,4 +1,4 @@
-struct Loop<T> {
+private struct Loop<T> {
     Loop<T> next;
 }
 

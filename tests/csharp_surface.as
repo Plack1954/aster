@@ -1,4 +1,4 @@
-struct Article
+private struct Article
 {
     int Id;
     bool Published;

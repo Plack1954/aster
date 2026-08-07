@@ -1,4 +1,4 @@
-struct UniqueValue {
+private struct UniqueValue {
     long value;
 
     private UniqueValue(const ref UniqueValue other) = delete;

@@ -1,6 +1,6 @@
 using System;
 
-delegate long Reader();
+private delegate long Reader();
 
 private abstract class Animal
 {

@@ -1,4 +1,4 @@
-struct Grow<T> {
+private struct Grow<T> {
     Grow<List<T>> next;
 }
 

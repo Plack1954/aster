@@ -1,4 +1,4 @@
-struct Box<T> {
+private struct Box<T> {
     T value;
 }
 

@@ -3,11 +3,11 @@ namespace Counter;
 using Aster.Html;
 using System.Text;
 
-struct CounterState {
+private struct CounterState {
     int Count;
 }
 
-struct TodoPatch {
+private struct TodoPatch {
     int nextId;
     Html item;
 }

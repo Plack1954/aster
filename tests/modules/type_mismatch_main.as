@@ -2,7 +2,7 @@ namespace Types.Mismatch;
 
 using Types.TypeDep;
 
-struct Resource {
+private struct Resource {
     long id;
 }
 

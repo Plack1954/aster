@@ -10,7 +10,7 @@ public struct SiteBuild
     int files;
 }
 
-struct SsgResponse
+private struct SsgResponse
 {
     string bytes;
     bool html;

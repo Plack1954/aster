@@ -1,6 +1,6 @@
 private extern NativeHandle NativeHandleOpenId(long id);
 
-struct Marker {
+private struct Marker {
     long id;
 }
 
@@ -8,25 +8,25 @@ struct Marker {
     Console.WriteLine(self.id);
 }
 
-struct Pair {
+private struct Pair {
     long first;
     long second;
 }
 
-enum Phase {
+private enum Phase {
     Start,
     Done,
 }
 
-element Html section {
+private element Html section {
     Html children;
 }
 
-element Html strong {
+private element Html strong {
     Html children;
 }
 
-element Html style {
+private element Html style {
     Html children;
 }
 

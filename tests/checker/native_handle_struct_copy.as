@@ -1,6 +1,6 @@
 private extern NativeHandle NativeHandleOpenId(long id);
 
-struct Owner {
+private struct Owner {
     NativeHandle handle;
 }
 

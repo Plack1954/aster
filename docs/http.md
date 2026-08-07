@@ -122,7 +122,7 @@ percent-decoded, and remain valid independently of the request handle.
 `std.http_app` builds the typed application surface above those primitives:
 
 ```text
-struct Request {
+private struct Request {
     string method;
     string path;
     string host;

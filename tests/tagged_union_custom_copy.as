@@ -1,4 +1,4 @@
-struct CopyItem {
+private struct CopyItem {
     long value;
 
     public CopyItem(const ref CopyItem other) {
@@ -6,7 +6,7 @@ struct CopyItem {
     }
 }
 
-union CopyUnion {
+private union CopyUnion {
     Empty,
     Value(CopyItem),
 }

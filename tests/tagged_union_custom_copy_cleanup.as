@@ -1,4 +1,4 @@
-struct UnionResource {
+private struct UnionResource {
     Arena storage;
     long id;
 

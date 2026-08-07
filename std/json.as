@@ -31,13 +31,13 @@ public struct JsonDocument
 
 public struct JsonSerializer {}
 
-enum JsonWriterContainer
+private enum JsonWriterContainer
 {
     Object,
     Array,
 }
 
-struct JsonWriterFrame
+private struct JsonWriterFrame
 {
     JsonWriterContainer Container;
     int ValueCount;
@@ -63,7 +63,7 @@ public JsonWriter JsonWriter.Create()
     };
 }
 
-struct JsonParser
+private struct JsonParser
 {
     string Source;
     nuint Position;

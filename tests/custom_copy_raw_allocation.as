@@ -1,4 +1,4 @@
-struct DeepNumber {
+private struct DeepNumber {
     Arena storage;
     long* value;
 

@@ -1,4 +1,4 @@
-extern struct BadCLayout {
+private extern struct BadCLayout {
     string text;
 }
 

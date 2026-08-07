@@ -40,7 +40,7 @@ private class ServerState
     }
 }
 
-struct ServerLifetime
+private struct ServerLifetime
 {
     WebApplication Application;
     ServerState State;

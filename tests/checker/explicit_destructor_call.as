@@ -1,4 +1,4 @@
-struct Item {
+private struct Item {
     long value;
 }
 

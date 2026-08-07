@@ -1,4 +1,4 @@
-enum State
+private enum State
 {
     Ready,
 }

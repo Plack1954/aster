@@ -1,4 +1,4 @@
-struct Tracked {
+private struct Tracked {
     long id;
 }
 
@@ -6,11 +6,11 @@ struct Tracked {
     Console.WriteLine(self.id);
 }
 
-struct Wrapper {
+private struct Wrapper {
     Tracked item;
 }
 
-union MaybeTracked {
+private union MaybeTracked {
     Some(Tracked),
     None,
 }

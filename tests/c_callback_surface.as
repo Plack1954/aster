@@ -1,5 +1,5 @@
-delegate long Transform(long value);
-delegate bool Predicate(bool value);
+private delegate long Transform(long value);
+private delegate bool Predicate(bool value);
 
 private extern long NativeApply(long value, Transform callback);
 private extern long NativeIncrement(long value);

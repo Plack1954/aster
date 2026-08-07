@@ -1,4 +1,4 @@
-union Status {
+private union Status {
     Ready(long),
     Empty,
 }

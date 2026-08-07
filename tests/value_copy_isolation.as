@@ -1,4 +1,4 @@
-struct Collection
+private struct Collection
 {
     List<int> Values;
 }

@@ -1,4 +1,4 @@
-enum Invalid
+private enum Invalid
 {
     Pair(string, string),
     MissingClose(string string),

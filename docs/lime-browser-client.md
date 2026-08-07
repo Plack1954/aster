@@ -138,7 +138,7 @@ problem it solves.
 The current baseline lets handlers return a scalar or a typed patch:
 
 ```aster
-struct CounterPatch
+private struct CounterPatch
 {
     int Count;
     bool CanDecrement;

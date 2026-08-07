@@ -50,7 +50,7 @@ private class Counter
     }
 }
 
-struct Point
+private struct Point
 {
     public long X { get; set; }
 

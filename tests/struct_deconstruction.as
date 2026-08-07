@@ -1,4 +1,4 @@
-struct ResponseParts {
+private struct ResponseParts {
     int status;
     string body;
     List<string> headers;

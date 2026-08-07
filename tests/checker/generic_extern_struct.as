@@ -1,4 +1,4 @@
-extern struct CBox<T> {
+private extern struct CBox<T> {
     T value;
 }
 

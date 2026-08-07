@@ -9,7 +9,7 @@ using Aster.Html;
 using Aster.Interop;
 using System.Text;
 
-struct ApplicationOwner
+private struct ApplicationOwner
 {
     WebApplication Value;
 }

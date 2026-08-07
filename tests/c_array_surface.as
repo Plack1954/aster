@@ -1,4 +1,4 @@
-struct Samples {
+private struct Samples {
     int Values[3];
 }
 

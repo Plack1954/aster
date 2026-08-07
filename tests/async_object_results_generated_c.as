@@ -2,7 +2,7 @@ private extern Task Task.Delay(int milliseconds);
 
 using Aster.Html;
 
-struct PageResponse
+private struct PageResponse
 {
     int StatusCode;
     string ContentType;

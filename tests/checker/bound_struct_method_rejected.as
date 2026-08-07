@@ -1,6 +1,6 @@
-delegate long Operation(long amount);
+private delegate long Operation(long amount);
 
-struct Counter
+private struct Counter
 {
     long value;
 

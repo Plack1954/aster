@@ -1,4 +1,4 @@
-struct Point {
+private struct Point {
     long x;
 }
 

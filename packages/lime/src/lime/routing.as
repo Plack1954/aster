@@ -25,7 +25,7 @@ public enum RouteConstraintKind
     Required,
 }
 
-struct RouteValue
+private struct RouteValue
 {
     string name;
     string value;
@@ -79,14 +79,14 @@ public struct RouteValues
     }
 }
 
-struct ParsedConstraint
+private struct ParsedConstraint
 {
     RouteConstraintKind kind;
     long first;
     long second;
 }
 
-struct RouteSegment
+private struct RouteSegment
 {
     RouteSegmentKind kind;
     RouteConstraintKind constraintKinds[8];
@@ -98,7 +98,7 @@ struct RouteSegment
     bool preserveCatchAllSlashes;
 }
 
-struct ConstraintRange
+private struct ConstraintRange
 {
     bool hasLower;
     long lower;

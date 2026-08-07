@@ -18,7 +18,7 @@ private int Add(int left, int middle, int right)
     return left + middle + right;
 }
 
-delegate int IntChooser(int value);
+private delegate int IntChooser(int value);
 
 private T First<T>(T value)
 {
@@ -41,7 +41,7 @@ private int Change(ref Counter value)
     return value.Base;
 }
 
-struct Counter
+private struct Counter
 {
     int Base;
 }

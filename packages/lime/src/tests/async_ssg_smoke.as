@@ -5,7 +5,7 @@ using Lime.Ssg;
 using Aster.Html;
 using Aster.Interop;
 
-struct ApplicationOwner
+private struct ApplicationOwner
 {
     WebApplication Value;
 }

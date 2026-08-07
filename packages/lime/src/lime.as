@@ -710,48 +710,48 @@ public delegate Task<Response> AsyncRouteJsonBindingHandler(
     RouteBinding route, JsonBody body
 );
 
-struct RouteRouteBindingEndpoint
+private struct RouteRouteBindingEndpoint
 {
     string first;
     string second;
     RouteRouteBindingHandler handler;
 }
-struct RouteQueryBindingEndpoint
+private struct RouteQueryBindingEndpoint
 {
     string route;
     string query;
     RouteQueryBindingHandler handler;
 }
-struct RouteHeaderBindingEndpoint
+private struct RouteHeaderBindingEndpoint
 {
     string route;
     string header;
     RouteHeaderBindingHandler handler;
 }
-struct RouteJsonBindingEndpoint
+private struct RouteJsonBindingEndpoint
 {
     string route;
     RouteJsonBindingHandler handler;
 }
-struct AsyncRouteRouteBindingEndpoint
+private struct AsyncRouteRouteBindingEndpoint
 {
     string first;
     string second;
     AsyncRouteRouteBindingHandler handler;
 }
-struct AsyncRouteQueryBindingEndpoint
+private struct AsyncRouteQueryBindingEndpoint
 {
     string route;
     string query;
     AsyncRouteQueryBindingHandler handler;
 }
-struct AsyncRouteHeaderBindingEndpoint
+private struct AsyncRouteHeaderBindingEndpoint
 {
     string route;
     string header;
     AsyncRouteHeaderBindingHandler handler;
 }
-struct AsyncRouteJsonBindingEndpoint
+private struct AsyncRouteJsonBindingEndpoint
 {
     string route;
     AsyncRouteJsonBindingHandler handler;
@@ -778,7 +778,7 @@ public delegate Html HtmlMiddleware(
     Html page
 );
 public delegate Response ExceptionHandler(Exception error);
-union RouteHandler
+private union RouteHandler
 {
     Sync(Handler),
     Async(AsyncHandler),
@@ -807,7 +807,7 @@ union RouteHandler
     AsyncBoundRouteHeader(AsyncRouteHeaderBindingEndpoint),
     AsyncBoundRouteJson(AsyncRouteJsonBindingEndpoint),
 }
-struct UrlValue
+private struct UrlValue
 {
     string name;
     string value;

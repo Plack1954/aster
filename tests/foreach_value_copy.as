@@ -1,9 +1,9 @@
-struct Article
+private struct Article
 {
     int Views;
 }
 
-struct ArticleSet
+private struct ArticleSet
 {
     List<Article> Items;
 }

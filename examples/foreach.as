@@ -1,6 +1,6 @@
 using System.Text;
 
-struct Article {
+private struct Article {
     string title;
 }
 

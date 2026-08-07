@@ -1,6 +1,6 @@
 using System.Text;
 
-struct Record {
+private struct Record {
     string name;
 }
 

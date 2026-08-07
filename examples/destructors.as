@@ -1,7 +1,7 @@
 private extern NativeHandle NativeHandleOpenId(long id);
 private extern long NativeHandleDropLog();
 
-struct Tracked {
+private struct Tracked {
     long id;
     NativeHandle handle;
 }

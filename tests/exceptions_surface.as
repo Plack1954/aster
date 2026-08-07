@@ -1,4 +1,4 @@
-struct Tracked
+private struct Tracked
 {
     int Id;
 }

@@ -1,4 +1,4 @@
-struct Counter {
+private struct Counter {
     long value;
     string label;
 }

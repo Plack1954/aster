@@ -1,9 +1,9 @@
-struct Point {
+private struct Point {
     long x;
     long y;
 }
 
-union Status {
+private union Status {
     Ready(long),
     Empty,
 }

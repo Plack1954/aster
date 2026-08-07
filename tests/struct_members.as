@@ -1,4 +1,4 @@
-struct Example {
+private struct Example {
     int value;
 
     public Example(int value) {

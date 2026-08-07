@@ -1,4 +1,4 @@
-element Html meter {
+private element Html meter {
     long value;
 }
 

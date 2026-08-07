@@ -44,7 +44,7 @@ aggregate ABI remains provisional.
 `extern struct` marks a declaration intended for direct C layout:
 
 ```text
-extern struct CPoint {
+private extern struct CPoint {
     x: float,
     y: float,
 }

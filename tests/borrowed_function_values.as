@@ -1,13 +1,13 @@
 using System.Text;
 
-struct State
+private struct State
 {
     string name;
     int count;
 }
 
-delegate int Read(State state, int amount);
-delegate void Update(ref State state, int amount);
+private delegate int Read(State state, int amount);
+private delegate void Update(ref State state, int amount);
 
 private int read(State state, int amount)
 {

@@ -1,9 +1,9 @@
-struct Point {
+private struct Point {
     long x;
     long y;
 }
 
-struct Resource {
+private struct Resource {
     long id;
 }
 
@@ -11,7 +11,7 @@ struct Resource {
     Console.WriteLine(self.id);
 }
 
-struct Box {
+private struct Box {
     Resource item;
 }
 

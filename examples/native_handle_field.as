@@ -1,7 +1,7 @@
 private extern NativeHandle NativeHandleOpenId(long id);
 private extern long NativeHandleDropLog();
 
-struct Wrapper {
+private struct Wrapper {
     NativeHandle handle;
     long label;
 }

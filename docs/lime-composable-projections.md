@@ -142,7 +142,7 @@ A retained region has:
 A possible, non-final source sketch is:
 
 ```aster
-struct TableState
+private struct TableState
 {
     int selectedId;
     string status;
@@ -215,7 +215,7 @@ Structural changes remain explicit because they carry real identity policy:
 A transition may compose state and structural operations recursively:
 
 ```aster
-struct TableTransition
+private struct TableTransition
 {
     TableState state;
     List<KeyedChange> rows;
@@ -443,7 +443,7 @@ contain a meaningless removal. The prototype now separates the values with a
 nested transition:
 
 ```aster
-struct RowSelectionProjectionTransition
+private struct RowSelectionProjectionTransition
 {
     RowSelectionProjectionState state;
     KeyedRemove removal;

@@ -4,7 +4,7 @@ using Lime;
 using Lime.CurrentHttp;
 using Aster.Net.Http;
 
-struct ApplicationOwner
+private struct ApplicationOwner
 {
     WebApplication Value;
 }

@@ -1,4 +1,4 @@
-struct ResourceValue {
+private struct ResourceValue {
     long id;
     Arena storage;
 

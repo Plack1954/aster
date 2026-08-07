@@ -1,4 +1,4 @@
-struct Tracked {
+private struct Tracked {
     long id;
 }
 
@@ -6,7 +6,7 @@ struct Tracked {
     Console.WriteLine(self.id);
 }
 
-struct Wrapper<T> {
+private struct Wrapper<T> {
     T item;
 }
 

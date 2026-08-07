@@ -1,4 +1,4 @@
-delegate long Operation(long amount);
+private delegate long Operation(long amount);
 
 private class Counter
 {

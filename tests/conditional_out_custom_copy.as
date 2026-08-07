@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-struct ConditionalCopyItem {
+private struct ConditionalCopyItem {
     long value;
 
     public ConditionalCopyItem(const ref ConditionalCopyItem other) {
@@ -8,7 +8,7 @@ struct ConditionalCopyItem {
     }
 }
 
-struct ConditionalCopyHolder {
+private struct ConditionalCopyHolder {
     ConditionalCopyItem item;
 }
 

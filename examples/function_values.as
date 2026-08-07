@@ -2,7 +2,7 @@ private long AddOne(long value) {
     return value + 1;
 }
 
-delegate long Operation(long value);
+private delegate long Operation(long value);
 
 private long apply(long value, Operation operation) {
     return operation(value);

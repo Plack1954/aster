@@ -50,7 +50,7 @@ private class BrowserState
     }
 }
 
-struct BrowserLifetime
+private struct BrowserLifetime
 {
     WebApplication Application;
     BrowserState State;

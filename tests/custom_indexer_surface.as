@@ -1,4 +1,4 @@
-struct Catalog
+private struct Catalog
 {
     int Base;
 }

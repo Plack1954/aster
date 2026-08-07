@@ -4,7 +4,7 @@ using Nested.NestedOwnershipDep;
 
 private extern NativeHandle NativeHandleOpen();
 
-struct Helper {
+private struct Helper {
     long id;
 }
 

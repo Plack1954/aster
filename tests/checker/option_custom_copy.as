@@ -1,4 +1,4 @@
-struct OptionItem {
+private struct OptionItem {
     long value;
 
     private OptionItem(const ref OptionItem other) = delete;

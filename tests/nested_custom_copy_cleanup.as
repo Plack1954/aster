@@ -1,4 +1,4 @@
-struct ResourceValue {
+private struct ResourceValue {
     Arena storage;
     long id;
 
@@ -12,7 +12,7 @@ struct ResourceValue {
     Console.WriteLine(self.id);
 }
 
-struct ResourceWrapper {
+private struct ResourceWrapper {
     ResourceValue resource;
 }
 

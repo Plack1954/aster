@@ -1,4 +1,4 @@
-struct CountedCopy {
+private struct CountedCopy {
     long generation;
 
     public CountedCopy(const ref CountedCopy other) {
@@ -10,7 +10,7 @@ struct CountedCopy {
     Console.WriteLine(self.generation);
 }
 
-struct CountedBox {
+private struct CountedBox {
     CountedCopy value;
     long marker;
 }
