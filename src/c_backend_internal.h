@@ -89,6 +89,34 @@ char *c_backend_emit_static_css_asset(CEmitter *emitter,
                                       const char *directory);
 void c_backend_emit_byte_string(FILE *output,
                                 const char *data, size_t length);
+void emit_operands(CEmitter *emitter,
+                   const IrInstruction *instruction);
+void emit_borrowed_call_operand(
+    CEmitter *emitter, const IrFunction *function, IrValueId value);
+void emit_call_operands(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction, size_t offset);
+void emit_list_element_equality(
+    CEmitter *emitter, const IrType *element,
+    IrValueId list, const char *index, IrValueId item);
+void emit_dictionary_key_equality(
+    CEmitter *emitter, const IrType *key,
+    IrValueId dictionary, const char *index, IrValueId candidate);
+void emit_dictionary_value_equality(
+    CEmitter *emitter, const IrType *value,
+    IrValueId dictionary, const char *index, IrValueId candidate);
+void emit_list_callback_call(
+    CEmitter *emitter, IrTypeId element,
+    IrValueId callback, IrValueId list, const char *index);
+void c_backend_emit_native_instruction(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
+void c_backend_emit_element_instruction(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
+void c_backend_emit_operation_instruction(
+    CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction);
 void c_backend_emit_instruction(CEmitter *emitter,
                                 const IrFunction *function,
                                 const IrInstruction *instruction);

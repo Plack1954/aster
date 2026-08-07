@@ -59,6 +59,9 @@ add_library(langlib
     src/ir_debug.c
     src/ir_bytecode.c
     src/c_backend.c
+    src/c_backend_native.c
+    src/c_backend_elements.c
+    src/c_backend_operations.c
     src/c_backend_module.c
     src/c_backend_exports.c
     src/c_backend_types.c
