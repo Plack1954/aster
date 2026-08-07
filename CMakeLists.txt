@@ -51,6 +51,13 @@ add_library(langlib
     src/checker_statements.c
     src/checker_module.c
     src/checker_calls.c
+    src/checker_call_instance.inc
+    src/checker_call_resolution.inc
+    src/checker_call_primitives.inc
+    src/checker_call_collections.inc
+    src/checker_call_dictionaries.inc
+    src/checker_call_lists.inc
+    src/checker_call_memory_unions.inc
     src/checker_types.c
     src/checker_elements.c
     src/checker_generics.c
