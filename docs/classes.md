@@ -15,7 +15,7 @@ The implementation establishes the following foundations:
 For example:
 
 ```csharp
-class Node
+private class Node
 {
     long Value;
     Node Next;
@@ -50,7 +50,7 @@ nullable-reference warnings remain a future feature.
 Constructors use C# syntax:
 
 ```csharp
-class Counter
+private class Counter
 {
     private long Value;
 
@@ -79,7 +79,7 @@ delete counter;
 
 Construction initializes every declared field before allocating the finished
 object. Assignment to `alias` copies only the reference. `delete` accepts a
-class reference, does nothing for `null`, dynamically selects the destructor
+private class reference, does nothing for `null`, dynamically selects the destructor
 for the allocation's actual class, drops owned value fields in reverse
 declaration order, and frees the object. A derived destructor automatically
 continues through its base destructor chain. This remains deterministic manual
@@ -125,7 +125,7 @@ callable member surface; it is not a public field with decorative syntax.
 Reads invoke its getter and writes invoke its setter in both backends.
 
 ```csharp
-class Counter
+private class Counter
 {
     private long Changes;
 
@@ -177,7 +177,7 @@ uses its declared type's normal copy policy.
 Classes and structs support C#-style static fields, properties, and methods:
 
 ```csharp
-class Counter
+private class Counter
 {
     private static long Value = 10;
 
@@ -219,7 +219,7 @@ object:
 ```csharp
 delegate long Operation(long amount);
 
-class Counter
+private class Counter
 {
     private long Value;
 
@@ -261,7 +261,7 @@ Aster supports C#-shaped single class inheritance and the `abstract`,
 `virtual`, `override`, and `sealed` modifiers:
 
 ```csharp
-abstract class Animal
+private abstract class Animal
 {
     public abstract long Speak();
     public abstract long Age { get; }
@@ -272,7 +272,7 @@ abstract class Animal
     }
 }
 
-sealed class Dog : Animal
+private sealed class Dog : Animal
 {
     public Dog() { }
 
@@ -291,7 +291,7 @@ inherited abstract methods and property accessors. An override must exactly
 match a virtual base signature, including parameter passing modes and return
 type. `sealed override` closes one virtual slot, while `sealed class` prevents
 further derivation. A virtual call dispatches from the allocation's runtime
-class in both bytecode and generated C; an inherited implementation remains
+private class in both bytecode and generated C; an inherited implementation remains
 the target when a derived class does not override it.
 
 Class-reference assignment supports the conventional implicit derived-to-base
@@ -306,18 +306,18 @@ interfaces, and a class may implement multiple interfaces in addition to its
 single base class:
 
 ```csharp
-interface IValue
+private interface IValue
 {
     long Value();
     long Number { get; }
 }
 
-interface IAdvanced : IValue
+private interface IAdvanced : IValue
 {
     long Twice();
 }
 
-class Counter : BaseCounter, IAdvanced
+private class Counter : BaseCounter, IAdvanced
 {
     public long Value() { return 7; }
     public long Number => 8;

@@ -1,9 +1,9 @@
-interface IValue
+private interface IValue
 {
     long Value();
 }
 
-class Hidden : IValue
+private class Hidden : IValue
 {
     private long Value() { return 1; }
 }

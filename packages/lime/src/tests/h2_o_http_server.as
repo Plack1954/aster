@@ -9,7 +9,7 @@ using Lime.Static;
 using Aster.Html;
 using System.IO;
 
-class TestState
+private class TestState
 {
     private SessionStore Sessions;
 

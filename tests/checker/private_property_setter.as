@@ -1,4 +1,4 @@
-class Account
+private class Account
 {
     public long Balance { get; private set; }
 

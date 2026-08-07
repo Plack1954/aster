@@ -9,7 +9,7 @@ using Aster.Net.Http;
 using System.Text;
 using Tests.BrowserApp;
 
-class BrowserState
+private class BrowserState
 {
     public BrowserAssets assets;
 

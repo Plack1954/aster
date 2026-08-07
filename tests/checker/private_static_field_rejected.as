@@ -1,4 +1,4 @@
-class Secrets
+private class Secrets
 {
     private static long Value;
 }

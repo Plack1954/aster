@@ -1,4 +1,4 @@
-interface IInvalid
+private interface IInvalid
 {
     long Value;
 }

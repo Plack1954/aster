@@ -2,28 +2,28 @@ using System;
 
 delegate long Reader();
 
-interface IValue
+private interface IValue
 {
     long Value();
     long Number { get; }
 }
 
-interface IAdvanced : IValue
+private interface IAdvanced : IValue
 {
     long Twice();
 }
 
-interface IAlso
+private interface IAlso
 {
     long Value();
 }
 
-interface IWritable
+private interface IWritable
 {
     long Number { get; set; }
 }
 
-sealed class Box : IWritable
+private sealed class Box : IWritable
 {
     private long Storage;
 
@@ -39,7 +39,7 @@ sealed class Box : IWritable
     }
 }
 
-class Base : IAdvanced, IAlso
+private class Base : IAdvanced, IAlso
 {
     public Base() { }
 
@@ -53,7 +53,7 @@ class Base : IAdvanced, IAlso
     }
 }
 
-sealed class Derived : Base
+private sealed class Derived : Base
 {
     public Derived() { }
 

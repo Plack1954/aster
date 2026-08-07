@@ -2632,9 +2632,6 @@ bool lang_parse_module(const LangSource *source, LangDiagnostics *diagnostics,
             (decl == NULL || decl->kind != DECL_CLASS))
             lang_diag(diagnostics, start.span,
                       "`abstract` and `sealed` type modifiers require a class");
-        if (is_private && (decl == NULL || decl->kind != DECL_FUNCTION))
-            lang_diag(diagnostics, visibility.span,
-                      "`private` visibility is only valid on functions");
         if (is_public && visibility.length == 3U &&
             decl != NULL && decl->kind == DECL_FUNCTION)
             lang_diag(diagnostics, visibility.span,

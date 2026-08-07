@@ -1,4 +1,4 @@
-abstract class Base
+private abstract class Base
 {
     public Base() { }
     public abstract long Value();

@@ -1,6 +1,6 @@
 using System;
 
-class Counter
+private class Counter
 {
     private long Changes;
 

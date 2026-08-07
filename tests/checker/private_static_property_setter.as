@@ -1,4 +1,4 @@
-class Counter
+private class Counter
 {
     public static long Count { get; private set; }
 }

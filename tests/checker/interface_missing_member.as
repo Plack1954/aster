@@ -1,9 +1,9 @@
-interface IValue
+private interface IValue
 {
     long Value();
 }
 
-class Missing : IValue
+private class Missing : IValue
 {
 }
 

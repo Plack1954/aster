@@ -1,4 +1,4 @@
-class Person
+private class Person
 {
     public string Name { get; }
 

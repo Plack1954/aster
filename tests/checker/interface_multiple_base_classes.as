@@ -1,12 +1,12 @@
-class Left
+private class Left
 {
 }
 
-class Right
+private class Right
 {
 }
 
-class Invalid : Left, Right
+private class Invalid : Left, Right
 {
 }
 

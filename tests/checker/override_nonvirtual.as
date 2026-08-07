@@ -1,9 +1,9 @@
-class Base
+private class Base
 {
     public long Value() { return 1; }
 }
 
-class Derived : Base
+private class Derived : Base
 {
     public override long Value() { return 2; }
 }

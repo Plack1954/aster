@@ -1,8 +1,8 @@
-class Base
+private class Base
 {
 }
 
-interface IInvalid : Base
+private interface IInvalid : Base
 {
     long Value();
 }

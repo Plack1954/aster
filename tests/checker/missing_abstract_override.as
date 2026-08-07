@@ -1,9 +1,9 @@
-abstract class Base
+private abstract class Base
 {
     public abstract long Value();
 }
 
-class Derived : Base
+private class Derived : Base
 {
 }
 

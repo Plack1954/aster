@@ -172,7 +172,7 @@ private bool ContentLibrariesWork()
         "<h3>Gratitude &amp; <strong>Reflection</strong></h3>";
 }
 
-class SiteState
+private class SiteState
 {
     private string Title;
 

@@ -1,4 +1,4 @@
-interface IValue
+private interface IValue
 {
     long Value();
 }

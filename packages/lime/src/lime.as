@@ -818,7 +818,7 @@ public struct UrlValues
     List<UrlValue> values;
 }
 
-class Route
+private class Route
 {
     public List<string> methods;
     public RoutePattern pattern;
@@ -889,7 +889,7 @@ private string FirstPathSegment(string path)
     return StringSlice(path, 1, end);
 }
 
-class RouteLiteralBucket
+private class RouteLiteralBucket
 {
     private string Literal;
     private List<Route> Routes;
@@ -916,7 +916,7 @@ class RouteLiteralBucket
     }
 }
 
-class RouteMethodBucket
+private class RouteMethodBucket
 {
     private string Method;
     private List<Route> DynamicRoutes;
@@ -989,7 +989,7 @@ class RouteMethodBucket
     }
 }
 
-class RouteTable
+private class RouteTable
 {
     private List<RouteMethodBucket> Buckets;
 
@@ -1044,7 +1044,7 @@ class RouteTable
     }
 }
 
-class EndpointMetadata
+private class EndpointMetadata
 {
     public Option<string> Name;
     public Option<string> Description;
@@ -1060,7 +1060,7 @@ class EndpointMetadata
     }
 }
 
-class RouteGroupState
+private class RouteGroupState
 {
     public string Prefix;
     public RouteGroupState Parent;

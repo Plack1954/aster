@@ -1,6 +1,6 @@
 delegate long Operation(long amount);
 
-class Counter
+private class Counter
 {
     public Counter() { }
 

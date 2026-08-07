@@ -2,7 +2,7 @@ using System;
 
 delegate long Reader();
 
-abstract class Animal
+private abstract class Animal
 {
     public abstract long Speak();
     public abstract long Age { get; }
@@ -18,7 +18,7 @@ abstract class Animal
     }
 }
 
-class Dog : Animal
+private class Dog : Animal
 {
     public Dog()
     {
@@ -37,7 +37,7 @@ class Dog : Animal
     }
 }
 
-sealed class Bird : Animal
+private sealed class Bird : Animal
 {
     public Bird()
     {

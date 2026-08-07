@@ -70,6 +70,12 @@ unmodified spelling `int main()`. Writing `public int main()` or
 `private int main()` is an error. The former `pub` abbreviation is not valid
 for functions.
 
+Top-level classes and interfaces likewise require explicit visibility.
+`public class`/`public interface` export the declaration, while `private`
+keeps it module-local; a bare class or interface declaration is rejected.
+Aster does not use C#'s implicit `internal` default or provide an `internal`
+keyword.
+
 Non-`void` functions require an explicit `return`; ordinary function bodies
 do not have implicit tail returns.
 

@@ -1,4 +1,4 @@
-class Counter
+private class Counter
 {
     public Counter() { }
 

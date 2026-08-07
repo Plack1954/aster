@@ -1,8 +1,8 @@
-sealed class Base
+private sealed class Base
 {
 }
 
-class Derived : Base
+private class Derived : Base
 {
 }
 

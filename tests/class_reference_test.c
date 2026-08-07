@@ -28,7 +28,7 @@ static bool rejects_private_field_access(void) {
 
 int main(void) {
     static const char text[] =
-        "class Node {\n"
+        "private class Node {\n"
         "    private long Value;\n"
         "    public Node Next;\n"
         "    public Node(long value) { this.Value = value; this.Next = null; }\n"

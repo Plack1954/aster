@@ -9,7 +9,7 @@ using Aster.Net.Http;
 using System.IO;
 using System.Text;
 
-class ServerState
+private class ServerState
 {
     private string Name;
 

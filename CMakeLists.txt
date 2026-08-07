@@ -490,6 +490,7 @@ add_aster_generated_c_test(
         "-DEXPECTED_OUTPUT=42\n")
 foreach(visibility_failure
         function_visibility_required
+        class_visibility_required
         public_main_rejected
         private_main_rejected
         pub_function_rejected)

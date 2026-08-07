@@ -1,9 +1,9 @@
-interface ILeft : IRight
+private interface ILeft : IRight
 {
     long Left();
 }
 
-interface IRight : ILeft
+private interface IRight : ILeft
 {
     long Right();
 }

@@ -1,14 +1,14 @@
-class Base
+private class Base
 {
     public virtual long Value() { return 1; }
 }
 
-class Middle : Base
+private class Middle : Base
 {
     public sealed override long Value() { return 2; }
 }
 
-class Derived : Middle
+private class Derived : Middle
 {
     public override long Value() { return 3; }
 }

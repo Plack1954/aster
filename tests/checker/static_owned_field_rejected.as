@@ -1,4 +1,4 @@
-class Cache
+private class Cache
 {
     public static string Value;
 }

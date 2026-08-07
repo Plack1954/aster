@@ -1,6 +1,6 @@
 using System;
 
-class Counter
+private class Counter
 {
     private static long Value = 3;
     public static long Direct;

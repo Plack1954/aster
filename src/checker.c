@@ -3096,6 +3096,20 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
     }
     for (size_t i = 0U; i < module->count; ++i) {
         Decl *decl = module->decls[i];
+        if (decl->kind == DECL_CLASS && !decl->has_explicit_visibility) {
+            const char *kind = decl->as.structure.is_interface
+                ? "interface" : "class";
+            LangDiagnostic *diagnostic = lang_diag(
+                diagnostics, decl->span,
+                "%s `%s` must begin with `public` or `private`",
+                kind, decl->as.structure.name);
+            lang_diag_help(
+                diagnostic,
+                "use `private` for a module-local declaration or `public` for an exported declaration");
+        }
+    }
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *decl = module->decls[i];
         if (decl->kind != DECL_FUNCTION ||
             decl->generic_origin != NULL ||
             decl->as.function.is_drop)

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 delegate long Operation(long amount);
 delegate void Consumer(long value);
 
-class Counter
+private class Counter
 {
     private long Value;
 
@@ -36,7 +36,7 @@ class Counter
     }
 }
 
-class Total
+private class Total
 {
     private long Value;
 
