@@ -49,13 +49,46 @@ int main() {
 
 HTML is ordinary Aster syntax and normal control flow works inside elements.
 
-## Lime: SSR with a retained Wasm client
+## Lime web framework
 
-Lime is Aster's web application layer. The same native HTML and checked Aster
-code can render on the server and enhance that server-rendered document in the
-browser through WebAssembly. `lang project build-web` emits the server C
-translation, an optimized Wasm module, the small generic browser runtime, and a
-target loader.
+Lime is Aster's explicit, minimal-API web framework. It provides
+transport-neutral routing, requests and responses, middleware, forms, sessions,
+static files, typed content, server-side rendering, and static publication. It
+has no controllers, MVC layer, reflection-based registration, dependency
+injection container, filesystem routing, or separate template language.
+
+```aster
+using Lime;
+
+private Response Home(Request request)
+{
+    return Results.Html(<main><h1>Hello from Lime</h1></main>);
+}
+
+int main()
+{
+    WebApplication app = WebApplication.Create();
+    app.MapGet("/", Home);
+    delete app;
+    return 0;
+}
+```
+
+The same endpoint graph runs through the development VM, generated-C servers,
+tests, and static generation. Every Lime application remains a complete SSR
+application; SSG evaluates eligible GET responses ahead of time as a
+publication mode rather than requiring a separate site architecture. An
+application can remain entirely server-rendered, publish finite routes as
+files, or add browser behavior where useful.
+
+### Optional retained Wasm enhancement
+
+The Wasm client is one optional Lime capability, not Lime's identity. It adds
+typed interaction to ordinary server-rendered HTML while preserving progressive
+enhancement. The same native HTML and checked Aster code renders on the server
+and handles browser events through WebAssembly. `lang project build-web` emits
+an optimized Wasm module, the small generic browser runtime, and a target
+loader alongside the server application.
 
 Browser components are ordinary classes—there is no component keyword, second
 template language, JavaScript application layer, virtual DOM, runtime signal
@@ -183,6 +216,7 @@ Manifest projects support named binary, library, and test targets:
 - [.NET-referenced standard-library map](docs/standard-library-api-map.md)
 - [Values and cleanup](docs/values-and-cleanup.md)
 - [Projects and targets](docs/projects.md)
+- [Lime framework overview and minimal APIs](packages/lime/README.md)
 - [Lime seamless SSR and static generation](docs/lime-seamless-ssg.md)
 - [Lime browser Wasm client](docs/lime-browser-client.md)
 - [Normative Lime component semantics](docs/lime-component-semantics.md)
