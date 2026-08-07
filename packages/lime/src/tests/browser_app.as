@@ -203,6 +203,40 @@ private class IsolatedCounter
     }
 }
 
+private class NestedCounter
+{
+    private int count;
+    private static int dropped;
+
+    public NestedCounter()
+    {
+        this.count = 0;
+    }
+
+    ~NestedCounter()
+    {
+        dropped += 1;
+    }
+
+    public static int Dropped => dropped;
+
+    private int Increment(int count)
+    {
+        this.count += 1;
+        return this.count;
+    }
+
+    public Html Render()
+    {
+        return <aside class="nested-counter">
+            <output name="count">0</output>
+            <button type="button" onclick=this.Increment>
+                Increment nested counter
+            </button>
+        </aside>;
+    }
+}
+
 private class SeededCounter
 {
     private string label;
@@ -218,7 +252,7 @@ private class SeededCounter
         this.count = initial;
     }
 
-    private int Increment(int count)
+    private void Increment(int count)
     {
         if (this.enabled)
         {
@@ -228,19 +262,24 @@ private class SeededCounter
         {
             this.count += 2;
         }
-        return this.count;
     }
 
     public Html Render()
     {
         return <section class="seeded-counter">
             <strong>{this.label}</strong>
-            <output name="count">{this.initial}</output>
+            <output name="count">{this.count}</output>
             <button type="button" onclick=this.Increment>
                 Increment seeded counter
             </button>
+            <NestedCounter />
         </section>;
     }
+}
+
+public int ReadNestedDrops(int nestedDropCount)
+{
+    return NestedCounter.Dropped;
 }
 
 public int ReadDroppedCounters(int dropCount)
@@ -645,6 +684,10 @@ public Html BrowserPage(Html browserLoader)
             <output name="dropCount">0</output>
             <button type="button" onclick=ReadDroppedCounters>
                 Read dropped counters
+            </button>
+            <output name="nestedDropCount">0</output>
+            <button type="button" onclick=ReadNestedDrops>
+                Read nested drops
             </button>
             <output name="constructionAttempts">0</output>
             <button type="button" onclick=ReadConstructionAttempts>

@@ -110,11 +110,22 @@ therefore only mutate `this.todos`; they no longer return `Rows()` or any DOM
 result. Render faults leave the old DOM in place and follow host error reporting.
 
 Handlers may still return other supported browser results when appropriate.
-Transferring arbitrary class fields, lists, request-only objects, or
-post-constructor server mutations, automatic whole-component rerender without a
-controlled region, async instance methods, and nested component ownership remain
-unsupported. These limits are explicit; there is no lifecycle API or leaked
-page-global component singleton.
+A component's first `List<T>` field also has an initial structured-state path
+when `T` is a flat struct of Boolean, integer, and string fields represented by
+its keyed native HTML. SSR emits checked field IDs and raw escaped values; before
+the first handler, JavaScript clears the constructor list and rebuilds it through
+generated Wasm clear/add exports. The browser fixture deliberately changes one
+SSR todo from the constructor fixture and proves the Wasm list adopts that value.
+
+Without `aria-controls`, a `void` handler now rerenders compiler-owned scalar
+parts across the component root. Part matching excludes nested component and
+keyed-item ownership boundaries. Structural or conditional whole-component
+changes still require a bounded controlled region. Nested instances are not
+replaced by parent part updates and are disposed when an ancestor disconnects,
+but conditional nested mounting is not yet implemented. Nested state structs,
+multiple list fields, request-only objects, async instance methods, and general
+post-constructor object graphs remain unsupported. These limits are explicit;
+there is no lifecycle API or leaked page-global component singleton.
 
 ## Value and identity rules
 

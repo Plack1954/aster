@@ -30,7 +30,7 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 11.9 KB gzip versus 41.9 KB for the compared Vue client after adding the
+- 12.5 KB gzip versus 41.9 KB for the compared Vue client after adding the
   experimental batch decoder, keyed snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
@@ -519,14 +519,16 @@ text-only mixed static/dynamic children plus `class`, `disabled`, `hidden`, and
 `title`; interactive constructor transfer is limited to Boolean, integer, and
 string parameters stored in matching fields; class handlers are synchronous;
 and the older region-wide `ProjectionState`/`ProjectionTransition` prototype
-remains experimental. Arbitrary field/list state transfer, automatic whole
-component rendering without a controlled region, async instance methods, text
-mixed with nested elements, broader
-attributes/styles, conditional item-local structure, and deeper recursive
-composition remain to be designed.
+remains experimental. SSR can now rebuild the first `List<T>` field from keyed
+HTML when `T` is a flat Boolean/integer/string struct, and uncontrolled `void`
+handlers can refresh scalar parts across their component root without crossing
+nested ownership boundaries. Nested state structs, multiple list fields,
+structural/conditional whole-root changes, async instance methods, text mixed
+with nested elements, broader attributes/styles, conditional item-local
+structure, and deeper recursive composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 11.9 KB gzip. A future production implementation should
+client from 8.8 KB to 12.5 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 

@@ -87,17 +87,25 @@ projection_html = """<!doctype html>
     data-aster-component-param-0="s" data-aster-component-arg-0="Alpha"
     data-aster-component-param-1="l" data-aster-component-arg-1="7"
     data-aster-component-param-2="b" data-aster-component-arg-2>
-  <strong>Alpha</strong><output name="count">7</output>
+  <strong data-aster-part-t="{seededLabel}">Alpha</strong><output name="count" data-aster-part-t="{seededCount}">7</output>
   <button type="button"
-      data-aster-event="click|SeededCounter_Increment|l|x:SeededCounter|l:count">Increment seeded counter</button>
+      data-aster-event="click|SeededCounter_Increment|v|x:SeededCounter|l:count">Increment seeded counter</button>
+  <aside class="nested-counter" data-aster-component="NestedCounter">
+    <output name="count">0</output><button type="button"
+        data-aster-event="click|NestedCounter_Increment|l|x:NestedCounter|l:count">Increment nested counter</button>
+  </aside>
 </section>
 <section class="seeded-counter" data-aster-component="SeededCounter"
     data-aster-component-param-0="s" data-aster-component-arg-0="Beta"
     data-aster-component-param-1="l" data-aster-component-arg-1="40"
     data-aster-component-param-2="b">
-  <strong>Beta</strong><output name="count">40</output>
+  <strong data-aster-part-t="{seededLabel}">Beta</strong><output name="count" data-aster-part-t="{seededCount}">40</output>
   <button type="button"
-      data-aster-event="click|SeededCounter_Increment|l|x:SeededCounter|l:count">Increment seeded counter</button>
+      data-aster-event="click|SeededCounter_Increment|v|x:SeededCounter|l:count">Increment seeded counter</button>
+  <aside class="nested-counter" data-aster-component="NestedCounter">
+    <output name="count">0</output><button type="button"
+        data-aster-event="click|NestedCounter_Increment|l|x:NestedCounter|l:count">Increment nested counter</button>
+  </aside>
 </section>
 <section id="failing-constructor-component"
     data-aster-component="FailingConstructorComponent">
@@ -109,16 +117,22 @@ projection_html = """<!doctype html>
   <output name="dropCount">0</output>
   <button type="button"
       data-aster-event="click|ReadDroppedCounters|l|l:dropCount">Read dropped counters</button>
+  <output name="nestedDropCount">0</output>
+  <button type="button"
+      data-aster-event="click|ReadNestedDrops|l|l:nestedDropCount">Read nested drops</button>
   <output name="constructionAttempts">0</output>
   <button type="button"
       data-aster-event="click|ReadConstructionAttempts|l|l:constructionAttempts">Read construction attempts</button>
 </section>
-<section id="persistent-todo-component" data-aster-component="PersistentTodoList">
+<section id="persistent-todo-component" data-aster-component="PersistentTodoList"
+    data-aster-component-list-state="k:{persistentKey},s:{persistentTitle},s:{persistentClass},b:{persistentDisabled},b:{persistentHidden},s:{persistentTooltip}">
   <ul id="persistent-todo-list">
     <li data-aster-key="persistent-1" class="" title="First persistent todo"
         data-aster-part-c="{persistentClass}"
-        data-aster-part-a="{persistentTooltip}">
-      <label><span data-aster-part-t="{persistentTitle}">Todo: First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}"><small data-aster-part-h="{persistentHidden}">renamed detail</small></label>
+        data-aster-state-field-{persistentClass} data-aster-state-{persistentClass}=""
+        data-aster-part-a="{persistentTooltip}"
+        data-aster-state-field-{persistentTooltip} data-aster-state-{persistentTooltip}="First persistent todo">
+      <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="First persistent">Todo: First persistent</span> <input value="First persistent" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
       <button type="button" name="key" value="persistent-1"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
@@ -126,10 +140,12 @@ projection_html = """<!doctype html>
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RenameTodo|v|x:PersistentTodoList|s:key">Rename</button>
     </li>
-    <li data-aster-key="persistent-2" class="" title="Second persistent todo"
+    <li data-aster-key="persistent-2" class="" title="Server-loaded todo"
         data-aster-part-c="{persistentClass}"
-        data-aster-part-a="{persistentTooltip}">
-      <label><span data-aster-part-t="{persistentTitle}">Todo: Second persistent</span> <input value="Second persistent" data-aster-part-d="{persistentDisabled}"><small data-aster-part-h="{persistentHidden}">renamed detail</small></label>
+        data-aster-state-field-{persistentClass} data-aster-state-{persistentClass}=""
+        data-aster-part-a="{persistentTooltip}"
+        data-aster-state-field-{persistentTooltip} data-aster-state-{persistentTooltip}="Server-loaded todo">
+      <label><span data-aster-part-t="{persistentTitle}" data-aster-state-field-{persistentTitle} data-aster-state-{persistentTitle}="Server loaded">Todo: Server loaded</span> <input value="Server loaded" data-aster-part-d="{persistentDisabled}" data-aster-state-field-{persistentDisabled}><small data-aster-part-h="{persistentHidden}" data-aster-state-field-{persistentHidden}>renamed detail</small></label>
       <button type="button" name="key" value="persistent-2"
           aria-controls="persistent-todo-list"
           data-aster-event="click|PersistentTodoList_RemoveTodo|v|x:PersistentTodoList|s:key">Remove</button>
@@ -156,7 +172,14 @@ for field_index, field_name in enumerate((
         "{" + field_name + "}",
         projection_part("RowSelectionProjectionState", field_index)
     )
+projection_html = projection_html.replace(
+    "{seededLabel}", projection_part("SeededCounter", 0)
+)
+projection_html = projection_html.replace(
+    "{seededCount}", projection_part("SeededCounter", 3)
+)
 for field_index, field_name in (
+    (0, "persistentKey"),
     (1, "persistentTitle"),
     (2, "persistentClass"),
     (3, "persistentDisabled"),
@@ -267,14 +290,40 @@ try:
         assert seeded.count() == 2
         assert seeded.nth(0).locator("strong").text_content() == "Alpha"
         assert seeded.nth(1).locator("strong").text_content() == "Beta"
+        nested = seeded.nth(0).locator(".nested-counter")
+        page.evaluate("""window.nestedIdentity =
+            document.querySelector('.seeded-counter .nested-counter')""")
+        nested.get_by_text("Increment nested counter", exact=True).click()
+        assert nested.locator('[name="count"]').text_content() == "1"
         seeded.nth(0).get_by_text(
             "Increment seeded counter", exact=True
         ).click()
         seeded.nth(1).get_by_text(
             "Increment seeded counter", exact=True
         ).click()
-        assert seeded.nth(0).locator('[name="count"]').text_content() == "8"
-        assert seeded.nth(1).locator('[name="count"]').text_content() == "42"
+        assert seeded.nth(0).locator(':scope > [name="count"]').text_content() == "8"
+        assert seeded.nth(1).locator(':scope > [name="count"]').text_content() == "42"
+        assert nested.locator('[name="count"]').text_content() == "1"
+        assert page.evaluate("window.nestedIdentity.isConnected")
+        page.get_by_text("Read nested drops", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('[name=\"nestedDropCount\"]')"
+            ".textContent === '2'"
+        )
+        seeded.nth(0).evaluate("component => component.remove()")
+        page.wait_for_timeout(0)
+        page.get_by_text("Read nested drops", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('[name=\"nestedDropCount\"]')"
+            ".textContent === '3'"
+        )
+        assert seeded.count() == 1
+        seeded.nth(0).get_by_text(
+            "Increment seeded counter", exact=True
+        ).click()
+        assert seeded.nth(0).locator(
+            ':scope > [name="count"]'
+        ).text_content() == "44"
 
         failing_constructor = page.get_by_text(
             "Construct failing component", exact=True
@@ -367,11 +416,11 @@ try:
         assert first_persistent.locator("small").is_hidden()
         assert second_persistent.locator(
             "[data-aster-part-t]"
-        ).text_content() == "Todo: Second persistent"
+        ).text_content() == "Todo: Server loaded"
         assert second_persistent.get_attribute("class") == ""
         assert second_persistent.get_attribute(
             "title"
-        ) == "Second persistent todo"
+        ) == "Server-loaded todo"
         assert not second_persistent.locator("input").is_disabled()
         assert not second_persistent.locator("small").is_hidden()
         assert persistent_input.input_value() == "persistent browser edit"
@@ -409,7 +458,7 @@ try:
         assert fourth_persistent.locator("small").is_hidden()
         assert second_persistent.locator(
             "[data-aster-part-t]"
-        ).text_content() == "Todo: Second persistent"
+        ).text_content() == "Todo: Server loaded"
         assert persistent.locator(":scope > li").count() == 4
         persistent.locator(
             '[data-aster-key="persistent-3"]'
@@ -429,4 +478,4 @@ finally:
     server.shutdown()
     server.server_close()
 
-print("void component renders, SSR state, and retained keyed DOM verified")
+print("SSR list state, nested ownership, and component renders verified")

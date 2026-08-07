@@ -131,6 +131,69 @@ function componentConstructorArguments(scope, exports, memory) {
     }
 }
 
+function restoreComponentListState(scope, owner, handle, exports, memory) {
+    const encoded = scope.getAttribute("data-aster-component-list-state");
+    if (encoded === null) return;
+    const clear = exports[`aster_export_component_${owner}_state_clear`];
+    const add = exports[`aster_export_component_${owner}_state_add`];
+    if (typeof clear !== "function" || typeof add !== "function")
+        throw new Error(`Aster component list-state ABI is missing: ${owner}`);
+    const fields = encoded.split(",").map((field) => {
+        const separator = field.indexOf(":");
+        return [field.slice(0, separator), field.slice(separator + 1)];
+    });
+    const items = [...scope.querySelectorAll("[data-aster-key]")].filter(
+        (item) => item.closest("[data-aster-component]") === scope &&
+            item.parentElement?.closest("[data-aster-key]") === null
+    );
+    clear(handle);
+    for (const item of items) {
+        const args = [handle];
+        const allocations = [];
+        try {
+            for (const [type, id] of fields) {
+                let value;
+                if (type === "k") {
+                    value = item.dataset.asterKey ?? "";
+                } else {
+                    const selector =
+                        `[data-aster-state-field-${CSS.escape(id)}]`;
+                    const target = item.matches(selector)
+                        ? item : item.querySelector(selector);
+                    if (target === null ||
+                        target.closest("[data-aster-key]") !== item)
+                        throw new Error(
+                            `Aster component state field is missing: ${id}`
+                        );
+                    value = type === "b"
+                        ? target.hasAttribute(`data-aster-state-${id}`)
+                        : target.getAttribute(`data-aster-state-${id}`) ?? "";
+                }
+                if (type === "b") {
+                    args.push(value ? 1 : 0);
+                } else if (type === "l") {
+                    args.push(BigInt(value));
+                } else {
+                    const bytes = encoder.encode(value);
+                    const pointer = Number(
+                        exports.aster_export_memory_alloc(bytes.length)
+                    );
+                    if (pointer === 0)
+                        throw new Error("Aster component state allocation failed");
+                    new Uint8Array(memory.buffer, pointer, bytes.length)
+                        .set(bytes);
+                    args.push(pointer, bytes.length);
+                    allocations.push(pointer);
+                }
+            }
+            add(...args);
+        } finally {
+            for (const pointer of allocations)
+                exports.aster_export_memory_free(pointer);
+        }
+    }
+}
+
 function componentInstance(scope, owner, exports, memory) {
     let components = activeComponents.get(scope);
     if (components === undefined) {
@@ -159,6 +222,14 @@ function componentInstance(scope, owner, exports, memory) {
         }
         if (handle === 0)
             throw new Error(`Aster component construction failed: ${owner}`);
+        try {
+            restoreComponentListState(scope, owner, handle, exports, memory);
+        } catch (error) {
+            drop(handle);
+            if (exports.aster_export_exception_pending() !== 0)
+                takePendingException(exports, memory);
+            throw error;
+        }
         component = {handle, drop, exports, memory};
         components.set(owner, component);
     }
@@ -324,13 +395,19 @@ function collectionFor(source, state) {
 
 const keyedPartKinds = ["t", "c", "d", "h", "a"];
 
-function keyedPartElements(item) {
-    const elements = [item, ...item.querySelectorAll(
+function keyedPartElements(region) {
+    const elements = [region, ...region.querySelectorAll(
         "[data-aster-part-t], [data-aster-part-c], [data-aster-part-d], " +
         "[data-aster-part-h], [data-aster-part-a]"
     )];
-    return elements.filter(
-        (element) => element.closest("[data-aster-key]") === item
+    const keyed = region.matches("[data-aster-key]") ? region : null;
+    const component = region.matches("[data-aster-component]")
+        ? region : region.closest("[data-aster-component]");
+    return elements.filter((element) =>
+        element.closest("[data-aster-component]") === component &&
+        (keyed === null
+            ? element.closest("[data-aster-key]") === null
+            : element.closest("[data-aster-key]") === keyed)
     );
 }
 
@@ -443,7 +520,6 @@ function applyComponentSnapshot(
     source, scope, state, owner, exports, memory, hydrateWithin
 ) {
     const controlled = controlledTarget(source);
-    if (controlled === null) return;
     const handle = componentInstance(scope, owner, exports, memory);
     const render = exports[`aster_export_component_${owner}_render`];
     if (typeof render !== "function")
@@ -464,6 +540,12 @@ function applyComponentSnapshot(
     ) ?? fragment.firstElementChild;
     if (renderedScope === null)
         throw new Error(`Aster component render root is missing: ${owner}`);
+    if (controlled === null) {
+        if (renderedScope.tagName !== scope.tagName)
+            throw new Error(`Aster component render root changed: ${owner}`);
+        applyKeyedPartPlan(keyedPartPlan(scope, renderedScope));
+        return;
+    }
     const controlledId = controlled.id;
     const snapshot = renderedScope.id === controlledId
         ? renderedScope

@@ -198,6 +198,10 @@ try {
                     "PersistentTodo", field
                 );
                 if (!html.includes(`Todo: ${expected}`) ||
+                    !html.includes("data-aster-component-list-state=") ||
+                    !html.includes(
+                        `data-aster-state-field-${part(1)}`
+                    ) ||
                     !html.includes(`data-aster-part-t=\"${part(1)}\"`) ||
                     !html.includes(`data-aster-part-c=\"${part(2)}\"`) ||
                     !html.includes(`data-aster-part-d=\"${part(3)}\"`) ||
@@ -218,6 +222,7 @@ try {
 const seededNew = instance.exports.aster_export_component_SeededCounter_new;
 const seededDrop = instance.exports.aster_export_component_SeededCounter_drop;
 const seededIncrement = instance.exports.aster_export_SeededCounter_Increment;
+const seededRender = instance.exports.aster_export_component_SeededCounter_render;
 const seedBytes = new TextEncoder().encode("Node seed");
 const seedPointer = Number(
     instance.exports.aster_export_memory_alloc(seedBytes.length)
@@ -232,8 +237,21 @@ try {
     instance.exports.aster_export_memory_free(seedPointer);
 }
 try {
-    if (seededIncrement(seededCounter, 12n) !== 13n)
-        throw new Error("component constructor state was not transferred");
+    seededIncrement(seededCounter, 12n);
+    const rendered = Number(renderHtml(Number(seededRender(seededCounter))));
+    try {
+        const pointer = Number(stringData(rendered));
+        const length = Number(stringLength(rendered));
+        const html = new TextDecoder().decode(
+            new Uint8Array(memory.buffer, pointer, length)
+        );
+        if (!html.includes(">13</output>"))
+            throw new Error(
+                "whole component void render did not retain constructor state"
+            );
+    } finally {
+        stringDrop(rendered);
+    }
 } finally {
     seededDrop(seededCounter);
 }

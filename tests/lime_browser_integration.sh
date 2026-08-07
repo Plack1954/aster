@@ -74,6 +74,8 @@ grep -Eq 'data-aster-part-c="[0-9a-f]{16}"' <<<"$page"
 grep -Eq 'data-aster-part-d="[0-9a-f]{16}"' <<<"$page"
 grep -Eq 'data-aster-part-h="[0-9a-f]{16}"' <<<"$page"
 grep -Eq 'data-aster-part-a="[0-9a-f]{16}"' <<<"$page"
+grep -q 'data-aster-component-list-state=' <<<"$page"
+grep -Eq 'data-aster-state-field-[0-9a-f]{16}' <<<"$page"
 test "$(grep -o 'data-aster-component="IsolatedCounter"' <<<"$page" | wc -l)" -eq 2
 test "$(grep -o 'data-aster-component="SeededCounter"' <<<"$page" | wc -l)" -eq 2
 grep -q 'data-aster-component-param-0="s"' <<<"$page"
@@ -82,6 +84,7 @@ grep -q 'data-aster-component-param-1="l"' <<<"$page"
 grep -q 'data-aster-component-arg-1="40"' <<<"$page"
 grep -q 'data-aster-component-param-2="b"' <<<"$page"
 grep -q 'data-aster-component-arg-2' <<<"$page"
+grep -q 'click|SeededCounter_Increment|v|x:SeededCounter|l:count' <<<"$page"
 grep -q 'click|IsolatedCounter_Increment|l|x:IsolatedCounter|l:count' <<<"$page"
 test "$(grep -o 'name="value"' <<<"$page" | wc -l)" -ge 2
 grep -q 'name="positive"' <<<"$page"

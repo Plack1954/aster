@@ -653,6 +653,109 @@ void c_backend_emit_public_aggregate_accessors(
     fputs("    free(value);\n}\n\n", emitter->output);
 }
 
+static void emit_component_list_state_abi(
+    CEmitter *emitter, const char *owner,
+    IrTypeId class_type_id, const IrType *class_type) {
+    const IrModule *ir = emitter->ir;
+    size_t list_field = class_type->field_count;
+    IrTypeId list_type_id = IR_INVALID_ID;
+    const IrType *list_type = NULL;
+    const IrType *item_type = NULL;
+    for (size_t field = 0U; field < class_type->field_count; ++field) {
+        IrTypeId candidate_id = class_type->field_types[field];
+        const IrType *candidate = &ir->types[candidate_id];
+        if (!c_backend_type_is_vec(candidate) ||
+            candidate->element_type == IR_INVALID_ID)
+            continue;
+        const IrType *item = &ir->types[candidate->element_type];
+        if (item->shape != IR_TYPE_STRUCT || item->field_count == 0U)
+            continue;
+        bool supported = true;
+        for (size_t item_field = 0U;
+             item_field < item->field_count; ++item_field) {
+            const IrType *field_type = &ir->types[item->field_types[item_field]];
+            bool string_type = field_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+                field_type->name != NULL &&
+                strcmp(field_type->name, "string") == 0;
+            if (!(string_type || field_type->shape == IR_TYPE_BOOL ||
+                  field_type->shape == IR_TYPE_SIGNED_INT ||
+                  field_type->shape == IR_TYPE_UNSIGNED_INT))
+                supported = false;
+        }
+        if (!supported) continue;
+        list_field = field;
+        list_type_id = candidate_id;
+        list_type = candidate;
+        item_type = item;
+        break;
+    }
+    if (list_type == NULL || item_type == NULL) return;
+    fputs("void aster_export_component_", emitter->output);
+    emit_web_identifier(emitter->output, owner);
+    fputs("_state_clear(", emitter->output);
+    c_backend_emit_type(emitter, class_type_id);
+    fputs(" value) {\n", emitter->output);
+    fprintf(emitter->output,
+            "    aster_drop_%" PRIu32 "(&value->f%zu);\n",
+            list_type_id, list_field);
+    fprintf(emitter->output,
+            "    value->f%zu = calloc(1U, sizeof(*value->f%zu));\n"
+            "    if (value->f%zu == NULL) aster_trap(\"out of memory\");\n"
+            "}\n",
+            list_field, list_field, list_field);
+    fputs("void aster_export_component_", emitter->output);
+    emit_web_identifier(emitter->output, owner);
+    fputs("_state_add(", emitter->output);
+    c_backend_emit_type(emitter, class_type_id);
+    fputs(" value", emitter->output);
+    for (size_t field = 0U; field < item_type->field_count; ++field) {
+        const IrType *field_type = &ir->types[item_type->field_types[field]];
+        if (field_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+            field_type->name != NULL &&
+            strcmp(field_type->name, "string") == 0)
+            fprintf(emitter->output,
+                    ", const unsigned char *p%zu_data, size_t p%zu_length",
+                    field, field);
+        else {
+            fputs(", ", emitter->output);
+            c_backend_emit_type(emitter, item_type->field_types[field]);
+            fprintf(emitter->output, " p%zu", field);
+        }
+    }
+    fputs(") {\n    ", emitter->output);
+    c_backend_emit_type(emitter, list_type->element_type);
+    fputs(" item = {0};\n", emitter->output);
+    for (size_t field = 0U; field < item_type->field_count; ++field) {
+        const IrType *field_type = &ir->types[item_type->field_types[field]];
+        if (field_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+            field_type->name != NULL &&
+            strcmp(field_type->name, "string") == 0)
+            fprintf(emitter->output,
+                    "    item.f%zu = aster_string_from((aster_str){"
+                    "p%zu_data, p%zu_length});\n",
+                    field, field, field);
+        else
+            fprintf(emitter->output, "    item.f%zu = p%zu;\n", field, field);
+    }
+    fprintf(emitter->output,
+            "    if (value->f%zu->length == value->f%zu->capacity) {\n"
+            "        size_t capacity = value->f%zu->capacity == 0U ? 4U : "
+            "value->f%zu->capacity * 2U;\n"
+            "        if (capacity < value->f%zu->capacity) "
+            "aster_trap(\"list capacity overflow\");\n"
+            "        void *data = realloc(value->f%zu->data, "
+            "capacity * sizeof(*value->f%zu->data));\n"
+            "        if (data == NULL) aster_trap(\"out of memory\");\n"
+            "        value->f%zu->data = data;\n"
+            "        value->f%zu->capacity = capacity;\n"
+            "    }\n"
+            "    value->f%zu->data[value->f%zu->length++] = item;\n"
+            "}\n",
+            list_field, list_field, list_field, list_field,
+            list_field, list_field, list_field, list_field,
+            list_field, list_field, list_field);
+}
+
 void c_backend_emit_web_component_abis(
     CEmitter *emitter, size_t entry) {
     const IrModule *ir = emitter->ir;
@@ -766,6 +869,8 @@ void c_backend_emit_web_component_abis(
         fprintf(emitter->output,
                 " value) {\n    return aster_fn_%zu(value);\n}\n",
                 render_index);
+        emit_component_list_state_abi(
+            emitter, method->owner_type, type_id, type);
         fputs("void aster_export_component_", emitter->output);
         emit_web_identifier(emitter->output, method->owner_type);
         fputs("_drop(", emitter->output);

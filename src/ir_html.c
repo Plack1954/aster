@@ -616,6 +616,46 @@ static void emit_keyed_part_marker(
                 : kind == 'h' ? "data-aster-part-h"
                               : "data-aster-part-a";
     set->symbol_length = strlen(set->symbol);
+
+    if (builder->function->owner_type == NULL ||
+        expression == NULL || expression->kind != EXPR_FIELD ||
+        expression->as.field.object->type == NULL ||
+        expression->as.field.object->type->declaration == NULL ||
+        expression->as.field.object->type->declaration->kind != DECL_STRUCT)
+        return;
+    char *state_name = lang_arena_alloc(
+        &builder->module->lowering_module->arena, 40U);
+    char *state_marker_name = lang_arena_alloc(
+        &builder->module->lowering_module->arena, 48U);
+    (void)snprintf(
+        state_name, 40U, "data-aster-state-%016" PRIx64, part_id);
+    (void)snprintf(
+        state_marker_name, 48U,
+        "data-aster-state-field-%016" PRIx64, part_id);
+    IrInstruction *state_marker = ir_append_instruction(
+        builder, IR_OP_CONST_BOOL,
+        ir_intern_type(builder->module, &ir_bool_type),
+        NULL, 0U, span);
+    if (state_marker != NULL) state_marker->integer = 1U;
+    IrValueId state_marker_value = state_marker != NULL
+        ? state_marker->result : IR_INVALID_ID;
+    IrInstruction *set_state_marker = ir_append_instruction(
+        builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+        IR_INVALID_ID, &state_marker_value, 1U, span);
+    if (set_state_marker != NULL) {
+        set_state_marker->index = local;
+        set_state_marker->symbol = state_marker_name;
+        set_state_marker->symbol_length = strlen(state_marker_name);
+    }
+    IrValueId state_value = ir_lower_expr(builder, expression);
+    IrInstruction *set_state = ir_append_instruction(
+        builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+        IR_INVALID_ID, &state_value, 1U, span);
+    if (set_state != NULL) {
+        set_state->index = local;
+        set_state->symbol = state_name;
+        set_state->symbol_length = strlen(state_name);
+    }
 }
 
 static void emit_component_constructor_markers(
@@ -700,6 +740,63 @@ static void emit_component_constructor_markers(
             set_value->symbol_length = strlen(value_name);
         }
     }
+    for (size_t field = 0U; field < instance->field_count; ++field) {
+        const IrType *list = &builder->module->types[
+            instance->field_types[field]];
+        if (list->shape != IR_TYPE_BUILTIN_OBJECT || list->name == NULL ||
+            strncmp(list->name, "List<", 5U) != 0 ||
+            list->element_type == IR_INVALID_ID)
+            continue;
+        const IrType *item = &builder->module->types[list->element_type];
+        if (item->shape != IR_TYPE_STRUCT || item->field_count == 0U)
+            continue;
+        char *schema = lang_arena_alloc(
+            &builder->module->lowering_module->arena,
+            item->field_count * 20U + 1U);
+        size_t offset = 0U;
+        bool supported = true;
+        for (size_t item_field = 0U;
+             item_field < item->field_count; ++item_field) {
+            const IrType *field_type = &builder->module->types[
+                item->field_types[item_field]];
+            char code = strcmp(item->field_names[item_field], "key") == 0
+                ? 'k' : field_type->shape == IR_TYPE_BOOL ? 'b'
+                : field_type->shape == IR_TYPE_SIGNED_INT ||
+                  field_type->shape == IR_TYPE_UNSIGNED_INT ? 'l'
+                : field_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+                  field_type->name != NULL &&
+                  strcmp(field_type->name, "string") == 0 ? 's' : '?';
+            if (code == '?') {
+                supported = false;
+                break;
+            }
+            uint64_t id = lang_projection_part_id(
+                item->module_name, item->name, item_field);
+            offset += (size_t)snprintf(
+                schema + offset, item->field_count * 20U + 1U - offset,
+                "%s%c:%016" PRIx64,
+                item_field == 0U ? "" : ",", code, id);
+        }
+        if (!supported) continue;
+        IrInstruction *constant = ir_append_instruction(
+            builder, IR_OP_CONST_STRING,
+            ir_intern_type(builder->module, &ir_str_type),
+            NULL, 0U, span);
+        if (constant == NULL) return;
+        constant->symbol = schema;
+        constant->symbol_length = offset;
+        IrValueId schema_value = constant->result;
+        IrInstruction *set_schema = ir_append_instruction(
+            builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+            IR_INVALID_ID, &schema_value, 1U, span);
+        if (set_schema != NULL) {
+            set_schema->index = local;
+            set_schema->symbol = "data-aster-component-list-state";
+            set_schema->symbol_length =
+                strlen(set_schema->symbol);
+        }
+        break;
+    }
 }
 
 static const Expr *keyed_text_part_expression(const Expr *element) {
@@ -734,8 +831,9 @@ IrValueId ir_lower_element_with_parent(
             builder, expr, resolved, parent_local);
 
     IrTypeId result_type = ir_intern_type(builder->module, expr->type);
-    bool keyed_item = builder->element_count != 0U &&
-        builder->elements[builder->element_count - 1U].keyed_item;
+    bool keyed_item = builder->function->is_component_render ||
+        (builder->element_count != 0U &&
+         builder->elements[builder->element_count - 1U].keyed_item);
     for (size_t property = 0U;
          property < expr->as.element.property_count; ++property)
         if (expr->as.element.properties[property].keyed_identity)
@@ -845,16 +943,25 @@ IrValueId ir_lower_element_with_parent(
             set->symbol = property_name;
             set->symbol_length = strlen(property_name);
         }
-        if (keyed_item && strcmp(property_name, "class") == 0)
+        bool dynamic_property =
+            property->value->kind != EXPR_INT &&
+            property->value->kind != EXPR_FLOAT &&
+            property->value->kind != EXPR_STRING &&
+            property->value->kind != EXPR_BOOL;
+        if (keyed_item && dynamic_property &&
+            strcmp(property_name, "class") == 0)
             emit_keyed_part_marker(
                 builder, local, property->value, 'c', property->span);
-        else if (keyed_item && strcmp(property_name, "disabled") == 0)
+        else if (keyed_item && dynamic_property &&
+                 strcmp(property_name, "disabled") == 0)
             emit_keyed_part_marker(
                 builder, local, property->value, 'd', property->span);
-        else if (keyed_item && strcmp(property_name, "hidden") == 0)
+        else if (keyed_item && dynamic_property &&
+                 strcmp(property_name, "hidden") == 0)
             emit_keyed_part_marker(
                 builder, local, property->value, 'h', property->span);
-        else if (keyed_item && strcmp(property_name, "title") == 0)
+        else if (keyed_item && dynamic_property &&
+                 strcmp(property_name, "title") == 0)
             emit_keyed_part_marker(
                 builder, local, property->value, 'a', property->span);
     }
