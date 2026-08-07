@@ -87,6 +87,11 @@ kind = "bin"
 entry = "Tests.BrowserHttpServer"
 browser_entry = "Tests.BrowserApp"
 
+[target.final_todo_proof]
+kind = "bin"
+entry = "Tests.FinalTodoApp"
+browser_entry = "Tests.FinalTodoApp"
+
 [target.async_response]
 kind = "bin"
 entry = "Tests.AsyncResponse"

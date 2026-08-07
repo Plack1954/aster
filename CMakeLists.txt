@@ -987,6 +987,15 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
         PASS_REGULAR_EXPRESSION
             "component faults, exact disposal, and native retained state verified"
         TIMEOUT 60)
+    add_test(NAME final_todo_application_proof
+        COMMAND bash tests/final_todo_wasm.sh
+            $<TARGET_FILE:lang>
+            ${CMAKE_CURRENT_BINARY_DIR}/final-todo-proof)
+    set_tests_properties(final_todo_application_proof PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        PASS_REGULAR_EXPRESSION
+            "final server-loaded todo application proof verified"
+        TIMEOUT 60)
     add_test(NAME browser_compare_wasm
         COMMAND bash tests/browser_compare_wasm.sh
             $<TARGET_FILE:lang>

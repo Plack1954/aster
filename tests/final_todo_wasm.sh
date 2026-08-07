@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+lang=$1
+output_directory=$2
+
+rm -rf "$output_directory"
+"$lang" project build-web \
+    packages/lime/aster.toml "$output_directory" final_todo_proof
+python3 tests/final_todo_browser.py "$lang" "$output_directory"

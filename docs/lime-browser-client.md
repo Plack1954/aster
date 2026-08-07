@@ -291,6 +291,10 @@ nor rejected because it is unfashionable. It must win on total application DX,
 correctness, artifact size, startup, update cost, memory, and deterministic
 lifetime behavior.
 
+The locked language contract for component eligibility, rendering results, DOM
+ownership, keyed identity, state transfer, and disposal is
+[`lime-component-semantics.md`](lime-component-semantics.md).
+
 ## A likely layered model
 
 Lime may not need one universal browser update mechanism. A coherent hierarchy

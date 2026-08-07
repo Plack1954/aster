@@ -29,6 +29,10 @@ special indirection type.
 
 ## Native HTML class components
 
+The normative browser contract is defined in
+[`lime-component-semantics.md`](lime-component-semantics.md). This section
+provides implementation context and examples.
+
 A class with one explicit constructor and a public zero-argument
 `Html Render()` method may be used in native HTML element position. Constructor
 parameter names become checked component properties:
