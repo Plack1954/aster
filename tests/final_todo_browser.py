@@ -14,7 +14,7 @@ if len(sys.argv) != 3:
 lang = Path(sys.argv[1]).resolve()
 directory = Path(sys.argv[2]).resolve()
 page_html = subprocess.run(
-    [str(lang), "project", "run", "packages/lime/aster.toml", "final_todo_proof"],
+    [str(lang), "project", "run", "packages/aster_web/aster.toml", "final_todo_proof"],
     check=True, capture_output=True, text=True
 ).stdout
 page_html += """

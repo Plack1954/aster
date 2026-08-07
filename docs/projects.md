@@ -45,7 +45,7 @@ Local packages are declared by path relative to the manifest:
 
 ```toml
 [dependencies]
-lime = "../orange/packages/lime"
+aster_web = "../orange/packages/aster_web"
 ```
 
 The dependency directory must contain its own `aster.toml`, and the key must
@@ -75,7 +75,7 @@ The mapping from a PascalCase namespace to a snake_case file path is determinist
 
 ```text
 source_root + App.Main → source_root/app/main.as
-source_root + Lime.CurrentHttp → source_root/lime/current_http.as
+source_root + Aster.Web.CurrentHttp → source_root/aster/web/current_http.as
 ```
 
 Every project file must declare the namespace implied by its path. A used
@@ -101,7 +101,7 @@ Library targets are checkable but not directly runnable. `project run` and
 the same manifest, source-root, namespace mapping, and entrypoint rules.
 
 `project build-site` runs the selected binary target through typed IR with the
-output directory exposed as its sole `std.process` argument. A Lime SSG target
+output directory exposed as its sole `std.process` argument. A Aster Web SSG target
 uses that argument with `SiteBuild`; the command remains an ordinary project
 execution convention rather than introducing a compiler-owned page model.
 

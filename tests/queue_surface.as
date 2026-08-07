@@ -42,7 +42,7 @@ int main()
 
     Queue<string> names = new();
     names.Enqueue("Aster");
-    names.Enqueue("Lime");
+    names.Enqueue("Pear");
     string queuedName = "unset";
     if (!names.TryPeek(out queuedName) || queuedName != "Aster")
     {
@@ -50,8 +50,8 @@ int main()
     }
     Queue<string> copied = names;
     string first = names.Dequeue();
-    if (first != "Aster" || names.Peek() != "Lime") { return 8; }
-    if (copied.Dequeue() != "Aster" || copied.Dequeue() != "Lime")
+    if (first != "Aster" || names.Peek() != "Pear") { return 8; }
+    if (copied.Dequeue() != "Aster" || copied.Dequeue() != "Pear")
     {
         return 9;
     }

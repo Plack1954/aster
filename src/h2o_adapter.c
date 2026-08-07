@@ -58,61 +58,61 @@ static LangNativeResult h2o_string_value(LangVM *vm,
 #include <h2o/http1.h>
 #include <h2o/http2.h>
 
-static volatile sig_atomic_t lime_h2o_signal_stop_requested = 0;
+static volatile sig_atomic_t aster_web_h2o_signal_stop_requested = 0;
 
-static void lime_h2o_on_stop_signal(int signal_number) {
+static void aster_web_h2o_on_stop_signal(int signal_number) {
     (void)signal_number;
-    lime_h2o_signal_stop_requested = 1;
+    aster_web_h2o_signal_stop_requested = 1;
 }
 
-#define LIME_H2O_SERVER_MAGIC UINT32_C(0x4f483253)
-#define LIME_H2O_REQUEST_MAGIC UINT32_C(0x4f483252)
-#define LIME_H2O_STREAM_MAGIC UINT32_C(0x4f483247)
+#define ASTER_WEB_H2O_SERVER_MAGIC UINT32_C(0x4f483253)
+#define ASTER_WEB_H2O_REQUEST_MAGIC UINT32_C(0x4f483252)
+#define ASTER_WEB_H2O_STREAM_MAGIC UINT32_C(0x4f483247)
 
-typedef struct LimeH2OServer LimeH2OServer;
+typedef struct AsterWebH2OServer AsterWebH2OServer;
 
-typedef struct LimeH2OHandler {
+typedef struct AsterWebH2OHandler {
     h2o_handler_t super;
-    LimeH2OServer *server;
-} LimeH2OHandler;
+    AsterWebH2OServer *server;
+} AsterWebH2OHandler;
 
-typedef struct LimeH2OStaticMount {
+typedef struct AsterWebH2OStaticMount {
     char *root;
     size_t root_length;
     char *internal_prefix;
-    struct LimeH2OStaticMount *next;
-} LimeH2OStaticMount;
+    struct AsterWebH2OStaticMount *next;
+} AsterWebH2OStaticMount;
 
-typedef struct LimeH2OStaticGuard {
+typedef struct AsterWebH2OStaticGuard {
     h2o_handler_t super;
-    LimeH2OServer *server;
-} LimeH2OStaticGuard;
+    AsterWebH2OServer *server;
+} AsterWebH2OStaticGuard;
 
-typedef struct LimeH2OPendingRequest {
+typedef struct AsterWebH2OPendingRequest {
     h2o_req_t *request;
-    struct LimeH2OPendingRequest *next;
-} LimeH2OPendingRequest;
+    struct AsterWebH2OPendingRequest *next;
+} AsterWebH2OPendingRequest;
 
-typedef struct LimeH2ORequest {
+typedef struct AsterWebH2ORequest {
     uint32_t magic;
-    LimeH2OServer *server;
+    AsterWebH2OServer *server;
     h2o_req_t *request;
     bool responded;
-} LimeH2ORequest;
+} AsterWebH2ORequest;
 
-typedef struct LimeH2OStream {
+typedef struct AsterWebH2OStream {
     h2o_generator_t super;
     uint32_t magic;
-    LimeH2OServer *server;
+    AsterWebH2OServer *server;
     h2o_req_t *request;
     char *inflight;
     bool ready;
     bool stopped;
     bool final_sent;
     bool abandoned;
-} LimeH2OStream;
+} AsterWebH2OStream;
 
-struct LimeH2OServer {
+struct AsterWebH2OServer {
     uint32_t magic;
     size_t references;
     h2o_globalconf_t config;
@@ -121,13 +121,13 @@ struct LimeH2OServer {
     h2o_accept_ctx_t accept;
     h2o_evloop_t *loop;
     h2o_socket_t *listener;
-    LimeH2OPendingRequest *pending_head;
-    LimeH2OPendingRequest *pending_tail;
+    AsterWebH2OPendingRequest *pending_head;
+    AsterWebH2OPendingRequest *pending_tail;
     size_t pending_count;
     size_t max_queued_requests;
     h2o_req_t *static_delegate;
     h2o_iovec_t static_headers;
-    LimeH2OStaticMount *static_mounts;
+    AsterWebH2OStaticMount *static_mounts;
     size_t static_mount_count;
     uint16_t port;
     bool context_initialized;
@@ -137,11 +137,11 @@ struct LimeH2OServer {
     bool shutdown_complete;
 };
 
-static void h2o_server_release(LimeH2OServer *server);
+static void h2o_server_release(AsterWebH2OServer *server);
 
-static void h2o_static_mounts_dispose(LimeH2OStaticMount *mount) {
+static void h2o_static_mounts_dispose(AsterWebH2OStaticMount *mount) {
     while (mount != NULL) {
-        LimeH2OStaticMount *next = mount->next;
+        AsterWebH2OStaticMount *next = mount->next;
         free(mount->root);
         free(mount->internal_prefix);
         free(mount);
@@ -149,15 +149,15 @@ static void h2o_static_mounts_dispose(LimeH2OStaticMount *mount) {
     }
 }
 
-static void lime_h2o_stream_clear_chunk(LimeH2OStream *stream) {
+static void aster_web_h2o_stream_clear_chunk(AsterWebH2OStream *stream) {
     free(stream->inflight);
     stream->inflight = NULL;
 }
 
-static void lime_h2o_stream_proceed(h2o_generator_t *base,
+static void aster_web_h2o_stream_proceed(h2o_generator_t *base,
                                     h2o_req_t *request) {
-    LimeH2OStream *stream = (LimeH2OStream *)base;
-    lime_h2o_stream_clear_chunk(stream);
+    AsterWebH2OStream *stream = (AsterWebH2OStream *)base;
+    aster_web_h2o_stream_clear_chunk(stream);
     stream->ready = true;
     if (stream->abandoned && !stream->final_sent) {
         stream->final_sent = true;
@@ -166,24 +166,24 @@ static void lime_h2o_stream_proceed(h2o_generator_t *base,
     }
 }
 
-static void lime_h2o_stream_stop(h2o_generator_t *base,
+static void aster_web_h2o_stream_stop(h2o_generator_t *base,
                                  h2o_req_t *request) {
     (void)request;
-    LimeH2OStream *stream = (LimeH2OStream *)base;
-    lime_h2o_stream_clear_chunk(stream);
+    AsterWebH2OStream *stream = (AsterWebH2OStream *)base;
+    aster_web_h2o_stream_clear_chunk(stream);
     stream->request = NULL;
     stream->ready = true;
     stream->stopped = true;
 }
 
-static void lime_h2o_stream_dispose(void *opaque) {
-    LimeH2OStream *stream = opaque;
-    lime_h2o_stream_clear_chunk(stream);
+static void aster_web_h2o_stream_dispose(void *opaque) {
+    AsterWebH2OStream *stream = opaque;
+    aster_web_h2o_stream_clear_chunk(stream);
     stream->magic = 0U;
 }
 
-static void lime_h2o_stream_drop(void *opaque) {
-    LimeH2OStream *stream = opaque;
+static void aster_web_h2o_stream_drop(void *opaque) {
+    AsterWebH2OStream *stream = opaque;
     if (stream == NULL) return;
     if (!stream->final_sent && !stream->stopped) {
         stream->abandoned = true;
@@ -197,17 +197,17 @@ static void lime_h2o_stream_drop(void *opaque) {
     h2o_mem_release_shared(stream);
 }
 
-static int lime_h2o_on_request(h2o_handler_t *base, h2o_req_t *request) {
-    LimeH2OHandler *handler = (LimeH2OHandler *)base;
-    LimeH2OServer *server = handler->server;
-    if (server == NULL || server->magic != LIME_H2O_SERVER_MAGIC)
+static int aster_web_h2o_on_request(h2o_handler_t *base, h2o_req_t *request) {
+    AsterWebH2OHandler *handler = (AsterWebH2OHandler *)base;
+    AsterWebH2OServer *server = handler->server;
+    if (server == NULL || server->magic != ASTER_WEB_H2O_SERVER_MAGIC)
         return -1;
     if (server->pending_count >= server->max_queued_requests) {
         h2o_send_error_503(
             request, "Service Unavailable", "Server is busy.", 0);
         return 0;
     }
-    LimeH2OPendingRequest *pending = malloc(sizeof(*pending));
+    AsterWebH2OPendingRequest *pending = malloc(sizeof(*pending));
     if (pending == NULL) {
         h2o_send_error_503(
             request, "Service Unavailable", "Server is busy.", 0);
@@ -224,17 +224,17 @@ static int lime_h2o_on_request(h2o_handler_t *base, h2o_req_t *request) {
     return 0;
 }
 
-static void lime_h2o_on_accept(h2o_socket_t *listener,
+static void aster_web_h2o_on_accept(h2o_socket_t *listener,
                                const char *error) {
     if (error != NULL) return;
-    LimeH2OServer *server = listener->data;
-    if (server == NULL || server->magic != LIME_H2O_SERVER_MAGIC)
+    AsterWebH2OServer *server = listener->data;
+    if (server == NULL || server->magic != ASTER_WEB_H2O_SERVER_MAGIC)
         return;
     h2o_socket_t *socket = h2o_evloop_socket_accept(listener);
     if (socket != NULL) h2o_accept(&server->accept, socket);
 }
 
-static bool h2o_server_start(LimeH2OServer *server) {
+static bool h2o_server_start(AsterWebH2OServer *server) {
     if (server->context_initialized) return true;
     h2o_context_init(&server->context, server->loop, &server->config);
     server->context_initialized = true;
@@ -243,12 +243,12 @@ static bool h2o_server_start(LimeH2OServer *server) {
     return true;
 }
 
-static void h2o_server_begin_shutdown(LimeH2OServer *server) {
+static void h2o_server_begin_shutdown(AsterWebH2OServer *server) {
     if (server->shutdown_started) return;
     server->stopping = true;
     server->shutdown_started = true;
     while (server->pending_head != NULL) {
-        LimeH2OPendingRequest *pending = server->pending_head;
+        AsterWebH2OPendingRequest *pending = server->pending_head;
         server->pending_head = pending->next;
         h2o_send_error_503(pending->request, "Service Unavailable",
                            "Server is shutting down.",
@@ -267,7 +267,7 @@ static void h2o_server_begin_shutdown(LimeH2OServer *server) {
         h2o_context_request_shutdown(&server->context);
 }
 
-static void h2o_server_drain(LimeH2OServer *server) {
+static void h2o_server_drain(AsterWebH2OServer *server) {
     if (server->shutdown_complete) return;
     h2o_server_begin_shutdown(server);
     if (server->context_initialized) {
@@ -281,8 +281,8 @@ static void h2o_server_drain(LimeH2OServer *server) {
     server->shutdown_complete = true;
 }
 
-static void h2o_server_destroy(LimeH2OServer *server) {
-    if (server == NULL || server->magic != LIME_H2O_SERVER_MAGIC) return;
+static void h2o_server_destroy(AsterWebH2OServer *server) {
+    if (server == NULL || server->magic != ASTER_WEB_H2O_SERVER_MAGIC) return;
     h2o_server_drain(server);
     h2o_config_dispose(&server->config);
     h2o_evloop_destroy(server->loop);
@@ -291,8 +291,8 @@ static void h2o_server_destroy(LimeH2OServer *server) {
     free(server);
 }
 
-static void h2o_server_release(LimeH2OServer *server) {
-    if (server == NULL || server->magic != LIME_H2O_SERVER_MAGIC) return;
+static void h2o_server_release(AsterWebH2OServer *server) {
+    if (server == NULL || server->magic != ASTER_WEB_H2O_SERVER_MAGIC) return;
     if (--server->references == 0U) h2o_server_destroy(server);
 }
 
@@ -301,8 +301,8 @@ static void h2o_server_drop(void *opaque) {
 }
 
 static void h2o_request_drop(void *opaque) {
-    LimeH2ORequest *request = opaque;
-    if (request == NULL || request->magic != LIME_H2O_REQUEST_MAGIC)
+    AsterWebH2ORequest *request = opaque;
+    if (request == NULL || request->magic != ASTER_WEB_H2O_REQUEST_MAGIC)
         return;
     if (!request->responded && request->request != NULL) {
         h2o_send_error_500(
@@ -310,7 +310,7 @@ static void h2o_request_drop(void *opaque) {
             "Request left without a response.",
             H2O_SEND_ERROR_HTTP1_CLOSE_CONNECTION);
     }
-    LimeH2OServer *server = request->server;
+    AsterWebH2OServer *server = request->server;
     request->magic = 0U;
     request->request = NULL;
     request->server = NULL;
@@ -318,21 +318,21 @@ static void h2o_request_drop(void *opaque) {
     h2o_server_release(server);
 }
 
-static LimeH2OServer *get_h2o_server(const LangValue *value) {
-    LimeH2OServer *server = lang_native_handle_data(value);
-    return server != NULL && server->magic == LIME_H2O_SERVER_MAGIC
+static AsterWebH2OServer *get_h2o_server(const LangValue *value) {
+    AsterWebH2OServer *server = lang_native_handle_data(value);
+    return server != NULL && server->magic == ASTER_WEB_H2O_SERVER_MAGIC
         ? server : NULL;
 }
 
-static LimeH2ORequest *get_h2o_request(const LangValue *value) {
-    LimeH2ORequest *request = lang_native_handle_data(value);
-    return request != NULL && request->magic == LIME_H2O_REQUEST_MAGIC
+static AsterWebH2ORequest *get_h2o_request(const LangValue *value) {
+    AsterWebH2ORequest *request = lang_native_handle_data(value);
+    return request != NULL && request->magic == ASTER_WEB_H2O_REQUEST_MAGIC
         ? request : NULL;
 }
 
-static LimeH2OStream *get_h2o_stream(const LangValue *value) {
-    LimeH2OStream *stream = lang_native_handle_data(value);
-    return stream != NULL && stream->magic == LIME_H2O_STREAM_MAGIC
+static AsterWebH2OStream *get_h2o_stream(const LangValue *value) {
+    AsterWebH2OStream *stream = lang_native_handle_data(value);
+    return stream != NULL && stream->magic == ASTER_WEB_H2O_STREAM_MAGIC
         ? stream : NULL;
 }
 
@@ -390,19 +390,19 @@ static LangNativeResult h2o_server_open_value(
     if (address_c == NULL)
         return h2o_result_error(vm, "invalid H2O listen address");
 
-    LimeH2OServer *server = calloc(1U, sizeof(*server));
+    AsterWebH2OServer *server = calloc(1U, sizeof(*server));
     if (server == NULL) {
         free(address_c);
         return h2o_native_failure("out of memory creating H2O server");
     }
-    server->magic = LIME_H2O_SERVER_MAGIC;
+    server->magic = ASTER_WEB_H2O_SERVER_MAGIC;
     server->references = 1U;
     server->handle_signals = args[6].as.boolean;
     server->max_queued_requests = (size_t)max_queued_requests;
     if (server->handle_signals) {
-        lime_h2o_signal_stop_requested = 0;
-        if (signal(SIGINT, lime_h2o_on_stop_signal) == SIG_ERR ||
-            signal(SIGTERM, lime_h2o_on_stop_signal) == SIG_ERR) {
+        aster_web_h2o_signal_stop_requested = 0;
+        if (signal(SIGINT, aster_web_h2o_on_stop_signal) == SIG_ERR ||
+            signal(SIGTERM, aster_web_h2o_on_stop_signal) == SIG_ERR) {
             free(address_c);
             free(server);
             return h2o_result_error(vm,
@@ -419,9 +419,9 @@ static LangNativeResult h2o_server_open_value(
         &server->config, h2o_iovec_init(H2O_STRLIT("default")), 65535);
     h2o_pathconf_t *path = h2o_config_register_path(
         server->host, "/", 0);
-    LimeH2OHandler *handler = (LimeH2OHandler *)h2o_create_handler(
+    AsterWebH2OHandler *handler = (AsterWebH2OHandler *)h2o_create_handler(
         path, sizeof(*handler));
-    handler->super.on_req = lime_h2o_on_request;
+    handler->super.on_req = aster_web_h2o_on_request;
     handler->server = server;
 
     server->loop = h2o_evloop_create();
@@ -472,7 +472,7 @@ static LangNativeResult h2o_server_open_value(
         return h2o_result_error(vm, "could not create H2O listener");
     }
     server->listener->data = server;
-    h2o_socket_read_start(server->listener, lime_h2o_on_accept);
+    h2o_socket_read_start(server->listener, aster_web_h2o_on_accept);
 
     LangValue handle;
     if (!lang_native_handle_value(vm, server, h2o_server_drop, &handle)) {
@@ -486,7 +486,7 @@ static LangNativeResult h2o_server_port_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
     (void)vm;
-    LimeH2OServer *server = arg_count == 1U
+    AsterWebH2OServer *server = arg_count == 1U
         ? get_h2o_server(&args[0]) : NULL;
     if (server == NULL)
         return h2o_native_failure("H2OServerPort expects an H2O server");
@@ -495,8 +495,8 @@ static LangNativeResult h2o_server_port_value(
     };
 }
 
-static void h2o_server_update_stop_requested(LimeH2OServer *server) {
-    if (server->handle_signals && lime_h2o_signal_stop_requested != 0)
+static void h2o_server_update_stop_requested(AsterWebH2OServer *server) {
+    if (server->handle_signals && aster_web_h2o_signal_stop_requested != 0)
         server->stopping = true;
 }
 
@@ -504,7 +504,7 @@ static LangNativeResult h2o_stop_requested_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
     (void)vm;
-    LimeH2OServer *server = arg_count == 1U
+    AsterWebH2OServer *server = arg_count == 1U
         ? get_h2o_server(&args[0]) : NULL;
     if (server == NULL)
         return h2o_native_failure(
@@ -518,7 +518,7 @@ static LangNativeResult h2o_stop_requested_value(
 static LangNativeResult h2o_shutdown_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2OServer *server = arg_count == 1U
+    AsterWebH2OServer *server = arg_count == 1U
         ? get_h2o_server(&args[0]) : NULL;
     if (server == NULL)
         return h2o_result_error(vm,
@@ -532,7 +532,7 @@ static LangNativeResult h2o_shutdown_value(
 static LangNativeResult h2o_accept_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2OServer *server = arg_count == 1U
+    AsterWebH2OServer *server = arg_count == 1U
         ? get_h2o_server(&args[0]) : NULL;
     if (server == NULL)
         return h2o_result_error(vm, "H2OTryAccept expects an H2O server");
@@ -557,12 +557,12 @@ static LangNativeResult h2o_accept_value(
         if (loop_result != 0 && errno != EINTR)
             return h2o_result_error(vm, "H2O event loop failed");
     }
-    LimeH2ORequest *request = calloc(1U, sizeof(*request));
+    AsterWebH2ORequest *request = calloc(1U, sizeof(*request));
     if (request == NULL)
         return h2o_native_failure("out of memory accepting H2O request");
-    request->magic = LIME_H2O_REQUEST_MAGIC;
+    request->magic = ASTER_WEB_H2O_REQUEST_MAGIC;
     request->server = server;
-    LimeH2OPendingRequest *pending = server->pending_head;
+    AsterWebH2OPendingRequest *pending = server->pending_head;
     server->pending_head = pending->next;
     if (server->pending_head == NULL) server->pending_tail = NULL;
     server->pending_count -= 1U;
@@ -581,7 +581,7 @@ static LangNativeResult h2o_request_iovec(
     LangVM *vm, const LangValue *args, size_t arg_count,
     h2o_iovec_t (*select)(h2o_req_t *)
 ) {
-    LimeH2ORequest *request = arg_count == 1U
+    AsterWebH2ORequest *request = arg_count == 1U
         ? get_h2o_request(&args[0]) : NULL;
     if (request == NULL || request->request == NULL)
         return h2o_native_failure("invalid H2O request");
@@ -618,7 +618,7 @@ static LangNativeResult h2o_request_body_value(
 static LangNativeResult h2o_request_remote_ip_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *wrapper = arg_count == 1U
+    AsterWebH2ORequest *wrapper = arg_count == 1U
         ? get_h2o_request(&args[0]) : NULL;
     if (wrapper == NULL || wrapper->request == NULL)
         return h2o_native_failure("H2ORequestRemoteIpAddress expects a request");
@@ -645,7 +645,7 @@ static LangNativeResult h2o_request_remote_ip_value(
 static LangNativeResult h2o_request_scheme_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *wrapper = arg_count == 1U
+    AsterWebH2ORequest *wrapper = arg_count == 1U
         ? get_h2o_request(&args[0]) : NULL;
     if (wrapper == NULL || wrapper->request == NULL)
         return h2o_native_failure("H2ORequestScheme expects a request");
@@ -659,7 +659,7 @@ static LangNativeResult h2o_request_scheme_value(
 static LangNativeResult h2o_request_header_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *request = arg_count == 2U
+    AsterWebH2ORequest *request = arg_count == 2U
         ? get_h2o_request(&args[0]) : NULL;
     LangStringView name;
     if (request == NULL || request->request == NULL ||
@@ -684,7 +684,7 @@ static LangNativeResult h2o_request_header_value(
 static LangNativeResult h2o_request_headers_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *request = arg_count == 1U
+    AsterWebH2ORequest *request = arg_count == 1U
         ? get_h2o_request(&args[0]) : NULL;
     if (request == NULL || request->request == NULL)
         return h2o_native_failure("H2ORequestHeaders expects a request");
@@ -804,11 +804,11 @@ static bool h2o_add_response_headers(h2o_req_t *request,
     return true;
 }
 
-static int lime_h2o_static_guard(h2o_handler_t *base,
+static int aster_web_h2o_static_guard(h2o_handler_t *base,
                                  h2o_req_t *request) {
-    LimeH2OStaticGuard *guard = (LimeH2OStaticGuard *)base;
-    LimeH2OServer *server = guard->server;
-    if (server == NULL || server->magic != LIME_H2O_SERVER_MAGIC ||
+    AsterWebH2OStaticGuard *guard = (AsterWebH2OStaticGuard *)base;
+    AsterWebH2OServer *server = guard->server;
+    if (server == NULL || server->magic != ASTER_WEB_H2O_SERVER_MAGIC ||
         server->static_delegate != request) {
         h2o_send_error_404(request, "Not Found", "not found", 0);
         return 0;
@@ -828,7 +828,7 @@ static int lime_h2o_static_guard(h2o_handler_t *base,
 static LangNativeResult h2o_register_static_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2OServer *server = arg_count == 2U
+    AsterWebH2OServer *server = arg_count == 2U
         ? get_h2o_server(&args[0]) : NULL;
     LangStringView root;
     if (server == NULL ||
@@ -843,7 +843,7 @@ static LangNativeResult h2o_register_static_value(
     size_t root_length = root.length;
     while (root_length > 1U && root.data[root_length - 1U] == '/')
         --root_length;
-    for (LimeH2OStaticMount *mount = server->static_mounts;
+    for (AsterWebH2OStaticMount *mount = server->static_mounts;
          mount != NULL; mount = mount->next) {
         if (mount->root_length == root_length &&
             memcmp(mount->root, root.data, root_length) == 0)
@@ -852,7 +852,7 @@ static LangNativeResult h2o_register_static_value(
             });
     }
 
-    LimeH2OStaticMount *mount = calloc(1U, sizeof(*mount));
+    AsterWebH2OStaticMount *mount = calloc(1U, sizeof(*mount));
     if (mount == NULL) return h2o_native_failure("out of memory");
     mount->root = malloc(root_length + 1U);
     char internal[96];
@@ -878,9 +878,9 @@ static LangNativeResult h2o_register_static_value(
 
     h2o_pathconf_t *path = h2o_config_register_path(
         server->host, mount->internal_prefix, 0);
-    LimeH2OStaticGuard *guard = (LimeH2OStaticGuard *)h2o_create_handler(
+    AsterWebH2OStaticGuard *guard = (AsterWebH2OStaticGuard *)h2o_create_handler(
         path, sizeof(*guard));
-    guard->super.on_req = lime_h2o_static_guard;
+    guard->super.on_req = aster_web_h2o_static_guard;
     guard->server = server;
     (void)h2o_file_register(path, mount->root, NULL, NULL, 0);
 
@@ -892,11 +892,11 @@ static LangNativeResult h2o_register_static_value(
     });
 }
 
-static LimeH2OStaticMount *h2o_static_mount_for_path(
-    LimeH2OServer *server, LangStringView path
+static AsterWebH2OStaticMount *h2o_static_mount_for_path(
+    AsterWebH2OServer *server, LangStringView path
 ) {
-    LimeH2OStaticMount *best = NULL;
-    for (LimeH2OStaticMount *mount = server->static_mounts;
+    AsterWebH2OStaticMount *best = NULL;
+    for (AsterWebH2OStaticMount *mount = server->static_mounts;
          mount != NULL; mount = mount->next) {
         bool prefix = path.length > mount->root_length &&
             memcmp(path.data, mount->root, mount->root_length) == 0 &&
@@ -912,7 +912,7 @@ static LimeH2OStaticMount *h2o_static_mount_for_path(
 static LangNativeResult h2o_respond_file_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *wrapper = arg_count == 4U
+    AsterWebH2ORequest *wrapper = arg_count == 4U
         ? get_h2o_request(&args[0]) : NULL;
     int64_t status;
     LangStringView headers;
@@ -922,8 +922,8 @@ static LangNativeResult h2o_respond_file_value(
         !lang_value_string_view(&args[2], &headers) ||
         !lang_value_string_view(&args[3], &file_path))
         return h2o_result_error(vm, "invalid H2O file response arguments");
-    LimeH2OServer *server = wrapper->server;
-    LimeH2OStaticMount *mount = h2o_static_mount_for_path(
+    AsterWebH2OServer *server = wrapper->server;
+    AsterWebH2OStaticMount *mount = h2o_static_mount_for_path(
         server, file_path);
     if (mount == NULL)
         return h2o_result_error(vm,
@@ -989,7 +989,7 @@ static bool h2o_prepare_empty_response(
 static LangNativeResult h2o_respond_empty_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *wrapper = arg_count == 3U
+    AsterWebH2ORequest *wrapper = arg_count == 3U
         ? get_h2o_request(&args[0]) : NULL;
     int64_t status;
     LangStringView headers;
@@ -1011,7 +1011,7 @@ static LangNativeResult h2o_respond_empty_value(
 static LangNativeResult h2o_respond_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *wrapper = arg_count == 6U
+    AsterWebH2ORequest *wrapper = arg_count == 6U
         ? get_h2o_request(&args[0]) : NULL;
     int64_t status;
     LangStringView content_type;
@@ -1039,7 +1039,7 @@ static LangNativeResult h2o_respond_value(
 static LangNativeResult h2o_respond_bytes_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *wrapper = arg_count == 6U
+    AsterWebH2ORequest *wrapper = arg_count == 6U
         ? get_h2o_request(&args[0]) : NULL;
     int64_t status;
     LangStringView content_type;
@@ -1067,7 +1067,7 @@ static LangNativeResult h2o_respond_bytes_value(
 static LangNativeResult h2o_stream_begin_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2ORequest *wrapper = arg_count == 5U
+    AsterWebH2ORequest *wrapper = arg_count == 5U
         ? get_h2o_request(&args[0]) : NULL;
     int64_t status;
     LangStringView content_type;
@@ -1082,12 +1082,12 @@ static LangNativeResult h2o_stream_begin_value(
     if (!h2o_prepare_response(request, status, content_type, headers))
         return h2o_result_error(vm, "invalid H2O response metadata");
 
-    LimeH2OStream *stream = h2o_mem_alloc_shared(
-        &request->pool, sizeof(*stream), lime_h2o_stream_dispose);
+    AsterWebH2OStream *stream = h2o_mem_alloc_shared(
+        &request->pool, sizeof(*stream), aster_web_h2o_stream_dispose);
     memset(stream, 0, sizeof(*stream));
-    stream->super.proceed = lime_h2o_stream_proceed;
-    stream->super.stop = lime_h2o_stream_stop;
-    stream->magic = LIME_H2O_STREAM_MAGIC;
+    stream->super.proceed = aster_web_h2o_stream_proceed;
+    stream->super.stop = aster_web_h2o_stream_stop;
+    stream->magic = ASTER_WEB_H2O_STREAM_MAGIC;
     stream->server = wrapper->server;
     stream->request = request;
     stream->ready = true;
@@ -1095,7 +1095,7 @@ static LangNativeResult h2o_stream_begin_value(
 
     LangValue handle;
     if (!lang_native_handle_value(
-            vm, stream, lime_h2o_stream_drop, &handle)) {
+            vm, stream, aster_web_h2o_stream_drop, &handle)) {
         h2o_mem_release_shared(stream);
         return h2o_native_failure("could not wrap H2O response stream");
     }
@@ -1106,14 +1106,14 @@ static LangNativeResult h2o_stream_begin_value(
 }
 
 static LangNativeResult h2o_stream_write_chunk(
-    LangVM *vm, LimeH2OStream *stream,
+    LangVM *vm, AsterWebH2OStream *stream,
     const void *data, size_t length, bool final
 ) {
     if (length > 1024U * 1024U)
         return h2o_result_error(vm, "H2O response chunk exceeds 1 MiB");
     while (!stream->ready && !stream->stopped) {
         if (stream->server == NULL ||
-            stream->server->magic != LIME_H2O_SERVER_MAGIC)
+            stream->server->magic != ASTER_WEB_H2O_SERVER_MAGIC)
             return h2o_result_error(vm, "H2O server closed during response");
         if (h2o_evloop_run(stream->server->loop, INT32_MAX) != 0 &&
             errno != EINTR)
@@ -1148,7 +1148,7 @@ static LangNativeResult h2o_stream_write_chunk(
 static LangNativeResult h2o_stream_write_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2OStream *stream = arg_count == 3U
+    AsterWebH2OStream *stream = arg_count == 3U
         ? get_h2o_stream(&args[0]) : NULL;
     LangStringView chunk;
     if (stream == NULL ||
@@ -1162,7 +1162,7 @@ static LangNativeResult h2o_stream_write_value(
 static LangNativeResult h2o_stream_write_bytes_value(
     LangVM *vm, const LangValue *args, size_t arg_count
 ) {
-    LimeH2OStream *stream = arg_count == 3U
+    AsterWebH2OStream *stream = arg_count == 3U
         ? get_h2o_stream(&args[0]) : NULL;
     LangByteSlice chunk;
     if (stream == NULL ||

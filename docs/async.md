@@ -84,7 +84,7 @@ permission to destroy a running frame at an arbitrary instruction.
 5. Timers and `Task.Delay`.
 6. Libcurl-backed `HttpClient`: synchronous easy-handle calls and asynchronous
    multi-handle transfers driven by executor timers are implemented.
-7. Lime handlers returning `Task<Response>` are implemented through the same
+7. Aster Web handlers returning `Task<Response>` are implemented through the same
    `Map*` APIs and execute through `DispatchAsync`.
 8. Streaming and a controlled worker pool for genuinely blocking operations.
 
@@ -138,5 +138,5 @@ their original tasks but only the first is propagated by the combined task.
 `await` is not implemented as a hidden blocking call: only the outer executor
 waits when it has no runnable continuations.
 
-Signals in Lime Browser are a separate, undecided reactive-state feature. They
+Signals in Aster Web Browser are a separate, undecided reactive-state feature. They
 are neither required nor prohibited by Aster async.

@@ -131,6 +131,6 @@ The older `SqliteOpen`, `SqlitePrepare`, `SqliteBind*`, and related
 expected value. The main object API throws `SqliteException`, allowing ordinary
 application code to propagate failures to its request or process boundary.
 
-Lime may add a substantially higher-level productivity API later. That layer
+Aster Web may add a substantially higher-level productivity API later. That layer
 must build on this package and preserve visible SQL rather than moving ORM or
 query-language magic into Aster's core SQLite interface.

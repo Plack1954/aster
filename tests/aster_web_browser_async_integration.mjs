@@ -1,0 +1,279 @@
+import {readFile} from "node:fs/promises";
+
+if (process.argv.length !== 3)
+    throw new Error("expected the Aster Web browser Wasm path");
+
+const bytes = await readFile(process.argv[2]);
+let memory;
+const imports = {
+    aster: {
+        trap(pointer, length) {
+            const view = new Uint8Array(memory.buffer, pointer, length);
+            throw new Error(new TextDecoder().decode(view));
+        },
+        now_ms() {
+            return BigInt(Date.now());
+        }
+    }
+};
+const {instance} = await WebAssembly.instantiate(bytes, imports);
+memory = instance.exports.memory;
+
+const start = instance.exports.aster_export_IncrementLater;
+const status = instance.exports.aster_export_task_status;
+const result = instance.exports.aster_export_IncrementLater_task_result;
+const drop = instance.exports.aster_export_task_drop;
+if (typeof start !== "function" || typeof status !== "function" ||
+    typeof result !== "function" || typeof drop !== "function")
+    throw new Error("async browser Task exports are incomplete");
+
+const task = Number(start(41n));
+if (task === 0) throw new Error("async browser handler returned a null Task");
+if (status(task) !== 0)
+    throw new Error("Task.Delay browser handler did not initially suspend");
+
+let state = 0;
+for (let attempt = 0; attempt < 100 && state === 0; ++attempt) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    state = status(task);
+}
+if (state !== 1)
+    throw new Error(`async browser Task did not succeed: ${state}`);
+if (result(task) !== 42n)
+    throw new Error("async browser Task returned the wrong result");
+drop(task);
+
+const fail = instance.exports.aster_export_FailLater;
+const taskError = instance.exports.aster_export_task_error;
+const stringData = instance.exports.aster_export_string_data;
+const stringLength = instance.exports.aster_export_string_length;
+const stringDrop = instance.exports.aster_export_string_drop;
+if (typeof fail !== "function" || typeof taskError !== "function")
+    throw new Error("async browser Task fault exports are incomplete");
+const failedTask = Number(fail(0n));
+let failedState = 0;
+for (let attempt = 0; attempt < 100 && failedState === 0; ++attempt) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    failedState = status(failedTask);
+}
+if (failedState !== 2)
+    throw new Error(`async browser Task did not fault: ${failedState}`);
+const errorHandle = Number(taskError(failedTask));
+try {
+    const pointer = Number(stringData(errorHandle));
+    const length = Number(stringLength(errorHandle));
+    const message = new TextDecoder().decode(
+        new Uint8Array(memory.buffer, pointer, length)
+    );
+    if (message !== "browser async failure")
+        throw new Error(`unexpected async browser error: ${message}`);
+} finally {
+    stringDrop(errorHandle);
+    drop(failedTask);
+}
+
+function projectionPart(typeName, fieldIndex) {
+    let value = 14695981039346656037n;
+    for (const segment of ["Tests::BrowserApp", "::", typeName])
+        for (const byte of new TextEncoder().encode(segment)) {
+            value ^= BigInt(byte);
+            value = BigInt.asUintN(64, value * 1099511628211n);
+        }
+    let index = BigInt(fieldIndex);
+    for (let byte = 0; byte < 8; ++byte) {
+        value ^= (index >> BigInt(byte * 8)) & 255n;
+        value = BigInt.asUintN(64, value * 1099511628211n);
+    }
+    if (value === 0n) value = 1n;
+    return value.toString(36);
+}
+
+if (Object.keys(instance.exports).some((name) =>
+    name.startsWith("aster_export_projection_batch_") ||
+    name.includes("IncreaseProjected")))
+    throw new Error("legacy projection exports were not tree-shaken");
+
+const impossibleAllocation = Number(
+    instance.exports.aster_export_memory_alloc(0xffffffff)
+);
+if (impossibleAllocation !== 0) {
+    instance.exports.aster_export_memory_free(impossibleAllocation);
+    throw new Error("component state allocation failure was not reported");
+}
+
+const componentNew =
+    instance.exports.aster_export_component_PersistentTodoList_new;
+const componentDrop =
+    instance.exports.aster_export_component_PersistentTodoList_drop;
+const componentAppend =
+    instance.exports.aster_export_PersistentTodoList_AppendTodo;
+const componentRender =
+    instance.exports.aster_export_component_PersistentTodoList_render;
+const renderHtml = instance.exports.aster_export_html_render;
+if (typeof componentNew !== "function" ||
+    typeof componentDrop !== "function" ||
+    typeof componentAppend !== "function" ||
+    typeof componentRender !== "function")
+    throw new Error("persistent class component exports are incomplete");
+const component = Number(componentNew());
+try {
+    for (const expected of ["persistent-3", "persistent-4"]) {
+        componentAppend(component);
+        const rendered = Number(renderHtml(
+            Number(componentRender(component))
+        ));
+        try {
+            const pointer = Number(stringData(rendered));
+            const length = Number(stringLength(rendered));
+            const text = new TextDecoder().decode(
+                new Uint8Array(memory.buffer, pointer, length)
+            );
+            if (!text.includes(`data-aster-key=\"${expected}\"`))
+                throw new Error(
+                    `persistent component lost state before ${expected}`
+                );
+        } finally {
+            stringDrop(rendered);
+        }
+    }
+    const rename = instance.exports.aster_export_PersistentTodoList_RenameTodo;
+    const input = new TextEncoder().encode("persistent-1");
+    const inputPointer = Number(
+        instance.exports.aster_export_memory_alloc(input.length)
+    );
+    new Uint8Array(memory.buffer, inputPointer, input.length).set(input);
+    try {
+        for (const expected of ["First persistent!", "First persistent!!"]) {
+            rename(component, inputPointer, input.length);
+            const rendered = Number(renderHtml(
+                Number(componentRender(component))
+            ));
+            try {
+                const pointer = Number(stringData(rendered));
+                const length = Number(stringLength(rendered));
+                const html = new TextDecoder().decode(
+                    new Uint8Array(memory.buffer, pointer, length)
+                );
+                const part = (field) => projectionPart(
+                    "PersistentTodo", field
+                );
+                if (!html.includes(`Todo: ${expected}`) ||
+                    !html.includes("data-aster-component-list-state=") ||
+                    !html.includes(
+                        `data-aster-state-field-${part(1)}`
+                    ) ||
+                    !html.includes(`data-aster-part-t=\"${part(1)}\"`) ||
+                    !html.includes(`data-aster-part-c=\"${part(2)}\"`) ||
+                    !html.includes(`data-aster-part-d=\"${part(3)}\"`) ||
+                    !html.includes(`data-aster-part-h=\"${part(4)}\"`) ||
+                    !html.includes(`data-aster-part-a=\"${part(5)}\"`))
+                    throw new Error("native keyed item parts were not emitted");
+            } finally {
+                stringDrop(rendered);
+            }
+        }
+    } finally {
+        instance.exports.aster_export_memory_free(inputPointer);
+    }
+} finally {
+    componentDrop(component);
+}
+
+const seededNew = instance.exports.aster_export_component_SeededCounter_new;
+const seededDrop = instance.exports.aster_export_component_SeededCounter_drop;
+const seededIncrement = instance.exports.aster_export_SeededCounter_Increment;
+const seededRender = instance.exports.aster_export_component_SeededCounter_render;
+const seedBytes = new TextEncoder().encode("Node seed");
+const seedPointer = Number(
+    instance.exports.aster_export_memory_alloc(seedBytes.length)
+);
+new Uint8Array(memory.buffer, seedPointer, seedBytes.length).set(seedBytes);
+let seededCounter;
+try {
+    seededCounter = Number(seededNew(
+        seedPointer, seedBytes.length, 12n, 1
+    ));
+} finally {
+    instance.exports.aster_export_memory_free(seedPointer);
+}
+try {
+    seededIncrement(seededCounter, 12n);
+    const rendered = Number(renderHtml(Number(seededRender(seededCounter))));
+    try {
+        const pointer = Number(stringData(rendered));
+        const length = Number(stringLength(rendered));
+        const html = new TextDecoder().decode(
+            new Uint8Array(memory.buffer, pointer, length)
+        );
+        if (!html.includes(">13</output>"))
+            throw new Error(
+                "whole component void render did not retain constructor state"
+            );
+    } finally {
+        stringDrop(rendered);
+    }
+} finally {
+    seededDrop(seededCounter);
+}
+
+const counterNew = instance.exports.aster_export_component_IsolatedCounter_new;
+const counterDrop = instance.exports.aster_export_component_IsolatedCounter_drop;
+const counterIncrement = instance.exports.aster_export_IsolatedCounter_Increment;
+const counterFail = instance.exports.aster_export_IsolatedCounter_Fail;
+const exceptionPending = instance.exports.aster_export_exception_pending;
+const exceptionTake = instance.exports.aster_export_exception_take;
+const droppedCounters = instance.exports.aster_export_ReadDroppedCounters;
+if ([counterNew, counterDrop, counterIncrement, counterFail,
+     exceptionPending, exceptionTake, droppedCounters].some(
+    (value) => typeof value !== "function"
+)) throw new Error("class component fault or disposal exports are incomplete");
+const counter = Number(counterNew());
+if (counterIncrement(counter, 0n) !== 1n ||
+    counterIncrement(counter, 1n) !== 2n)
+    throw new Error("class component instance state was not retained");
+counterFail(counter, 2n);
+if (exceptionPending() !== 1)
+    throw new Error("browser handler exception was not published");
+const exception = Number(exceptionTake());
+try {
+    const pointer = Number(stringData(exception));
+    const length = Number(stringLength(exception));
+    const message = new TextDecoder().decode(
+        new Uint8Array(memory.buffer, pointer, length)
+    );
+    if (message !== "isolated component failure")
+        throw new Error(`unexpected component failure: ${message}`);
+} finally {
+    stringDrop(exception);
+}
+if (exceptionPending() !== 0 || counterIncrement(counter, 2n) !== 13n)
+    throw new Error("class component did not survive its handler fault");
+counterDrop(counter);
+if (droppedCounters(0n) !== 1n)
+    throw new Error("class component destructor did not run exactly once");
+
+const failingNew = instance.exports
+    .aster_export_component_FailingConstructorComponent_new;
+const constructionAttempts =
+    instance.exports.aster_export_ReadConstructionAttempts;
+for (let attempt = 1n; attempt <= 2n; ++attempt) {
+    const failedHandle = Number(failingNew());
+    if (failedHandle !== 0 || exceptionPending() !== 1)
+        throw new Error("failed component construction leaked a handle");
+    const failure = Number(exceptionTake());
+    try {
+        const pointer = Number(stringData(failure));
+        const length = Number(stringLength(failure));
+        const message = new TextDecoder().decode(
+            new Uint8Array(memory.buffer, pointer, length)
+        );
+        if (message !== "component construction failure")
+            throw new Error(`unexpected constructor failure: ${message}`);
+    } finally {
+        stringDrop(failure);
+    }
+    if (constructionAttempts(0n) !== attempt)
+        throw new Error("failed component construction was not retried");
+}
+
+console.log("Aster Web browser void renders and class ownership verified");

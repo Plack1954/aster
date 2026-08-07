@@ -1191,7 +1191,7 @@ Consequences: `Database`, `Statement`, and `Transaction` are distinct public
 types. Statements must not outlive their database, which Aster does not
 statically prove. Text, blobs, and error messages are copied. Named parameters
 are resolved by SQLite. Transactions roll back on cleanup and nested
-transactions use savepoints. Migrations remain ordinary SQLite SQL. Lime may
+transactions use savepoints. Migrations remain ordinary SQLite SQL. Aster Web may
 later provide a more productive application layer without changing this core
 contract.
 
@@ -1366,27 +1366,27 @@ and interpolation inside `--name` are rejected.
 
 ## Put nginx at the public production boundary
 
-Decision: deploy Lime's H2O adapter on loopback behind nginx. nginx owns public
+Decision: deploy Aster Web's H2O adapter on loopback behind nginx. nginx owns public
 TLS, HTTP-to-HTTPS redirection, public protocol negotiation, certificates, and
-virtual hosting. Direct H2O TLS is not a Lime roadmap item.
+virtual hosting. Direct H2O TLS is not a Aster Web roadmap item.
 
 Context: Aster targets PHP/C-style web deployment and should not make each
 application responsible for certificate lifecycle or public TLS policy. H2O is
 still valuable as the embedded, production-shaped application HTTP transport.
 
 Alternatives: expose Aster's handwritten HTTP server publicly, configure
-H2O as the TLS edge, embed certificate automation in Lime, or make a particular
-external proxy part of Lime's application API.
+H2O as the TLS edge, embed certificate automation in Aster Web, or make a particular
+external proxy part of Aster Web's application API.
 
 Reason: nginx is mature infrastructure with a clear operational boundary.
-Keeping it outside Lime preserves adapter-neutral application code while H2O
+Keeping it outside Aster Web preserves adapter-neutral application code while H2O
 continues to own proven parsing, connection handling, streaming, and response
 I/O behind that boundary.
 
-Consequences: Aster/H2O binds to `127.0.0.1`; Lime honors forwarded origin
+Consequences: Aster/H2O binds to `127.0.0.1`; Aster Web honors forwarded origin
 data only from an explicitly trusted nginx peer. nginx configuration and
 certificate renewal belong to host administration. A systemd restart drains
-the old H2O process gracefully but has a brief listener handoff until Lime
+the old H2O process gracefully but has a brief listener handoff until Aster Web
 adds an explicitly justified zero-downtime mechanism.
 ## Use bounded C++-style copy control for user-owned values
 

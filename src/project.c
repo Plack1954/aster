@@ -717,7 +717,7 @@ static bool browser_ensure_directory(const char *path) {
 static int browser_run(char *const arguments[]) {
 #if defined(_WIN32)
     (void)arguments;
-    fputs("error: Lime browser builds are not yet supported on Windows\n",
+    fputs("error: Aster Web browser builds are not yet supported on Windows\n",
           stderr);
     return 1;
 #else
@@ -988,7 +988,7 @@ int lang_project_build_web(const char *manifest_path,
     if (result == 0) result = browser_run(optimize);
     if (result == 0 &&
         !browser_copy_file(runtime_js_source, runtime_js)) {
-        fprintf(stderr, "error: cannot copy Lime browser runtime: %s\n",
+        fprintf(stderr, "error: cannot copy Aster Web browser runtime: %s\n",
                 strerror(errno));
         result = 1;
     }
@@ -1006,7 +1006,7 @@ int lang_project_build_web(const char *manifest_path,
             fclose(application_loader) != 0)
             loader_ok = false;
         if (!loader_ok) {
-            fputs("error: cannot write Lime browser loader\n", stderr);
+            fputs("error: cannot write Aster Web browser loader\n", stderr);
             result = 1;
         }
     }

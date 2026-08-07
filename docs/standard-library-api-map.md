@@ -431,7 +431,7 @@ adding a query abstraction.
 | `NativeRemoveFile` | `File.Delete` | Exact facade implemented |
 | `NativeRemoveDirectory` | `Directory.Delete` | Non-recursive overload implemented |
 | `CopyFileBuffered` | `File.Copy` | Both two-path and Boolean-overwrite overloads implemented |
-| `DiscoverFiles` | `Directory.GetFiles` or `EnumerateFiles` | Adapt | Deterministic content discovery remains a Lime/content policy API. |
+| `DiscoverFiles` | `Directory.GetFiles` or `EnumerateFiles` | Adapt | Deterministic content discovery remains a Aster Web/content policy API. |
 
 First `File` family:
 
@@ -614,9 +614,9 @@ efficiency refinement, not a semantic dependency.
 
 The component is isolated from `langlib`. `ASTER_ENABLE_CRYPTO=OFF` removes the
 OpenSSL dependency and leaves hashing as typed-unavailable operations while OS
-randomness, UUIDs, and the constant-time fallback remain available. Lime
+randomness, UUIDs, and the constant-time fallback remain available. Aster Web
 sessions now obtain 256-bit identifiers through `GetHexString(32)` instead of
-asking SQLite for `randomblob`. Lime also supports atomic session-ID rotation,
+asking SQLite for `randomblob`. Aster Web also supports atomic session-ID rotation,
 server-side destruction with deletion cookies, and amortized or explicit
 expired-session sweeping.
 
@@ -673,7 +673,7 @@ bounded first version. `Deserialize<T>` normally infers `T` from its expected
 result type, for example `User user = JsonSerializer.Deserialize(json);`.
 
 `JsonWriter` deliberately owns a `StringBuilder` and returns one completed JSON
-string; it is the bounded intermediate needed by Lime today. The distinct
+string; it is the bounded intermediate needed by Aster Web today. The distinct
 `Utf8JsonWriter` name remains pending a byte destination such as `Stream` or
 `IBufferWriter<byte>` so that Aster does not misrepresent .NET's
 destination-backed contract.
@@ -687,8 +687,8 @@ These areas should not be distorted merely to resemble .NET:
 | `Html` and native HTML components | Aster-native language/library surface. |
 | Native CSS | Aster-native language feature. |
 | `Option<T>` and `Result<T,E>` | Retain as ordinary types; they are not the default infrastructure error style. |
-| Lime routing, SSR, SSG, forms, browser WASM | Lime framework surface, not the core standard library. |
-| SQLite direct facade | Keep SQLite-shaped: typed statements, rows, transactions, and SQL-file migrations; Lime may add a higher application layer later. |
+| Aster Web routing, SSR, SSG, forms, browser WASM | Aster Web framework surface, not the core standard library. |
+| SQLite direct facade | Keep SQLite-shaped: typed statements, rows, transactions, and SQL-file migrations; Aster Web may add a higher application layer later. |
 | `Arena`, raw pointers, slices, buffers | Systems layer governed by Aster/C semantics. |
 | `Native*` functions | Stable narrow runtime boundary, not application-facing API design. |
 
@@ -719,15 +719,15 @@ Aster.Web.HttpApp
 Aster.Web.Middleware
 Aster.Web.Router
 
-Lime
-Lime.Content
-Lime.Ssg
-Lime.Browser
+Aster Web
+Aster.Web.Content
+Aster.Web.Ssg
+Aster.Web.Browser
 ```
 
 `System.*` contains familiar general-purpose application APIs. Aster-native
 language facilities, low-level systems facilities, and interoperability do
-not masquerade as .NET BCL features. Lime remains an independent framework.
+not masquerade as .NET BCL features. Aster Web remains an independent framework.
 
 The former `Std.*` namespace has been removed rather than retained as a
 compatibility alias. The `std/` directory remains an internal source-tree

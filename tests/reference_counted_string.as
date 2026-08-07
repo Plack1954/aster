@@ -6,7 +6,7 @@ int main()
     Console.WriteLine(first);
     Console.WriteLine(second);
 
-    second = "Lime";
+    second = "Pear";
     Console.WriteLine(first);
     Console.WriteLine(second);
     return 0;

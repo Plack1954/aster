@@ -6,10 +6,10 @@ routing, handlers, control flow, and HTML construction are ordinary Aster
 code.
 
 This adapter exists for local development, conformance tests, differential
-VM/generated-C verification, and benchmarks. It is not Lime's recommended
+VM/generated-C verification, and benchmarks. It is not Aster Web's recommended
 production or Internet-facing transport and will not grow into a competing web
 server. The production-adapter contract and H2O track are documented in
-`docs/lime-http-adapters.md`.
+`docs/aster-web-http-adapters.md`.
 
 Aster 0.2 also exposes `HttpServerOpenConfig(address, port,
 max_header_bytes, max_body_bytes, timeout_ms)`. Header limits may be 1–64 KiB,
@@ -228,7 +228,7 @@ the RAII owner; dropping it during a partial stream closes the socket.
 
 Fixed-length reusable responses use a content-type allowlist through
 `HttpRespondReuse`. In addition to UTF-8 HTML, plain text, and CSS, the
-header-capable response boundary accepts Lime's explicit static-asset media
+header-capable response boundary accepts Aster Web's explicit static-asset media
 types: JavaScript, JSON, XML, SVG, PNG, JPEG, GIF, WebP, icons, WOFF/WOFF2,
 WebAssembly, and generic binary data. Application strings never become raw
 HTTP content-type syntax. The documentation-server example uses this API for

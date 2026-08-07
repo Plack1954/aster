@@ -18,7 +18,7 @@ set(ASTER_GENERATED_C_TEST_LANES 2 CACHE STRING
 option(LANG_VM_COMPUTED_GOTO
     "Use the optional GCC/Clang computed-goto VM dispatch" OFF)
 set(ASTER_H2O_SOURCE_ROOT "" CACHE PATH
-    "Path to the pinned H2O source tree (enables Lime.H2O)")
+    "Path to the pinned H2O source tree (enables Aster.Web.H2O)")
 set(ASTER_H2O_BUILD_ROOT "" CACHE PATH
     "Path containing the matching libh2o-evloop shared library")
 
@@ -127,7 +127,7 @@ set(LANG_HAVE_H2O OFF)
 if(ASTER_H2O_SOURCE_ROOT OR ASTER_H2O_BUILD_ROOT)
     if(NOT ASTER_H2O_SOURCE_ROOT OR NOT ASTER_H2O_BUILD_ROOT)
         message(FATAL_ERROR
-            "Lime.H2O requires both ASTER_H2O_SOURCE_ROOT and ASTER_H2O_BUILD_ROOT")
+            "Aster.Web.H2O requires both ASTER_H2O_SOURCE_ROOT and ASTER_H2O_BUILD_ROOT")
     endif()
     set(ASTER_H2O_LIBRARY
         "${ASTER_H2O_BUILD_ROOT}/libh2o-evloop.so")
@@ -147,7 +147,7 @@ if(ASTER_H2O_SOURCE_ROOT OR ASTER_H2O_BUILD_ROOT)
         "${ASTER_H2O_SOURCE_ROOT}/deps/picotls/include"
         "${ASTER_H2O_SOURCE_ROOT}/deps/quicly/include")
     target_link_libraries(langlib PUBLIC "${ASTER_H2O_LIBRARY}")
-    message(STATUS "Lime.H2O enabled with ${ASTER_H2O_LIBRARY}")
+    message(STATUS "Aster.Web.H2O enabled with ${ASTER_H2O_LIBRARY}")
 endif()
 if(LANG_VM_COMPUTED_GOTO)
     if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
@@ -977,12 +977,12 @@ if(ASTER_WASM_CLANG AND ASTER_WASM_LINKER AND
         PASS_REGULAR_EXPRESSION
             "wasm islands verified: typed exports, SSR counter, and two forms"
     )
-    add_test(NAME lime_browser_async_wasm
-        COMMAND bash tests/lime_browser_async_wasm.sh
+    add_test(NAME aster_web_browser_async_wasm
+        COMMAND bash tests/aster_web_browser_async_wasm.sh
             $<TARGET_FILE:lang>
             ${ASTER_NODE_EXECUTABLE}
-            ${CMAKE_CURRENT_BINARY_DIR}/lime-browser-async)
-    set_tests_properties(lime_browser_async_wasm PROPERTIES
+            ${CMAKE_CURRENT_BINARY_DIR}/aster-web-browser-async)
+    set_tests_properties(aster_web_browser_async_wasm PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         PASS_REGULAR_EXPRESSION
             "component faults, exact disposal, and native retained state verified"
@@ -1010,15 +1010,15 @@ endif()
 if(ASTER_ENABLE_SQLITE_TESTS AND UNIX AND ASTER_WASM_CLANG AND
    ASTER_WASM_LINKER AND ASTER_WASM_OPTIMIZER AND
    ASTER_CURL_EXECUTABLE AND SQLite3_FOUND)
-    add_test(NAME lime_browser_http_integration
-        COMMAND bash tests/lime_browser_integration.sh
+    add_test(NAME aster_web_browser_http_integration
+        COMMAND bash tests/aster_web_browser_integration.sh
             $<TARGET_FILE:lang>
             ${CMAKE_C_COMPILER}
             $<TARGET_FILE:langlib>
             ${SQLite3_LIBRARY}
-            ${CMAKE_CURRENT_BINARY_DIR}/lime-browser
+            ${CMAKE_CURRENT_BINARY_DIR}/aster-web-browser
             $<IF:$<BOOL:${LANG_SANITIZE}>,on,off>)
-    set_tests_properties(lime_browser_http_integration PROPERTIES
+    set_tests_properties(aster_web_browser_http_integration PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         TIMEOUT 60
     )
@@ -1640,84 +1640,84 @@ add_test(NAME project_local_dependency_emit_c
 set_tests_properties(project_local_dependency_emit_c PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_library_check
-    COMMAND lang project check packages/lime/aster.toml library)
-set_tests_properties(lime_library_check PROPERTIES
+add_test(NAME aster_web_library_check
+    COMMAND lang project check packages/aster_web/aster.toml library)
+set_tests_properties(aster_web_library_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 if(ASTER_PYTHON_EXECUTABLE)
-    add_test(NAME lime_typed_routes_generated
+    add_test(NAME aster_web_typed_routes_generated
         COMMAND ${ASTER_PYTHON_EXECUTABLE}
-            tools/generate_lime_typed_routes.py --check)
-    set_tests_properties(lime_typed_routes_generated PROPERTIES
+            tools/generate_aster_web_typed_routes.py --check)
+    set_tests_properties(aster_web_typed_routes_generated PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 endif()
-add_test(NAME lime_current_http_check
-    COMMAND lang project check packages/lime/aster.toml current_http)
-set_tests_properties(lime_current_http_check PROPERTIES
+add_test(NAME aster_web_current_http_check
+    COMMAND lang project check packages/aster_web/aster.toml current_http)
+set_tests_properties(aster_web_current_http_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_h2o_check
-    COMMAND lang project check packages/lime/aster.toml h2o)
-set_tests_properties(lime_h2o_check PROPERTIES
+add_test(NAME aster_web_h2o_check
+    COMMAND lang project check packages/aster_web/aster.toml h2o)
+set_tests_properties(aster_web_h2o_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_forms_check
-    COMMAND lang project check packages/lime/aster.toml forms)
-set_tests_properties(lime_forms_check PROPERTIES
+add_test(NAME aster_web_forms_check
+    COMMAND lang project check packages/aster_web/aster.toml forms)
+set_tests_properties(aster_web_forms_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_sessions_check
-    COMMAND lang project check packages/lime/aster.toml sessions)
-set_tests_properties(lime_sessions_check PROPERTIES
+add_test(NAME aster_web_sessions_check
+    COMMAND lang project check packages/aster_web/aster.toml sessions)
+set_tests_properties(aster_web_sessions_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_static_check
-    COMMAND lang project check packages/lime/aster.toml static)
-set_tests_properties(lime_static_check PROPERTIES
+add_test(NAME aster_web_static_check
+    COMMAND lang project check packages/aster_web/aster.toml static)
+set_tests_properties(aster_web_static_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_content_check
-    COMMAND lang project check packages/lime/aster.toml content)
-set_tests_properties(lime_content_check PROPERTIES
+add_test(NAME aster_web_content_check
+    COMMAND lang project check packages/aster_web/aster.toml content)
+set_tests_properties(aster_web_content_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_markdown_check
-    COMMAND lang project check packages/lime/aster.toml markdown)
-set_tests_properties(lime_markdown_check PROPERTIES
+add_test(NAME aster_web_markdown_check
+    COMMAND lang project check packages/aster_web/aster.toml markdown)
+set_tests_properties(aster_web_markdown_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_test(NAME lime_smoke
-    COMMAND lang project test packages/lime/aster.toml)
-set_tests_properties(lime_smoke PROPERTIES
+add_test(NAME aster_web_smoke
+    COMMAND lang project test packages/aster_web/aster.toml)
+set_tests_properties(aster_web_smoke PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PASS_REGULAR_EXPRESSION "Lime"
+    PASS_REGULAR_EXPRESSION "Aster Web"
 )
 if(UNIX)
-    add_test(NAME lime_ssg_integration
-        COMMAND bash tests/lime_ssg_integration.sh
+    add_test(NAME aster_web_ssg_integration
+        COMMAND bash tests/aster_web_ssg_integration.sh
             $<TARGET_FILE:lang>
             ${CMAKE_CURRENT_BINARY_DIR})
-    set_tests_properties(lime_ssg_integration PROPERTIES
+    set_tests_properties(aster_web_ssg_integration PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 endif()
-add_test(NAME lime_blog_fixture_c_backend
-    COMMAND lang project emit-c packages/lime/aster.toml blog_fixture_server)
-set_tests_properties(lime_blog_fixture_c_backend PROPERTIES
+add_test(NAME aster_web_blog_fixture_c_backend
+    COMMAND lang project emit-c packages/aster_web/aster.toml blog_fixture_server)
+set_tests_properties(aster_web_blog_fixture_c_backend PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_aster_generated_project_test(
-    lime_c_backend
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+    aster_web_c_backend
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
     smoke
-        "-DEXPECTED_OUTPUT=<h1>Stateful Lime</h1>\n<p>Stateful Lime:missing</p>\n<section><h1>Lime</h1><p>Small, explicit, and written in Aster.</p></section>\n<article>first-post</article>\n<p>two words!:new</p>\n<h1>Method not allowed</h1>\n/\n")
+        "-DEXPECTED_OUTPUT=<h1>Stateful Aster Web</h1>\n<p>Stateful Aster Web:missing</p>\n<section><h1>Aster Web</h1><p>Small, explicit, and written in Aster.</p></section>\n<article>first-post</article>\n<p>two words!:new</p>\n<h1>Method not allowed</h1>\n/\n")
 add_aster_generated_project_test(
-    lime_async_response_c_backend
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+    aster_web_async_response_c_backend
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
     async_response
-        "-DEXPECTED_OUTPUT=200\n200\n<article><h1>Async Lime response</h1></article>\n<article><h1>Async Lime response</h1></article>\n")
+        "-DEXPECTED_OUTPUT=200\n200\n<article><h1>Async Aster Web response</h1></article>\n<article><h1>Async Aster Web response</h1></article>\n")
 add_aster_generated_project_test(
     project_c_backend_compile_and_run
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/project/aster.toml
@@ -1753,12 +1753,12 @@ set_tests_properties(project_test_targets PROPERTIES
     PASS_REGULAR_EXPRESSION "\\[pass\\] smoke"
 )
 add_aster_generated_project_test(
-    lime_sessions_c_backend
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+    aster_web_sessions_c_backend
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
     sessions_smoke
     -DCRYPTO_LIBRARY=$<TARGET_FILE:aster_crypto>
     -DOPENSSL_CRYPTO_LINK_LIBRARY=${OPENSSL_CRYPTO_LIBRARY})
-set_tests_properties(lime_sessions_c_backend PROPERTIES
+set_tests_properties(aster_web_sessions_c_backend PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 add_test(NAME project_whole_namespace_using
@@ -2023,13 +2023,13 @@ add_test(
 set_tests_properties(directory_discovery_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION
-        "packages/lime/test_content/a.md[\r\n]+packages/lime/test_content/b.md"
+        "packages/aster_web/test_content/a.md[\r\n]+packages/aster_web/test_content/b.md"
 )
 add_aster_generated_c_test(
     directory_discovery_c_backend
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/directory_discovery.as
     aster_directory_discovery
-        "-DEXPECTED_OUTPUT=packages/lime/test_content/a.md\npackages/lime/test_content/b.md\n")
+        "-DEXPECTED_OUTPUT=packages/aster_web/test_content/a.md\npackages/aster_web/test_content/b.md\n")
 set_tests_properties(directory_discovery_c_backend PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -2582,7 +2582,7 @@ add_test(NAME borrowed_function_values_run
     COMMAND lang run tests/borrowed_function_values.as)
 set_tests_properties(borrowed_function_values_run PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PASS_REGULAR_EXPRESSION "3[\r\n]+6[\r\n]+lime"
+    PASS_REGULAR_EXPRESSION "3[\r\n]+6[\r\n]+pear"
 )
 add_test(NAME buffer_slice_runtime_run
     COMMAND lang run tests/c_backend_buffer_slice.as)
@@ -2760,61 +2760,61 @@ add_executable(generated_http_integration_test
 target_link_libraries(generated_http_integration_test PRIVATE langlib)
 lang_enable_warnings(generated_http_integration_test)
 
-add_executable(lime_http_integration_test
-    tests/lime_http_integration.c)
-target_link_libraries(lime_http_integration_test PRIVATE langlib)
-lang_enable_warnings(lime_http_integration_test)
-add_test(NAME lime_current_http_vm_integration
-    COMMAND lime_http_integration_test vm)
-set_tests_properties(lime_current_http_vm_integration PROPERTIES
+add_executable(aster_web_http_integration_test
+    tests/aster_web_http_integration.c)
+target_link_libraries(aster_web_http_integration_test PRIVATE langlib)
+lang_enable_warnings(aster_web_http_integration_test)
+add_test(NAME aster_web_current_http_vm_integration
+    COMMAND aster_web_http_integration_test vm)
+set_tests_properties(aster_web_current_http_vm_integration PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     TIMEOUT 10
 )
 add_aster_generated_project_test(
-    lime_current_http_c_integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+    aster_web_current_http_c_integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
     current_http_server
-        -DDRIVER_EXECUTABLE=$<TARGET_FILE:lime_http_integration_test>)
-set_tests_properties(lime_current_http_c_integration PROPERTIES
+        -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_http_integration_test>)
+set_tests_properties(aster_web_current_http_c_integration PROPERTIES
     TIMEOUT 120
 )
-add_executable(lime_async_http_integration_test
-    tests/lime_async_http_integration.c)
-target_link_libraries(lime_async_http_integration_test PRIVATE langlib)
-lang_enable_warnings(lime_async_http_integration_test)
-add_test(NAME lime_async_current_http_vm_integration
-    COMMAND lime_async_http_integration_test vm)
-set_tests_properties(lime_async_current_http_vm_integration PROPERTIES
+add_executable(aster_web_async_http_integration_test
+    tests/aster_web_async_http_integration.c)
+target_link_libraries(aster_web_async_http_integration_test PRIVATE langlib)
+lang_enable_warnings(aster_web_async_http_integration_test)
+add_test(NAME aster_web_async_current_http_vm_integration
+    COMMAND aster_web_async_http_integration_test vm)
+set_tests_properties(aster_web_async_current_http_vm_integration PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     TIMEOUT 10
 )
 add_aster_generated_project_test(
-    lime_async_current_http_c_integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+    aster_web_async_current_http_c_integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
     async_http_server
-        -DDRIVER_EXECUTABLE=$<TARGET_FILE:lime_async_http_integration_test>)
-set_tests_properties(lime_async_current_http_c_integration PROPERTIES
+        -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_async_http_integration_test>)
+set_tests_properties(aster_web_async_current_http_c_integration PROPERTIES
     TIMEOUT 120
 )
 if(LANG_HAVE_H2O AND UNIX)
-    add_executable(lime_h2o_integration_test
-        tests/lime_h2o_integration.c)
-    target_link_libraries(lime_h2o_integration_test PRIVATE langlib)
-    lang_enable_warnings(lime_h2o_integration_test)
-    add_test(NAME lime_h2o_vm_integration
-        COMMAND lime_h2o_integration_test vm)
-    set_tests_properties(lime_h2o_vm_integration PROPERTIES
+    add_executable(aster_web_h2o_integration_test
+        tests/aster_web_h2o_integration.c)
+    target_link_libraries(aster_web_h2o_integration_test PRIVATE langlib)
+    lang_enable_warnings(aster_web_h2o_integration_test)
+    add_test(NAME aster_web_h2o_vm_integration
+        COMMAND aster_web_h2o_integration_test vm)
+    set_tests_properties(aster_web_h2o_vm_integration PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         TIMEOUT 15
         ENVIRONMENT "LD_LIBRARY_PATH=${ASTER_H2O_BUILD_ROOT}"
     )
     add_aster_generated_project_test(
-    lime_h2o_c_integration
-    ${CMAKE_CURRENT_SOURCE_DIR}/packages/lime/aster.toml
+    aster_web_h2o_c_integration
+    ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/aster.toml
     h2o_http_server
-            -DDRIVER_EXECUTABLE=$<TARGET_FILE:lime_h2o_integration_test>
+            -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_h2o_integration_test>
             "-DEXTRA_LIBRARIES=${SQLite3_LIBRARIES}\;${ASTER_H2O_LIBRARY}")
-    set_tests_properties(lime_h2o_c_integration PROPERTIES
+    set_tests_properties(aster_web_h2o_c_integration PROPERTIES
         TIMEOUT 15
         ENVIRONMENT "LD_LIBRARY_PATH=${ASTER_H2O_BUILD_ROOT}"
     )

@@ -2,7 +2,7 @@ using Aster.Content;
 
 int main()
 {
-    switch (DiscoverFiles("packages/lime/test_content", ".md"))
+    switch (DiscoverFiles("packages/aster_web/test_content", ".md"))
     {
         case Result.Ok(paths): {
             foreach (string path in paths)

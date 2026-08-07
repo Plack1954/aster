@@ -1,6 +1,6 @@
-# Lime Browser 0.1 retained-DOM example
+# Aster Web Browser 0.1 retained-DOM example
 
-This is the executable coverage application for Lime Browser 0.1. Native
+This is the executable coverage application for Aster Web Browser 0.1. Native
 Aster HTML is server rendered through the primary C backend and hydrated with
 state transitions compiled from the same Aster project target to browser
 WebAssembly.
@@ -90,5 +90,5 @@ The example covers synchronous scalar and Boolean results, borrowed UTF-8
 inputs, owned String and direct Html results, supported patch structs,
 persistent island state, and keyed collection updates. Its forms retain normal
 action and method attributes for progressive enhancement. Async handlers using
-`Task.Delay` are covered by the Lime browser fixture; Fetch and general nested
+`Task.Delay` are covered by the Aster Web browser fixture; Fetch and general nested
 aggregate ABI generation remain outside Browser 0.1.

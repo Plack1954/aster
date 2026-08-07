@@ -30,7 +30,7 @@ special indirection type.
 ## Native HTML class components
 
 The normative browser contract is defined in
-[`lime-component-semantics.md`](lime-component-semantics.md). This section
+[`aster-web-component-semantics.md`](aster-web-component-semantics.md). This section
 provides implementation context and examples.
 
 A class with one explicit constructor and a public zero-argument

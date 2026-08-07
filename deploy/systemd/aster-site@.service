@@ -1,5 +1,5 @@
 [Unit]
-Description=Aster/Lime site %i
+Description=Aster/Aster Web site %i
 After=network.target
 
 [Service]

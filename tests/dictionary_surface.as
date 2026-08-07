@@ -8,7 +8,7 @@ int main()
     if (reserved < 10 || scores.Capacity != reserved) { return 22; }
 
     scores.Add("Aster", 10);
-    scores.Add("Lime", 20);
+    scores.Add("Pear", 20);
     if (scores.TryAdd("Aster", 999)) { return 16; }
     if (!scores.TryAdd("Fresh", 25)) { return 17; }
     if (scores.KeyAt(0) != "Aster" || scores.ValueAt(1) != 20)
@@ -38,7 +38,7 @@ int main()
     scores["Aster"] = 99;
     if (copied["Aster"] != 15) { return 15; }
 
-    if (!scores.Remove("Lime")) { return 9; }
+    if (!scores.Remove("Pear")) { return 9; }
     if (scores.Remove("Missing")) { return 10; }
     if (scores.Count != 3) { return 11; }
     if (!scores.ContainsValue(99) || scores.ContainsValue(20)) { return 19; }

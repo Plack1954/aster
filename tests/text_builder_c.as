@@ -35,8 +35,8 @@ int main()
 
     List<string> names = new();
     names.Add("Aster");
-    names.Add("Lime");
-    if (string.Join(", ", names) != "Aster, Lime") { return 16; }
+    names.Add("Pear");
+    if (string.Join(", ", names) != "Aster, Pear") { return 16; }
     if (string.CompareOrdinal("Aster", "Aster") != 0) { return 17; }
     if (string.CompareOrdinal("Aster", "Pear") >= 0) { return 18; }
     if (!string.Equals("Aster", "Aster")) { return 19; }
@@ -53,19 +53,19 @@ int main()
     string? unicodeWhiteSpace = "   ";
     if (!string.IsNullOrWhiteSpace(unicodeWhiteSpace)) { return 31; }
 
-    List<string> commaParts = "Aster,,Lime,".Split(",");
+    List<string> commaParts = "Aster,,Pear,".Split(",");
     if (commaParts.Count != 4 ||
         commaParts[0] != "Aster" ||
         commaParts[1] != "" ||
-        commaParts[2] != "Lime" ||
+        commaParts[2] != "Pear" ||
         commaParts[3] != "") { return 32; }
     List<string> whole = "Aster".Split("");
     if (whole.Count != 1 || whole[0] != "Aster") { return 33; }
-    List<string> words = "Aster  Lime Web".Split();
+    List<string> words = "Aster  Pear Web".Split();
     if (words.Count != 4 ||
         words[0] != "Aster" ||
         words[1] != "" ||
-        words[2] != "Lime" ||
+        words[2] != "Pear" ||
         words[3] != "Web") { return 34; }
     List<string> emptyParts = "".Split(",");
     if (emptyParts.Count != 1 || emptyParts[0] != "") { return 35; }
@@ -73,16 +73,16 @@ int main()
         StringSplitOptions.RemoveEmptyEntries |
         StringSplitOptions.TrimEntries;
     List<string> cleanParts =
-        " Aster, , Lime ,, Web ".Split(",", splitOptions);
+        " Aster, , Pear ,, Web ".Split(",", splitOptions);
     if (cleanParts.Count != 3 ||
         cleanParts[0] != "Aster" ||
-        cleanParts[1] != "Lime" ||
+        cleanParts[1] != "Pear" ||
         cleanParts[2] != "Web") { return 36; }
     List<string> limitedParts =
-        "Aster,Lime,Web".Split(",", 2, StringSplitOptions.None);
+        "Aster,Pear,Web".Split(",", 2, StringSplitOptions.None);
     if (limitedParts.Count != 2 ||
         limitedParts[0] != "Aster" ||
-        limitedParts[1] != "Lime,Web") { return 37; }
+        limitedParts[1] != "Pear,Web") { return 37; }
     List<string> noParts =
         "Aster".Split(",", 0, StringSplitOptions.None);
     if (noParts.Count != 0) { return 38; }
@@ -99,7 +99,7 @@ int main()
     if (builder.ToString() != "Aster42\n") { return 22; }
     builder.Clear();
     if (builder.Length != 0) { return 23; }
-    builder.AppendLine("Lime");
-    if (builder.ToString() != "Lime\n") { return 24; }
+    builder.AppendLine("Pear");
+    if (builder.ToString() != "Pear\n") { return 24; }
     return 0;
 }

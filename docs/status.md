@@ -292,13 +292,13 @@ of Wasm, 12,494 bytes of unminified generic runtime, 94 bytes of application
 loader, and 3,601 bytes of SSR HTML. Asynchronous handlers and general nested
 aggregate ABI generation remain later work.
 
-Lime Browser 0.1 promotes those retained-DOM milestones out of the isolated
+Aster Web Browser 0.1 promotes those retained-DOM milestones out of the isolated
 trial. A binary project target can declare `browser_entry`; `project build-web`
 emits its server C and produces optimized browser Wasm, the reusable runtime,
 and a tiny generated loader in one output directory. The optional
-`lime.browser` package emits the module tag and serves only those typed assets.
+`Aster.Web.Browser` package emits the module tag and serves only those typed assets.
 Direct owned Html handler results now join scalar, Boolean, string, and
-supported patch-struct results. The live Lime integration serves SSR event
+supported patch-struct results. The live Aster Web integration serves SSR event
 metadata, Wasm, runtime JavaScript, and the loader through generated C, while
 a normal form POST proves the non-Wasm fallback. The browser suite also proves
 direct Html keyed replacement without replacing its collection container.

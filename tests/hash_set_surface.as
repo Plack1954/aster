@@ -7,7 +7,7 @@ int main()
     if (names.EnsureCapacity(10) < 10 || names.Capacity < 10) { return 2; }
 
     if (!names.Add("Aster")) { return 3; }
-    if (!names.Add("Lime")) { return 4; }
+    if (!names.Add("Pear")) { return 4; }
     if (names.Add("Aster")) { return 5; }
     if (names.Count != 2) { return 6; }
     if (!names.Contains("Aster") || names.Contains("Missing")) { return 7; }

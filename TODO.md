@@ -144,7 +144,7 @@ cleanup, and cooperative `CancellationToken` behavior. Continue
   needs them; fixed-length bounded streaming uploads are implemented;
 - add cancellation registrations and linked-token sources when real code needs
   them;
-- keep Lime's implemented `Task<Response>` handler and `DispatchAsync` paths
+- keep Aster Web's implemented `Task<Response>` handler and `DispatchAsync` paths
   covered while the transport layer becomes cancellation-aware.
 - add async process waiting and concurrent standard-stream draining only after
   the executor has a general native-readiness registration path; the bounded
@@ -156,7 +156,7 @@ Bounded C#-style overloads are implemented for free functions, static and
 instance methods, function values, `ref`, and generic overloads separated by
 arity. Calls resolve by arity and exact argument types; duplicate signatures
 and ambiguous calls are diagnosed. The selected declaration is preserved
-through the VM, typed IR, and generated C. Lime and Nook use overloaded `Get`.
+through the VM, typed IR, and generated C. Aster Web and Nook use overloaded `Get`.
 
 - Add trial inference when multiple generic templates share both a name and
   an arity. Do not add conversion ranking or generic-preference rules.

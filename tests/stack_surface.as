@@ -40,16 +40,16 @@ int main()
 
     Stack<string> names = new();
     names.Push("Aster");
-    names.Push("Lime");
+    names.Push("Pear");
     string stackedName = "unset";
-    if (!names.TryPeek(out stackedName) || stackedName != "Lime")
+    if (!names.TryPeek(out stackedName) || stackedName != "Pear")
     {
         return 16;
     }
     Stack<string> copied = names;
     string top = names.Pop();
-    if (top != "Lime" || names.Peek() != "Aster") { return 9; }
-    if (copied.Pop() != "Lime" || copied.Pop() != "Aster") { return 10; }
+    if (top != "Pear" || names.Peek() != "Aster") { return 9; }
+    if (copied.Pop() != "Pear" || copied.Pop() != "Aster") { return 10; }
 
     numbers.Push(42);
     numbers.Clear();
