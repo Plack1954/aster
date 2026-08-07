@@ -156,7 +156,7 @@ bool c_backend_function_is_entry_module_export(
     const IrModule *ir, size_t function_index, size_t entry) {
     const IrFunction *function = &ir->functions[function_index];
     return function->is_web_export &&
-           function->is_public &&
+           (function->is_public || function->owner_type != NULL) &&
            !function->is_destructor &&
            function->module_name != NULL &&
            ir->functions[entry].module_name != NULL &&
@@ -176,6 +176,15 @@ static void emit_web_identifier(FILE *output, const char *name) {
 static const char *web_function_basename(const IrFunction *function) {
     const char *name = strrchr(function->name, ':');
     return name == NULL ? function->name : name + 1U;
+}
+
+static void emit_web_function_identifier(
+    FILE *output, const IrFunction *function) {
+    if (function->owner_type != NULL) {
+        emit_web_identifier(output, function->owner_type);
+        fputc('_', output);
+    }
+    emit_web_identifier(output, web_function_basename(function));
 }
 
 static bool web_projection_state_type(const IrType *type) {
@@ -230,8 +239,7 @@ static void emit_public_export_signature(
     if (result->shape == IR_TYPE_STRUCT)
         fputs(" *", emitter->output);
     fputs(" aster_export_", emitter->output);
-    emit_web_identifier(
-        emitter->output, web_function_basename(function));
+    emit_web_function_identifier(emitter->output, function);
     fputc('(', emitter->output);
     if (function->parameter_count == 0U) {
         fputs("void", emitter->output);
@@ -497,14 +505,12 @@ void c_backend_emit_public_async_result_accessor(
     c_backend_emit_type(emitter, result_type_id);
     if (result->shape == IR_TYPE_STRUCT) fputs(" *", emitter->output);
     fputs(" aster_export_", emitter->output);
-    emit_web_identifier(
-        emitter->output, web_function_basename(function));
+    emit_web_function_identifier(emitter->output, function);
     fputs("_task_result(aster_task *task);\n", emitter->output);
     c_backend_emit_type(emitter, result_type_id);
     if (result->shape == IR_TYPE_STRUCT) fputs(" *", emitter->output);
     fputs(" aster_export_", emitter->output);
-    emit_web_identifier(
-        emitter->output, web_function_basename(function));
+    emit_web_function_identifier(emitter->output, function);
     fputs("_task_result(aster_task *task) {\n"
           "    if (task == NULL || task->state != ASTER_TASK_SUCCEEDED ||\n"
           "        task->result == NULL || task->result_size != sizeof(",
@@ -554,8 +560,7 @@ static void emit_aggregate_accessor_name(
     CEmitter *emitter, const IrFunction *function,
     char code, const char *field_name) {
     fputs("aster_export_", emitter->output);
-    emit_web_identifier(
-        emitter->output, web_function_basename(function));
+    emit_web_function_identifier(emitter->output, function);
     fprintf(emitter->output, "_result_%c_", code);
     emit_web_identifier(emitter->output, field_name);
 }
@@ -607,13 +612,11 @@ void c_backend_emit_public_aggregate_accessors(
         fputs("}\n", emitter->output);
     }
     fputs("void aster_export_", emitter->output);
-    emit_web_identifier(
-        emitter->output, web_function_basename(function));
+    emit_web_function_identifier(emitter->output, function);
     fputs("_result_drop(", emitter->output);
     c_backend_emit_type(emitter, result_type);
     fputs(" *value);\nvoid aster_export_", emitter->output);
-    emit_web_identifier(
-        emitter->output, web_function_basename(function));
+    emit_web_function_identifier(emitter->output, function);
     fputs("_result_drop(", emitter->output);
     c_backend_emit_type(emitter, result_type);
     fputs(" *value) {\n    if (value == NULL) return;\n", emitter->output);
@@ -622,6 +625,69 @@ void c_backend_emit_public_aggregate_accessors(
                 "    aster_drop_%" PRIu32 "(value);\n",
                 result_type);
     fputs("    free(value);\n}\n\n", emitter->output);
+}
+
+void c_backend_emit_web_component_abis(
+    CEmitter *emitter, size_t entry) {
+    const IrModule *ir = emitter->ir;
+    for (size_t method_index = 0U;
+         method_index < ir->function_count; ++method_index) {
+        const IrFunction *method = &ir->functions[method_index];
+        if (!c_backend_function_is_entry_module_export(
+                ir, method_index, entry) || method->owner_type == NULL)
+            continue;
+        bool emitted = false;
+        for (size_t prior = 0U; prior < method_index; ++prior)
+            if (c_backend_function_is_entry_module_export(
+                    ir, prior, entry) &&
+                ir->functions[prior].owner_type != NULL &&
+                strcmp(ir->functions[prior].owner_type,
+                       method->owner_type) == 0)
+                emitted = true;
+        if (emitted) continue;
+        size_t constructor_index = ir->function_count;
+        for (size_t candidate = 0U;
+             candidate < ir->function_count; ++candidate)
+            if (ir->functions[candidate].is_constructor &&
+                ir->functions[candidate].owner_type != NULL &&
+                strcmp(ir->functions[candidate].owner_type,
+                       method->owner_type) == 0 &&
+                ir->functions[candidate].parameter_count == 0U) {
+                constructor_index = candidate;
+                break;
+            }
+        if (constructor_index == ir->function_count) {
+            c_backend_unsupported(
+                emitter, method->span,
+                "a browser class component without a zero-argument constructor");
+            continue;
+        }
+        const IrFunction *constructor = &ir->functions[constructor_index];
+        IrTypeId type_id = constructor->return_type;
+        const IrType *type = &ir->types[type_id];
+        c_backend_emit_type(emitter, type_id);
+        fputs(" aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_new(void) {\n    return aster_fn_", emitter->output);
+        fprintf(emitter->output, "%zu();\n}\n", constructor_index);
+        fputs("void aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_drop(", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fputs(" value) {\n    if (value == NULL) return;\n", emitter->output);
+        if (type->destructor_function != IR_INVALID_ID)
+            fprintf(emitter->output,
+                    "    (void)aster_fn_%" PRIu32 "(value);\n",
+                    type->destructor_function);
+        for (size_t field = type->field_count; field > 0U; --field) {
+            IrTypeId field_type = type->field_types[field - 1U];
+            if (c_backend_type_needs_drop(emitter, field_type))
+                fprintf(emitter->output,
+                        "    aster_drop_%" PRIu32 "(&value->f%zu);\n",
+                        field_type, field - 1U);
+        }
+        fputs("    free(value);\n}\n\n", emitter->output);
+    }
 }
 
 bool c_backend_web_exports_use_strings(

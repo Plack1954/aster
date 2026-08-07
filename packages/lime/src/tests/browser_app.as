@@ -15,6 +15,91 @@ public struct NativeTodo
     string title;
 }
 
+private class PersistentTodoList
+{
+    private List<NativeTodo> todos;
+    private int nextId;
+
+    public PersistentTodoList()
+    {
+        todos = new();
+        todos.Add(new() { key = "persistent-1", title = "First persistent" });
+        todos.Add(new() { key = "persistent-2", title = "Second persistent" });
+        nextId = 3;
+    }
+
+    private Html Rows()
+    {
+        List<Html> rows = new();
+        foreach (NativeTodo todo in todos)
+        {
+            rows.Add(
+                <li key=todo.key>
+                    <label>{todo.title}<input value=todo.title /></label>
+                    <button
+                        type="button"
+                        name="key"
+                        value=todo.key
+                        aria-controls="persistent-todo-list"
+                        onclick=this.RemoveTodo
+                    >Remove</button>
+                </li>
+            );
+        }
+        return <>{rows}</>;
+    }
+
+    private Html AppendTodo()
+    {
+        string key = $"persistent-{this.nextId}";
+        NativeTodo todo = new()
+        {
+            key = key,
+            title = $"Persistent {this.nextId}"
+        };
+        this.todos.Add(todo);
+        this.nextId += 1;
+        return this.Rows();
+    }
+
+    private Html RemoveTodo(string key)
+    {
+        for (nuint index = 0; index < this.todos.Count; index++)
+        {
+            if (this.todos[index].key == key)
+            {
+                this.todos.RemoveAt(index);
+                break;
+            }
+        }
+        return this.Rows();
+    }
+
+    private Html ClearTodos()
+    {
+        this.todos.Clear();
+        return this.Rows();
+    }
+
+    public Html Render()
+    {
+        return <section id="persistent-todo-component">
+            <h2>Persistent class component</h2>
+            <ul id="persistent-todo-list">{this.Rows()}</ul>
+            <button
+                type="button"
+                aria-controls="persistent-todo-list"
+                onclick=this.AppendTodo
+            >Append persistent todo</button>
+            <button
+                type="button"
+                aria-controls="persistent-todo-list"
+                onclick=this.ClearTodos
+            >Clear persistent todos</button>
+        </section>;
+    }
+}
+
 public struct ReactiveCounterPatch
 {
     int value;
@@ -370,6 +455,7 @@ public Html BrowserPage(Html browserLoader)
                 onclick=SelectSecondAndRemoveFirst
             >Select second and remove first</button>
         </section>
+        <PersistentTodoList />
         <section id="native-keyed-list-trial">
             <h2>Native keyed list trial</h2>
             <ul id="native-keyed-list">{NativeTodoRows(NativeTodos())}</ul>

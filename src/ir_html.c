@@ -571,6 +571,8 @@ IrValueId ir_lower_element_with_parent(
             builder, expr, resolved, parent_local);
 
     IrTypeId result_type = ir_intern_type(builder->module, expr->type);
+    bool class_render_root = builder->element_count == 0U &&
+        builder->function->is_component_render;
     const char *name =
         resolved != NULL && resolved->kind == DECL_ELEMENT
         ? resolved->as.element.name : expr->as.element.name;
@@ -578,6 +580,25 @@ IrValueId ir_lower_element_with_parent(
         builder, result_type, name, parent_local,
         expr->as.element.open_span);
     if (local == UINT32_MAX) return IR_INVALID_ID;
+    if (class_render_root) {
+        IrInstruction *owner = ir_append_instruction(
+            builder, IR_OP_CONST_STRING,
+            ir_intern_type(builder->module, &ir_str_type),
+            NULL, 0U, expr->span);
+        if (owner != NULL) {
+            owner->symbol = builder->function->owner_type;
+            owner->symbol_length = strlen(owner->symbol);
+            IrValueId value = owner->result;
+            IrInstruction *set = ir_append_instruction(
+                builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
+                IR_INVALID_ID, &value, 1U, expr->span);
+            if (set != NULL) {
+                set->index = local;
+                set->symbol = "data-aster-component";
+                set->symbol_length = strlen(set->symbol);
+            }
+        }
+    }
     for (size_t i = 0U; i < expr->as.element.property_count; ++i) {
         const ElementProperty *property =
             &expr->as.element.properties[i];

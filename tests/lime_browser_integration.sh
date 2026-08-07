@@ -66,6 +66,8 @@ grep -q 'data-aster-event="click|SelectSecondAndRemoveFirst|p|l:selectedId"' <<<
 grep -q 'data-aster-project="c:secondClass"' <<<"$page"
 grep -q 'data-aster-key="native-1"' <<<"$page"
 grep -q 'data-aster-event="click|RemoveNativeTodo|h|s:key"' <<<"$page"
+grep -q 'data-aster-component="PersistentTodoList"' <<<"$page"
+grep -q 'click|PersistentTodoList_AppendTodo|h|x:PersistentTodoList' <<<"$page"
 test "$(grep -o 'name="value"' <<<"$page" | wc -l)" -ge 2
 grep -q 'name="positive"' <<<"$page"
 grep -q 'name="canDecrease"' <<<"$page"

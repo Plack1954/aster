@@ -60,11 +60,32 @@ instance after its owned HTML has been produced. This gives SSR class components
 ordinary Aster construction and deterministic destruction without a base class,
 interface, lifecycle API, or `component` keyword.
 
-The initial implementation intentionally supports exactly one constructor;
-body children use an `Html children` constructor parameter just like a function
-component. Retaining the same class instance in browser Wasm across
-events is separate work; class element syntax must not be presented as
-persistent client state until that ownership path and fault cleanup are proven.
+The implementation intentionally supports exactly one constructor; body
+children use an `Html children` constructor parameter just like a function
+component.
+
+An interactive class component may bind its instance methods in native HTML;
+handlers can remain private implementation details:
+
+```aster
+<button onclick=this.RemoveTodo>Remove</button>
+```
+
+The browser compiler emits a component marker, a constructor/drop ABI, and
+owner-qualified method exports. JavaScript creates one Wasm class instance per
+rendered component region, prepends that retained instance to bound method
+calls, and drops it when the region disconnects from the DOM. Successive events
+therefore observe the same owned fields. A Chrome trial appends two keyed rows,
+removes one of the newly appended rows, and preserves a browser-edited input;
+the second append proves that `nextId` and the list survived the first event.
+
+The initial browser slice requires a zero-argument constructor so SSR and Wasm
+can initialize the same deterministic state independently. Instance handlers
+are synchronous and must still return an ordinary supported browser result,
+such as the keyed `Html` snapshot. Transferring constructor arguments or
+server-loaded state, automatic rerender after `void`, async instance methods,
+and nested component ownership remain unsupported. These limits are explicit;
+there is no lifecycle API or leaked page-global component singleton.
 
 ## Value and identity rules
 

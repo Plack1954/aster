@@ -3913,6 +3913,7 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         IrFunction *function = &ir->functions[output++];
         function->name = decl->as.function.name;
         function->module_name = decl->module_name;
+        function->owner_type = decl->as.function.owner_type;
         function->declaration = decl;
         function->span = decl->span;
         function->is_public = decl->is_public;
@@ -3926,6 +3927,10 @@ static void initialize_functions(const Module *module, IrModule *ir) {
         function->abi.may_propagate_exception = true;
         function->is_destructor =
             decl->as.function.is_drop;
+        function->is_constructor =
+            decl->as.function.is_constructor;
+        function->is_component_render =
+            decl->as.function.is_interactive_component_render;
         function->is_web_export =
             decl->as.function.is_web_handler;
         const Expr *render_root =

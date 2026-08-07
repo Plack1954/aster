@@ -471,6 +471,7 @@ typedef struct Function {
     Type **constructor_field_types;
     size_t constructor_field_count;
     bool is_web_handler;
+    bool is_interactive_component_render;
     const char *css_scope_attribute;
 } Function;
 
@@ -873,6 +874,7 @@ typedef struct IrLocal {
 typedef struct IrFunction {
     const char *name;
     const char *module_name;
+    const char *owner_type; /* Non-NULL for class/struct members. */
     /* Lowering-only source link; cleared before verification/backend use. */
     const Decl *declaration;
     LangSpan span;
@@ -902,6 +904,8 @@ typedef struct IrFunction {
     bool is_entry;
     bool is_public;
     bool is_destructor;
+    bool is_constructor;
+    bool is_component_render;
     bool is_web_export;
     bool is_async;
     bool is_abstract;

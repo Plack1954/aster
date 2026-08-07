@@ -59,6 +59,26 @@ directory = Path(sys.argv[1]).resolve()
   <button type="button" aria-controls="native-keyed-list"
       data-aster-event="click|ClearNativeTodos|h">Clear native todos</button>
 </section>
+<section id="persistent-todo-component" data-aster-component="PersistentTodoList">
+  <ul id="persistent-todo-list">
+    <li data-aster-key="persistent-1">
+      <label>First persistent <input value="First persistent"></label>
+      <button type="button" name="key" value="persistent-1"
+          aria-controls="persistent-todo-list"
+          data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
+    </li>
+    <li data-aster-key="persistent-2">
+      <label>Second persistent <input value="Second persistent"></label>
+      <button type="button" name="key" value="persistent-2"
+          aria-controls="persistent-todo-list"
+          data-aster-event="click|PersistentTodoList_RemoveTodo|h|x:PersistentTodoList|s:key">Remove</button>
+    </li>
+  </ul>
+  <button type="button" aria-controls="persistent-todo-list"
+      data-aster-event="click|PersistentTodoList_AppendTodo|h|x:PersistentTodoList">Append persistent todo</button>
+  <button type="button" aria-controls="persistent-todo-list"
+      data-aster-event="click|PersistentTodoList_ClearTodos|h|x:PersistentTodoList">Clear persistent todos</button>
+</section>
 <script type="module">
 import {hydrateAster} from "./aster.js";
 await hydrateAster({wasmUrl: "./browser_http_server.wasm"});
@@ -151,10 +171,40 @@ try:
         page.wait_for_function(
             "document.querySelector('#native-keyed-list').children.length === 0"
         )
+
+        persistent = page.locator("#persistent-todo-list")
+        persistent_input = persistent.locator(
+            '[data-aster-key="persistent-1"] input'
+        )
+        persistent_input.fill("persistent browser edit")
+        persistent_append = page.get_by_text(
+            "Append persistent todo", exact=True
+        )
+        persistent_append.click()
+        page.wait_for_function(
+            "document.querySelector('[data-aster-key=\"persistent-3\"]')"
+        )
+        persistent_append.click()
+        page.wait_for_function(
+            "document.querySelector('[data-aster-key=\"persistent-4\"]')"
+        )
+        assert persistent.locator(":scope > li").count() == 4
+        persistent.locator(
+            '[data-aster-key="persistent-3"] button'
+        ).click()
+        page.wait_for_function(
+            "!document.querySelector('[data-aster-key=\"persistent-3\"]')"
+        )
+        assert persistent.locator(":scope > li").count() == 3
+        assert persistent_input.input_value() == "persistent browser edit"
+        page.locator("#persistent-todo-component").evaluate(
+            "component => component.remove()"
+        )
+        page.wait_for_timeout(0)
         assert not errors, errors
         browser.close()
 finally:
     server.shutdown()
     server.server_close()
 
-print("native keyed lists and compiled projections retained DOM identity")
+print("persistent class components and keyed lists retained DOM identity")

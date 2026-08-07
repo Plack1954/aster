@@ -119,4 +119,38 @@ if (Object.keys(instance.exports).some(
     (name) => name.startsWith("aster_export_IncreaseProjected_result_")))
     throw new Error("projection state leaked flat aggregate accessors");
 
-console.log("Lime browser async and compiled projection transitions verified");
+const componentNew =
+    instance.exports.aster_export_component_PersistentTodoList_new;
+const componentDrop =
+    instance.exports.aster_export_component_PersistentTodoList_drop;
+const componentAppend =
+    instance.exports.aster_export_PersistentTodoList_AppendTodo;
+const renderHtml = instance.exports.aster_export_html_render;
+if (typeof componentNew !== "function" ||
+    typeof componentDrop !== "function" ||
+    typeof componentAppend !== "function")
+    throw new Error("persistent class component exports are incomplete");
+const component = Number(componentNew());
+try {
+    for (const expected of ["persistent-3", "persistent-4"]) {
+        const html = Number(componentAppend(component));
+        const rendered = Number(renderHtml(html));
+        try {
+            const pointer = Number(stringData(rendered));
+            const length = Number(stringLength(rendered));
+            const text = new TextDecoder().decode(
+                new Uint8Array(memory.buffer, pointer, length)
+            );
+            if (!text.includes(`data-aster-key=\"${expected}\"`))
+                throw new Error(
+                    `persistent component lost state before ${expected}`
+                );
+        } finally {
+            stringDrop(rendered);
+        }
+    }
+} finally {
+    componentDrop(component);
+}
+
+console.log("Lime browser async, projections, and class state verified");

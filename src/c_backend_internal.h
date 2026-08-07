@@ -45,6 +45,8 @@ void c_backend_emit_public_async_result_accessor(
     CEmitter *emitter, size_t function_index);
 void c_backend_emit_public_aggregate_accessors(
     CEmitter *emitter, size_t function_index);
+void c_backend_emit_web_component_abis(
+    CEmitter *emitter, size_t entry);
 bool c_backend_web_exports_use_strings(
     const IrModule *ir, size_t entry);
 bool c_backend_web_exports_use_tasks(

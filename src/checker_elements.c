@@ -239,9 +239,67 @@ static void check_projection_property(
     property->projection_binding = binding;
 }
 
+static Type *event_bound_method_type(
+    Checker *checker, Expr *expression) {
+    if (expression->kind != EXPR_FIELD) return NULL;
+    Type *object = check_expr(checker, expression->as.field.object);
+    if (object->kind != TYPE_CLASS || object->declaration == NULL)
+        return NULL;
+    Decl *selected = NULL;
+    for (size_t member = 0U;
+         member < object->declaration->as.structure.member_count; ++member) {
+        Decl *candidate =
+            object->declaration->as.structure.members[member];
+        if (candidate->kind != DECL_FUNCTION ||
+            candidate->as.function.is_static_member ||
+            candidate->as.function.is_constructor ||
+            candidate->as.function.is_drop)
+            continue;
+        const char *base = strrchr(candidate->as.function.name, ':');
+        base = base == NULL ? candidate->as.function.name : base + 1U;
+        if (strcmp(base, expression->as.field.field) != 0) continue;
+        if (selected != NULL) {
+            lang_diag(checker->diagnostics, expression->span,
+                      "browser event method `%s` must not be overloaded",
+                      expression->as.field.field);
+            return NULL;
+        }
+        selected = candidate;
+    }
+    if (selected == NULL) return NULL;
+    const Function *method = &selected->as.function;
+    Type *delegate = lang_arena_alloc(
+        &checker->module->arena, sizeof(*delegate));
+    memset(delegate, 0, sizeof(*delegate));
+    delegate->kind = TYPE_FUNCTION;
+    delegate->name = "browser-event-method";
+    delegate->element = method->checked_return_type;
+    delegate->argument_count = method->param_count - 1U;
+    if (delegate->argument_count != 0U) {
+        delegate->arguments = lang_arena_alloc(
+            &checker->module->arena,
+            delegate->argument_count * sizeof(*delegate->arguments));
+        delegate->parameter_modes = lang_arena_alloc(
+            &checker->module->arena,
+            delegate->argument_count * sizeof(*delegate->parameter_modes));
+    }
+    for (size_t parameter = 1U;
+         parameter < method->param_count; ++parameter) {
+        delegate->arguments[parameter - 1U] =
+            method->params[parameter].checked_type;
+        delegate->parameter_modes[parameter - 1U] =
+            parameter_mode_from_param(&method->params[parameter]);
+    }
+    return delegate;
+}
+
 static void check_html_event_handler(
     Checker *checker, ElementProperty *property) {
+    Type *previous_expected = checker->expected_type;
+    Type *bound_type = event_bound_method_type(checker, property->value);
+    if (bound_type != NULL) checker->expected_type = bound_type;
     Type *handler_type = check_expr(checker, property->value);
+    checker->expected_type = previous_expected;
     Decl *handler = (Decl *)property->value->resolved_decl;
     if (handler_type->kind != TYPE_FUNCTION || handler == NULL ||
         handler->kind != DECL_FUNCTION) {
@@ -250,10 +308,40 @@ static void check_html_event_handler(
                   property->name);
         return;
     }
-    if (!handler->is_public)
+    if (!handler->is_public && handler->as.function.owner_type == NULL)
         lang_diag(checker->diagnostics, property->value->span,
                   "event handler `%s` must be public",
                   handler->as.function.name);
+    if (handler->as.function.owner_type != NULL &&
+        handler->as.function.is_async)
+        lang_diag(checker->diagnostics, property->value->span,
+                  "browser class component handlers are synchronous in the initial prototype");
+    if (handler->as.function.owner_type != NULL) {
+        Decl *owner = find_type_declaration(
+            checker, handler->as.function.owner_type,
+            property->value->span);
+        bool zero_argument_constructor = false;
+        if (owner != NULL && owner->kind == DECL_CLASS)
+            for (size_t member = 0U;
+                 member < owner->as.structure.member_count; ++member) {
+                Decl *candidate = owner->as.structure.members[member];
+                if (candidate->kind != DECL_FUNCTION) continue;
+                if (candidate->as.function.is_constructor &&
+                    candidate->as.function.param_count == 0U)
+                    zero_argument_constructor = true;
+                const char *base = strrchr(
+                    candidate->as.function.name, ':');
+                base = base == NULL
+                    ? candidate->as.function.name : base + 1U;
+                if (strcmp(base, "Render") == 0)
+                    candidate->as.function
+                        .is_interactive_component_render = true;
+            }
+        if (!zero_argument_constructor)
+            lang_diag(checker->diagnostics, property->value->span,
+                      "interactive class component `%s` requires a zero-argument constructor",
+                      handler->as.function.owner_type);
+    }
     handler->as.function.is_web_handler = true;
     const Type *completion =
         web_handler_completion_type(handler_type->element);
@@ -319,6 +407,8 @@ static void check_html_event_handler(
             lang_diag(checker->diagnostics, completion->declaration->span,
                       "projection transition must contain exactly one `*ProjectionState` field");
     }
+    size_t first_parameter = handler->as.function.owner_type != NULL &&
+        !handler->as.function.is_static_member ? 1U : 0U;
     for (size_t argument = 0U;
          argument < handler_type->argument_count; ++argument)
         if (!web_handler_parameter_type(
@@ -332,8 +422,12 @@ static void check_html_event_handler(
     handler_name = handler_name == NULL
                  ? handler->as.function.name : handler_name + 1U;
     const char *event_name = property->name + 2U;
+    const char *owner = first_parameter != 0U
+        ? handler->as.function.owner_type : NULL;
     size_t length = strlen(event_name) + strlen(handler_name) + 4U;
-    for (size_t parameter = 0U;
+    if (owner != NULL)
+        length += strlen(owner) * 2U + 4U;
+    for (size_t parameter = first_parameter;
          parameter < handler->as.function.param_count; ++parameter)
         length += strlen(handler->as.function.params[parameter].name) + 3U;
     char *binding = lang_arena_alloc(
@@ -343,14 +437,21 @@ static void check_html_event_handler(
     if (handler_type->element->kind == TYPE_TASK &&
         result_code >= 'a' && result_code <= 'z')
         result_code = (char)(result_code - ('a' - 'A'));
-    size_t offset = (size_t)snprintf(
-        binding, length + 1U, "%s|%s|%c", event_name, handler_name,
-        result_code);
-    for (size_t parameter = 0U;
+    size_t offset;
+    if (owner != NULL)
+        offset = (size_t)snprintf(
+            binding, length + 1U, "%s|%s_%s|%c|x:%s",
+            event_name, owner, handler_name, result_code, owner);
+    else
+        offset = (size_t)snprintf(
+            binding, length + 1U, "%s|%s|%c",
+            event_name, handler_name, result_code);
+    for (size_t parameter = first_parameter;
          parameter < handler->as.function.param_count; ++parameter)
         offset += (size_t)snprintf(
             binding + offset, length + 1U - offset, "|%c:%s",
-            web_handler_type_code(handler_type->arguments[parameter]),
+            web_handler_type_code(
+                handler_type->arguments[parameter - first_parameter]),
             handler->as.function.params[parameter].name);
     property->event_binding = binding;
 }

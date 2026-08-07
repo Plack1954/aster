@@ -2,6 +2,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const islandStates = new WeakMap();
 const hydratedSources = new WeakSet();
+const activeComponents = new Map();
 
 function targetsFor(scope, name) {
     return scope.querySelectorAll(`[name="${CSS.escape(name)}"]`);
@@ -43,7 +44,8 @@ function targetValue(source, scope, type, name) {
 }
 
 function eventScope(source, root) {
-    return source.closest("form") ?? source.closest("[id]") ?? root;
+    return source.closest("[data-aster-component]") ??
+        source.closest("form") ?? source.closest("[id]") ?? root;
 }
 
 function stateFor(scope) {
@@ -73,10 +75,44 @@ function stateValue(source, scope, state, type, name) {
     return value;
 }
 
+function componentInstance(scope, owner, exports) {
+    let components = activeComponents.get(scope);
+    if (components === undefined) {
+        components = new Map();
+        activeComponents.set(scope, components);
+    }
+    let component = components.get(owner);
+    if (component === undefined) {
+        const create = exports[`aster_export_component_${owner}_new`];
+        const drop = exports[`aster_export_component_${owner}_drop`];
+        if (typeof create !== "function" || typeof drop !== "function")
+            throw new Error(`Aster component ABI is missing: ${owner}`);
+        const handle = Number(create());
+        if (handle === 0)
+            throw new Error(`Aster component construction failed: ${owner}`);
+        component = {handle, drop};
+        components.set(owner, component);
+    }
+    return component.handle;
+}
+
+function dropDisconnectedComponents() {
+    for (const [scope, components] of activeComponents) {
+        if (scope.isConnected) continue;
+        for (const {handle, drop} of components.values()) drop(handle);
+        activeComponents.delete(scope);
+        islandStates.delete(scope);
+    }
+}
+
 function marshalArguments(source, scope, state, parameters, exports, memory) {
     const args = [];
     const allocations = [];
     for (const [type, name] of parameters) {
+        if (type === "x") {
+            args.push(componentInstance(scope, name, exports));
+            continue;
+        }
         const value = stateValue(source, scope, state, type, name);
         if (type !== "s") {
             args.push(value);
@@ -728,6 +764,14 @@ export async function hydrateAster({wasmUrl, root = document}) {
         });
         hydratedSources.add(source);
       }
+    }
+    const observedRoot = root instanceof Document
+        ? root.documentElement : root;
+    if (observedRoot !== null) {
+        const componentObserver = new MutationObserver(
+            dropDisconnectedComponents
+        );
+        componentObserver.observe(observedRoot, {childList: true, subtree: true});
     }
     hydrateWithin(root);
     return instance;

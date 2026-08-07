@@ -1435,6 +1435,7 @@ static bool c_emit_module(const IrModule *ir,
             c_backend_emit_public_async_result_accessor(&emitter, function);
             c_backend_emit_public_aggregate_accessors(&emitter, function);
         }
+    c_backend_emit_web_component_abis(&emitter, entry);
     if (c_backend_web_exports_use_strings(ir, entry))
         c_backend_emit_web_string_abi(output);
     if (c_backend_web_exports_use_tasks(ir, entry))

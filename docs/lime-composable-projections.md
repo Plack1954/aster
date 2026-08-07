@@ -30,8 +30,8 @@ the spelling cannot.
 [`examples/browser_compare`](../examples/browser_compare/) established that
 the retained implementation can be small and competitive:
 
-- 9.9 KB gzip versus 41.9 KB for the compared Vue client after adding the
-  experimental batch decoder, structural validation, and keyed snapshots;
+- 10.4 KB gzip versus 41.9 KB for the compared Vue client after adding the
+  experimental batch decoder, keyed snapshots, and class-instance ownership;
 - direct sparse replacement, swap, deletion, and clear were faster locally;
 - Vue was faster for bulk create and append.
 
@@ -476,25 +476,28 @@ Existing keyed nodes are never replaced. Chrome coverage exercises `Add`,
 `RemoveAt`, `Insert`, and `Clear` while preserving retained row/input identity
 and a browser-edited input value.
 
-This is the structural half of a native keyed-list model, not yet a complete
-stateful todo application. The fixture reconstructs its deterministic list in
-each handler. Browser-region state is not yet retained in Wasm across events,
-and existing item content is deliberately left untouched; changed item-local
-content still needs compiled projections. Those are now the two blocking pieces
-for a normal persistent keyed todo list.
+The first fixture reconstructs its deterministic list in each handler. A newer
+class-component fixture closes that state gap without adding a component
+keyword or base class: a zero-argument constructor owns `List<Todo>` and
+`nextId` fields, `Render() -> Html` supplies native keyed HTML, and public bound
+methods mutate the retained Wasm object. JavaScript creates one object per
+compiler-marked DOM region and calls the generated drop ABI when that region is
+removed. Two successive appends produce distinct keys and a later removal sees
+the appended item, proving state persistence rather than deterministic
+reconstruction.
 
-This validates one-batch scalar/structural composition and one level of nested
-transition lowering, not the temporary projection syntax. Current prototype limits
-are intentional: projection handlers are synchronous, persistent state fields
-are flat Boolean/integer/string values, only `KeyedRemove` has been exercised,
-text initialization is still written as an ordinary child expression, and the
-`ProjectionState`/`ProjectionTransition` suffixes are markers rather than final
-region declarations. Async batches, effect collections, true keyed item-local
-plans, Wasm-owned browser-region state, deeper recursive composition, and a
-final explicit state-boundary spelling remain to be designed.
+This validates persistent Wasm-owned state, keyed structural snapshots, and
+one level of nested transition lowering, not the temporary projection syntax.
+Current prototype limits are intentional: interactive class constructors take
+no arguments, class handlers are synchronous, existing keyed item content is
+left untouched, projection state fields are flat Boolean/integer/string values,
+and `ProjectionState`/`ProjectionTransition` suffixes remain experimental.
+Server-state transfer, automatic class rerendering, async instance methods,
+effect collections, true keyed item-local plans, and deeper recursive
+composition remain to be designed.
 
 The generic decoder and first structural record increased the comparison
-client from 8.8 KB to 9.9 KB gzip. A future production implementation should
+client from 8.8 KB to 10.4 KB gzip. A future production implementation should
 tree-shake the decoder from
 applications without projection-state handlers.
 
