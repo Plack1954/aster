@@ -80,6 +80,12 @@ add_library(langlib
     src/c_backend_async.c
     src/bytecode.c
     src/vm.c
+    src/vm_dispatch_locals.inc
+    src/vm_dispatch_arithmetic.inc
+    src/vm_dispatch_calls.inc
+    src/vm_dispatch_aggregates.inc
+    src/vm_dispatch_html.inc
+    src/vm_dispatch_iteration.inc
     src/vm_async.c
     src/vm_values.c
     src/vm_builtin_exec.c
