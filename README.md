@@ -49,6 +49,66 @@ int main() {
 
 HTML is ordinary Aster syntax and normal control flow works inside elements.
 
+## Lime: SSR with a retained Wasm client
+
+Lime is Aster's web application layer. The same native HTML and checked Aster
+code can render on the server and enhance that server-rendered document in the
+browser through WebAssembly. `lang project build-web` emits the server C
+translation, an optimized Wasm module, the small generic browser runtime, and a
+target loader.
+
+Browser components are ordinary classes—there is no component keyword, second
+template language, JavaScript application layer, virtual DOM, runtime signal
+API, or public DOM-command API:
+
+```aster
+private class Counter
+{
+    private int count;
+
+    public Counter(int count)
+    {
+        this.count = count;
+    }
+
+    private void Increment()
+    {
+        this.count += 1;
+    }
+
+    public Html Render()
+    {
+        return <button type="button" onclick=this.Increment>
+            Count: {this.count}
+        </button>;
+    }
+}
+
+private Html Page()
+{
+    return <main><Counter count=0 /></main>;
+}
+```
+
+The server constructs and renders the class normally. In the browser, Lime
+retains one isolated Wasm instance per component region and reconciles
+compiler-owned text, attributes, styles, and explicitly keyed children after a
+successful handler. It preserves browser-owned input values, checked state,
+focus, selection, and caret. Private synchronous and asynchronous methods can
+be handlers; pending async work is versioned so stale completions cannot
+overwrite newer state. Component destruction and explicit root teardown are
+deterministic.
+
+The current checked SSR-state-transfer subset supports scalar constructor
+state and one flat keyed `List<T>` made from Boolean, integer, and string
+fields. See the normative contract and known limitations in
+[`docs/lime-component-semantics.md`](docs/lime-component-semantics.md). The
+complete two-instance todo proof is in
+[`packages/lime/src/tests/final_todo_app.as`](packages/lime/src/tests/final_todo_app.as),
+and the runnable browser examples are
+[`examples/wasm_counter/`](examples/wasm_counter/) and
+[`examples/browser_compare/`](examples/browser_compare/).
+
 ## Build
 
 Aster requires CMake 3.16 or newer and a C17 compiler. Native
@@ -124,8 +184,11 @@ Manifest projects support named binary, library, and test targets:
 - [Values and cleanup](docs/values-and-cleanup.md)
 - [Projects and targets](docs/projects.md)
 - [Lime seamless SSR and static generation](docs/lime-seamless-ssg.md)
-- [Lime browser client and Wasm direction](docs/lime-browser-client.md)
-- [Composable compiler-checked browser projections](docs/lime-composable-projections.md)
+- [Lime browser Wasm client](docs/lime-browser-client.md)
+- [Normative Lime component semantics](docs/lime-component-semantics.md)
+- [Final Lime application proof](docs/lime-final-application-proof.md)
+- [Final retained-DOM measurement](docs/lime-final-measurement.md)
+- [Browser projection design history](docs/lime-composable-projections.md)
 - [Typed IR](docs/ir.md)
 - [Backend architecture](docs/architecture.md)
 - [C interoperability](docs/ffi.md)
