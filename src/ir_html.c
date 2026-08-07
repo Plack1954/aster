@@ -214,6 +214,7 @@ static IrValueId lower_element_body(IrBuilder *builder,
                 text->symbol = item->as.expression->as.string.data;
                 text->symbol_length =
                     item->as.expression->as.string.length;
+                text->auxiliary = 0U;
             }
         } else if (
             item->as.expression->kind ==
@@ -1106,6 +1107,7 @@ IrValueId ir_lower_element_with_parent(
                 text->symbol = item->as.expression->as.string.data;
                 text->symbol_length =
                     item->as.expression->as.string.length;
+                text->auxiliary = 0U;
             }
         } else if (
             item->as.expression->kind ==

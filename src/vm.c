@@ -2912,7 +2912,7 @@ vm_switch_integer_binary:
                 vm_html_ensure_open_closed(html);
                 LangStringView value = vm->module->constants[
                     (size_t)instruction.b].value.as.string;
-                vm_html_append_text(html, value);
+                vm_html_bytes(html, value.data, value.length);
                 break;
             }
             VM_LABEL(html_attr_constant_local)

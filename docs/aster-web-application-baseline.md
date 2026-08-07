@@ -88,7 +88,7 @@ home, article, and archive HTML during verification, and served assets matched
 their source bytes. Headless Chrome comparisons at 1600px and 480px confirmed
 the supplied responsive layout and styling.
 
-The application has 17 Aster source files and 1,131 application-owned Aster
+The application has 19 Aster source files and 1,399 application-owned Aster
 lines. The Min port has 1,572 Rust application lines,
 but this small difference is not a DX victory: the implementations do not yet
 have identical build and metadata facilities.
@@ -112,10 +112,15 @@ What worked well:
 
 What remains materially worse than vanilla PHP:
 
-- `foreach` cannot iterate an aggregate field directly and forces forwarding
-  helpers;
-- the generic stateful startup, server loop, and SSG entry remain visible
+- a server check takes 5.05 seconds and development startup through the first
+  successful request takes 8.15 seconds on the measured development machine;
+- the combined static/generated-C build takes 28.41 seconds and peaks near
+  749 MiB RSS;
+- the application lifetime wrapper, server loop, and SSG entry remain visible
   application plumbing;
+- intentional named HTML entities require explicit `Html.UnsafeRaw` because
+  source text is escaped and direct Unicode arrows are not accepted by the
+  lexer;
 - fingerprinted assets, incremental builds, JSON-LD, and full article metadata
   remain behind the Min implementation.
 
@@ -135,12 +140,13 @@ filename list and all eight explicit parameterized SSG page registrations.
 
 Aster Web now owns the reusable frontmatter document parser and safe bounded
 Markdown component. Nook's private parser and renderer were deleted, reducing
-the application to 17 Aster files and 1,131 lines while producing identical
+the application to 19 Aster files and 1,399 lines while producing identical
 static output.
 
-The port also found and fixed two concrete platform defects: Aster Web served CSS
-as generic binary data, which browsers refused to apply, and native `<meta>`
-lacked the standard Open Graph `property` attribute.
+The port has also found and fixed concrete platform defects: Aster Web served
+CSS as generic binary data, which browsers refused to apply; native `<meta>`
+lacked the standard Open Graph `property` attribute; and an uninitialized HTML
+IR flag made VM and generated-C static-text escaping disagree.
 
 A same-surface vanilla PHP implementation has not yet been written, so Aster
 must not claim measured parity with PHP. The current port is now substantial

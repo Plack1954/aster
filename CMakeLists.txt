@@ -1517,6 +1517,11 @@ add_aster_generated_c_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/html_coverage.as
     aster_c_html_coverage
         -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html_coverage.out)
+add_aster_generated_c_test(
+    c_backend_html_escaping
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/html_escaping.as
+    aster_c_html_escaping
+        -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/html_escaping.out)
 add_test(NAME ref_parameter_value_copy_vm
     COMMAND lang run-ir tests/ref_value_copy.as)
 set_tests_properties(ref_parameter_value_copy_vm PROPERTIES
