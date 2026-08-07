@@ -160,3 +160,38 @@ through the VM, typed IR, and generated C. Lime and Nook use overloaded `Get`.
 
 - Add trial inference when multiple generic templates share both a name and
   an arity. Do not add conversion ranking or generic-preference rules.
+
+## Signed collection-index ergonomics
+
+Aster currently uses `nuint` for `List<T>.Count`, indexes, capacities, and
+range arguments. This matches C/C++ `size_t`, C# `nuint`, Rust `usize`, the
+generated-C representation, and Wasm memory sizing, but makes familiar C#-style
+`int` loops noisy:
+
+```aster
+for (int index = 0; index < (int)items.Count; index++)
+    Use(items[(nuint)index]);
+```
+
+Keep `nuint` as the storage and ABI type. Evaluate a bounded ergonomic layer
+rather than introducing general implicit signed/unsigned conversions.
+
+- [ ] Inventory every index/count surface together: `List`, arrays, strings,
+  spans/slices, buffers, `Dictionary.KeyAt`/`ValueAt`, and range methods.
+- [ ] Decide whether indexing expressions should accept signed integers through
+  an explicit compiler-generated checked conversion that traps on negative or
+  out-of-range values.
+- [ ] Prototype checked `int` overloads for common list operations such as
+  `Insert`, `RemoveAt`, `GetRange`, `RemoveRange`, and ranged `Reverse`.
+- [ ] Decide how indexed `for` loops compare an `int` index with a `nuint`
+  `Count` without adding unsafe global conversion ranking. Consider a narrowly
+  checked comparison rule or retain explicit conversion at that boundary.
+- [ ] Keep `Count`, `Capacity`, allocation sizes, and backend/runtime ABIs as
+  `nuint`; do not cap collections at `int.MaxValue` merely for familiarity.
+- [ ] Reject or trap negative indexes deterministically in the VM and generated
+  C, with the same source-level diagnostic or runtime message.
+- [ ] Add positive and negative differential tests for indexing, insertion,
+  removal, empty collections, boundary values, and 32-bit Wasm behavior.
+- [ ] Document the final rule with both idiomatic `foreach` and indexed-loop
+  examples. Do not add LINQ, lambdas, or unrelated collection APIs as part of
+  this task.
