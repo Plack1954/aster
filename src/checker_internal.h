@@ -125,6 +125,23 @@ bool checker_require_copyable(
 const Decl *type_copy_constructor(const Type *type);
 
 Local *find_local(Checker *checker, const char *name);
+bool class_member_accessible(
+    const Checker *checker, const Decl *owner, bool is_public);
+Function *declared_property_accessor(
+    const Decl *owner, const char *name, bool setter);
+const Decl *current_property_owner(Checker *checker);
+Function *static_property_accessor(
+    Checker *checker, const char *name, bool setter);
+void set_cleanup_plan(
+    Checker *checker, CleanupPlan *plan, size_t begin);
+void snapshot_out_assignment(
+    const Checker *checker, bool assigned[256]);
+void restore_out_assignment(
+    Checker *checker, const bool assigned[256]);
+void merge_out_assignment(
+    Checker *checker, const bool left[256], const bool right[256]);
+void require_assigned_out_parameters(
+    Checker *checker, LangSpan span);
 Function *find_function(Checker *checker, const char *name,
                         LangSpan use_span);
 const Decl *function_declaration(const Checker *checker,

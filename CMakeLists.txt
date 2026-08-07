@@ -46,7 +46,10 @@ add_library(langlib
     src/parser_declarations.c
     src/parser_debug.c
     src/parser_elements.c
-    src/checker.c
+    src/checker_core.c
+    src/checker_expressions.c
+    src/checker_statements.c
+    src/checker_module.c
     src/checker_calls.c
     src/checker_types.c
     src/checker_elements.c
