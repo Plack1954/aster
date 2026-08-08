@@ -523,6 +523,8 @@ typedef struct Decl {
     const struct Decl *generic_origin; /* Template for a function instance. */
     Type **generic_arguments; /* Concrete function type arguments. */
     size_t generic_argument_count;
+    /* Canonical semantic type for a non-generic aggregate declaration. */
+    Type *resolved_type;
     union {
         Function function;
         struct {

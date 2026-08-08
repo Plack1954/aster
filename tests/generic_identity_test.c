@@ -16,6 +16,8 @@ int main(void) {
 
     const Type *first = NULL;
     const Type *second = NULL;
+    const Type *plain_first = NULL;
+    const Type *plain_second = NULL;
     const Decl *function_first = NULL;
     const Decl *function_second = NULL;
     const Decl *function_template = NULL;
@@ -35,6 +37,12 @@ int main(void) {
             if (decl->as.function.param_count == 1U &&
                 strcmp(decl->as.function.name, "AcceptSecond") == 0)
                 second = decl->as.function.params[0].checked_type;
+            if (decl->as.function.param_count == 1U &&
+                strcmp(decl->as.function.name, "AcceptPlainFirst") == 0)
+                plain_first = decl->as.function.params[0].checked_type;
+            if (decl->as.function.param_count == 1U &&
+                strcmp(decl->as.function.name, "AcceptPlainSecond") == 0)
+                plain_second = decl->as.function.params[0].checked_type;
             if ((strcmp(decl->as.function.name, "CallFirst") == 0 ||
                  strcmp(decl->as.function.name, "CallSecond") == 0) &&
                 decl->as.function.body != NULL &&
@@ -57,6 +65,9 @@ int main(void) {
     }
     bool canonical =
         first != NULL && first == second &&
+        plain_first != NULL && plain_first == plain_second &&
+        plain_first->declaration != NULL &&
+        plain_first->declaration->resolved_type == plain_first &&
         module.type_instantiation_count == 1U &&
         module.type_instantiations[0] == first &&
         function_template != NULL &&

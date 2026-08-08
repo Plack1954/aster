@@ -1707,6 +1707,8 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
                 decl_name, type_decl->type_param_count);
             return &type_error;
         }
+        if (type_decl->resolved_type != NULL)
+            return type_decl->resolved_type;
         Type *type = lang_arena_alloc(&checker->module->arena, sizeof(*type));
         type->kind = type_decl->kind == DECL_CLASS
                    ? TYPE_CLASS : TYPE_NAMED;
@@ -1719,6 +1721,7 @@ Type *resolve_type(Checker *checker, const char *name, LangSpan span) {
         type->managed =
             type_name_is_managed(checker, decl_name, NULL, 0U);
         checker->current_module = previous_module;
+        type_decl->resolved_type = type;
         return type;
     }
     lang_diag(checker->diagnostics, span, "unknown type `%s`", name);
