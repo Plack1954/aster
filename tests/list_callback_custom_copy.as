@@ -36,6 +36,11 @@ int main() {
     List<CopyProbe> matches = values.FindAll(IsCopied);
     CopyProbe match = copy(matches[0]);
     Console.WriteLine(match.generation);
+    Console.WriteLine(values.FindIndex(IsCopied));
+    Console.WriteLine(values.FindLastIndex(IsCopied));
+    Console.WriteLine(values.TrueForAll(IsCopied));
+    Console.WriteLine(values.RemoveAll(IsCopied));
+    Console.WriteLine(values.Count);
 
     List<NestedProbe> nested = new();
     NestedProbe nestedValue = new() {

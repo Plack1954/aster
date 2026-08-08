@@ -414,12 +414,24 @@ add_test(NAME list_callback_custom_copy_vm
     COMMAND lang run tests/list_callback_custom_copy.as)
 set_tests_properties(list_callback_custom_copy_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PASS_REGULAR_EXPRESSION "11[\r\n]+true[\r\n]+12[\r\n]+21")
+    PASS_REGULAR_EXPRESSION
+        "11[\r\n]+true[\r\n]+12[\r\n]+0[\r\n]+0[\r\n]+true[\r\n]+1[\r\n]+0[\r\n]+21")
 add_aster_generated_c_test(
     list_callback_custom_copy_generated_c
     tests/list_callback_custom_copy.as
     list_callback_custom_copy
-    "-DEXPECTED_OUTPUT=11\ntrue\n12\n21\n")
+    "-DEXPECTED_OUTPUT=11\ntrue\n12\n0\n0\ntrue\n1\n0\n21\n")
+add_test(NAME list_callback_throwing_copy_vm
+    COMMAND lang run-ir tests/list_callback_throwing_copy.as)
+set_tests_properties(list_callback_throwing_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "ForEach[\r\n]+Exists[\r\n]+FindAll[\r\n]+FindIndex[\r\n]+FindLastIndex[\r\n]+TrueForAll[\r\n]+RemoveAll[\r\n]+2")
+add_aster_generated_c_test(
+    list_callback_throwing_copy_generated_c
+    tests/list_callback_throwing_copy.as
+    list_callback_throwing_copy
+    "-DEXPECTED_OUTPUT=ForEach\nExists\nFindAll\nFindIndex\nFindLastIndex\nTrueForAll\nRemoveAll\n2\n")
 add_test(NAME list_callback_exceptions_vm
     COMMAND lang run-ir tests/list_callback_exceptions.as)
 set_tests_properties(list_callback_exceptions_vm PROPERTIES
