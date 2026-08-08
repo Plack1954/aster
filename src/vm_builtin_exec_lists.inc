@@ -374,11 +374,22 @@
         if (index == -50) {
             size_t write = 0U;
             size_t removed = 0U;
-            for (size_t read = 0U; read < list->as.vector.count; ++read) {
+            size_t original_count = list->as.vector.count;
+            for (size_t read = 0U; read < original_count; ++read) {
                 bool matched = false;
                 if (!vm_list_call_callback(
                         vm, callback, list->as.vector.items[read],
                         instruction_span, true, &matched)) {
+                    size_t remaining = original_count - read;
+                    if (remaining != 0U && write != read)
+                        memmove(&list->as.vector.items[write],
+                                &list->as.vector.items[read],
+                                remaining * sizeof(*list->as.vector.items));
+                    list->as.vector.count = write + remaining;
+                    for (size_t i = list->as.vector.count;
+                         i < original_count; ++i)
+                        list->as.vector.items[i] =
+                            (LangValue){.tag=LANG_VALUE_UNIT};
                     if (!vm->trapped && !vm->exception_pending)
                         runtime_error(
                             vm, instruction, "invalid List predicate");

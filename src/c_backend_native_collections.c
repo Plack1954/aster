@@ -4,6 +4,48 @@
 #include <stdio.h>
 #include <string.h>
 
+static void emit_list_callback_evaluation(
+    CEmitter *emitter, const IrInstruction *instruction,
+    IrTypeId element, IrValueId callback, IrValueId list,
+    const char *index, bool predicate
+) {
+    FILE *output = emitter->output;
+    bool copy = c_backend_type_requires_semantic_copy(
+        emitter->ir, element);
+    if (predicate)
+        fprintf(output,
+                "        bool list_callback_%" PRIu32 " = false;\n",
+                instruction->result);
+    if (copy) {
+        fputs("        ", output);
+        c_backend_emit_type(emitter, element);
+        fprintf(output,
+                " list_argument_%" PRIu32 " = aster_clone_%" PRIu32
+                "(v%" PRIu32 "->data[%s]);\n"
+                "        if (!aster_exception_pending)\n"
+                "            ",
+                instruction->result, element, list, index);
+    } else {
+        fputs("        ", output);
+    }
+    if (predicate)
+        fprintf(output, "list_callback_%" PRIu32 " = ",
+                instruction->result);
+    else
+        fputs("(void)", output);
+    fprintf(output,
+            "v%" PRIu32 ".invoke(v%" PRIu32 ".receiver, ",
+            callback, callback);
+    if (copy)
+        fprintf(output, "list_argument_%" PRIu32,
+                instruction->result);
+    else
+        fprintf(output, "v%" PRIu32 "->data[%s]", list, index);
+    fputs(");\n"
+          "        if (aster_exception_pending) break;\n",
+          output);
+}
+
 bool c_backend_emit_native_collections(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction
@@ -744,15 +786,16 @@ bool c_backend_emit_native_collections(
             fprintf(output,
                     "    v%" PRIu32 " = %s;\n"
                     "    for (size_t i = 0U; i < v%" PRIu32
-                    "->length; ++i) {\n"
-                    "        if (%s",
+                    "->length; ++i) {\n",
                     instruction->result, all ? "true" : "false",
-                    list, all ? "!" : "");
-            emit_list_callback_call(
-                emitter, element, callback, list, "i");
+                    list);
+            emit_list_callback_evaluation(
+                emitter, instruction, element, callback, list, "i", true);
             fprintf(output,
+                    "        if (%slist_callback_%" PRIu32
                     ") { v%" PRIu32 " = %s; break; }\n"
                     "    }\n",
+                    all ? "!" : "", instruction->result,
                     instruction->result, all ? "false" : "true");
             return true;
         }
@@ -763,15 +806,14 @@ bool c_backend_emit_native_collections(
                     "    *v%" PRIu32 " = (aster_vec_%" PRIu32
                     "){0};\n"
                     "    for (size_t i = 0U; i < v%" PRIu32
-                    "->length; ++i) {\n"
-                    "        if (!",
+                    "->length; ++i) {\n",
                     instruction->result, instruction->result,
                     instruction->result, instruction->result_type,
                     list);
-            emit_list_callback_call(
-                emitter, element, callback, list, "i");
+            emit_list_callback_evaluation(
+                emitter, instruction, element, callback, list, "i", true);
             fprintf(output,
-                    ") continue;\n"
+                    "        if (!list_callback_%" PRIu32 ") continue;\n"
                     "        if (v%" PRIu32 "->length == "
                     "v%" PRIu32 "->capacity) {\n"
                     "            size_t capacity = v%" PRIu32
@@ -784,22 +826,38 @@ bool c_backend_emit_native_collections(
                     "aster_trap(\"out of memory\");\n"
                     "            v%" PRIu32 "->data = data;\n"
                     "            v%" PRIu32 "->capacity = capacity;\n"
-                    "        }\n"
-                    "        v%" PRIu32 "->data[v%" PRIu32
-                    "->length++] = ",
-                    instruction->result, instruction->result,
+                    "        }\n",
+                    instruction->result,
                     instruction->result, instruction->result,
                     instruction->result, instruction->result,
                     instruction->result, instruction->result,
                     instruction->result, instruction->result);
             bool copy = c_backend_type_requires_semantic_copy(
                 emitter->ir, element);
-            if (copy)
-                fprintf(output, "aster_clone_%" PRIu32 "(", element);
-            fprintf(output, "v%" PRIu32 "->data[i]", list);
-            fputs(copy ? ");\n" : ";\n",
-                  output);
-            fputs("    }\n", output);
+            if (copy) {
+                fputs("        ", output);
+                c_backend_emit_type(emitter, element);
+                fprintf(output,
+                        " list_retained_%" PRIu32 " = "
+                        "aster_clone_%" PRIu32
+                        "(v%" PRIu32 "->data[i]);\n"
+                        "        if (aster_exception_pending) break;\n"
+                        "        v%" PRIu32 "->data[v%" PRIu32
+                        "->length++] = list_retained_%" PRIu32 ";\n",
+                        instruction->result, element, list,
+                        instruction->result, instruction->result,
+                        instruction->result);
+            } else {
+                fprintf(output,
+                        "        v%" PRIu32 "->data[v%" PRIu32
+                        "->length++] = v%" PRIu32 "->data[i];\n",
+                        instruction->result, instruction->result, list);
+            }
+            fprintf(output,
+                    "    }\n"
+                    "    if (aster_exception_pending)\n"
+                    "        aster_drop_%" PRIu32 "(&v%" PRIu32 ");\n",
+                    instruction->result_type, instruction->result);
             return true;
         }
         if (strcmp(instruction->symbol, "List::FindIndex") == 0 ||
@@ -818,10 +876,11 @@ bool c_backend_emit_native_collections(
                         list);
             else
                 fputs("offset", output);
-            fputs(";\n        if (", output);
-            emit_list_callback_call(
-                emitter, element, callback, list, "at");
+            fputs(";\n", output);
+            emit_list_callback_evaluation(
+                emitter, instruction, element, callback, list, "at", true);
             fprintf(output,
+                    "        if (list_callback_%" PRIu32
                     ") { list_found_%" PRIu32 " = at; break; }\n"
                     "    }\n"
                     "    if (list_found_%" PRIu32
@@ -832,6 +891,7 @@ bool c_backend_emit_native_collections(
                     " == SIZE_MAX ? -INT32_C(1) : "
                     "(int32_t)list_found_%" PRIu32 ";\n",
                     instruction->result, instruction->result,
+                    instruction->result,
                     instruction->result, instruction->result,
                     instruction->result, instruction->result);
             return true;
@@ -840,53 +900,101 @@ bool c_backend_emit_native_collections(
             fprintf(output,
                     "    size_t list_write_%" PRIu32 " = 0U;\n"
                     "    size_t list_removed_%" PRIu32 " = 0U;\n"
-                    "    for (size_t read = 0U; read < v%" PRIu32
-                    "->length; ++read) {\n"
-                    "        if (",
-                    instruction->result, instruction->result, list);
-            emit_list_callback_call(
-                emitter, element, callback, list, "read");
-            fputs(") {\n", output);
+                    "    size_t list_original_%" PRIu32
+                    " = v%" PRIu32 "->length;\n"
+                    "    size_t list_read_%" PRIu32 " = 0U;\n"
+                    "    for (; list_read_%" PRIu32
+                    " < list_original_%" PRIu32
+                    "; ++list_read_%" PRIu32 ") {\n",
+                    instruction->result, instruction->result,
+                    instruction->result, list,
+                    instruction->result, instruction->result,
+                    instruction->result, instruction->result);
+            char read_index[64];
+            (void)snprintf(read_index, sizeof(read_index),
+                           "list_read_%" PRIu32, instruction->result);
+            emit_list_callback_evaluation(
+                emitter, instruction, element, callback, list,
+                read_index, true);
+            fprintf(output,
+                    "        if (list_callback_%" PRIu32 ") {\n",
+                    instruction->result);
             if (c_backend_type_needs_drop(emitter, element))
                 fprintf(output,
                         "            aster_drop_%" PRIu32
-                        "(&v%" PRIu32 "->data[read]);\n",
-                        element, list);
+                        "(&v%" PRIu32 "->data[list_read_%" PRIu32 "]);\n",
+                        element, list, instruction->result);
             fprintf(output,
                     "            ++list_removed_%" PRIu32 ";\n"
                     "        } else {\n"
                     "            if (list_write_%" PRIu32
-                    " != read) v%" PRIu32
+                    " != list_read_%" PRIu32 ") v%" PRIu32
                     "->data[list_write_%" PRIu32
-                    "] = v%" PRIu32 "->data[read];\n"
+                    "] = v%" PRIu32 "->data[list_read_%" PRIu32 "];\n"
                     "            ++list_write_%" PRIu32 ";\n"
                     "        }\n"
-                    "    }\n"
-                    "    v%" PRIu32 "->length = list_write_%" PRIu32
+                    "    }\n",
+                    instruction->result,
+                    instruction->result, instruction->result, list,
+                    instruction->result, list, instruction->result,
+                    instruction->result);
+            fprintf(output,
+                    "    if (aster_exception_pending) {\n"
+                    "        size_t remaining = list_original_%" PRIu32
+                    " - list_read_%" PRIu32 ";\n"
+                    "        if (remaining != 0U && list_write_%" PRIu32
+                    " != list_read_%" PRIu32 ")\n"
+                    "            memmove(&v%" PRIu32
+                    "->data[list_write_%" PRIu32 "], &v%" PRIu32
+                    "->data[list_read_%" PRIu32 "],\n"
+                    "                    remaining * sizeof(*v%" PRIu32
+                    "->data));\n"
+                    "        v%" PRIu32 "->length = list_write_%" PRIu32
+                    " + remaining;\n"
+                    "    } else {\n",
+                    instruction->result, instruction->result,
+                    instruction->result, instruction->result,
+                    list, instruction->result, list,
+                    instruction->result, list, list,
+                    instruction->result);
+            fprintf(output,
+                    "        v%" PRIu32 "->length = list_write_%" PRIu32
                     ";\n"
+                    "    }\n"
+                    "    if (v%" PRIu32 "->length < list_original_%" PRIu32
+                    ")\n"
+                    "        memset(&v%" PRIu32 "->data[v%" PRIu32
+                    "->length], 0, (list_original_%" PRIu32
+                    " - v%" PRIu32 "->length) * sizeof(*v%" PRIu32
+                    "->data));\n",
+                    list, instruction->result,
+                    list, instruction->result,
+                    list, list, instruction->result,
+                    list, list);
+            fprintf(output,
                     "    if (list_removed_%" PRIu32
                     " > (size_t)INT32_MAX)\n"
                     "        aster_trap(\"removed count exceeds int range\");\n"
                     "    v%" PRIu32 " = (int32_t)list_removed_%" PRIu32
                     ";\n",
-                    instruction->result, instruction->result, list,
-                    instruction->result, list,
-                    instruction->result, list, instruction->result,
                     instruction->result, instruction->result,
                     instruction->result);
             fprintf(output,
-                    "    ASTER_LIST_MUTATION(v%" PRIu32
+                    "    if (!aster_exception_pending || "
+                    "list_removed_%" PRIu32 " != 0U)\n"
+                    "        ASTER_LIST_MUTATION(v%" PRIu32
                     ", 255U, 0U, 1U);\n",
-                    list);
+                    instruction->result, list);
             return true;
         }
         fprintf(output,
                 "    for (size_t i = 0U; i < v%" PRIu32
-                "->length; ++i) (void)", list);
-        emit_list_callback_call(
-            emitter, element, callback, list, "i");
+                "->length; ++i) {\n", list);
+        emit_list_callback_evaluation(
+            emitter, instruction, element, callback, list, "i", false);
         fprintf(output,
-                ";\n    v%" PRIu32 " = UINT8_C(0);\n",
+                "    }\n"
+                "    v%" PRIu32 " = UINT8_C(0);\n",
                 instruction->result);
         return true;
     }

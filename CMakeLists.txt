@@ -420,6 +420,17 @@ add_aster_generated_c_test(
     tests/list_callback_custom_copy.as
     list_callback_custom_copy
     "-DEXPECTED_OUTPUT=11\ntrue\n12\n21\n")
+add_test(NAME list_callback_exceptions_vm
+    COMMAND lang run-ir tests/list_callback_exceptions.as)
+set_tests_properties(list_callback_exceptions_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "11[\r\n]+copy failed[\r\n]+3[\r\n]+nested copy failed[\r\n]+1[\r\n]+2[\r\n]+callback failed[\r\n]+99[\r\n]+predicate failed[\r\n]+predicate failed[\r\n]+predicate failed[\r\n]+predicate failed[\r\n]+find failed[\r\n]+3[\r\n]+remove failed[\r\n]+3[\r\n]+keep[\r\n]+boom[\r\n]+tail")
+add_aster_generated_c_test(
+    list_callback_exceptions_generated_c
+    tests/list_callback_exceptions.as
+    list_callback_exceptions
+    "-DEXPECTED_OUTPUT=11\ncopy failed\n3\nnested copy failed\n1\n2\ncallback failed\n99\npredicate failed\npredicate failed\npredicate failed\npredicate failed\nfind failed\n3\nremove failed\n3\nkeep\nboom\ntail\n")
 add_test(NAME list_callback_noncopyable_rejected
     COMMAND lang check tests/checker/list_callback_noncopyable.as)
 set_tests_properties(list_callback_noncopyable_rejected PROPERTIES

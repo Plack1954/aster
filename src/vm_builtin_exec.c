@@ -580,7 +580,10 @@ static bool vm_list_call_callback(
         return false;
     LangValue callback_result = vm_invoke_function_value(
         vm, callback, &argument, 1U, span);
-    if (vm->trapped) return false;
+    if (vm->trapped || vm->exception_pending) {
+        vm_value_drop_owned(vm, callback_result);
+        return false;
+    }
     if (expects_bool && callback_result.tag != LANG_VALUE_BOOL) {
         vm_value_drop_owned(vm, callback_result);
         return false;

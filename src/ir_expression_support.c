@@ -1274,6 +1274,8 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         ir_set_native_call_descriptor(
             builder, call, false, registry_dispatch);
     }
+    const char *call_symbol = call->symbol != NULL
+        ? call->symbol : callee_name;
     IrValueId result = call->result;
     for (size_t i = borrowed_temporary_count; i > 0U; --i) {
         IrInstruction *drop = ir_append_instruction(
@@ -1293,9 +1295,16 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     free(borrowed_place_counts);
     bool registered_native = target != NULL &&
         target->kind == DECL_FUNCTION && target->as.function.is_extern;
-    bool builtin_may_throw = callee_name != NULL &&
-        strcmp(callee_name,
-               "CancellationToken::ThrowIfCancellationRequested") == 0;
+    bool builtin_may_throw = call_symbol != NULL &&
+        (strcmp(call_symbol,
+                "CancellationToken::ThrowIfCancellationRequested") == 0 ||
+         strcmp(call_symbol, "List::Exists") == 0 ||
+         strcmp(call_symbol, "List::FindAll") == 0 ||
+         strcmp(call_symbol, "List::FindIndex") == 0 ||
+         strcmp(call_symbol, "List::FindLastIndex") == 0 ||
+         strcmp(call_symbol, "List::RemoveAll") == 0 ||
+         strcmp(call_symbol, "List::ForEach") == 0 ||
+         strcmp(call_symbol, "List::TrueForAll") == 0);
     if (!native || registered_native || builtin_may_throw) {
         IrInstruction *pending = ir_append_instruction(
             builder, IR_OP_EXCEPTION_PENDING,

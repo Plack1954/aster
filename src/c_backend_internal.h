@@ -111,9 +111,6 @@ void emit_dictionary_key_equality(
 void emit_dictionary_value_equality(
     CEmitter *emitter, const IrType *value,
     IrValueId dictionary, const char *index, IrValueId candidate);
-void emit_list_callback_call(
-    CEmitter *emitter, IrTypeId element,
-    IrValueId callback, IrValueId list, const char *index);
 void c_backend_emit_native_instruction(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction);

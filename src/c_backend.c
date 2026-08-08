@@ -412,23 +412,6 @@ void emit_dictionary_value_equality(
     }
 }
 
-void emit_list_callback_call(
-    CEmitter *emitter, IrTypeId element,
-    IrValueId callback, IrValueId list, const char *index) {
-    FILE *output = emitter->output;
-    fprintf(output,
-            "v%" PRIu32 ".invoke(v%" PRIu32 ".receiver, ",
-            callback, callback);
-    bool copy = c_backend_type_requires_semantic_copy(
-        emitter->ir, element);
-    if (copy)
-        fprintf(output, "aster_clone_%" PRIu32 "(", element);
-    fprintf(output, "v%" PRIu32 "->data[%s]", list, index);
-    if (copy)
-        fputc(')', output);
-    fputc(')', output);
-}
-
 const IrInstruction *c_backend_find_value_producer(
     const IrFunction *function, IrValueId value) {
     for (size_t block = 0U; block < function->block_count; ++block)

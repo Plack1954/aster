@@ -63,9 +63,13 @@
                 LangValue *args = &stack[sp - count];
                 LangValue result;
                 if (instruction.a < 0) {
-                    if (!vm_call_builtin(vm, instruction.a, args, count, &result,
-                                      instruction_span))
+                    bool completed = vm_call_builtin(
+                        vm, instruction.a, args, count, &result,
+                        instruction_span);
+                    if (!completed && !vm->exception_pending)
                         goto fail;
+                    if (!completed)
+                        result = (LangValue){.tag=LANG_VALUE_UNIT};
                     for (size_t i = 0U; i < count; ++i)
                         if (i >= call_site->argument_count ||
                             !parameter_mode_is_reference(

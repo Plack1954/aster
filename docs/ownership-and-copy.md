@@ -113,6 +113,9 @@ Collection callbacks whose parameter is passed by value follow the same rule.
 element through its semantic copy operation, including custom copy
 constructors nested inside aggregates. They reject noncopyable element types;
 the collection keeps ownership of its elements throughout the callback.
+If copying or invoking a callback throws, iteration stops before the next
+element. Partial `FindAll` results are destroyed, while a partially completed
+`RemoveAll` retains a valid list containing the unprocessed suffix.
 
 ## Classes and unsafe code
 
