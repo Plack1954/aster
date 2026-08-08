@@ -15,6 +15,8 @@ static void mark_c_type(CEmitter *emitter, IrTypeId type_id) {
     const IrType *type = &emitter->ir->types[type_id];
     if (c_backend_type_is_native_handle(type))
         emitter->needs_native_runtime = true;
+    if (type->copy_function != IR_INVALID_ID)
+        c_backend_mark_function(emitter, type->copy_function);
     if (type->destructor_function != IR_INVALID_ID)
         c_backend_mark_function(emitter, type->destructor_function);
     if (type->element_type != IR_INVALID_ID)
@@ -129,7 +131,8 @@ bool c_backend_function_needs_normal_variant(
                 return true;
     for (size_t t = 0U; t < ir->type_count; ++t)
         if (emitter->used_types[t] &&
-            ir->types[t].destructor_function == function_index)
+            (ir->types[t].destructor_function == function_index ||
+             ir->types[t].copy_function == function_index))
             return true;
     for (size_t f = 0U; f < ir->function_count; ++f) {
         if (!emitter->reachable_functions[f]) continue;

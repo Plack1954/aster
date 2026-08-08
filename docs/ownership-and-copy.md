@@ -108,6 +108,12 @@ An index read cannot remove an element while preserving its container shape.
 It therefore copies a copyable non-trivial element. A noncopyable stored value
 must be accessed through a borrowing or consuming collection API instead.
 
+Collection callbacks whose parameter is passed by value follow the same rule.
+`List<T>.ForEach`, predicate methods, and `FindAll` pass each retained list
+element through its semantic copy operation, including custom copy
+constructors nested inside aggregates. They reject noncopyable element types;
+the collection keeps ownership of its elements throughout the callback.
+
 ## Classes and unsafe code
 
 Class values are non-owning references with explicit `delete`; assignment

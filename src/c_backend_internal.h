@@ -71,6 +71,8 @@ bool c_backend_type_is_task(const IrType *type);
 bool c_backend_type_is_cancellation(const IrType *type);
 bool c_backend_type_clone_supported(const IrModule *ir,
                                     IrTypeId type_id);
+bool c_backend_type_requires_semantic_copy(const IrModule *ir,
+                                           IrTypeId type_id);
 bool c_backend_type_is_supported(const IrModule *ir,
                                  IrTypeId type_id);
 void c_backend_emit_type(CEmitter *emitter, IrTypeId type_id);

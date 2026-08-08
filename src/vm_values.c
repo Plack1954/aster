@@ -627,45 +627,71 @@ void vm_object_free(LangVM *vm, Object *object) {
     if (free_container) free(object);
 }
 
-static Object *object_clone(const Object *source);
-LangValue vm_value_clone(LangValue value) {
-    if (value.tag == LANG_VALUE_OBJECT) {
-        Object *object = value.as.object;
-        if (object == NULL) {
-            return value;
-        }
-        if (
-            (object->kind == OBJECT_STRING ||
-             object->kind == OBJECT_NATIVE_HANDLE ||
-             object->kind == OBJECT_CANCELLATION ||
-             object->kind == OBJECT_TASK)) {
-            if (object->references == SIZE_MAX) return value;
-            if (object->references == 0U) object->references = 1U;
-            ++object->references;
-        } else {
-            value.as.object = object_clone(object);
+static uint32_t vm_custom_copy_for_metadata(
+    const LangVM *vm, const char *metadata) {
+    if (vm == NULL || vm->module == NULL || metadata == NULL) return 0U;
+    const char *type_name = metadata;
+    const char *module_separator = strchr(metadata, '#');
+    size_t module_length = 0U;
+    if (module_separator != NULL) {
+        module_length = (size_t)(module_separator - metadata);
+        type_name = module_separator + 1;
+    }
+    size_t type_length = strlen(type_name);
+    const char *field_separator = strchr(type_name, '|');
+    const char *variant_separator = strstr(type_name, "::");
+    if (field_separator != NULL)
+        type_length = (size_t)(field_separator - type_name);
+    if (variant_separator != NULL &&
+        (size_t)(variant_separator - type_name) < type_length)
+        type_length = (size_t)(variant_separator - type_name);
+    for (size_t i = 0U; i < vm->module->custom_copy_count; ++i) {
+        const BytecodeCustomCopy *entry = &vm->module->custom_copies[i];
+        if (entry->runtime_module_length == module_length &&
+            entry->runtime_type_length == type_length &&
+            (module_length == 0U ||
+             memcmp(entry->runtime_module, metadata, module_length) == 0) &&
+            memcmp(entry->runtime_type, type_name, type_length) == 0) {
+            if (entry->copy_function >= UINT32_MAX) return 0U;
+            return (uint32_t)entry->copy_function + 1U;
         }
     }
-    return value;
+    return 0U;
 }
 
-static Object *object_clone(const Object *source) {
+static bool clone_value(
+    LangVM *vm, LangValue value, bool semantic, LangSpan span,
+    LangValue *out_value);
+
+static Object *object_clone(
+    LangVM *vm, const Object *source, bool semantic, LangSpan span,
+    bool *ok) {
     Object *copy = vm_allocate(1U, sizeof(*copy));
+    memset(copy, 0, sizeof(*copy));
     copy->kind = source->kind;
     copy->language_destructor = source->language_destructor;
     switch (source->kind) {
         case OBJECT_ARRAY:
-            copy->as.array.count = source->as.array.count;
-            copy->as.array.items = vm_allocate(copy->as.array.count, sizeof(LangValue));
-            for (size_t i = 0U; i < copy->as.array.count; ++i)
-                copy->as.array.items[i] = vm_value_clone(source->as.array.items[i]);
+            copy->as.array.items = vm_allocate(
+                source->as.array.count, sizeof(LangValue));
+            for (size_t i = 0U; i < source->as.array.count; ++i) {
+                if (!clone_value(vm, source->as.array.items[i], semantic,
+                                 span, &copy->as.array.items[i]))
+                    goto fail;
+                ++copy->as.array.count;
+            }
             break;
         case OBJECT_STRUCT:
             copy->as.structure.metadata = copy_string(source->as.structure.metadata);
-            copy->as.structure.count = source->as.structure.count;
-            copy->as.structure.fields = vm_allocate(copy->as.structure.count, sizeof(LangValue));
-            for (size_t i = 0U; i < copy->as.structure.count; ++i)
-                copy->as.structure.fields[i] = vm_value_clone(source->as.structure.fields[i]);
+            copy->as.structure.fields = vm_allocate(
+                source->as.structure.count, sizeof(LangValue));
+            for (size_t i = 0U; i < source->as.structure.count; ++i) {
+                if (!clone_value(vm, source->as.structure.fields[i],
+                                 semantic, span,
+                                 &copy->as.structure.fields[i]))
+                    goto fail;
+                ++copy->as.structure.count;
+            }
             break;
         case OBJECT_HTML:
             while (source->as.html.destination != NULL)
@@ -723,23 +749,28 @@ static Object *object_clone(const Object *source) {
                 copy->as.string_builder.length] = '\0';
             break;
         case OBJECT_VEC:
-            copy->as.vector.count = source->as.vector.count;
             copy->as.vector.capacity = source->as.vector.count;
             copy->as.vector.items = vm_allocate(
                 copy->as.vector.capacity, sizeof(*copy->as.vector.items));
-            for (size_t i = 0U; i < copy->as.vector.count; ++i)
-                copy->as.vector.items[i] =
-                    vm_value_clone(source->as.vector.items[i]);
+            for (size_t i = 0U; i < source->as.vector.count; ++i) {
+                if (!clone_value(vm, source->as.vector.items[i], semantic,
+                                 span, &copy->as.vector.items[i]))
+                    goto fail;
+                ++copy->as.vector.count;
+            }
             break;
         case OBJECT_DICTIONARY:
-            copy->as.dictionary.count = source->as.dictionary.count;
             copy->as.dictionary.capacity = source->as.dictionary.count;
             copy->as.dictionary.items = vm_allocate(
                 copy->as.dictionary.capacity,
                 sizeof(*copy->as.dictionary.items));
-            for (size_t i = 0U; i < copy->as.dictionary.count; ++i)
-                copy->as.dictionary.items[i] =
-                    vm_value_clone(source->as.dictionary.items[i]);
+            for (size_t i = 0U; i < source->as.dictionary.count; ++i) {
+                if (!clone_value(vm, source->as.dictionary.items[i],
+                                 semantic, span,
+                                 &copy->as.dictionary.items[i]))
+                    goto fail;
+                ++copy->as.dictionary.count;
+            }
             copy->as.dictionary.bucket_count =
                 source->as.dictionary.bucket_count;
             copy->as.dictionary.buckets = vm_allocate(
@@ -752,15 +783,19 @@ static Object *object_clone(const Object *source) {
                            sizeof(*copy->as.dictionary.buckets));
             break;
         case OBJECT_QUEUE:
-            copy->as.queue.count = source->as.queue.count;
             copy->as.queue.capacity = source->as.queue.count;
             copy->as.queue.items = vm_allocate(
                 copy->as.queue.capacity, sizeof(*copy->as.queue.items));
-            for (size_t i = 0U; i < copy->as.queue.count; ++i)
-                copy->as.queue.items[i] = vm_value_clone(
-                    source->as.queue.items[
-                        (source->as.queue.head + i) %
-                        source->as.queue.capacity]);
+            for (size_t i = 0U; i < source->as.queue.count; ++i) {
+                if (!clone_value(
+                        vm,
+                        source->as.queue.items[
+                            (source->as.queue.head + i) %
+                            source->as.queue.capacity],
+                        semantic, span, &copy->as.queue.items[i]))
+                    goto fail;
+                ++copy->as.queue.count;
+            }
             break;
         case OBJECT_BUFFER:
             copy->as.buffer.length = source->as.buffer.length;
@@ -781,7 +816,9 @@ static Object *object_clone(const Object *source) {
         case OBJECT_CANCELLATION:
             break;
         case OBJECT_ITER:
-            copy->as.iterator.array = object_clone(source->as.iterator.array);
+            copy->as.iterator.array = object_clone(
+                vm, source->as.iterator.array, semantic, span, ok);
+            if (!*ok) goto fail;
             copy->as.iterator.bytes = source->as.iterator.bytes;
             copy->as.iterator.index = source->as.iterator.index;
             copy->as.iterator.borrowed = false;
@@ -793,6 +830,62 @@ static Object *object_clone(const Object *source) {
             break;
     }
     return copy;
+fail:
+    *ok = false;
+    vm_object_free(vm, copy);
+    return NULL;
+}
+
+static bool clone_value(
+    LangVM *vm, LangValue value, bool semantic, LangSpan span,
+    LangValue *out_value) {
+    if (out_value == NULL) return false;
+    if (value.tag != LANG_VALUE_OBJECT || value.as.object == NULL) {
+        *out_value = value;
+        return true;
+    }
+    Object *object = value.as.object;
+    if (semantic && object->kind == OBJECT_STRUCT) {
+        uint32_t copy_function = vm_custom_copy_for_metadata(
+            vm, object->as.structure.metadata);
+        if (copy_function != 0U) {
+            LangValue source = value;
+            LangValue reference = {
+                .tag=LANG_VALUE_RAW_POINTER,
+                .as.pointer=&source
+            };
+            *out_value = vm_execute_function(
+                vm, (size_t)(copy_function - 1U), &reference, 1U, span);
+            return !vm->trapped && !vm->exception_pending;
+        }
+    }
+    if (object->kind == OBJECT_STRING ||
+        object->kind == OBJECT_NATIVE_HANDLE ||
+        object->kind == OBJECT_CANCELLATION ||
+        object->kind == OBJECT_TASK) {
+        if (object->references != SIZE_MAX) {
+            if (object->references == 0U) object->references = 1U;
+            ++object->references;
+        }
+        *out_value = value;
+        return true;
+    }
+    bool ok = true;
+    value.as.object = object_clone(vm, object, semantic, span, &ok);
+    if (!ok) return false;
+    *out_value = value;
+    return true;
+}
+
+LangValue vm_value_clone(LangValue value) {
+    LangValue result = (LangValue){.tag=LANG_VALUE_UNIT};
+    (void)clone_value(NULL, value, false, (LangSpan){0}, &result);
+    return result;
+}
+
+bool vm_value_semantic_copy(
+    LangVM *vm, LangValue value, LangSpan span, LangValue *out_value) {
+    return clone_value(vm, value, true, span, out_value);
 }
 
 uint32_t vm_language_destructor_for_metadata(

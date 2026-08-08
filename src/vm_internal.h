@@ -196,6 +196,8 @@ int64_t vm_string_index_of_ordinal(
     LangStringView value, LangStringView needle, size_t start);
 void *vm_allocate_uninitialized(size_t count, size_t size);
 LangValue vm_value_clone(LangValue value);
+bool vm_value_semantic_copy(LangVM *vm, LangValue value, LangSpan span,
+                            LangValue *out_value);
 uint32_t vm_language_destructor_for_metadata(
     const LangVM *vm, const char *metadata);
 LangValue vm_execute_function(LangVM *vm, size_t function_index,

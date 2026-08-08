@@ -792,11 +792,12 @@ bool c_backend_emit_native_collections(
                     instruction->result, instruction->result,
                     instruction->result, instruction->result,
                     instruction->result, instruction->result);
-            if (c_backend_type_needs_drop(emitter, element))
+            bool copy = c_backend_type_requires_semantic_copy(
+                emitter->ir, element);
+            if (copy)
                 fprintf(output, "aster_clone_%" PRIu32 "(", element);
             fprintf(output, "v%" PRIu32 "->data[i]", list);
-            fputs(c_backend_type_needs_drop(emitter, element)
-                      ? ");\n" : ";\n",
+            fputs(copy ? ");\n" : ";\n",
                   output);
             fputs("    }\n", output);
             return true;

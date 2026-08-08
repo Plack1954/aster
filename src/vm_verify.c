@@ -318,7 +318,9 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
         (module->virtual_entry_count != 0U &&
          module->virtual_entries == NULL) ||
         (module->class_destructor_count != 0U &&
-         module->class_destructors == NULL))
+         module->class_destructors == NULL) ||
+        (module->custom_copy_count != 0U &&
+         module->custom_copies == NULL))
         return false;
     for (size_t entry = 0U;
          entry < module->virtual_entry_count; ++entry) {
@@ -341,6 +343,23 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
             destructor->destructor_function >= module->function_count ||
             (destructor->runtime_module_length != 0U &&
              destructor->runtime_module == NULL))
+            return false;
+    }
+    for (size_t entry = 0U;
+         entry < module->custom_copy_count; ++entry) {
+        const BytecodeCustomCopy *copy = &module->custom_copies[entry];
+        if (copy->runtime_type == NULL ||
+            copy->runtime_type_length == 0U ||
+            copy->copy_function >= module->function_count ||
+            (copy->runtime_module_length != 0U &&
+             copy->runtime_module == NULL))
+            return false;
+        const BytecodeFunction *function =
+            &module->functions[copy->copy_function];
+        if (function->arity != 1U ||
+            function->parameter_modes == NULL ||
+            function->parameter_modes[0] !=
+                PARAMETER_MODE_IMMUTABLE_REFERENCE)
             return false;
     }
     for (size_t f = 0U; f < module->function_count; ++f) {

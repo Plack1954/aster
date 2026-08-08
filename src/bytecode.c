@@ -29,6 +29,7 @@ void lang_bytecode_free(BytecodeModule *bytecode) {
     free(bytecode->static_defaults);
     free(bytecode->virtual_entries);
     free(bytecode->class_destructors);
+    free(bytecode->custom_copies);
     memset(bytecode, 0, sizeof(*bytecode));
 }
 

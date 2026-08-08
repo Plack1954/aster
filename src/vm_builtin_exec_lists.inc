@@ -255,7 +255,9 @@
                 if (!vm_list_call_callback(
                         vm, callback, list->as.vector.items[i],
                         instruction_span, true, &matched)) {
-                    runtime_error(vm, instruction, "invalid List predicate");
+                    if (!vm->trapped && !vm->exception_pending)
+                        runtime_error(
+                            vm, instruction, "invalid List predicate");
                     return false;
                 }
                 if ((index == -46 && matched) ||
@@ -277,7 +279,9 @@
                         vm, callback, list->as.vector.items[i],
                         instruction_span, true, &matched)) {
                     vm_object_free(vm, matches);
-                    runtime_error(vm, instruction, "invalid List predicate");
+                    if (!vm->trapped && !vm->exception_pending)
+                        runtime_error(
+                            vm, instruction, "invalid List predicate");
                     return false;
                 }
                 if (!matched) continue;
@@ -287,8 +291,14 @@
                                   "out of memory growing List");
                     return false;
                 }
-                matches->as.vector.items[matches->as.vector.count++] =
-                    vm_value_clone(list->as.vector.items[i]);
+                LangValue copied;
+                if (!vm_value_semantic_copy(
+                        vm, list->as.vector.items[i], instruction_span,
+                        &copied)) {
+                    vm_object_free(vm, matches);
+                    return false;
+                }
+                matches->as.vector.items[matches->as.vector.count++] = copied;
             }
             result->tag = LANG_VALUE_OBJECT;
             result->as.object = matches;
@@ -346,7 +356,9 @@
                 if (!vm_list_call_callback(
                         vm, callback, list->as.vector.items[at],
                         instruction_span, true, &matched)) {
-                    runtime_error(vm, instruction, "invalid List predicate");
+                    if (!vm->trapped && !vm->exception_pending)
+                        runtime_error(
+                            vm, instruction, "invalid List predicate");
                     return false;
                 }
                 if (matched) { found = at; break; }
@@ -367,7 +379,9 @@
                 if (!vm_list_call_callback(
                         vm, callback, list->as.vector.items[read],
                         instruction_span, true, &matched)) {
-                    runtime_error(vm, instruction, "invalid List predicate");
+                    if (!vm->trapped && !vm->exception_pending)
+                        runtime_error(
+                            vm, instruction, "invalid List predicate");
                     return false;
                 }
                 if (matched) {
@@ -397,7 +411,8 @@
             if (!vm_list_call_callback(
                     vm, callback, list->as.vector.items[i],
                     instruction_span, false, NULL)) {
-                runtime_error(vm, instruction, "invalid List action");
+                if (!vm->trapped && !vm->exception_pending)
+                    runtime_error(vm, instruction, "invalid List action");
                 return false;
             }
         }

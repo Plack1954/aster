@@ -419,10 +419,12 @@ void emit_list_callback_call(
     fprintf(output,
             "v%" PRIu32 ".invoke(v%" PRIu32 ".receiver, ",
             callback, callback);
-    if (c_backend_type_needs_drop(emitter, element))
+    bool copy = c_backend_type_requires_semantic_copy(
+        emitter->ir, element);
+    if (copy)
         fprintf(output, "aster_clone_%" PRIu32 "(", element);
     fprintf(output, "v%" PRIu32 "->data[%s]", list, index);
-    if (c_backend_type_needs_drop(emitter, element))
+    if (copy)
         fputc(')', output);
     fputc(')', output);
 }

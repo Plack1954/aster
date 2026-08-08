@@ -410,6 +410,21 @@ add_aster_generated_c_test(
     tests/list_custom_copy_cleanup.as
     list_custom_copy_cleanup
     "-DEXPECTED_OUTPUT=2\n1\n")
+add_test(NAME list_callback_custom_copy_vm
+    COMMAND lang run tests/list_callback_custom_copy.as)
+set_tests_properties(list_callback_custom_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "11[\r\n]+true[\r\n]+12[\r\n]+21")
+add_aster_generated_c_test(
+    list_callback_custom_copy_generated_c
+    tests/list_callback_custom_copy.as
+    list_callback_custom_copy
+    "-DEXPECTED_OUTPUT=11\ntrue\n12\n21\n")
+add_test(NAME list_callback_noncopyable_rejected
+    COMMAND lang check tests/checker/list_callback_noncopyable.as)
+set_tests_properties(list_callback_noncopyable_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
 add_test(NAME list_deleted_copy_rejected
     COMMAND lang check tests/checker/list_deleted_copy.as)
 set_tests_properties(list_deleted_copy_rejected PROPERTIES

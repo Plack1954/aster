@@ -575,7 +575,9 @@ static bool vm_list_call_callback(
     if (callback.tag != LANG_VALUE_FUNCTION &&
         callback.tag != LANG_VALUE_BOUND_FUNCTION)
         return false;
-    LangValue argument = vm_value_clone(item);
+    LangValue argument;
+    if (!vm_value_semantic_copy(vm, item, span, &argument))
+        return false;
     LangValue callback_result = vm_invoke_function_value(
         vm, callback, &argument, 1U, span);
     if (vm->trapped) return false;

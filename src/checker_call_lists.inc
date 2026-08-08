@@ -339,6 +339,12 @@
                       "`%s` expects a function taking `%s` and returning `%s`",
                       name, list->element->name,
                       action ? "void" : "bool");
+        if (!type_is_copyable(checker, list->element))
+            lang_diag(
+                checker->diagnostics,
+                expr->as.call.arguments.items[0]->span,
+                "`%s` cannot copy noncopyable element type `%s`",
+                name, list->element->name);
         for (size_t i = 1U; i < callback_index; ++i) {
             (void)coerce_literal(
                 checker, expr->as.call.arguments.items[i], &type_usize);

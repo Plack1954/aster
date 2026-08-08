@@ -1128,6 +1128,14 @@ typedef struct BytecodeClassDestructor {
     size_t destructor_function;
 } BytecodeClassDestructor;
 
+typedef struct BytecodeCustomCopy {
+    const char *runtime_module;
+    size_t runtime_module_length;
+    const char *runtime_type;
+    size_t runtime_type_length;
+    size_t copy_function;
+} BytecodeCustomCopy;
+
 typedef struct BytecodeModule {
     BytecodeFunction *functions;
     size_t function_count;
@@ -1140,6 +1148,8 @@ typedef struct BytecodeModule {
     size_t virtual_entry_count;
     BytecodeClassDestructor *class_destructors;
     size_t class_destructor_count;
+    BytecodeCustomCopy *custom_copies;
+    size_t custom_copy_count;
 } BytecodeModule;
 
 bool lang_ir_compile_bytecode(const IrModule *ir,

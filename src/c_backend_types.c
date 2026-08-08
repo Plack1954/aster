@@ -146,6 +146,51 @@ bool c_backend_type_clone_supported(
     return supported;
 }
 
+static bool type_requires_semantic_copy_inner(
+    const IrModule *ir, IrTypeId type_id, bool *visiting
+) {
+    if (type_id >= ir->type_count || visiting[type_id]) return false;
+    const IrType *type = &ir->types[type_id];
+    if (type->copy_policy != IR_COPY_TRIVIAL) return true;
+    visiting[type_id] = true;
+    bool required = false;
+    if (c_backend_type_is_vec(type) || c_backend_type_is_queue(type) ||
+        type->shape == IR_TYPE_ARRAY)
+        required = type_requires_semantic_copy_inner(
+            ir, type->element_type, visiting);
+    else if (c_backend_type_is_dictionary(type))
+        required = type_requires_semantic_copy_inner(
+                ir, type->element_type, visiting) ||
+            type_requires_semantic_copy_inner(
+                ir, type->error_type, visiting);
+    else if (type->shape == IR_TYPE_STRUCT)
+        for (size_t field = 0U; field < type->field_count && !required;
+             ++field)
+            required = type_requires_semantic_copy_inner(
+                ir, type->field_types[field], visiting);
+    else if (type->shape == IR_TYPE_UNION)
+        for (size_t variant = 0U;
+             variant < type->variant_count && !required; ++variant) {
+            IrTypeId payload = type->variant_payload_types[variant];
+            if (payload != IR_INVALID_ID)
+                required = type_requires_semantic_copy_inner(
+                    ir, payload, visiting);
+        }
+    visiting[type_id] = false;
+    return required;
+}
+
+bool c_backend_type_requires_semantic_copy(
+    const IrModule *ir, IrTypeId type_id
+) {
+    bool *visiting = calloc(ir->type_count, sizeof(*visiting));
+    if (visiting == NULL) return true;
+    bool required = type_requires_semantic_copy_inner(
+        ir, type_id, visiting);
+    free(visiting);
+    return required;
+}
+
 static bool type_is_c_supported_inner(
     const IrModule *ir, IrTypeId type_id,
     bool *visiting, bool *resolved) {

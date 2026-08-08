@@ -496,6 +496,31 @@ bool lang_ir_compile_bytecode(const IrModule *ir,
                 .destructor_function=runtime->destructor_function
             };
     }
+    for (size_t type = 0U; type < ir->type_count; ++type)
+        if ((ir->types[type].shape == IR_TYPE_STRUCT ||
+             ir->types[type].shape == IR_TYPE_UNION) &&
+            ir->types[type].copy_function != IR_INVALID_ID)
+            ++bytecode->custom_copy_count;
+    bytecode->custom_copies = ir_bc_resize(
+        NULL, bytecode->custom_copy_count,
+        sizeof(*bytecode->custom_copies));
+    size_t copy_output = 0U;
+    for (size_t type = 0U; type < ir->type_count; ++type) {
+        const IrType *runtime = &ir->types[type];
+        if ((runtime->shape != IR_TYPE_STRUCT &&
+             runtime->shape != IR_TYPE_UNION) ||
+            runtime->copy_function == IR_INVALID_ID)
+            continue;
+        bytecode->custom_copies[copy_output++] =
+            (BytecodeCustomCopy){
+                .runtime_module=runtime->module_name,
+                .runtime_module_length=runtime->module_name != NULL
+                    ? strlen(runtime->module_name) : 0U,
+                .runtime_type=runtime->name,
+                .runtime_type_length=strlen(runtime->name),
+                .copy_function=runtime->copy_function
+            };
+    }
     for (size_t f = 0U; f < ir->function_count; ++f) {
         IrBytecodeBuilder builder;
         memset(&builder, 0, sizeof(builder));

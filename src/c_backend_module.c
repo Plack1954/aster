@@ -800,8 +800,9 @@ static void emit_clone_helper_prototypes(CEmitter *emitter) {
     for (size_t type = 0U;
          type < emitter->ir->type_count; ++type) {
         if (!emitter->used_types[type] ||
-            (!emitter->ir->types[type].requires_cleanup &&
-             !emitter->ir->types[type].managed) ||
+            emitter->ir->types[type].copy_policy == IR_COPY_NONCOPYABLE ||
+            !c_backend_type_requires_semantic_copy(
+                emitter->ir, (IrTypeId)type) ||
             !c_backend_type_clone_supported(
                 emitter->ir, (IrTypeId)type))
             continue;
@@ -822,7 +823,11 @@ static void emit_clone_helper(
             " aster_clone_%" PRIu32 "(", type_id);
     c_backend_emit_type(emitter, type_id);
     fputs(" value) {\n", emitter->output);
-    if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
+    if (type->copy_function != IR_INVALID_ID) {
+        fprintf(emitter->output,
+                "    return aster_fn_%" PRIu32 "(&value);\n",
+                type->copy_function);
+    } else if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
         strcmp(type->name, "string") == 0) {
         fputs("    return aster_string_clone(value);\n",
               emitter->output);
@@ -881,7 +886,8 @@ static void emit_clone_helper(
                 "        result->data = aster_allocate("
                 "value->length * sizeof(*result->data));\n"
                 "        for (size_t i = 0U; i < value->length; ++i)\n");
-        if (c_backend_type_needs_drop(emitter, type->element_type))
+        if (c_backend_type_requires_semantic_copy(
+                emitter->ir, type->element_type))
             fprintf(emitter->output,
                     "            result->data[i] = aster_clone_%" PRIu32
                     "(value->data[i]);\n",
@@ -904,7 +910,8 @@ static void emit_clone_helper(
                 "value->length * sizeof(*result->data));\n"
                 "        for (size_t i = 0U; i < value->length; ++i)\n",
                 type_id);
-        if (c_backend_type_needs_drop(emitter, type->element_type))
+        if (c_backend_type_requires_semantic_copy(
+                emitter->ir, type->element_type))
             fprintf(emitter->output,
                     "            result->data[i] = aster_clone_%" PRIu32
                     "(value->data[(value->head + i) %% value->capacity]);\n",
@@ -934,7 +941,8 @@ static void emit_clone_helper(
                 "value->length * sizeof(*result->hashes));\n"
                 "        for (size_t i = 0U; i < value->length; ++i) {\n",
                 type_id);
-        if (c_backend_type_needs_drop(emitter, type->element_type))
+        if (c_backend_type_requires_semantic_copy(
+                emitter->ir, type->element_type))
             fprintf(emitter->output,
                     "            result->keys[i] = aster_clone_%" PRIu32
                     "(value->keys[i]);\n",
@@ -942,7 +950,8 @@ static void emit_clone_helper(
         else
             fputs("            result->keys[i] = value->keys[i];\n",
                   emitter->output);
-        if (c_backend_type_needs_drop(emitter, type->error_type))
+        if (c_backend_type_requires_semantic_copy(
+                emitter->ir, type->error_type))
             fprintf(emitter->output,
                     "            result->values[i] = aster_clone_%" PRIu32
                     "(value->values[i]);\n",
@@ -961,7 +970,8 @@ static void emit_clone_helper(
         fputs(" result = value;\n", emitter->output);
         for (size_t field = 0U; field < type->field_count; ++field) {
             IrTypeId field_type = type->field_types[field];
-            if (!c_backend_type_needs_drop(emitter, field_type))
+            if (!c_backend_type_requires_semantic_copy(
+                    emitter->ir, field_type))
                 continue;
             fprintf(emitter->output,
                     "    result.f%zu = aster_clone_%" PRIu32
@@ -973,7 +983,8 @@ static void emit_clone_helper(
         fputs("    ", emitter->output);
         c_backend_emit_type(emitter, type_id);
         fputs(" result = value;\n", emitter->output);
-        if (c_backend_type_needs_drop(emitter, type->element_type))
+        if (c_backend_type_requires_semantic_copy(
+                emitter->ir, type->element_type))
             fprintf(emitter->output,
                     "    for (size_t i = 0U; i < %zuU; ++i)\n"
                     "        result.items[i] = aster_clone_%" PRIu32
@@ -990,7 +1001,8 @@ static void emit_clone_helper(
             IrTypeId payload =
                 type->variant_payload_types[variant];
             if (payload == IR_INVALID_ID ||
-                !c_backend_type_needs_drop(emitter, payload))
+                !c_backend_type_requires_semantic_copy(
+                    emitter->ir, payload))
                 continue;
             fprintf(emitter->output,
                     "        case UINT32_C(%zu):\n"
@@ -1013,8 +1025,9 @@ static void emit_clone_helpers(CEmitter *emitter) {
     for (size_t type = 0U;
          type < emitter->ir->type_count; ++type)
         if (emitter->used_types[type] &&
-            (emitter->ir->types[type].requires_cleanup ||
-             emitter->ir->types[type].managed) &&
+            emitter->ir->types[type].copy_policy != IR_COPY_NONCOPYABLE &&
+            c_backend_type_requires_semantic_copy(
+                emitter->ir, (IrTypeId)type) &&
             c_backend_type_clone_supported(
                 emitter->ir, (IrTypeId)type))
             emit_clone_helper(emitter, (IrTypeId)type);
