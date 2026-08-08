@@ -1,0 +1,1 @@
+<main><h1>Template benchmark</h1><script><%- value %></script><span><%= iteration %></span></main>

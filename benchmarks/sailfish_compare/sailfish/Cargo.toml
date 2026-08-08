@@ -1,0 +1,11 @@
+[package]
+name = "aster-sailfish-benchmark"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sailfish = { git = "https://github.com/rust-sailfish/sailfish", rev = "84de5ffe278c26eadb2341a0e1605e10dc4897a5" }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
