@@ -415,7 +415,8 @@ void lower_instruction(IrBytecodeBuilder *builder,
                         instruction->span, &index))
                 return;
             (void)emit_instruction(
-                builder, OP_INVALIDATE_LOCAL, index, 0,
+                builder, OP_INVALIDATE_LOCAL, index,
+                (int32_t)instruction->auxiliary,
                 instruction->span);
             return;
         case IR_OP_VALUE_CLONE:

@@ -519,8 +519,13 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                 IrInstruction *invalidate = ir_append_instruction(
                     builder, IR_OP_LOCAL_INVALIDATE, IR_INVALID_ID,
                     NULL, 0U, stmt->span);
-                if (invalidate != NULL)
+                if (invalidate != NULL) {
                     invalidate->index = source_local;
+                    /* The VM represents value aggregates with a heap shell.
+                     * All owned fields have moved, so reclaim that shell
+                     * without invoking the consumed value's destructor. */
+                    invalidate->auxiliary = 1U;
+                }
             }
             break;
         }

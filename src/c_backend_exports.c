@@ -697,6 +697,50 @@ void c_backend_emit_web_component_abis(
         const IrFunction *render = &ir->functions[render_index];
         IrTypeId type_id = constructor->return_type;
         const IrType *type = &ir->types[type_id];
+        /* These wrappers are externally visible to the browser loader.
+         * Declare the ABI before defining it so generated translation units
+         * remain clean under -Wmissing-prototypes. */
+        c_backend_emit_type(emitter, type_id);
+        fputs(" aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_new(", emitter->output);
+        if (constructor->parameter_count == 0U) {
+            fputs("void", emitter->output);
+        } else {
+            for (size_t parameter = 0U;
+                 parameter < constructor->parameter_count; ++parameter) {
+                if (parameter != 0U) fputs(", ", emitter->output);
+                const IrType *parameter_type = &ir->types[
+                    constructor->parameters[parameter].type];
+                if (web_parameter_is_string(parameter_type))
+                    fprintf(emitter->output,
+                            "const unsigned char *p%zu_data, size_t p%zu_length",
+                            parameter, parameter);
+                else {
+                    c_backend_emit_type(
+                        emitter, constructor->parameters[parameter].type);
+                    fprintf(emitter->output, " p%zu", parameter);
+                }
+            }
+        }
+        fputs(");\n", emitter->output);
+        c_backend_emit_type(emitter, render->return_type);
+        fputs(" aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_render(", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fputs(" value);\n", emitter->output);
+        c_backend_emit_type(emitter, render->return_type);
+        fputs(" aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_render_skip(", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fputs(" value, size_t skip);\n", emitter->output);
+        fputs("void aster_export_component_", emitter->output);
+        emit_web_identifier(emitter->output, method->owner_type);
+        fputs("_drop(", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fputs(" value);\n", emitter->output);
         c_backend_emit_type(emitter, type_id);
         fputs(" aster_export_component_", emitter->output);
         emit_web_identifier(emitter->output, method->owner_type);

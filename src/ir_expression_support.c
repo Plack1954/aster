@@ -743,10 +743,11 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             builder, IR_OP_RAW_ALLOC,
             ir_intern_type(builder->module, expr->type),
             operands, 2U, expr->span);
+        IrValueId result = allocation != NULL
+            ? allocation->result : IR_INVALID_ID;
         discard_local_place_borrows(
             builder, borrowed_values, borrowed_count, expr->span);
-        return allocation != NULL
-             ? allocation->result : IR_INVALID_ID;
+        return result;
     }
     if (callee_name != NULL &&
         strcmp(callee_name, "raw_load_i64") == 0) {

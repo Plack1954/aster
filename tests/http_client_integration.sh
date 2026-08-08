@@ -9,6 +9,7 @@ sqlite_library=$5
 curl_library=$6
 python=$7
 output_directory=$8
+sanitize=${9:-OFF}
 
 mkdir -p "$output_directory"
 port_file=$(mktemp)
@@ -39,9 +40,14 @@ ASTER_HTTP_TEST_ORIGIN="$origin" \
 libraries=("$http_client_library" "$runtime_library")
 if [[ -n "$sqlite_library" ]]; then libraries+=("$sqlite_library"); fi
 if [[ -n "$curl_library" ]]; then libraries+=("$curl_library"); fi
+sanitizer_flags=()
+if [[ "$sanitize" == "ON" ]]; then
+    sanitizer_flags=(-fsanitize=address,undefined -fno-omit-frame-pointer)
+fi
 "$c_compiler" \
     -std=c17 -Wall -Wextra -Wpedantic -Wconversion -Wshadow \
     -Wstrict-prototypes -Wmissing-prototypes -Werror \
+    "${sanitizer_flags[@]}" \
     -I include "$output_directory/client.c" "${libraries[@]}" \
     -o "$output_directory/client"
 ASTER_HTTP_TEST_ORIGIN="$origin" "$output_directory/client"

@@ -10,8 +10,7 @@ private Result<int, string> BuildSite()
 {
     string outputRoot = try NativeProcessArg(0);
     BlogApplication application = try CreateApp();
-    (WebApplication app, Blog state) = application;
-    SiteBuild built = try SiteBuild(app, outputRoot);
+    SiteBuild built = try SiteBuild(application.Application, outputRoot);
     Console.WriteLine($"Generated {built.files} files.");
     return Result.Ok(0);
 }

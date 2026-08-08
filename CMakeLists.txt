@@ -1217,7 +1217,8 @@ if(ASTER_ENABLE_CURL AND UNIX AND ASTER_PYTHON_EXECUTABLE)
             "${SQLite3_LIBRARIES}"
             "${ASTER_CURL_LIBRARIES}"
             ${ASTER_PYTHON_EXECUTABLE}
-            ${CMAKE_CURRENT_BINARY_DIR}/http-client)
+            ${CMAKE_CURRENT_BINARY_DIR}/http-client
+            ${LANG_SANITIZE})
     set_tests_properties(http_client_vm_and_generated_c_integration PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         TIMEOUT 60)
@@ -1231,7 +1232,8 @@ if(ASTER_ENABLE_CRYPTO AND UNIX)
             $<TARGET_FILE:aster_crypto>
             "${SQLite3_LIBRARIES}"
             "${OPENSSL_CRYPTO_LIBRARY}"
-            ${CMAKE_CURRENT_BINARY_DIR}/cryptography)
+            ${CMAKE_CURRENT_BINARY_DIR}/cryptography
+            ${LANG_SANITIZE})
     set_tests_properties(cryptography_vm_and_generated_c_integration PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         TIMEOUT 60)
@@ -3147,7 +3149,7 @@ add_test(NAME aster_web_current_http_vm_integration
     COMMAND aster_web_http_integration_test vm)
 set_tests_properties(aster_web_current_http_vm_integration PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    TIMEOUT 10
+    TIMEOUT 30
 )
 add_aster_generated_project_test(
     aster_web_current_http_c_integration

@@ -518,6 +518,10 @@ static IrValueId lower_component_element(IrBuilder *builder,
             if (parent_local != IR_INVALID_ID && target->has_render_root)
                 render->render_destination = parent_local;
         }
+        /* Appending the cleanup instructions may reallocate the current
+         * block, so retain the stable SSA id rather than the instruction
+         * pointer. */
+        IrValueId render_result = render->result;
         IrInstruction *delete_load = ir_append_instruction(
             builder, IR_OP_LOCAL_LOAD, call_type,
             NULL, 0U, expr->span);
@@ -528,7 +532,7 @@ static IrValueId lower_component_element(IrBuilder *builder,
             builder, IR_OP_CLASS_DELETE, IR_INVALID_ID,
             &delete_value, 1U, expr->span);
         (void)drop;
-        call_result = render->result;
+        call_result = render_result;
     }
     for (size_t i = temporary_count; i > 0U; --i) {
         IrInstruction *drop = ir_append_instruction(

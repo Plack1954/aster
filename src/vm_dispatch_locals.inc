@@ -115,9 +115,21 @@
                 break;
             }
             VM_LABEL(invalidate_local)
-            case OP_INVALIDATE_LOCAL:
-                initialized[(size_t)instruction.a] = false;
+            case OP_INVALIDATE_LOCAL: {
+                size_t slot = (size_t)instruction.a;
+                /* A flagged invalidation ends deconstruction after every
+                 * owned field has transferred.  Do not run the consumed
+                 * value's destructor, but reclaim the VM-only heap shell.
+                 * Ordinary temporary invalidations carry no such ownership. */
+                if (instruction.b != 0 && initialized[slot] &&
+                    references[slot] == NULL &&
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT &&
+                    LOCAL(slot).as.object != NULL &&
+                    ((Object *)LOCAL(slot).as.object)->kind == OBJECT_STRUCT)
+                    vm_object_free(vm, (Object *)LOCAL(slot).as.object);
+                initialized[slot] = false;
                 break;
+            }
             VM_LABEL(load_static)
             case OP_LOAD_STATIC:
                 PUSH(vm->static_fields[(size_t)instruction.a]);
