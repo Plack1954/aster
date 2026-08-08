@@ -64,9 +64,10 @@ static Type *check_match_expression(Checker *checker, Expr *expr) {
         .kind=STMT_MATCH,
         .span=expr->span,
         .as.match_={
-            expr->as.match_.value,
-            expr->as.match_.arms,
-            expr->as.match_.arm_count
+            .value=expr->as.match_.value,
+            .arms=expr->as.match_.arms,
+            .arm_count=expr->as.match_.arm_count,
+            .borrowed=false
         }
     };
     (void)check_stmt(checker, &statement);

@@ -651,8 +651,9 @@ static void emit_function_variant(
             c_backend_emit_type(emitter, function->locals[l].type);
             fprintf(emitter->output,
                     " *l%zu_ref = NULL;\n"
+                    "    (void)l%zu_ref;\n"
                     "#define l%zu (*l%zu_ref)\n",
-                    l, l, l);
+                    l, l, l, l);
             continue;
         }
         fputs("    ", emitter->output);

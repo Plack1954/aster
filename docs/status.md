@@ -6,9 +6,9 @@ entry means the bounded 0.1 behavior is implemented and directly exercised.
 
 | # | Criterion | Evidence |
 |---:|---|---|
-| 1 | Builds with Clang and GCC | Strict `-Werror` build commands below; warnings are applied to every C target. |
-| 2 | Normal test suite passes | `ctest`; the `language_tests` aggregate also checks every positive and negative source fixture. |
-| 3 | ASan and UBSan pass | `LANG_SANITIZE=ON` build and test command below. |
+| 1 | Builds with Clang and GCC | Continuous strict GCC/Clang `-Werror` jobs; warnings are applied to every C target. |
+| 2 | Normal test suite passes | Both strict jobs run the complete uncached CTest inventory; `language_tests` checks every positive and negative source fixture. |
+| 3 | ASan and UBSan pass | Continuous GCC/Clang ASan+UBSan jobs run the complete suite, plus a focused sanitizer ownership gate. |
 | 4 | Hello world runs | `hello_run`, `examples/hello.as`. |
 | 5 | Functions, structs, arrays, enums execute | `arithmetic`, `structs`, `arrays`, `enum_match_run`, and `recursion_run`. |
 | 6 | Ordinary values copy normally | Buffer, string, List, aggregate, and NativeHandle copy fixtures. |

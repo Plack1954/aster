@@ -41,7 +41,10 @@ typedef struct NativeProcess {
 } NativeProcess;
 
 static char *process_copy_text(LangStringView text) {
-    if (memchr(text.data, '\0', text.length) != NULL) return NULL;
+    if (text.length != 0U && text.data == NULL) return NULL;
+    if (text.length != 0U &&
+        memchr(text.data, '\0', text.length) != NULL)
+        return NULL;
     char *copy = malloc(text.length + 1U);
     if (copy == NULL) return NULL;
     if (text.length != 0U) memcpy(copy, text.data, text.length);
@@ -277,7 +280,20 @@ static LangNativeResult native_process_launch(
         execvp(process->executable, argv);
 child_error: {
             int child_errno = errno;
-            (void)write(launch_error[1], &child_errno, sizeof(child_errno));
+            const unsigned char *bytes =
+                (const unsigned char *)&child_errno;
+            size_t remaining = sizeof(child_errno);
+            while (remaining != 0U) {
+                ssize_t written = write(launch_error[1], bytes, remaining);
+                if (written > 0) {
+                    bytes += (size_t)written;
+                    remaining -= (size_t)written;
+                } else if (written < 0 && errno == EINTR) {
+                    continue;
+                } else {
+                    break;
+                }
+            }
             _exit(127);
         }
     }

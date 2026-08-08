@@ -563,7 +563,7 @@ static bool emit_aggregate_type(
                 "}\n\n",
                 type_id, type_id);
         fprintf(emitter->output,
-                "static inline void aster_dictionary_erase_%" PRIu32
+                "static ASTER_MAYBE_UNUSED inline void aster_dictionary_erase_%" PRIu32
                 "(aster_dictionary_%" PRIu32
                 " *value, size_t index, size_t bucket) {\n"
                 "    size_t mask = value->bucket_count - 1U;\n"

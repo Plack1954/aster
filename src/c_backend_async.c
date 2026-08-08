@@ -585,14 +585,14 @@ void c_backend_emit_async_runtime(FILE *output) {
         "    size_t remaining;\n"
         "    void (*finish)(struct aster_when_all_state *state);\n"
         "} aster_when_all_state;\n"
-        "static inline void aster_when_all_release(aster_when_all_state *state) {\n"
+        "static ASTER_MAYBE_UNUSED inline void aster_when_all_release(aster_when_all_state *state) {\n"
         "    for (size_t i = 0U; i < state->count; ++i)\n"
         "        aster_task_drop(state->tasks[i]);\n"
         "    free(state->tasks);\n"
         "    aster_task_drop(state->output);\n"
         "    free(state);\n"
         "}\n"
-        "static inline bool aster_when_all_propagate_fault(\n"
+        "static ASTER_MAYBE_UNUSED inline bool aster_when_all_propagate_fault(\n"
         "        aster_when_all_state *state) {\n"
         "    for (size_t i = 0U; i < state->count; ++i) {\n"
         "        if (state->tasks[i]->state == ASTER_TASK_FAULTED) {\n"
@@ -603,7 +603,7 @@ void c_backend_emit_async_runtime(FILE *output) {
         "    }\n"
         "    return false;\n"
         "}\n"
-        "static inline bool aster_when_all_propagate_cancellation(\n"
+        "static ASTER_MAYBE_UNUSED inline bool aster_when_all_propagate_cancellation(\n"
         "        aster_when_all_state *state) {\n"
         "    for (size_t i = 0U; i < state->count; ++i) {\n"
         "        if (state->tasks[i]->state == ASTER_TASK_CANCELED) {\n"
@@ -621,7 +621,7 @@ void c_backend_emit_async_runtime(FILE *output) {
         "    aster_when_all_state *state = context;\n"
         "    if (--state->remaining == 0U) state->finish(state);\n"
         "}\n"
-        "static inline aster_task *aster_when_all_start(\n"
+        "static ASTER_MAYBE_UNUSED inline aster_task *aster_when_all_start(\n"
         "        aster_task **tasks, size_t count,\n"
         "        void (*finish)(aster_when_all_state *state)) {\n"
         "    aster_task *output = aster_task_new();\n"
@@ -674,7 +674,7 @@ void c_backend_emit_async_runtime(FILE *output) {
         "    free(state->contexts);\n"
         "    free(state);\n"
         "}\n"
-        "static inline aster_task *aster_when_any_start(\n"
+        "static ASTER_MAYBE_UNUSED inline aster_task *aster_when_any_start(\n"
         "        aster_task **tasks, size_t count) {\n"
         "    if (count == 0U) {\n"
         "        free(tasks);\n"
@@ -1238,6 +1238,7 @@ void c_backend_emit_async_function(
         if (c_backend_local_is_borrowed_alias(
                 emitter, function, (uint32_t)l)) {
             fprintf(output, " *l%zu_ref = NULL;\n", l);
+            fprintf(output, "    (void)l%zu_ref;\n", l);
             fprintf(output, "#define l%zu (*l%zu_ref)\n", l, l);
         } else {
             fprintf(output, " l%zu = {0};\n", l);

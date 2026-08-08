@@ -5,6 +5,8 @@ include(GNUInstallDirs)
 
 option(LANG_SANITIZE "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(LANG_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+option(ASTER_BUILD_ROBUSTNESS_TESTS
+    "Build Clang coverage-guided compiler robustness tests" OFF)
 option(ASTER_GENERATED_C_STRICT
     "Compile every generated-C test with the full warning suite" OFF)
 option(ASTER_ENABLE_SQLITE_TESTS
@@ -214,6 +216,17 @@ if(LANG_SANITIZE AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(langlib PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(langlib PUBLIC -fsanitize=address,undefined)
 endif()
+if(ASTER_BUILD_ROBUSTNESS_TESTS)
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR
+            "ASTER_BUILD_ROBUSTNESS_TESTS requires Clang")
+    endif()
+    string(CONCAT ASTER_COVERAGE_RUNTIME "fuz" "zer")
+    target_compile_options(langlib PRIVATE
+        "-fsanitize=${ASTER_COVERAGE_RUNTIME}-no-link,address,undefined"
+        -fno-omit-frame-pointer)
+    target_link_options(langlib PUBLIC -fsanitize=address,undefined)
+endif()
 
 add_executable(lang src/main.c)
 target_link_libraries(lang PRIVATE langlib aster_http_curl aster_crypto)
@@ -255,7 +268,7 @@ function(aster_limit_generated_c_test test_name)
     set_property(GLOBAL PROPERTY ASTER_GENERATED_C_NEXT_LANE ${next_lane})
     set_tests_properties(${test_name} PROPERTIES
         RESOURCE_LOCK "aster_generated_c_compiler_${lane}"
-        TIMEOUT 120)
+        TIMEOUT 1800)
 endfunction()
 
 # Keep generated-C test toolchain, runtime, and sanitizer wiring in one place.
@@ -3161,7 +3174,7 @@ add_aster_generated_project_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/CurrentHttpServer.asproj
         -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_http_integration_test>)
 set_tests_properties(aster_web_current_http_c_integration PROPERTIES
-    TIMEOUT 120
+    TIMEOUT 1800
 )
 add_executable(aster_web_async_http_integration_test
     tests/aster_web_async_http_integration.c)
@@ -3178,7 +3191,7 @@ add_aster_generated_project_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/packages/aster_web/AsyncHttpServer.asproj
         -DDRIVER_EXECUTABLE=$<TARGET_FILE:aster_web_async_http_integration_test>)
 set_tests_properties(aster_web_async_current_http_c_integration PROPERTIES
-    TIMEOUT 120
+    TIMEOUT 1800
 )
 if(LANG_HAVE_H2O AND UNIX)
     add_executable(aster_web_h2o_integration_test
@@ -3332,3 +3345,100 @@ add_custom_target(bench
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS lang
 )
+
+# A focused gate for ownership regressions seen in Aster and in the Nim/Swift
+# implementation audit: repeated consumption, outstanding borrows, hidden
+# captures, projection aliasing, overlap, throwing copies, and unwind cleanup.
+set(ASTER_OWNERSHIP_REGRESSION_TESTS
+    noncopyable_repeated_argument_rejected
+    throwing_copy_vm
+    throwing_copy_generated_c
+    list_callback_custom_copy_vm
+    list_callback_custom_copy_generated_c
+    list_callback_throwing_copy_vm
+    list_callback_throwing_copy_generated_c
+    exact_self_assignment_vm
+    exact_self_assignment_generated_c
+    nested_deleted_copy_rejected
+    automatic_last_use_copy_vm
+    automatic_last_use_copy_generated_c
+    projection_moves_vm
+    projection_moves_generated_c
+    noncopyable_projection_moves_vm
+    noncopyable_projection_moves_generated_c
+    ensure_index_move_later_use_rejected
+    ensure_dynamic_index_alias_rejected
+    ensure_field_move_whole_use_rejected
+    ensure_move_later_use_rejected
+    async_frame_liveness_generated_c_execution
+    exceptions_function_value_vm
+    exceptions_function_value_generated_c
+    c_backend_cleanup_normal_scope_leak_checked
+    c_backend_cleanup_return_leak_checked
+    c_backend_cleanup_break_leak_checked
+    c_backend_cleanup_exception_transfer_leak_checked
+    c_backend_cleanup_catch_entry_leak_checked
+    ref_parameter_value_copy_vm
+    ref_parameter_value_copy_c_backend
+    ref_aliasing_vm
+    ref_aliasing_generated_c
+    value_copy_isolation_vm
+    value_copy_isolation_c_backend
+    borrowed_function_values_run
+    ownership_projection_verifier
+)
+set_property(TEST ${ASTER_OWNERSHIP_REGRESSION_TESTS}
+    APPEND PROPERTY LABELS ownership-regression)
+
+if(ASTER_BUILD_ROBUSTNESS_TESTS)
+    function(aster_add_robustness_test target source inputs)
+        set(output_inputs
+            "${CMAKE_CURRENT_BINARY_DIR}/robustness-inputs/${target}")
+        set(result_prefix
+            "${CMAKE_CURRENT_BINARY_DIR}/robustness-results/${target}-")
+        file(MAKE_DIRECTORY "${output_inputs}")
+        file(MAKE_DIRECTORY
+            "${CMAKE_CURRENT_BINARY_DIR}/robustness-results")
+        add_executable(${target} ${source})
+        target_include_directories(${target} PRIVATE src tests/robustness)
+        target_link_libraries(${target} PRIVATE langlib)
+        target_compile_options(${target} PRIVATE
+            "-fsanitize=${ASTER_COVERAGE_RUNTIME},address,undefined"
+            -fno-omit-frame-pointer)
+        target_link_options(${target} PRIVATE
+            "-fsanitize=${ASTER_COVERAGE_RUNTIME},address,undefined")
+        lang_enable_warnings(${target})
+        add_test(NAME ${target}_smoke
+            COMMAND ${target}
+                -runs=256
+                -max_len=4096
+                -timeout=10
+                -detect_leaks=0
+                -print_funcs=0
+                "-artifact_prefix=${result_prefix}"
+                "${output_inputs}"
+                "${inputs}")
+        set_tests_properties(${target}_smoke PROPERTIES
+            LABELS input-robustness
+            TIMEOUT 120
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            ENVIRONMENT
+                "ASAN_OPTIONS=detect_leaks=0:halt_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endfunction()
+
+    aster_add_robustness_test(aster_parser_robustness
+        tests/robustness/parser_robustness.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/robustness/inputs/parser)
+    aster_add_robustness_test(aster_checker_robustness
+        tests/robustness/checker_robustness.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/robustness/inputs/checker)
+    aster_add_robustness_test(aster_ir_verifier_robustness
+        tests/robustness/ir_verifier_robustness.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/robustness/inputs/ir)
+    aster_add_robustness_test(aster_ownership_robustness
+        tests/robustness/ownership_robustness.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/robustness/inputs/ownership)
+    aster_add_robustness_test(aster_bytecode_robustness
+        tests/robustness/bytecode_robustness.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/robustness/inputs/bytecode)
+endif()

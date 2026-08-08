@@ -1,0 +1,140 @@
+name: continuous validation
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strict:
+    name: strict ${{ matrix.compiler }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-rt-dev ninja-build libcurl4-openssl-dev libssl-dev libsqlite3-dev
+      - name: Configure
+        run: >-
+          cmake -S . -B build-strict -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=${{ matrix.compiler }}
+          -DLANG_WARNINGS_AS_ERRORS=ON
+          -DASTER_GENERATED_C_STRICT=ON
+      - name: Build
+        run: cmake --build build-strict
+      - name: Test
+        env:
+          ASTER_CACHE_DIR: ""
+        run: ctest --test-dir build-strict --output-on-failure --parallel 2
+
+  sanitizers:
+    name: ASan + UBSan ${{ matrix.compiler }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-rt-dev ninja-build libcurl4-openssl-dev libssl-dev libsqlite3-dev
+      - name: Configure
+        run: >-
+          cmake -S . -B build-sanitize -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_COMPILER=${{ matrix.compiler }}
+          -DLANG_WARNINGS_AS_ERRORS=ON
+          -DLANG_SANITIZE=ON
+      - name: Build
+        run: cmake --build build-sanitize
+      - name: Test
+        env:
+          ASTER_CACHE_DIR: ""
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-sanitize --output-on-failure --parallel 2
+
+  input-robustness:
+    name: compiler input robustness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-dev ninja-build libcurl4-openssl-dev libssl-dev libsqlite3-dev
+      - name: Configure
+        run: >-
+          cmake -S . -B build-robustness -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_COMPILER=clang
+          -DLANG_WARNINGS_AS_ERRORS=ON
+          -DASTER_BUILD_ROBUSTNESS_TESTS=ON
+      - name: Build robustness checks
+        run: >-
+          cmake --build build-robustness --target
+          aster_parser_robustness
+          aster_checker_robustness
+          aster_ir_verifier_robustness
+          aster_ownership_robustness
+          aster_bytecode_robustness
+      - name: Run seeded input checks
+        run: >-
+          ctest --test-dir build-robustness
+          -L input-robustness --output-on-failure --parallel 1
+      - name: Run scheduled input variation
+        if: github.event_name == 'schedule'
+        run: |
+          build-robustness/aster_parser_robustness -max_total_time=60 -timeout=10 -detect_leaks=0 -print_funcs=0 -artifact_prefix=build-robustness/robustness-results/parser- build-robustness/robustness-inputs/aster_parser_robustness tests/robustness/inputs/parser
+          build-robustness/aster_checker_robustness -max_total_time=60 -timeout=10 -detect_leaks=0 -print_funcs=0 -artifact_prefix=build-robustness/robustness-results/checker- build-robustness/robustness-inputs/aster_checker_robustness tests/robustness/inputs/checker
+          build-robustness/aster_ir_verifier_robustness -max_total_time=60 -timeout=10 -detect_leaks=0 -print_funcs=0 -artifact_prefix=build-robustness/robustness-results/ir- build-robustness/robustness-inputs/aster_ir_verifier_robustness tests/robustness/inputs/ir
+          build-robustness/aster_ownership_robustness -max_total_time=60 -timeout=10 -detect_leaks=0 -print_funcs=0 -artifact_prefix=build-robustness/robustness-results/ownership- build-robustness/robustness-inputs/aster_ownership_robustness tests/robustness/inputs/ownership
+          build-robustness/aster_bytecode_robustness -max_total_time=60 -timeout=10 -detect_leaks=0 -print_funcs=0 -artifact_prefix=build-robustness/robustness-results/bytecode- build-robustness/robustness-inputs/aster_bytecode_robustness tests/robustness/inputs/bytecode
+      - name: Upload reproducer inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiler-reproducer-inputs
+          path: build-robustness/robustness-results/
+          if-no-files-found: ignore
+
+  ownership-regressions:
+    name: ownership regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-rt-dev ninja-build libcurl4-openssl-dev libssl-dev libsqlite3-dev
+      - name: Configure
+        run: >-
+          cmake -S . -B build-ownership -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_COMPILER=clang
+          -DLANG_WARNINGS_AS_ERRORS=ON
+          -DASTER_GENERATED_C_STRICT=ON
+          -DLANG_SANITIZE=ON
+      - name: Build
+        run: cmake --build build-ownership
+      - name: Run ownership regression matrix
+        env:
+          ASTER_CACHE_DIR: ""
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: >-
+          ctest --test-dir build-ownership
+          -L ownership-regression --output-on-failure --parallel 2

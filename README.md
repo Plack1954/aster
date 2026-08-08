@@ -219,6 +219,7 @@ Manifest projects support named binary, library, and test targets:
 - [.NET-referenced standard-library map](docs/standard-library-api-map.md)
 - [Values and cleanup](docs/values-and-cleanup.md)
 - [Ownership, moves, and explicit copies](docs/ownership-and-copy.md)
+- [Continuous compiler validation](docs/compiler-robustness.md)
 - [Projects and targets](docs/projects.md)
 - [Aster Web framework overview and minimal APIs](packages/aster_web/README.md)
 - [Aster Web seamless SSR and static generation](docs/aster-web-seamless-ssg.md)
