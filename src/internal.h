@@ -597,6 +597,12 @@ typedef struct TypeLookupCacheEntry {
     bool occupied;
 } TypeLookupCacheEntry;
 
+typedef struct FunctionLookupNode {
+    Decl *declaration;
+    size_t next; /* One-based node index; zero ends the chain. */
+    size_t next_name; /* Same unqualified/exact function spelling. */
+} FunctionLookupNode;
+
 typedef struct Module {
     Decl **decls;
     size_t count;
@@ -607,6 +613,16 @@ typedef struct Module {
     size_t type_lookup_capacity;
     TypeLookupCacheEntry *type_lookup_cache;
     size_t type_lookup_cache_capacity;
+    /* Lazily indexed and extended when checking synthesizes declarations. */
+    size_t *function_lookup_heads;
+    size_t *function_lookup_tails;
+    size_t *function_name_heads;
+    size_t *function_name_tails;
+    size_t function_lookup_bucket_count;
+    FunctionLookupNode *function_lookup_nodes;
+    size_t function_lookup_node_count;
+    size_t function_lookup_node_capacity;
+    size_t function_lookup_indexed_declaration_count;
     ImportDecl *imports;
     size_t import_count;
     Type **type_instantiations; /* Canonical applied named types. */

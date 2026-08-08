@@ -169,6 +169,11 @@ void require_assigned_out_parameters(
     Checker *checker, LangSpan span);
 Function *find_function(Checker *checker, const char *name,
                         LangSpan use_span);
+size_t checker_current_function_first(Checker *checker, const char *name);
+const Decl *checker_current_function_at(
+    const Checker *checker, size_t link);
+size_t checker_current_function_next(
+    const Checker *checker, size_t link);
 const Decl *function_declaration(const Checker *checker,
                                  const Function *function);
 const char *function_module_name(const Checker *checker,

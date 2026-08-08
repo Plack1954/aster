@@ -12,6 +12,182 @@ typedef struct CallOverloadSet {
     size_t exact_count;
 } CallOverloadSet;
 
+static size_t function_lookup_hash(const char *module_name,
+                                   const char *name) {
+    size_t hash = (size_t)1469598103934665603ULL;
+    const char *parts[] = {module_name, "::", name};
+    for (size_t part = 0U; part < 3U; ++part)
+        for (const unsigned char *cursor =
+                 (const unsigned char *)parts[part];
+             *cursor != '\0'; ++cursor) {
+            hash ^= *cursor;
+            hash *= (size_t)1099511628211ULL;
+        }
+    return hash;
+}
+
+static void append_function_lookup(Module *module, Decl *declaration) {
+    if (declaration->kind != DECL_FUNCTION ||
+        declaration->module_name == NULL)
+        return;
+    if (module->function_lookup_node_count ==
+        module->function_lookup_node_capacity) {
+        size_t capacity = module->function_lookup_node_capacity == 0U
+            ? 16U : module->function_lookup_node_capacity * 2U;
+        FunctionLookupNode *nodes = lang_arena_alloc(
+            &module->arena, capacity * sizeof(*nodes));
+        if (module->function_lookup_nodes != NULL)
+            memcpy(nodes, module->function_lookup_nodes,
+                   module->function_lookup_node_count * sizeof(*nodes));
+        module->function_lookup_nodes = nodes;
+        module->function_lookup_node_capacity = capacity;
+    }
+    size_t bucket = function_lookup_hash(
+        declaration->module_name, declaration->as.function.name) &
+        (module->function_lookup_bucket_count - 1U);
+    size_t link = ++module->function_lookup_node_count;
+    module->function_lookup_nodes[link - 1U] =
+        (FunctionLookupNode){declaration, 0U, 0U};
+    size_t tail = module->function_lookup_tails[bucket];
+    if (tail == 0U)
+        module->function_lookup_heads[bucket] = link;
+    else
+        module->function_lookup_nodes[tail - 1U].next = link;
+    module->function_lookup_tails[bucket] = link;
+    size_t name_bucket = function_lookup_hash(
+        "", declaration->as.function.name) &
+        (module->function_lookup_bucket_count - 1U);
+    tail = module->function_name_tails[name_bucket];
+    if (tail == 0U)
+        module->function_name_heads[name_bucket] = link;
+    else
+        module->function_lookup_nodes[tail - 1U].next_name = link;
+    module->function_name_tails[name_bucket] = link;
+}
+
+static void ensure_function_lookup(Module *module) {
+    if (module->function_lookup_heads == NULL) {
+        size_t buckets = 16U;
+        while (module->count > buckets / 2U) buckets *= 2U;
+        module->function_lookup_heads = lang_arena_alloc(
+            &module->arena, buckets * sizeof(*module->function_lookup_heads));
+        module->function_lookup_tails = lang_arena_alloc(
+            &module->arena, buckets * sizeof(*module->function_lookup_tails));
+        module->function_name_heads = lang_arena_alloc(
+            &module->arena, buckets * sizeof(*module->function_name_heads));
+        module->function_name_tails = lang_arena_alloc(
+            &module->arena, buckets * sizeof(*module->function_name_tails));
+        module->function_lookup_bucket_count = buckets;
+        module->function_lookup_node_capacity =
+            module->count > 16U ? module->count : 16U;
+        module->function_lookup_nodes = lang_arena_alloc(
+            &module->arena,
+            module->function_lookup_node_capacity *
+                sizeof(*module->function_lookup_nodes));
+    }
+    for (size_t i = module->function_lookup_indexed_declaration_count;
+         i < module->count; ++i)
+        append_function_lookup(module, module->decls[i]);
+    module->function_lookup_indexed_declaration_count = module->count;
+}
+
+size_t checker_current_function_first(Checker *checker, const char *name) {
+    if (checker->current_module == NULL) return 0U;
+    ensure_function_lookup(checker->module);
+    size_t bucket = function_lookup_hash(checker->current_module, name) &
+        (checker->module->function_lookup_bucket_count - 1U);
+    for (size_t link = checker->module->function_lookup_heads[bucket];
+         link != 0U;
+         link = checker->module->function_lookup_nodes[link - 1U].next) {
+        const Decl *declaration =
+            checker->module->function_lookup_nodes[link - 1U].declaration;
+        if (strcmp(declaration->module_name, checker->current_module) == 0 &&
+            strcmp(declaration->as.function.name, name) == 0)
+            return link;
+    }
+    return 0U;
+}
+
+const Decl *checker_current_function_at(
+    const Checker *checker, size_t link) {
+    return link != 0U && link <= checker->module->function_lookup_node_count
+        ? checker->module->function_lookup_nodes[link - 1U].declaration
+        : NULL;
+}
+
+size_t checker_current_function_next(
+    const Checker *checker, size_t link) {
+    if (link == 0U ||
+        link > checker->module->function_lookup_node_count)
+        return 0U;
+    const Decl *current = checker_current_function_at(checker, link);
+    for (link = checker->module->function_lookup_nodes[link - 1U].next;
+         link != 0U;
+         link = checker->module->function_lookup_nodes[link - 1U].next) {
+        const Decl *declaration = checker_current_function_at(checker, link);
+        if (strcmp(declaration->module_name, current->module_name) == 0 &&
+            strcmp(declaration->as.function.name,
+                   current->as.function.name) == 0)
+            return link;
+    }
+    return 0U;
+}
+
+static size_t function_name_first(Checker *checker, const char *name) {
+    ensure_function_lookup(checker->module);
+    size_t bucket = function_lookup_hash("", name) &
+        (checker->module->function_lookup_bucket_count - 1U);
+    for (size_t link = checker->module->function_name_heads[bucket];
+         link != 0U;
+         link = checker->module->function_lookup_nodes[link - 1U].next_name) {
+        const Decl *declaration = checker_current_function_at(checker, link);
+        if (strcmp(declaration->as.function.name, name) == 0)
+            return link;
+    }
+    return 0U;
+}
+
+static size_t function_name_next(const Checker *checker, size_t link) {
+    if (link == 0U ||
+        link > checker->module->function_lookup_node_count)
+        return 0U;
+    const Decl *current = checker_current_function_at(checker, link);
+    for (link = checker->module->function_lookup_nodes[link - 1U].next_name;
+         link != 0U;
+         link = checker->module->function_lookup_nodes[link - 1U].next_name) {
+        const Decl *declaration = checker_current_function_at(checker, link);
+        if (strcmp(declaration->as.function.name,
+                   current->as.function.name) == 0)
+            return link;
+    }
+    return 0U;
+}
+
+static const char *visible_function_declaration_name(
+    const Checker *checker, const char *use_name) {
+    /* Qualified paths can name modules, types, or compiler-provided APIs.
+     * Their declaration spelling is not necessarily the final path segment,
+     * so only index unqualified names whose declaration spelling is provable. */
+    if (last_path_separator(use_name) != NULL) return NULL;
+    for (size_t i = 0U; i < checker->module->import_count; ++i) {
+        const ImportDecl *import = &checker->module->imports[i];
+        if (import->owner_module == NULL ||
+            checker->current_module == NULL ||
+            strcmp(import->owner_module, checker->current_module) != 0)
+            continue;
+        for (size_t item = 0U; item < import->item_count; ++item) {
+            const ImportItem *selected = &import->items[item];
+            const char *visible = selected->alias != NULL
+                ? selected->alias : selected->name;
+            if (strcmp(visible, use_name) != 0) continue;
+            /* A renamed selective import can coexist with an exact name from
+             * another module. One bucket cannot represent both spellings. */
+            if (strcmp(selected->name, use_name) != 0) return NULL;
+        }
+    }
+    return use_name;
+}
+
 static ParameterMode call_argument_mode(const Expr *call, size_t index) {
     return call->as.call.argument_modes != NULL
         ? call->as.call.argument_modes[index]
@@ -55,12 +231,75 @@ static bool call_candidate_named_and_visible(
 }
 
 static bool has_current_call_candidate(
-    const Checker *checker, const char *name) {
-    for (size_t i = 0U; i < checker->module->count; ++i)
+    Checker *checker, const char *name) {
+    return checker_current_function_first(checker, name) != 0U;
+}
+
+typedef struct CallCandidateIterator {
+    Checker *checker;
+    const char *name;
+    bool current_only;
+    bool initialized;
+    bool indexed;
+    bool indexed_returned_candidate;
+    size_t scan;
+    size_t link;
+} CallCandidateIterator;
+
+static const Decl *next_call_candidate(CallCandidateIterator *iterator) {
+    if (iterator->current_only) {
+        if (!iterator->initialized) {
+            iterator->initialized = true;
+            iterator->link = checker_current_function_first(
+                iterator->checker, iterator->name);
+        } else {
+            iterator->link = checker_current_function_next(
+                iterator->checker, iterator->link);
+        }
+        return checker_current_function_at(
+            iterator->checker, iterator->link);
+    }
+    if (!iterator->initialized) {
+        iterator->initialized = true;
+        const char *declaration_name = visible_function_declaration_name(
+            iterator->checker, iterator->name);
+        if (declaration_name != NULL) {
+            iterator->indexed = true;
+            iterator->link = function_name_first(
+                iterator->checker, declaration_name);
+        }
+    } else if (iterator->indexed) {
+        iterator->link = function_name_next(
+            iterator->checker, iterator->link);
+    }
+    if (iterator->indexed) {
+        while (iterator->link != 0U) {
+            const Decl *declaration = checker_current_function_at(
+                iterator->checker, iterator->link);
+            if (call_candidate_named_and_visible(
+                    iterator->checker, declaration,
+                    iterator->name, false)) {
+                iterator->indexed_returned_candidate = true;
+                return declaration;
+            }
+            iterator->link = function_name_next(
+                iterator->checker, iterator->link);
+        }
+        /* A name-index miss is never authoritative. Compatibility aliases and
+         * compiler-provided declarations can be visible under another source
+         * spelling; retain the original exhaustive lookup as the fallback. */
+        if (iterator->indexed_returned_candidate) return NULL;
+        iterator->indexed = false;
+        iterator->scan = 0U;
+    }
+    while (iterator->scan < iterator->checker->module->count) {
+        const Decl *declaration =
+            iterator->checker->module->decls[iterator->scan++];
         if (call_candidate_named_and_visible(
-                checker, checker->module->decls[i], name, true))
-            return true;
-    return false;
+                iterator->checker, declaration, iterator->name, false))
+            return declaration;
+    }
+    return NULL;
 }
 
 static size_t overload_argument_rank(
@@ -118,11 +357,10 @@ static CallOverloadSet collect_call_overloads(
     CallOverloadSet result = {0};
     size_t best_rank = SIZE_MAX;
     bool current_only = has_current_call_candidate(checker, name);
-    for (size_t i = 0U; i < checker->module->count; ++i) {
-        const Decl *decl = checker->module->decls[i];
-        if (!call_candidate_named_and_visible(
-                checker, decl, name, current_only))
-            continue;
+    CallCandidateIterator iterator = {
+        .checker=checker, .name=name, .current_only=current_only};
+    const Decl *decl;
+    while ((decl = next_call_candidate(&iterator)) != NULL) {
         if (result.first_named == NULL) result.first_named = decl;
         ++result.named_count;
         const Function *function = &decl->as.function;
@@ -182,11 +420,11 @@ static void diagnose_call_overloads(
             : "no overload of `%s` matches the argument types",
         name);
     bool current_only = has_current_call_candidate(checker, name);
-    for (size_t i = 0U; i < checker->module->count; ++i) {
-        const Decl *decl = checker->module->decls[i];
-        if (!call_candidate_named_and_visible(
-                checker, decl, name, current_only) ||
-            decl->as.function.param_count !=
+    CallCandidateIterator iterator = {
+        .checker=checker, .name=name, .current_only=current_only};
+    const Decl *decl;
+    while ((decl = next_call_candidate(&iterator)) != NULL) {
+        if (decl->as.function.param_count !=
                 call->as.call.arguments.count)
             continue;
         lang_diag_secondary(
@@ -201,11 +439,10 @@ static const Decl *resolve_function_value_overload(
     const Decl *selected = NULL;
     size_t named_count = 0U;
     size_t exact_count = 0U;
-    for (size_t i = 0U; i < checker->module->count; ++i) {
-        const Decl *decl = checker->module->decls[i];
-        if (!call_candidate_named_and_visible(
-                checker, decl, name, current_only))
-            continue;
+    CallCandidateIterator iterator = {
+        .checker=checker, .name=name, .current_only=current_only};
+    const Decl *decl;
+    while ((decl = next_call_candidate(&iterator)) != NULL) {
         ++named_count;
         if (expected == NULL || expected->kind != TYPE_FUNCTION ||
             decl->type_param_count != 0U)
@@ -245,13 +482,11 @@ static const Decl *resolve_function_value_overload(
             ? "no overload of `%s` matches the target function type"
             : "overloaded function `%s` requires a target function type",
         name);
-    for (size_t i = 0U; i < checker->module->count; ++i) {
-        const Decl *decl = checker->module->decls[i];
-        if (call_candidate_named_and_visible(
-                checker, decl, name, current_only))
-            lang_diag_secondary(
-                diagnostic, decl->span, "overload candidate");
-    }
+    iterator = (CallCandidateIterator){
+        .checker=checker, .name=name, .current_only=current_only};
+    while ((decl = next_call_candidate(&iterator)) != NULL)
+        lang_diag_secondary(
+            diagnostic, decl->span, "overload candidate");
     return selected;
 }
 

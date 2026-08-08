@@ -145,6 +145,9 @@ Local *find_local(Checker *checker, const char *name) {
 
 Function *find_function(Checker *checker, const char *name,
                                LangSpan use_span) {
+    size_t local_link = checker_current_function_first(checker, name);
+    const Decl *local = checker_current_function_at(checker, local_link);
+    if (local != NULL) return (Function *)&local->as.function;
     Function *imported = NULL;
     const Decl *first_import = NULL;
     for (size_t i = 0U; i < checker->module->count; ++i) {

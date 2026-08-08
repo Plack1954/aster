@@ -128,15 +128,19 @@ crossing CFG boundaries.
 
 Compiler profiling on the multi-module `Aster.Web` smoke project now guards
 the large-project paths as well as microbenchmarks. On the same local release
-build, three independent `project check` processes fell from 2.03--2.13 seconds
-to 0.47--0.48 seconds, while peak RSS remained about 20 MiB. The current HTTP
-server project fell from 1.73--1.95 seconds to 0.36--0.37 seconds. The change
-uses a bounded module-wide resolution cache and an exact declaration index;
-ambiguous imported names retain their full diagnostics, and cache collisions
-fall back to ordinary lookup.
+build, independent uncached `project check` processes fell from 2.03--2.13
+seconds to 0.38--0.40 seconds, while peak RSS remained about 20 MiB. The
+current HTTP server project fell from 1.73--1.95 seconds to 0.36--0.37 seconds
+before the final function-lookup pass. The changes use a bounded module-wide
+type-resolution cache plus exact type and function declaration indexes.
+Function indexes retain declaration order, include declarations synthesized
+during generic checking, and accelerate only source spellings whose mapping is
+provable; qualified and renamed imports retain exhaustive lookup. Ambiguous
+imported names retain their full diagnostics, and cache/index uncertainty falls
+back to ordinary lookup.
 
 Generated-C compilation of the smoke project fell from 4.36 seconds before
-this profiling pass (2.85 seconds after type lookup was fixed) to 0.79--0.81
+this profiling pass (2.85 seconds after type lookup was fixed) to 0.72--0.73
 seconds. The verifier now intersects precomputed predecessor sets instead of
 rescanning the complete CFG for every dominator candidate, and stores its
 dominator matrix as bits rather than bytes. The emitted C is unchanged. The
