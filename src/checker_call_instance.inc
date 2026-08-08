@@ -27,10 +27,19 @@
                 lang_diag(checker->diagnostics, receiver->span,
                           "unknown method receiver `%s`",
                           receiver->as.name);
-        } else if (receiver->kind == EXPR_FIELD) {
-            receiver_type = check_expr(checker, receiver);
+        } else if (receiver->kind == EXPR_FIELD &&
+                   checker_expression_is_local_place(
+                       checker, receiver)) {
+            receiver_type = check_place(checker, receiver);
         } else {
+            /* Receiver discovery is a type probe.  The rewritten static call
+             * below performs the real argument check, so preserve ownership
+             * flow here or a consuming expression nested in the receiver
+             * would be observed twice. */
+            LocalFlowState receiver_flow[256];
+            snapshot_local_flow(checker, receiver_flow);
             receiver_type = check_expr(checker, receiver);
+            restore_local_flow(checker, receiver_flow);
         }
 
         const char *owner = receiver_type->name;
@@ -243,9 +252,7 @@
         expr->as.call.argument_modes = argument_modes;
         expr->as.call.arguments.count =
             old_count + (hash_set_add ? 2U : 1U);
-        expr->as.call.implicit_receiver =
-            receiver_type->kind != TYPE_CANCELLATION_TOKEN &&
-            receiver_type->kind != TYPE_CANCELLATION_TOKEN_SOURCE;
+        expr->as.call.implicit_receiver = true;
         field->kind = EXPR_NAME;
         field->as.name = qualified;
     }

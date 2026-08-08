@@ -583,10 +583,14 @@ void c_backend_emit_async_frame_declaration(
     for (size_t l = 0U; l < function->local_count; ++l) {
         fputs("    ", output);
         c_backend_emit_type(emitter, function->locals[l].type);
-        fprintf(output, " l%zu;\n", l);
+        fprintf(output,
+                c_backend_local_is_borrowed_alias(
+                    emitter, function, (uint32_t)l)
+                    ? " *local%zu;\n" : " local%zu;\n",
+                l);
         if (c_backend_local_tracks_drop(
                 emitter, function, (uint32_t)l))
-            fprintf(output, "    bool l%zu_live;\n", l);
+            fprintf(output, "    bool local%zu_live;\n", l);
     }
     for (size_t v = 0U; v < function->value_count; ++v) {
         fputs("    ", output);
@@ -610,11 +614,16 @@ static void emit_frame_save(CEmitter *emitter,
     for (size_t p = 0U; p < function->parameter_count; ++p)
         fprintf(output, "        frame->p%zu = p%zu;\n", p, p);
     for (size_t l = 0U; l < function->local_count; ++l) {
-        fprintf(output, "        frame->l%zu = l%zu;\n", l, l);
+        if (c_backend_local_is_borrowed_alias(
+                emitter, function, (uint32_t)l))
+            fprintf(output,
+                    "        frame->local%zu = l%zu_ref;\n", l, l);
+        else
+            fprintf(output, "        frame->local%zu = l%zu;\n", l, l);
         if (c_backend_local_tracks_drop(
                 emitter, function, (uint32_t)l))
             fprintf(output,
-                    "        frame->l%zu_live = l%zu_live;\n", l, l);
+                    "        frame->local%zu_live = l%zu_live;\n", l, l);
     }
     for (size_t v = 0U; v < function->value_count; ++v)
         fprintf(output, "        frame->v%zu = v%zu;\n", v, v);
@@ -775,12 +784,20 @@ void c_backend_emit_async_function(
     for (size_t l = 0U; l < function->local_count; ++l) {
         fputs("    ", output);
         c_backend_emit_type(emitter, function->locals[l].type);
-        fprintf(output, " l%zu = frame->l%zu;\n", l, l);
-        fprintf(output, "    (void)l%zu;\n", l);
+        if (c_backend_local_is_borrowed_alias(
+                emitter, function, (uint32_t)l)) {
+            fprintf(output,
+                    " *l%zu_ref = frame->local%zu;\n"
+                    "#define l%zu (*l%zu_ref)\n",
+                    l, l, l, l);
+        } else {
+            fprintf(output, " l%zu = frame->local%zu;\n", l, l);
+            fprintf(output, "    (void)l%zu;\n", l);
+        }
         if (c_backend_local_tracks_drop(
                 emitter, function, (uint32_t)l))
             fprintf(output,
-                    "    bool l%zu_live = frame->l%zu_live;\n", l, l);
+                    "    bool l%zu_live = frame->local%zu_live;\n", l, l);
     }
     for (size_t v = 0U; v < function->value_count; ++v) {
         fputs("    ", output);
@@ -818,5 +835,9 @@ void c_backend_emit_async_function(
         c_backend_emit_terminator(emitter, function, &block->terminator);
         if (emitter->failed) return;
     }
+    for (size_t l = 0U; l < function->local_count; ++l)
+        if (c_backend_local_is_borrowed_alias(
+                emitter, function, (uint32_t)l))
+            fprintf(output, "#undef l%zu\n", l);
     fputs("}\n\n", output);
 }

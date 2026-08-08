@@ -92,8 +92,8 @@ static bool expression_contains_return(const Expr *expr) {
         case EXPR_ASSIGN:
             return expression_contains_return(expr->as.assign.target) ||
                    expression_contains_return(expr->as.assign.value);
-        case EXPR_CLONE:
-            return expression_contains_return(expr->as.clone.value);
+        case EXPR_COPY:
+            return expression_contains_return(expr->as.copy.value);
         case EXPR_TRY:
             return expression_contains_return(expr->as.try_.value);
         case EXPR_AWAIT:

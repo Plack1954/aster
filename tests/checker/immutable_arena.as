@@ -7,6 +7,6 @@ private void allocate(Arena arena) {
 
 int main() {
     Arena arena = Arena.new();
-    allocate(arena);
+    allocate(copy(arena));
     return 0;
 }

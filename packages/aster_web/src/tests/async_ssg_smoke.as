@@ -23,7 +23,7 @@ private async Task<Response> HomeAsync(Request request)
     return Results.Html(<main><h1>Async static page</h1></main>);
 }
 
-private Response Missing(Request request)
+private Response Missing(const ref Request request)
 {
     return Results.NotFound(<h1>Not found</h1>);
 }

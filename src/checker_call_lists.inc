@@ -386,5 +386,12 @@
                 checker->diagnostics, expr->span,
                 "`List::Get` cannot copy noncopyable element type `%s`",
                 vector->element->name);
+        else if (type_moves_by_default(checker, vector->element) &&
+                 checker->copy_depth == 0U &&
+                 checker->borrow_depth == 0U)
+            lang_diag(
+                checker->diagnostics, expr->span,
+                "reading non-trivial List element `%s` requires `copy(...)`",
+                vector->element->name);
         return vector->element;
     }

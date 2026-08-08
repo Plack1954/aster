@@ -172,9 +172,9 @@ static void print_expr(const Expr *expr, int depth) {
             puts("assign");
             print_expr(expr->as.assign.target, depth + 1);
             break;
-        case EXPR_CLONE:
-            puts("clone");
-            print_expr(expr->as.clone.value, depth + 1);
+        case EXPR_COPY:
+            puts("copy");
+            print_expr(expr->as.copy.value, depth + 1);
             break;
         case EXPR_TRY:
             puts("try");

@@ -92,7 +92,8 @@ bool c_backend_emit_native_runtime(
     if (instruction->symbol != NULL &&
         strcmp(instruction->symbol,
                "CancellationTokenSource::Token") == 0) {
-        fprintf(output, "    v%" PRIu32 " = v%" PRIu32 ";\n",
+        fprintf(output,
+                "    v%" PRIu32 " = aster_cancellation_retain(v%" PRIu32 ");\n",
                 instruction->result, instruction->operands[0]);
         return true;
     }
@@ -103,10 +104,9 @@ bool c_backend_emit_native_runtime(
                 "    if (v%" PRIu32 " == NULL)\n"
                 "        aster_trap(\"CancellationTokenSource.Cancel requires a source\");\n"
                 "    v%" PRIu32 "->requested = true;\n"
-                "    aster_cancellation_drop(v%" PRIu32 ");\n"
                 "    v%" PRIu32 " = UINT8_C(0);\n",
                 instruction->operands[0], instruction->operands[0],
-                instruction->operands[0], instruction->result);
+                instruction->result);
         return true;
     }
     if (instruction->symbol != NULL &&
@@ -114,10 +114,9 @@ bool c_backend_emit_native_runtime(
                "CancellationToken::IsCancellationRequested") == 0) {
         fprintf(output,
                 "    v%" PRIu32 " = v%" PRIu32
-                " != NULL && v%" PRIu32 "->requested;\n"
-                "    aster_cancellation_drop(v%" PRIu32 ");\n",
+                " != NULL && v%" PRIu32 "->requested;\n",
                 instruction->result, instruction->operands[0],
-                instruction->operands[0], instruction->operands[0]);
+                instruction->operands[0]);
         return true;
     }
     if (instruction->symbol != NULL &&
@@ -134,10 +133,9 @@ bool c_backend_emit_native_runtime(
                 "        aster_exception_type = \"OperationCanceledException\";\n"
                 "        aster_exception_pending = true;\n"
                 "    }\n"
-                "    aster_cancellation_drop(v%" PRIu32 ");\n"
                 "    v%" PRIu32 " = UINT8_C(0);\n",
                 instruction->operands[0], instruction->operands[0],
-                instruction->operands[0], instruction->result);
+                instruction->result);
         return true;
     }
     if (instruction->symbol != NULL &&

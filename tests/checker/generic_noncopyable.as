@@ -3,7 +3,7 @@ private struct Box<T> {
 }
 
 private void invalid(Box<Arena> arenaBox) {
-    Box<Arena> copy = arenaBox;
+    Box<Arena> copied = copy(arenaBox);
 }
 
 int main() {

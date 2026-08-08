@@ -1,4 +1,7 @@
-private bool Contains(List<string> values, string wanted)
+private bool Contains(
+    const ref List<string> values,
+    const ref string wanted
+)
 {
     foreach (string value in values)
     {

@@ -14,7 +14,7 @@ int main() {
     CopyBox<GenericItem> original = CopyBox {
         value: new() { value = 7 },
     };
-    CopyBox<GenericItem> copied = original;
+    CopyBox<GenericItem> copied = copy(original);
     Console.WriteLine(original.value.value);
     Console.WriteLine(copied.value.value);
     return 0;

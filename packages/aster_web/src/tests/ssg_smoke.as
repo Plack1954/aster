@@ -19,7 +19,7 @@ private struct ApplicationOwner
     delete self.Value;
 }
 
-private Response home(Request request)
+private Response home(const ref Request request)
 {
     return Results.Html(
         <html>
@@ -29,12 +29,12 @@ private Response home(Request request)
     );
 }
 
-private Response about(Request request)
+private Response about(const ref Request request)
 {
     return Results.Html(<main><h1>About</h1></main>);
 }
 
-private Response ArticlePage(Request request)
+private Response ArticlePage(const ref Request request)
 {
     switch (request.RouteValue("slug"))
     {
@@ -47,12 +47,12 @@ private Response ArticlePage(Request request)
     }
 }
 
-private Response robots(Request request)
+private Response robots(const ref Request request)
 {
     return Results.Text("User-agent: *\nAllow: /\n");
 }
 
-private Response missing(Request request)
+private Response missing(const ref Request request)
 {
     return Results.NotFound(<h1>Not found</h1>);
 }

@@ -73,6 +73,14 @@
             lang_diag(checker->diagnostics, expr->span,
                       "`Dictionary::Get` cannot copy noncopyable value type `%s`",
                       dictionary->error_type->name);
+        else if (get &&
+                 type_moves_by_default(checker, dictionary->error_type) &&
+                 checker->copy_depth == 0U &&
+                 checker->borrow_depth == 0U)
+            lang_diag(
+                checker->diagnostics, expr->span,
+                "reading non-trivial Dictionary value `%s` requires `copy(...)`",
+                dictionary->error_type->name);
         return get ? dictionary->error_type : &type_bool;
     }
     if (strcmp(name, "Dictionary::TryGetValue") == 0) {

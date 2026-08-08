@@ -18,9 +18,10 @@ private class ServerState
         Name = name;
     }
 
-    public FilterResult RejectFiltered(Request request)
+    public FilterResult RejectFiltered(const ref Request request)
     {
-        if (Name == "Aster Web integration" && request.Path == "/filtered")
+        if (this.Name == "Aster Web integration" &&
+            request.Path == "/filtered")
         {
             return FilterResult.Respond(
                 Results.NotFound(<h1>Filtered</h1>)
@@ -29,9 +30,9 @@ private class ServerState
         return FilterResult.Continue;
     }
 
-    public Html FrameErrors(Request request, Html page)
+    public Html FrameErrors(const ref Request request, Html page)
     {
-        if (Name == "Aster Web integration" &&
+        if (this.Name == "Aster Web integration" &&
             (request.Path == "/filtered" || request.Path == "/missing"))
         {
             return <main data-path=request.Path>{page}</main>;
@@ -52,7 +53,7 @@ private struct ServerLifetime
     delete self.State;
 }
 
-private Response article(Request request)
+private Response article(const ref Request request)
 {
     string source = "";
     switch (request.Query("ref"))
@@ -92,7 +93,7 @@ private Response article(Request request)
     return response;
 }
 
-private Response submit(Request request)
+private Response submit(const ref Request request)
 {
     try
     {
@@ -121,31 +122,31 @@ private Response submit(Request request)
     }
 }
 
-private Response missing(Request request)
+private Response missing(const ref Request request)
 {
     return Results.NotFound(<h1>Missing</h1>);
 }
 
-private Response robots(Request request)
+private Response robots(const ref Request request)
 {
     return Results.Text(
         "User-agent: *\nDisallow: /private\n"
     );
 }
 
-private Response stylesheet(Request request)
+private Response stylesheet(const ref Request request)
 {
     return Results.Css(
         "body { color: #e45b20; }\n"
     );
 }
 
-private Response feed(Request request)
+private Response feed(const ref Request request)
 {
     return Results.Xml("<rss version=\"2.0\"></rss>");
 }
 
-private Response mark(Request request)
+private Response mark(const ref Request request)
 {
     switch (StaticFile("packages/aster_web/testdata", request.Path))
     {
@@ -156,20 +157,20 @@ private Response mark(Request request)
     }
 }
 
-private Response MethodResponse(Request request)
+private Response MethodResponse(const ref Request request)
 {
-    return Results.Text(request.Method);
+    return Results.Text(copy(request.Method));
 }
 
-private Response CookieValue(Request request)
+private Response CookieValue(const ref Request request)
 {
     switch (request.Cookie("theme"))
     {
         case Option.Some(value): {
-            Response response = Results.Text(value);
             switch (ResponseCookie("theme", value))
             {
                 case Result.Ok(cookie): {
+                    Response response = Results.Text(value);
                     response.AddHeader(cookie);
                     return response;
                 }
@@ -184,7 +185,7 @@ private Response CookieValue(Request request)
     }
 }
 
-private Response HeaderValue(Request request)
+private Response HeaderValue(const ref Request request)
 {
     switch (request.Header("x-aster-test"))
     {
@@ -197,7 +198,7 @@ private Response HeaderValue(Request request)
     }
 }
 
-private Response ConfiguredCookie(Request request)
+private Response ConfiguredCookie(const ref Request request)
 {
     Option<string> domain = Option.Some("aster.test");
     Option<long> maxAge = Option.Some(3600);
@@ -223,7 +224,7 @@ private Response ConfiguredCookie(Request request)
     }
 }
 
-private Response DeletedCookie(Request request)
+private Response DeletedCookie(const ref Request request)
 {
     Response response = Results.Text("deleted");
     switch (ResponseDeleteCookie("theme", CookieOptions()))
@@ -238,7 +239,7 @@ private Response DeletedCookie(Request request)
     }
 }
 
-private Response JsonEcho(Request request)
+private Response JsonEcho(const ref Request request)
 {
     switch (request.Json())
     {
@@ -251,15 +252,15 @@ private Response JsonEcho(Request request)
     }
 }
 
-private Response Problem(Request request)
+private Response Problem(const ref Request request)
 {
     ProblemDetails problem = ProblemDetails.Create(409, "Conflict");
     problem.Detail = "The article already exists.";
-    problem.Instance = request.Path;
+    problem.Instance = copy(request.Path);
     return Results.Problem(problem);
 }
 
-private Response StreamedAsset(Request request)
+private Response StreamedAsset(const ref Request request)
 {
     List<byte> first = new();
     first.Add(65);

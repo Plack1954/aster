@@ -801,6 +801,8 @@ void ir_emit_function_cleanup_except(
         size_t local_index = i - 1U;
         if (local_index == excluded_local) continue;
         if (source->is_drop && local_index == 0U) continue;
+        if (builder->function->locals[local_index].borrowed)
+            continue;
         if (local_index < source->param_count &&
             source->params[local_index].borrowed)
             continue;

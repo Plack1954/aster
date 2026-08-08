@@ -139,6 +139,7 @@ static Type *rewrite_builtin_call(
     expr->as.call.arguments.items = arguments;
     expr->as.call.arguments.count = second == NULL ? 1U : 2U;
     expr->as.call.argument_modes = NULL;
+    expr->as.call.implicit_receiver = true;
     expr->as.call.implicit_enum_value = false;
     return checker_check_call(checker, expr);
 }
@@ -221,7 +222,6 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 if (part->expression == NULL)
                     continue;
                 bool borrowable_place =
-                    checker->html_interpolation_destination &&
                     (part->expression->kind == EXPR_NAME ||
                      (part->expression->kind == EXPR_FIELD &&
                       part->expression->as.field.object->kind ==
@@ -278,13 +278,33 @@ Type *check_expr(Checker *checker, Expr *expr) {
             break;
         case EXPR_NAME: result = checker_check_name(checker, expr); break;
         case EXPR_BINARY: {
-            Type *left = check_expr(checker, expr->as.binary.left);
+            TokenKind op = expr->as.binary.op;
+            bool comparison =
+                op == TOK_EQUAL_EQUAL || op == TOK_BANG_EQUAL ||
+                op == TOK_LESS || op == TOK_LESS_EQUAL ||
+                op == TOK_GREATER || op == TOK_GREATER_EQUAL;
+            bool borrow_left = comparison &&
+                checker_expression_is_borrowable(
+                    checker, expr->as.binary.left);
+            Type *left = borrow_left
+                ? check_borrowed_expr(checker, expr->as.binary.left)
+                : check_expr(checker, expr->as.binary.left);
+            expr->as.binary.borrow_left = borrow_left &&
+                checker_expression_is_borrowable(
+                    checker, expr->as.binary.left);
             Type *previous_expected = checker->expected_type;
             if (expr->as.binary.right->kind == EXPR_NULL)
                 checker->expected_type = left;
-            Type *right = check_expr(checker, expr->as.binary.right);
+            bool borrow_right = comparison &&
+                checker_expression_is_borrowable(
+                    checker, expr->as.binary.right);
+            Type *right = borrow_right
+                ? check_borrowed_expr(checker, expr->as.binary.right)
+                : check_expr(checker, expr->as.binary.right);
+            expr->as.binary.borrow_right = borrow_right &&
+                checker_expression_is_borrowable(
+                    checker, expr->as.binary.right);
             checker->expected_type = previous_expected;
-            TokenKind op = expr->as.binary.op;
             if (op == TOK_AND_AND || op == TOK_OR_OR) {
                 if (left->kind != TYPE_BOOL || right->kind != TYPE_BOOL)
                     lang_diag(
@@ -759,6 +779,8 @@ Type *check_expr(Checker *checker, Expr *expr) {
                               "`out` parameter `%s` cannot be read before assignment",
                               local->name);
                 local->definitely_assigned = true;
+                local->available = true;
+                local->moved_at = (LangSpan){0};
                 target->type = local->type;
                 target->resolved_local_id = local->id;
                 result = &type_unit;
@@ -788,6 +810,8 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 lang_diag(checker->diagnostics, object_expr->span,
                           "`out` parameter `%s` cannot be read before assignment",
                           local->name);
+            (void)checker_require_available(
+                checker, local, object_expr->span);
             Type *place_type = &type_error;
             if (target->kind == EXPR_FIELD) {
                 if ((local->type->kind != TYPE_NAMED &&
@@ -862,30 +886,36 @@ Type *check_expr(Checker *checker, Expr *expr) {
             result = &type_unit;
             break;
         }
-        case EXPR_CLONE: {
-            Expr *value = expr->as.clone.value;
+        case EXPR_COPY: {
+            Expr *value = expr->as.copy.value;
             if (value->kind == EXPR_NAME) {
                 Local *local = find_local(checker, value->as.name);
-                if (local == NULL) {
-                    lang_diag(checker->diagnostics, value->span,
-                              "cannot clone unavailable value");
-                    result = &type_error;
-                } else {
+                if (local != NULL) {
                     value->type = local->type;
                     value->resolved_local_id = local->id;
                     result = local->type;
+                    (void)checker_require_available(
+                        checker, local, value->span);
                     if (!type_is_copyable(checker, local->type))
                         lang_diag(checker->diagnostics, expr->span,
-                                  "type `%s` does not implement clone",
+                                  "type `%s` is not copyable",
                                   local->type->name);
+                } else {
+                    ++checker->copy_depth;
+                    result = check_expr(checker, value);
+                    --checker->copy_depth;
+                    if (!type_is_copyable(checker, result))
+                        lang_diag(checker->diagnostics, expr->span,
+                                  "type `%s` is not copyable",
+                                  result->name);
                 }
             } else {
-                result = value->kind == EXPR_FIELD
-                       ? check_place(checker, value)
-                       : check_expr(checker, value);
+                ++checker->copy_depth;
+                result = check_expr(checker, value);
+                --checker->copy_depth;
                 if (!type_is_copyable(checker, result))
                     lang_diag(checker->diagnostics, expr->span,
-                              "type `%s` does not implement clone",
+                              "type `%s` is not copyable",
                               result->name);
             }
             break;
@@ -1027,9 +1057,14 @@ Type *check_expr(Checker *checker, Expr *expr) {
                           "constant array index is out of bounds for length %zu",
                           object->array_length);
             result = object->kind == TYPE_ARRAY ? object->element : &type_error;
-            if (result != &type_error)
-                (void)checker_require_copyable(
-                    checker, result, expr->span);
+            if (result != &type_error &&
+                type_moves_by_default(checker, result) &&
+                checker->copy_depth == 0U &&
+                checker->borrow_depth == 0U)
+                lang_diag(
+                    checker->diagnostics, expr->span,
+                    "reading non-trivial array element `%s` requires `copy(...)`",
+                    result->name);
             break;
         }
         case EXPR_FIELD: {
@@ -1125,9 +1160,11 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 result = checker_check_name(checker, expr);
                 break;
             }
-            Type *object = expr->as.field.object->kind == EXPR_FIELD
-                ? check_expr(checker, expr->as.field.object)
-                : check_place(checker, expr->as.field.object);
+            bool local_place = checker_expression_is_local_place(
+                checker, expr->as.field.object);
+            Type *object = local_place
+                ? check_place(checker, expr->as.field.object)
+                : check_expr(checker, expr->as.field.object);
             if ((object->kind == TYPE_NAMED ||
                  object->kind == TYPE_CLASS) &&
                 object->declaration != NULL &&
@@ -1440,9 +1477,44 @@ Type *check_expr(Checker *checker, Expr *expr) {
             } else
                 lang_diag(checker->diagnostics, expr->span,
                           "unknown field `%s` on `%s`", expr->as.field.field, object->name);
-            if (result != &type_error)
-                (void)checker_require_copyable(
-                    checker, result, expr->span);
+            if (result != &type_error &&
+                type_moves_by_default(checker, result)) {
+                if (checker->copy_depth == 0U &&
+                    checker->borrow_depth == 0U &&
+                    object->kind == TYPE_OPTION &&
+                    expr->as.field.object->kind == EXPR_NAME) {
+                    Local *owner = find_local(
+                        checker, expr->as.field.object->as.name);
+                    if (owner != NULL)
+                        checker_move_local(
+                            checker, owner,
+                            expr->as.field.object->span);
+                } else if (checker->copy_depth == 0U &&
+                           checker->borrow_depth == 0U &&
+                           checker_expression_is_local_place(
+                               checker, expr)) {
+                    Expr *owner_expr = expr->as.field.object;
+                    const Decl *owner_decl = owner_expr->type != NULL
+                        ? owner_expr->type->declaration : NULL;
+                    if (owner_expr->kind == EXPR_NAME &&
+                        owner_decl != NULL &&
+                        owner_decl->kind == DECL_STRUCT) {
+                        Local *owner = find_local(
+                            checker, owner_expr->as.name);
+                        bool movable = owner != NULL &&
+                            owner->available && !owner->borrowed;
+                        if (owner != NULL)
+                            checker_move_local(
+                                checker, owner, owner_expr->span);
+                        expr->as.field.move_out = movable;
+                    } else {
+                        lang_diag(
+                            checker->diagnostics, expr->span,
+                            "reading non-trivial field `%s` requires `copy(...)`",
+                            expr->as.field.field);
+                    }
+                }
+            }
             break;
         }
         case EXPR_STRUCT: {

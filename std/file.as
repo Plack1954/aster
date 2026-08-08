@@ -14,49 +14,53 @@ public using IoError = string;
 public delegate Result<bool, IoError> LineHandler(string line);
 
 public extern Result<NativeHandle, IoError> NativeFileOpen(
-    string path,
-    string mode
+    const ref string path,
+    const ref string mode
 );
 
 // The returned shared handle owns the temporary path. Its final release
 // removes the file.
 public extern Result<NativeHandle, IoError> NativeFileCreateTemporary(
-    string directory
+    const ref string directory
 );
 
-public extern string NativeFileTemporaryPath(NativeHandle file);
+public extern string NativeFileTemporaryPath(const ref NativeHandle file);
 
 public extern Result<string, IoError> NativeFileReadAll(
-    NativeHandle file
+    const ref NativeHandle file
 );
 
 public extern Result<nuint, IoError> NativeFileWrite(
-    NativeHandle file,
-    string data
+    const ref NativeHandle file,
+    const ref string data
 );
 
 public extern Result<nuint, IoError> NativeFileReadInto(
-    NativeHandle file,
+    const ref NativeHandle file,
     Span<byte> bytes
 );
 
 public extern Result<nuint, IoError> NativeFileWriteBytes(
-    NativeHandle file,
+    const ref NativeHandle file,
     ReadOnlySpan<byte> bytes,
     nuint count
 );
 
 public extern Result<long, IoError> NativeFileSeek(
-    NativeHandle file,
+    const ref NativeHandle file,
     long offset,
     int origin
 );
 
-public extern Result<long, IoError> NativeFileLength(NativeHandle file);
+public extern Result<long, IoError> NativeFileLength(
+    const ref NativeHandle file
+);
 
-public extern Result<Unit, IoError> NativeFileFlush(NativeHandle file);
+public extern Result<Unit, IoError> NativeFileFlush(
+    const ref NativeHandle file
+);
 
-public extern void NativeFileClose(NativeHandle file);
+public extern void NativeFileClose(const ref NativeHandle file);
 
 public enum SeekOrigin
 {
@@ -108,7 +112,12 @@ private T FileResultOrThrow<T>(Result<T, IoError> result)
     }
 }
 
-private Stream CreateFileStream(string path, string mode, bool read, bool write)
+private Stream CreateFileStream(
+    const ref string path,
+    const ref string mode,
+    bool read,
+    bool write
+)
 {
     Result<NativeHandle, IoError> opened = NativeFileOpen(path, mode);
     NativeHandle handle = FileResultOrThrow(opened);
@@ -124,17 +133,17 @@ private Stream CreateFileStream(string path, string mode, bool read, bool write)
     };
 }
 
-public FileStream File.OpenRead(string path)
+public FileStream File.OpenRead(const ref string path)
 {
     return CreateFileStream(path, "rb", true, false);
 }
 
-public FileStream File.OpenWrite(string path)
+public FileStream File.OpenWrite(const ref string path)
 {
     return CreateFileStream(path, "wb", false, true);
 }
 
-public FileStream File.Create(string path)
+public FileStream File.Create(const ref string path)
 {
     return CreateFileStream(path, "w+b", true, true);
 }
@@ -298,7 +307,7 @@ public int Stream.ReadByte(ref Stream self)
     return bytes.Count == 0 ? -1 : (int)bytes[0];
 }
 
-public void Stream.Write(ref Stream self, List<byte> bytes)
+public void Stream.Write(ref Stream self, const ref List<byte> bytes)
 {
     self.EnsureOpen();
     if (!self.writable)
@@ -473,7 +482,7 @@ public List<byte> Stream.ToArray(Stream self)
     {
         throw new InvalidOperationException("Stream is not memory-backed.");
     }
-    return self.memory;
+    return copy(self.memory);
 }
 
 public void Stream.Flush(Stream self)
@@ -492,35 +501,31 @@ public void Stream.Flush(Stream self)
 public void Stream.Close(ref Stream self)
 {
     if (self.disposed) { return; }
-    switch (self.file)
-    {
-        case Option.Some(file): { NativeFileClose(file); }
-        case Option.None: {}
-    }
+    if (self.file != null) { NativeFileClose(self.file.Value); }
     self.disposed = true;
     self.readable = false;
     self.writable = false;
 }
 
-public BinaryReader BinaryReader.Create(Stream input)
+public BinaryReader BinaryReader.Create(const ref Stream input)
 {
     return new()
     {
         kind = input.kind,
-        file = input.file,
-        memory = input.memory,
+        file = copy(input.file),
+        memory = copy(input.memory),
         position = input.position,
         disposed = input.disposed
     };
 }
 
-public BinaryWriter BinaryWriter.Create(Stream output)
+public BinaryWriter BinaryWriter.Create(const ref Stream output)
 {
     return new()
     {
         kind = output.kind,
-        file = output.file,
-        memory = output.memory,
+        file = copy(output.file),
+        memory = copy(output.memory),
         position = output.position,
         disposed = output.disposed
     };
@@ -531,8 +536,8 @@ public Stream BinaryReader.BaseStream(BinaryReader self)
     return new()
     {
         kind = self.kind,
-        file = self.file,
-        memory = self.memory,
+        file = copy(self.file),
+        memory = copy(self.memory),
         position = self.position,
         readable = true,
         writable = false,
@@ -545,8 +550,8 @@ public Stream BinaryWriter.BaseStream(BinaryWriter self)
     return new()
     {
         kind = self.kind,
-        file = self.file,
-        memory = self.memory,
+        file = copy(self.file),
+        memory = copy(self.memory),
         position = self.position,
         readable = false,
         writable = true,
@@ -704,11 +709,7 @@ public List<byte> BinaryReader.ReadBytes(ref BinaryReader self, int count)
 
 public void BinaryReader.Close(ref BinaryReader self)
 {
-    switch (self.file)
-    {
-        case Option.Some(file): { NativeFileClose(file); }
-        case Option.None: {}
-    }
+    if (self.file != null) { NativeFileClose(self.file.Value); }
     self.disposed = true;
 }
 
@@ -805,7 +806,7 @@ private void BinaryWriter.Write7BitEncodedInt(ref BinaryWriter self, int value)
     BinaryWriter.Write(ref self, (byte)remaining);
 }
 
-public void BinaryWriter.Write(ref BinaryWriter self, string value)
+public void BinaryWriter.Write(ref BinaryWriter self, const ref string value)
 {
     List<byte> bytes = Encoding.UTF8().GetBytes(value);
     BinaryWriter.Write7BitEncodedInt(ref self, (int)bytes.Count);
@@ -815,7 +816,10 @@ public void BinaryWriter.Write(ref BinaryWriter self, string value)
     }
 }
 
-public void BinaryWriter.Write(ref BinaryWriter self, List<byte> bytes)
+public void BinaryWriter.Write(
+    ref BinaryWriter self,
+    const ref List<byte> bytes
+)
 {
     foreach (byte value in bytes)
     {
@@ -833,21 +837,17 @@ public void BinaryWriter.Flush(BinaryWriter self)
 
 public void BinaryWriter.Close(ref BinaryWriter self)
 {
-    switch (self.file)
-    {
-        case Option.Some(file): { NativeFileClose(file); }
-        case Option.None: {}
-    }
+    if (self.file != null) { NativeFileClose(self.file.Value); }
     self.disposed = true;
 }
 
-public string File.ReadAllText(string path)
+public string File.ReadAllText(const ref string path)
 {
     NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "rb"));
     return FileResultOrThrow(NativeFileReadAll(file));
 }
 
-public List<byte> File.ReadAllBytes(string path)
+public List<byte> File.ReadAllBytes(const ref string path)
 {
     FileStream stream = File.OpenRead(path);
     List<byte> result = new();
@@ -862,7 +862,10 @@ public List<byte> File.ReadAllBytes(string path)
     return result;
 }
 
-public void File.WriteAllText(string path, string contents)
+public void File.WriteAllText(
+    const ref string path,
+    const ref string contents
+)
 {
     NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "wb"));
     nuint written = FileResultOrThrow(NativeFileWrite(file, contents));
@@ -872,21 +875,24 @@ public void File.WriteAllText(string path, string contents)
     }
 }
 
-public void File.WriteAllBytes(string path, List<byte> bytes)
+public void File.WriteAllBytes(
+    const ref string path,
+    const ref List<byte> bytes
+)
 {
     FileStream stream = File.Create(path);
     stream.Write(bytes);
     stream.Close();
 }
 
-public List<string> File.ReadAllLines(string path)
+public List<string> File.ReadAllLines(const ref string path)
 {
     return FileResultOrThrow(ReadLinesBuffered(path, 65536));
 }
 
 public Result<nuint, IoError> CopyFileBuffered(
-    string sourcePath,
-    string destinationPath,
+    const ref string sourcePath,
+    const ref string destinationPath,
     long bufferSize
 ) {
     if (bufferSize <= 0) {
@@ -920,7 +926,7 @@ public Result<nuint, IoError> CopyFileBuffered(
 }
 
 public Result<List<string>, IoError> ReadLinesBuffered(
-    string path,
+    const ref string path,
     long bufferSize
 ) {
     if (bufferSize <= 0) {
@@ -1006,7 +1012,7 @@ public Result<List<string>, IoError> ReadLinesBuffered(
 }
 
 public Result<nuint, IoError> ForEachLineBuffered(
-    string path,
+    const ref string path,
     long bufferSize,
     LineHandler handler
 ) {
@@ -1100,63 +1106,71 @@ public Result<nuint, IoError> ForEachLineBuffered(
 // Directory and path operations share the .NET-style System.IO namespace.
 
 public extern Result<DirectoryStream, string> NativeDirectoryOpen(
-    string path
+    const ref string path
 );
 
 public extern Result<string, string> NativeDirectoryNext(
-    DirectoryStream directory
+    const ref DirectoryStream directory
 );
 
 public using FilesystemError = string;
 
 public extern Result<bool, FilesystemError> NativePathExists(
-    string path
+    const ref string path
 );
 
 public extern Result<bool, FilesystemError> NativePathIsFile(
-    string path
+    const ref string path
 );
 
 public extern Result<bool, FilesystemError> NativePathIsDirectory(
-    string path
+    const ref string path
 );
 
-public extern string NativePathCombine(string path1, string path2);
-public extern string NativePathJoin(string path1, string path2);
-public extern string NativePathGetFileName(string path);
-public extern string NativePathGetFileNameWithoutExtension(string path);
-public extern string NativePathGetExtension(string path);
-public extern bool NativePathIsPathFullyQualified(string path);
-private extern bool NativePathIsRoot(string path);
-public extern string NativePathGetDirectoryName(string path);
-public extern string NativePathGetPathRoot(string path);
+public extern string NativePathCombine(
+    const ref string path1,
+    const ref string path2
+);
+public extern string NativePathJoin(
+    const ref string path1,
+    const ref string path2
+);
+public extern string NativePathGetFileName(const ref string path);
+public extern string NativePathGetFileNameWithoutExtension(
+    const ref string path
+);
+public extern string NativePathGetExtension(const ref string path);
+public extern bool NativePathIsPathFullyQualified(const ref string path);
+private extern bool NativePathIsRoot(const ref string path);
+public extern string NativePathGetDirectoryName(const ref string path);
+public extern string NativePathGetPathRoot(const ref string path);
 private extern string NativePathChangeExtension(
-    string path,
-    string extension,
+    const ref string path,
+    const ref string extension,
     bool removeExtension
 );
 public extern string NativeDirectoryGetCurrentDirectory();
-public extern void NativeDirectorySetCurrentDirectory(string path);
+public extern void NativeDirectorySetCurrentDirectory(const ref string path);
 private extern string NativeEnvironmentNewLine();
 
 public extern Result<Unit, FilesystemError> NativeCreateDirectory(
-    string path
+    const ref string path
 );
 
 public extern Result<Unit, FilesystemError> NativeRenamePath(
-    string source,
-    string destination
+    const ref string source,
+    const ref string destination
 );
 
 public extern Result<Unit, FilesystemError> NativeRemoveFile(
-    string path
+    const ref string path
 );
 
 public extern Result<Unit, FilesystemError> NativeRemoveDirectory(
-    string path
+    const ref string path
 );
 
-public bool File.Exists(string path)
+public bool File.Exists(const ref string path)
 {
     switch (NativePathIsFile(path))
     {
@@ -1165,7 +1179,10 @@ public bool File.Exists(string path)
     }
 }
 
-public void File.Copy(string sourceFileName, string destFileName)
+public void File.Copy(
+    const ref string sourceFileName,
+    const ref string destFileName
+)
 {
     if (FileResultOrThrow(NativePathExists(destFileName)))
     {
@@ -1177,8 +1194,8 @@ public void File.Copy(string sourceFileName, string destFileName)
 }
 
 public void File.Copy(
-    string sourceFileName,
-    string destFileName,
+    const ref string sourceFileName,
+    const ref string destFileName,
     bool overwrite
 )
 {
@@ -1191,7 +1208,10 @@ public void File.Copy(
     );
 }
 
-public void File.Move(string sourceFileName, string destFileName)
+public void File.Move(
+    const ref string sourceFileName,
+    const ref string destFileName
+)
 {
     if (FileResultOrThrow(NativePathExists(destFileName)))
     {
@@ -1202,7 +1222,7 @@ public void File.Move(string sourceFileName, string destFileName)
     );
 }
 
-public void File.Delete(string path)
+public void File.Delete(const ref string path)
 {
     if (!File.Exists(path))
     {
@@ -1211,7 +1231,7 @@ public void File.Delete(string path)
     Unit ignored = FileResultOrThrow(NativeRemoveFile(path));
 }
 
-public bool Directory.Exists(string path)
+public bool Directory.Exists(const ref string path)
 {
     switch (NativePathIsDirectory(path))
     {
@@ -1220,7 +1240,7 @@ public bool Directory.Exists(string path)
     }
 }
 
-public void Directory.CreateDirectory(string path)
+public void Directory.CreateDirectory(const ref string path)
 {
     if (Directory.Exists(path))
     {
@@ -1229,7 +1249,10 @@ public void Directory.CreateDirectory(string path)
     Unit ignored = FileResultOrThrow(NativeCreateDirectory(path));
 }
 
-public void Directory.Move(string sourceDirName, string destDirName)
+public void Directory.Move(
+    const ref string sourceDirName,
+    const ref string destDirName
+)
 {
     if (FileResultOrThrow(NativePathExists(destDirName)))
     {
@@ -1240,7 +1263,7 @@ public void Directory.Move(string sourceDirName, string destDirName)
     );
 }
 
-public void Directory.Delete(string path)
+public void Directory.Delete(const ref string path)
 {
     Unit ignored = FileResultOrThrow(NativeRemoveDirectory(path));
 }
@@ -1250,26 +1273,33 @@ public string Directory.GetCurrentDirectory()
     return NativeDirectoryGetCurrentDirectory();
 }
 
-public void Directory.SetCurrentDirectory(string path)
+public void Directory.SetCurrentDirectory(const ref string path)
 {
     NativeDirectorySetCurrentDirectory(path);
 }
 
-public string Path.Combine(string path1, string path2)
+public string Path.Combine(
+    const ref string path1,
+    const ref string path2
+)
 {
     return NativePathCombine(path1, path2);
 }
 
-public string Path.Combine(string path1, string path2, string path3)
+public string Path.Combine(
+    const ref string path1,
+    const ref string path2,
+    const ref string path3
+)
 {
     return NativePathCombine(NativePathCombine(path1, path2), path3);
 }
 
 public string Path.Combine(
-    string path1,
-    string path2,
-    string path3,
-    string path4
+    const ref string path1,
+    const ref string path2,
+    const ref string path3,
+    const ref string path4
 )
 {
     return NativePathCombine(
@@ -1278,21 +1308,25 @@ public string Path.Combine(
     );
 }
 
-public string Path.Join(string path1, string path2)
+public string Path.Join(const ref string path1, const ref string path2)
 {
     return NativePathJoin(path1, path2);
 }
 
-public string Path.Join(string path1, string path2, string path3)
+public string Path.Join(
+    const ref string path1,
+    const ref string path2,
+    const ref string path3
+)
 {
     return NativePathJoin(NativePathJoin(path1, path2), path3);
 }
 
 public string Path.Join(
-    string path1,
-    string path2,
-    string path3,
-    string path4
+    const ref string path1,
+    const ref string path2,
+    const ref string path3,
+    const ref string path4
 )
 {
     return NativePathJoin(
@@ -1301,27 +1335,27 @@ public string Path.Join(
     );
 }
 
-public string Path.GetFileName(string path)
+public string Path.GetFileName(const ref string path)
 {
     return NativePathGetFileName(path);
 }
 
-public string Path.GetFileNameWithoutExtension(string path)
+public string Path.GetFileNameWithoutExtension(const ref string path)
 {
     return NativePathGetFileNameWithoutExtension(path);
 }
 
-public string Path.GetExtension(string path)
+public string Path.GetExtension(const ref string path)
 {
     return NativePathGetExtension(path);
 }
 
-public bool Path.IsPathFullyQualified(string path)
+public bool Path.IsPathFullyQualified(const ref string path)
 {
     return NativePathIsPathFullyQualified(path);
 }
 
-public string? Path.GetDirectoryName(string path)
+public string? Path.GetDirectoryName(const ref string path)
 {
     if (path.Length == 0 || NativePathIsRoot(path))
     {
@@ -1330,7 +1364,7 @@ public string? Path.GetDirectoryName(string path)
     return NativePathGetDirectoryName(path);
 }
 
-public string? Path.GetPathRoot(string path)
+public string? Path.GetPathRoot(const ref string path)
 {
     if (path.Length == 0)
     {
@@ -1339,7 +1373,10 @@ public string? Path.GetPathRoot(string path)
     return NativePathGetPathRoot(path);
 }
 
-public string Path.ChangeExtension(string path, string? extension)
+public string Path.ChangeExtension(
+    const ref string path,
+    const ref string? extension
+)
 {
     if (extension == null)
     {
@@ -1348,7 +1385,7 @@ public string Path.ChangeExtension(string path, string? extension)
     return NativePathChangeExtension(path, extension.Value, false);
 }
 
-private List<string> Directory.GetEntries(string path, int kind)
+private List<string> Directory.GetEntries(const ref string path, int kind)
 {
     DirectoryStream directory = FileResultOrThrow(
         NativeDirectoryOpen(path)
@@ -1382,22 +1419,22 @@ private List<string> Directory.GetEntries(string path, int kind)
     return entries;
 }
 
-public List<string> Directory.GetFileSystemEntries(string path)
+public List<string> Directory.GetFileSystemEntries(const ref string path)
 {
     return Directory.GetEntries(path, 0);
 }
 
-public List<string> Directory.GetFiles(string path)
+public List<string> Directory.GetFiles(const ref string path)
 {
     return Directory.GetEntries(path, 1);
 }
 
-public List<string> Directory.GetDirectories(string path)
+public List<string> Directory.GetDirectories(const ref string path)
 {
     return Directory.GetEntries(path, 2);
 }
 
-private string File.LinesToText(List<string> contents)
+private string File.LinesToText(const ref List<string> contents)
 {
     string newLine = NativeEnvironmentNewLine();
     StringBuilder builder = new();
@@ -1409,12 +1446,18 @@ private string File.LinesToText(List<string> contents)
     return builder.ToString();
 }
 
-public void File.WriteAllLines(string path, List<string> contents)
+public void File.WriteAllLines(
+    const ref string path,
+    const ref List<string> contents
+)
 {
     File.WriteAllText(path, File.LinesToText(contents));
 }
 
-public void File.AppendAllText(string path, string contents)
+public void File.AppendAllText(
+    const ref string path,
+    const ref string contents
+)
 {
     NativeHandle file = FileResultOrThrow(NativeFileOpen(path, "ab"));
     nuint written = FileResultOrThrow(NativeFileWrite(file, contents));
@@ -1424,7 +1467,10 @@ public void File.AppendAllText(string path, string contents)
     }
 }
 
-public void File.AppendAllLines(string path, List<string> contents)
+public void File.AppendAllLines(
+    const ref string path,
+    const ref List<string> contents
+)
 {
     File.AppendAllText(path, File.LinesToText(contents));
 }

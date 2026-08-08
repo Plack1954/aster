@@ -48,7 +48,7 @@ int main()
     {
         return 19;
     }
-    Queue<string> copied = names;
+    Queue<string> copied = copy(names);
     string first = names.Dequeue();
     if (first != "Aster" || names.Peek() != "Pear") { return 8; }
     if (copied.Dequeue() != "Aster" || copied.Dequeue() != "Pear")

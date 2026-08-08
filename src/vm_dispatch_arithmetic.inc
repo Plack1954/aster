@@ -354,8 +354,10 @@
                                 left_string.length) == 0);
                     result = scalar_operation == OP_EQ ? equal : !equal;
                 }
-                vm_value_drop_owned(vm, left);
-                vm_value_drop_owned(vm, right);
+                if (((uint32_t)instruction.b & 1U) == 0U)
+                    vm_value_drop_owned(vm, left);
+                if (((uint32_t)instruction.b & 2U) == 0U)
+                    vm_value_drop_owned(vm, right);
                 STORE_SCALAR_RESULT(((LangValue){
                     .tag=LANG_VALUE_BOOL,.as.boolean=result
                 }));

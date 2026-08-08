@@ -1,6 +1,6 @@
 using System.IO;
 
-private string CreateScopedTemporaryFile(string directory)
+private string CreateScopedTemporaryFile(const ref string directory)
 {
     switch (NativeFileCreateTemporary(directory))
     {

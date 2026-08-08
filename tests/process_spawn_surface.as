@@ -2,7 +2,7 @@ using Aster.Memory;
 using System.Diagnostics;
 using System.Text;
 
-private string ReadOutput(Process process, bool error)
+private string ReadOutput(const ref Process process, bool error)
 {
     Buffer buffer = Buffer.allocate(256);
     StringBuilder output = new();

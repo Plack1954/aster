@@ -79,6 +79,9 @@ bool c_backend_type_needs_drop(const CEmitter *emitter,
 bool c_backend_local_tracks_drop(const CEmitter *emitter,
                                  const IrFunction *function,
                                  uint32_t local);
+bool c_backend_local_is_borrowed_alias(
+    const CEmitter *emitter, const IrFunction *function,
+    uint32_t local);
 void c_backend_emit_drop_call(CEmitter *emitter,
                               IrTypeId type_id,
                               const char *prefix, uint32_t index);

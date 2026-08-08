@@ -251,26 +251,77 @@ void set_cleanup_plan(Checker *checker, CleanupPlan *plan,
     }
 }
 
-void snapshot_out_assignment(const Checker *checker,
-                                    bool assigned[256]) {
-    for (size_t i = 0U; i < checker->local_count; ++i)
-        assigned[i] = checker->locals[i].definitely_assigned;
+void snapshot_local_flow(const Checker *checker,
+                         LocalFlowState state[256]) {
+    for (size_t i = 0U; i < checker->local_count; ++i) {
+        state[i].definitely_assigned =
+            checker->locals[i].definitely_assigned;
+        state[i].available = checker->locals[i].available;
+        state[i].moved_at = checker->locals[i].moved_at;
+    }
 }
 
-void restore_out_assignment(Checker *checker,
-                                   const bool assigned[256]) {
+void restore_local_flow(Checker *checker,
+                        const LocalFlowState state[256]) {
     for (size_t i = 0U; i < checker->local_count; ++i)
-        if (checker->locals[i].is_out_parameter)
-            checker->locals[i].definitely_assigned = assigned[i];
-}
-
-void merge_out_assignment(Checker *checker,
-                                 const bool left[256],
-                                 const bool right[256]) {
-    for (size_t i = 0U; i < checker->local_count; ++i)
+    {
         if (checker->locals[i].is_out_parameter)
             checker->locals[i].definitely_assigned =
-                left[i] && right[i];
+                state[i].definitely_assigned;
+        checker->locals[i].available = state[i].available;
+        checker->locals[i].moved_at = state[i].moved_at;
+    }
+}
+
+void merge_local_flow(Checker *checker,
+                      const LocalFlowState left[256],
+                      const LocalFlowState right[256]) {
+    for (size_t i = 0U; i < checker->local_count; ++i) {
+        if (checker->locals[i].is_out_parameter)
+            checker->locals[i].definitely_assigned =
+                left[i].definitely_assigned &&
+                right[i].definitely_assigned;
+        checker->locals[i].available =
+            left[i].available && right[i].available;
+        checker->locals[i].moved_at = !left[i].available
+            ? left[i].moved_at : right[i].moved_at;
+    }
+}
+
+bool checker_require_available(
+    Checker *checker, const Local *local, LangSpan use_span
+) {
+    if (local == NULL || local->available) return true;
+    if (checker->last_unavailable_local_id == local->id &&
+        checker->last_unavailable_use.file == use_span.file &&
+        checker->last_unavailable_use.start == use_span.start &&
+        checker->last_unavailable_use.end == use_span.end)
+        return false;
+    checker->last_unavailable_local_id = local->id;
+    checker->last_unavailable_use = use_span;
+    LangDiagnostic *diagnostic = lang_diag(
+        checker->diagnostics, use_span,
+        "`%s` was moved and cannot be used before reassignment",
+        local->name);
+    if (local->moved_at.file != NULL)
+        lang_diag_secondary(
+            diagnostic, local->moved_at, "value moved here");
+    return false;
+}
+
+void checker_move_local(
+    Checker *checker, Local *local, LangSpan move_span
+) {
+    if (!checker_require_available(checker, local, move_span)) return;
+    if (local->borrowed) {
+        lang_diag(
+            checker->diagnostics, move_span,
+            "cannot move from borrowed local `%s`; use `copy(%s)`",
+            local->name, local->name);
+        return;
+    }
+    local->available = false;
+    local->moved_at = move_span;
 }
 
 void require_assigned_out_parameters(Checker *checker,
@@ -352,6 +403,9 @@ Type *check_place(Checker *checker, Expr *expr) {
             lang_diag(checker->diagnostics, expr->span,
                       "`out` parameter `%s` cannot be read before assignment",
                       local->name);
+        if (checker->allowed_unassigned_out_place != expr)
+            (void)checker_require_available(
+                checker, local, expr->span);
         return local->type;
     }
     if (expr->kind == EXPR_FIELD) {
@@ -400,7 +454,10 @@ Type *check_place(Checker *checker, Expr *expr) {
         }
         Type *object = check_place(checker, expr->as.field.object);
         Type *result = &type_error;
-        if (object->kind == TYPE_BUFFER &&
+        if (object->kind == TYPE_OPTION &&
+            strcmp(expr->as.field.field, "Value") == 0) {
+            result = object->element;
+        } else if (object->kind == TYPE_BUFFER &&
             strcmp(expr->as.field.field, "len") == 0) {
             result = &type_i64;
         } else if (object->kind == TYPE_NAMED ||
@@ -439,5 +496,129 @@ Type *check_place(Checker *checker, Expr *expr) {
         expr->type = result;
         return result;
     }
+    if (expr->kind == EXPR_INDEX) {
+        Type *object = check_place(checker, expr->as.index.object);
+        Type *index = check_expr(checker, expr->as.index.index);
+        if (object->kind != TYPE_ARRAY) {
+            lang_diag(
+                checker->diagnostics, expr->span,
+                "borrowed indexed places currently require a fixed array");
+            expr->type = &type_error;
+            return &type_error;
+        }
+        if (!is_integer(index))
+            lang_diag(
+                checker->diagnostics, expr->as.index.index->span,
+                "array index must be an integer");
+        if (expr->as.index.index->kind == EXPR_INT &&
+            expr->as.index.index->as.integer >= object->array_length)
+            lang_diag(
+                checker->diagnostics, expr->as.index.index->span,
+                "constant array index is out of bounds for length %zu",
+                object->array_length);
+        expr->as.index.unchecked = checker->unsafe_depth != 0U;
+        expr->type = object->element;
+        return object->element;
+    }
     return check_expr(checker, expr);
+}
+
+static Type *checker_local_place_type(
+    Checker *checker, const Expr *expr
+) {
+    if (expr == NULL) return false;
+    if (expr->kind == EXPR_NAME) {
+        Local *local = find_local(checker, expr->as.name);
+        return local != NULL ? local->type : NULL;
+    }
+    if (expr->kind == EXPR_FIELD && !expr->as.field.static_field) {
+        Type *object = checker_local_place_type(
+            checker, expr->as.field.object);
+        if (object == NULL) return NULL;
+        if (object->kind == TYPE_OPTION &&
+            strcmp(expr->as.field.field, "Value") == 0)
+            return object->element;
+        if (object->kind == TYPE_BUFFER &&
+            strcmp(expr->as.field.field, "len") == 0)
+            return &type_i64;
+        if ((object->kind == TYPE_NAMED || object->kind == TYPE_CLASS) &&
+            object->declaration != NULL) {
+            for (const Decl *owner = object->declaration;
+                 owner != NULL;
+                 owner = object->kind == TYPE_CLASS
+                    ? owner->as.structure.base_class : NULL)
+                for (size_t field = 0U;
+                     field < owner->as.structure.field_count; ++field)
+                    if (strcmp(
+                            owner->as.structure.fields[field].name,
+                            expr->as.field.field) == 0) {
+                        FieldDecl *declared =
+                            &owner->as.structure.fields[field];
+                        return resolve_type_syntax_in_applied_declaration(
+                            checker, object, declared->type_syntax,
+                            declared->type_name, declared->span);
+                    }
+        }
+        return NULL;
+    }
+    if (expr->kind == EXPR_INDEX) {
+        Type *object = checker_local_place_type(
+            checker, expr->as.index.object);
+        return object != NULL && object->kind == TYPE_ARRAY
+            ? object->element : NULL;
+    }
+    return NULL;
+}
+
+bool checker_expression_is_local_place(
+    Checker *checker, const Expr *expr
+) {
+    return checker_local_place_type(checker, expr) != NULL;
+}
+
+bool checker_expression_is_borrowable(
+    Checker *checker, const Expr *expr
+) {
+    if (checker_expression_is_local_place(checker, expr)) return true;
+    if (expr != NULL && expr->kind == EXPR_INDEX) {
+        Type *object = checker_local_place_type(
+            checker, expr->as.index.object);
+        if (object != NULL &&
+            (object->kind == TYPE_VEC ||
+             object->kind == TYPE_DICTIONARY ||
+             object->kind == TYPE_HASH_SET ||
+             object->kind == TYPE_QUEUE ||
+             object->kind == TYPE_STACK))
+            return true;
+    }
+    if (expr == NULL || expr->kind != EXPR_CALL)
+        return false;
+    if (expr->as.call.callee->kind == EXPR_FIELD &&
+        expr->as.call.arguments.count == 0U &&
+        (strcmp(expr->as.call.callee->as.field.field, "Peek") == 0) &&
+        checker_expression_is_local_place(
+            checker, expr->as.call.callee->as.field.object))
+        return true;
+    if (expr->as.call.callee->kind != EXPR_NAME ||
+        expr->as.call.arguments.count == 0U)
+        return false;
+    const char *name = expr->as.call.callee->as.name;
+    bool projection =
+        strcmp(name, "List::Get") == 0 ||
+        strcmp(name, "Queue::Peek") == 0 ||
+        strcmp(name, "Stack::Peek") == 0 ||
+        strcmp(name, "Dictionary::Get") == 0 ||
+        strcmp(name, "Dictionary::KeyAt") == 0 ||
+        strcmp(name, "Dictionary::ValueAt") == 0;
+    return projection && checker_expression_is_local_place(
+        checker, expr->as.call.arguments.items[0]);
+}
+
+Type *check_borrowed_expr(Checker *checker, Expr *expr) {
+    if (expr->kind == EXPR_NAME)
+        return check_place(checker, expr);
+    ++checker->borrow_depth;
+    Type *result = check_expr(checker, expr);
+    --checker->borrow_depth;
+    return result;
 }

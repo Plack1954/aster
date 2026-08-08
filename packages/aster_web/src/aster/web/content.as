@@ -1,9 +1,9 @@
 namespace Aster.Web.Content;
 
 public delegate Result<T, string> ContentDecoder<T>(
-    ContentDocument document
+    const ref ContentDocument document
 );
-public delegate T ContentValueDecoder<T>(ContentDocument document);
+public delegate T ContentValueDecoder<T>(const ref ContentDocument document);
 
 using Aster.Content;
 using System.IO;
@@ -27,7 +27,7 @@ private bool ContentSpace(byte value)
     return value == 32 || value == 9 || value == 13;
 }
 
-private string ContentTrim(string value)
+private string ContentTrim(const ref string value)
 {
     nuint start = 0;
     nuint end = value.Length;
@@ -58,7 +58,10 @@ private Result<string, string> ContentScalar(string raw)
     return Result.Ok(raw);
 }
 
-private bool ContentFieldsContain(List<ContentField> fields, string name)
+private bool ContentFieldsContain(
+    const ref List<ContentField> fields,
+    const ref string name
+)
 {
     foreach (ContentField field in fields)
     {
@@ -141,13 +144,13 @@ private Result<ContentDocument, string> ParseContentDocument(
 }
 
 private Result<string, string> ContentRequiredFrom(
-    List<ContentField> fields,
-    string name
+    const ref List<ContentField> fields,
+    const ref string name
 )
 {
     foreach (ContentField field in fields)
     {
-        if (field.name == name) { return Result.Ok(field.value); }
+        if (field.name == name) { return Result.Ok(copy(field.value)); }
     }
     return Result.Err("missing required frontmatter field");
 }
@@ -163,7 +166,7 @@ private T ContentResultOrThrow<T>(Result<T, string> result)
 
 public Result<string, string> ContentDocument.TryRequired(
     ContentDocument self,
-    string name
+    const ref string name
 )
 {
     return ContentRequiredFrom(self.fields, name);
@@ -171,13 +174,15 @@ public Result<string, string> ContentDocument.TryRequired(
 
 public string ContentDocument.Required(
     ContentDocument self,
-    string name
+    const ref string name
 )
 {
     return ContentResultOrThrow(ContentRequiredFrom(self.fields, name));
 }
 
-private Result<List<string>, string> ContentStringList(string raw)
+private Result<List<string>, string> ContentStringList(
+    const ref string raw
+)
 {
     nuint length = raw.Length;
     if (length < 2 || StringByteAt(raw, 0) != 91 ||
@@ -226,7 +231,7 @@ private Result<List<string>, string> ContentStringList(string raw)
 
 public Result<List<string>, string> ContentDocument.TryStrings(
     ContentDocument self,
-    string name
+    const ref string name
 )
 {
     switch (ContentRequiredFrom(self.fields, name))
@@ -238,7 +243,7 @@ public Result<List<string>, string> ContentDocument.TryStrings(
 
 public List<string> ContentDocument.Strings(
     ContentDocument self,
-    string name
+    const ref string name
 )
 {
     return ContentResultOrThrow(ContentStringList(
@@ -246,7 +251,9 @@ public List<string> ContentDocument.Strings(
     ));
 }
 
-public Result<ContentDocument, string> TryLoadContentDocument(string path)
+public Result<ContentDocument, string> TryLoadContentDocument(
+    const ref string path
+)
 {
     switch (NativeFileOpen(path, "rb"))
     {
@@ -256,17 +263,17 @@ public Result<ContentDocument, string> TryLoadContentDocument(string path)
             {
                 case Result.Err(error): { return Result.Err(error); }
                 case Result.Ok(source): {
-                    return ParseContentDocument(path, source);
+                    return ParseContentDocument(copy(path), source);
                 }
             }
         }
     }
 }
 
-public ContentDocument LoadContentDocument(string path)
+public ContentDocument LoadContentDocument(const ref string path)
 {
     return ContentResultOrThrow(
-        ParseContentDocument(path, File.ReadAllText(path))
+        ParseContentDocument(copy(path), File.ReadAllText(path))
     );
 }
 

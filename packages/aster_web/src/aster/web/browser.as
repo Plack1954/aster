@@ -14,7 +14,7 @@ public struct BrowserAssets
     string target;
 }
 
-private bool BrowserSegmentValid(string value)
+private bool BrowserSegmentValid(const ref string value)
 {
     if (value.Length == 0) { return false; }
     for (nuint index = 0; index < value.Length; index++)
@@ -62,7 +62,10 @@ public Result<BrowserAssets, string> BrowserAssets(
     });
 }
 
-private string BrowserFilename(BrowserAssets self, string extension)
+private string BrowserFilename(
+    const ref BrowserAssets self,
+    const ref string extension
+)
 {
     StringBuilder output = new();
     output.Append(self.target);
@@ -70,7 +73,10 @@ private string BrowserFilename(BrowserAssets self, string extension)
     return output.ToString();
 }
 
-private string BrowserUrl(BrowserAssets self, string filename)
+private string BrowserUrl(
+    const ref BrowserAssets self,
+    const ref string filename
+)
 {
     StringBuilder output = new();
     output.Append(self.urlPrefix);
@@ -91,7 +97,7 @@ public Html BrowserAssets.loader(BrowserAssets self)
 
 public Result<Response, string> BrowserAssets.serve(
     BrowserAssets self,
-    Request request
+    const ref Request request
 )
 {
     string wasmName = BrowserFilename(self, ".wasm");
@@ -99,17 +105,16 @@ public Result<Response, string> BrowserAssets.serve(
     string runtimeUrl = BrowserUrl(self, "aster.js");
     string wasmUrl = BrowserUrl(self, wasmName);
     string loaderUrl = BrowserUrl(self, loaderName);
-    string path = request.Path;
     string filename = "";
-    if (path == runtimeUrl)
+    if (request.Path == runtimeUrl)
     {
         filename = "aster.js";
     }
-    else if (path == wasmUrl)
+    else if (request.Path == wasmUrl)
     {
         filename = wasmName;
     }
-    else if (path == loaderUrl)
+    else if (request.Path == loaderUrl)
     {
         filename = loaderName;
     }

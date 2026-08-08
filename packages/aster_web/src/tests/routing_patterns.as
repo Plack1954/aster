@@ -21,10 +21,10 @@ private bool Rejects(string value)
 }
 
 private bool ParameterEquals(
-    RoutePattern pattern,
-    string path,
-    string name,
-    string expected
+    const ref RoutePattern pattern,
+    const ref string path,
+    const ref string name,
+    const ref string expected
 )
 {
     switch (pattern.Parameter(path, name))
@@ -35,9 +35,9 @@ private bool ParameterEquals(
 }
 
 private bool ParameterAbsent(
-    RoutePattern pattern,
-    string path,
-    string name
+    const ref RoutePattern pattern,
+    const ref string path,
+    const ref string name
 )
 {
     switch (pattern.Parameter(path, name))
@@ -48,9 +48,9 @@ private bool ParameterAbsent(
 }
 
 private bool PathEquals(
-    RoutePattern pattern,
-    RouteValues values,
-    string expected
+    const ref RoutePattern pattern,
+    const ref RouteValues values,
+    const ref string expected
 )
 {
     switch (pattern.GetPath(values))
@@ -60,7 +60,10 @@ private bool PathEquals(
     }
 }
 
-private bool PathRejected(RoutePattern pattern, RouteValues values)
+private bool PathRejected(
+    const ref RoutePattern pattern,
+    const ref RouteValues values
+)
 {
     switch (pattern.GetPath(values))
     {

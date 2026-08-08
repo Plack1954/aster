@@ -565,8 +565,15 @@ static void record_static_css(IrBuilder *builder, const Expr *expr) {
     };
 }
 
+static const Expr *keyed_part_projection(const Expr *expression) {
+    while (expression != NULL && expression->kind == EXPR_COPY)
+        expression = expression->as.copy.value;
+    return expression;
+}
+
 static uint64_t keyed_part_id(
     IrBuilder *builder, const Expr *expression, char kind, LangSpan span) {
+    expression = keyed_part_projection(expression);
     if (expression != NULL && expression->kind == EXPR_FIELD &&
         expression->as.field.object->type != NULL &&
         expression->as.field.object->type->declaration != NULL) {
@@ -615,8 +622,9 @@ static void append_part_range_marker(
 static void emit_keyed_part_marker(
     IrBuilder *builder, uint32_t local, const Expr *expression,
     char kind, const char *property_name, LangSpan span) {
+    const Expr *projection = keyed_part_projection(expression);
     uint64_t part_id = keyed_part_id(
-        builder, expression, kind, span);
+        builder, projection, kind, span);
     char compact_id[14];
     size_t compact_length = lang_dom_part_format(
         part_id, compact_id);
@@ -652,10 +660,10 @@ static void emit_keyed_part_marker(
     set->symbol_length = strlen(set->symbol);
 
     if (builder->function->owner_type == NULL ||
-        expression == NULL || expression->kind != EXPR_FIELD ||
-        expression->as.field.object->type == NULL ||
-        expression->as.field.object->type->declaration == NULL ||
-        expression->as.field.object->type->declaration->kind != DECL_STRUCT)
+        projection == NULL || projection->kind != EXPR_FIELD ||
+        projection->as.field.object->type == NULL ||
+        projection->as.field.object->type->declaration == NULL ||
+        projection->as.field.object->type->declaration->kind != DECL_STRUCT)
         return;
     char *state_name = lang_arena_alloc(
         &builder->module->lowering_module->arena, 40U);
@@ -949,7 +957,10 @@ IrValueId ir_lower_element_with_parent(
                 property_name);
             continue;
         }
-        IrValueId value = ir_lower_expr(builder, property->value);
+        IrValueId value = property->value->borrow_html_string
+            ? lower_borrowed_interpolation_string(
+                  builder, property->value)
+            : ir_lower_expr(builder, property->value);
         IrInstruction *set = ir_append_instruction(
             builder, IR_OP_LOCAL_ELEMENT_PROPERTY,
             IR_INVALID_ID, &value, 1U, property->span);

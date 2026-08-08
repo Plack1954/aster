@@ -1083,7 +1083,9 @@ Reason: whole-local reinitialization creates no duplicate owner. A live old
 value is destroyed before replacement; an empty slot receives the new owner.
 
 Consequences: use between move and assignment remains an error. Immutable
-locals still cannot be reassigned. Partial-field moves remain unsupported.
+locals still cannot be reassigned. Moving a non-trivial direct field transfers
+that field, cleans up the owner's remaining fields, and makes the whole owner
+unavailable; Aster never exposes a partly initialized struct.
 
 ## Assemble streaming lines in Aster
 

@@ -225,6 +225,70 @@ no_html_constant_fusion:
         }
     }
     if (opcode == OP_STORE_LOCAL &&
+        function->code_count >= builder->block_start + 10U) {
+        Instruction *search_call =
+            &function->code[function->code_count - 1U];
+        Instruction *needle_move =
+            &function->code[function->code_count - 2U];
+        Instruction *value_move =
+            &function->code[function->code_count - 3U];
+        Instruction *needle_copy =
+            &function->code[function->code_count - 4U];
+        Instruction *discard =
+            &function->code[function->code_count - 5U];
+        Instruction *needle_set =
+            &function->code[function->code_count - 6U];
+        Instruction *from_call =
+            &function->code[function->code_count - 7U];
+        Instruction *constant_move =
+            &function->code[function->code_count - 8U];
+        Instruction *constant =
+            &function->code[function->code_count - 9U];
+        Instruction *source_copy =
+            &function->code[function->code_count - 10U];
+        int kind = search_call->a == -91 ? 0
+            : search_call->a == -92 ? 2
+            : search_call->a == -93 ? 3
+            : search_call->a == -94 ? 4 : -1;
+        if (search_call->op == OP_CALL && search_call->b == 2 &&
+            kind >= 0 && needle_move->op == OP_MOVE_LOCAL &&
+            value_move->op == OP_MOVE_LOCAL &&
+            needle_copy->op == OP_COPY_LOCAL_TO &&
+            discard->op == OP_POP && needle_set->op == OP_SET_LOCAL &&
+            from_call->op == OP_CALL && from_call->a == -11 &&
+            from_call->b == 1 &&
+            constant_move->op == OP_MOVE_LOCAL &&
+            constant->op == OP_CONSTANT_LOCAL &&
+            source_copy->op == OP_COPY_LOCAL_TO &&
+            needle_move->a == needle_copy->b &&
+            needle_copy->a == needle_set->a &&
+            constant_move->a == constant->b &&
+            value_move->a == source_copy->b &&
+            source_copy->a >= 0 && source_copy->a < 1024 &&
+            a >= 0 && a < 1024) {
+            uint32_t packed = (uint32_t)source_copy->a |
+                ((uint32_t)a << 10U) |
+                ((uint32_t)kind << 20U);
+            free(function->call_sites[
+                function->code_count - 7U].argument_modes);
+            free(function->call_sites[
+                function->code_count - 1U].argument_modes);
+            memset(&function->call_sites[
+                       function->code_count - 7U], 0,
+                   sizeof(*function->call_sites));
+            memset(&function->call_sites[
+                       function->code_count - 1U], 0,
+                   sizeof(*function->call_sites));
+            *source_copy = (Instruction){
+                OP_STRING_SEARCH_LOCAL_CONSTANT,
+                (int32_t)packed, constant->a
+            };
+            function->spans[function->code_count - 10U] = span;
+            function->code_count -= 9U;
+            return function->code_count - 1U;
+        }
+    }
+    if (opcode == OP_STORE_LOCAL &&
         function->code_count >= builder->block_start + 11U) {
         Instruction *search_call =
             &function->code[function->code_count - 1U];

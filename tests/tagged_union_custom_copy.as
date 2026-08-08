@@ -14,7 +14,7 @@ private union CopyUnion {
 int main() {
     Option<CopyItem> optionOriginal = Option.Some(
         new() { value = 10 });
-    Option<CopyItem> optionCopy = optionOriginal;
+    Option<CopyItem> optionCopy = copy(optionOriginal);
     Option<CopyItem> noneCopy = Option.None;
     switch (optionOriginal) {
         case Option.Some(CopyItem item): {
@@ -39,7 +39,7 @@ int main() {
 
     Result<CopyItem, CopyItem> okOriginal = Result.Ok(
         new() { value = 20 });
-    Result<CopyItem, CopyItem> okCopy = okOriginal;
+    Result<CopyItem, CopyItem> okCopy = copy(okOriginal);
     switch (okCopy) {
         case Result.Ok(CopyItem item): {
             Console.WriteLine(item.value);
@@ -51,7 +51,7 @@ int main() {
 
     Result<CopyItem, CopyItem> errOriginal = Result.Err(
         new() { value = 30 });
-    Result<CopyItem, CopyItem> errCopy = errOriginal;
+    Result<CopyItem, CopyItem> errCopy = copy(errOriginal);
     switch (errCopy) {
         case Result.Ok(CopyItem item): {
             Console.WriteLine(item.value);
@@ -63,7 +63,7 @@ int main() {
 
     CopyItem unionItem = new() { value = 40 };
     CopyUnion unionOriginal = CopyUnion.Value(unionItem);
-    CopyUnion unionCopy = unionOriginal;
+    CopyUnion unionCopy = copy(unionOriginal);
     switch (unionCopy) {
         case CopyUnion.Value(CopyItem item): {
             Console.WriteLine(item.value);

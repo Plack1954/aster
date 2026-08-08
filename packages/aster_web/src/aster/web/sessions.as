@@ -96,7 +96,10 @@ private string CreateSessionId()
     return RandomNumberGenerator.GetHexString(32);
 }
 
-private bool SessionExists(Database database, string id)
+private bool SessionExists(
+    const ref Database database,
+    const ref string id
+)
 {
     Statement query = database.Prepare(
         "SELECT 1 FROM AsterWebSessions WHERE Id = @id AND ExpiresAt > unixepoch()"
@@ -106,8 +109,8 @@ private bool SessionExists(Database database, string id)
 }
 
 private void RefreshSession(
-    Database database,
-    string id,
+    const ref Database database,
+    const ref string id,
     long idleTimeoutSeconds
 )
 {
@@ -121,7 +124,7 @@ private void RefreshSession(
 
 public Session SessionStore.Open(
     ref SessionStore self,
-    Request request
+    const ref Request request
 )
 {
     self.opensSinceSweep += 1;
@@ -161,8 +164,8 @@ public Session SessionStore.Open(
     }
     return new()
     {
-        database = self.database,
-        options = self.options,
+        database = copy(self.database),
+        options = copy(self.options),
         id = id,
         isNew = isNew,
         cookieDirty = isNew,
@@ -179,10 +182,10 @@ public long SessionStore.SweepExpired(ref SessionStore self)
     return self.database.Changes();
 }
 
-public string Session.Id(Session self) { return self.id; }
+public string Session.Id(Session self) { return copy(self.id); }
 public bool Session.IsNew(Session self) { return self.isNew; }
 
-private void EnsureSessionActive(Session self)
+private void EnsureSessionActive(const ref Session self)
 {
     if (self.destroyed)
     {
@@ -190,7 +193,10 @@ private void EnsureSessionActive(Session self)
     }
 }
 
-public Option<string> Session.GetString(Session self, string key)
+public Option<string> Session.GetString(
+    Session self,
+    const ref string key
+)
 {
     EnsureSessionActive(self);
     Statement query = self.database.Prepare(
@@ -207,8 +213,8 @@ public Option<string> Session.GetString(Session self, string key)
 
 public void Session.SetString(
     Session self,
-    string key,
-    string value
+    const ref string key,
+    const ref string value
 )
 {
     EnsureSessionActive(self);
@@ -228,7 +234,7 @@ public void Session.SetString(
     );
 }
 
-public void Session.Remove(Session self, string key)
+public void Session.Remove(Session self, const ref string key)
 {
     EnsureSessionActive(self);
     Statement command = self.database.Prepare(
@@ -252,7 +258,6 @@ public void Session.Clear(Session self)
 public void Session.Rotate(ref Session self)
 {
     EnsureSessionActive(self);
-    string previous = self.id;
     string replacement = CreateSessionId();
     Transaction transaction = self.database.BeginTransaction(
         TransactionMode.Immediate
@@ -267,12 +272,12 @@ public void Session.Rotate(ref Session self)
         "UPDATE AsterWebSessionValues SET SessionId = @replacement WHERE SessionId = @previous"
     );
     moveValues.Bind("@replacement", replacement);
-    moveValues.Bind("@previous", previous);
+    moveValues.Bind("@previous", self.id);
     moveValues.Execute();
     Statement removePrevious = self.database.Prepare(
         "DELETE FROM AsterWebSessions WHERE Id = @previous"
     );
-    removePrevious.Bind("@previous", previous);
+    removePrevious.Bind("@previous", self.id);
     removePrevious.Execute();
     transaction.Commit();
     self.id = replacement;
@@ -296,7 +301,7 @@ public void Session.Destroy(ref Session self)
 public void Session.Commit(Session self, ref Response response)
 {
     if (!self.cookieDirty) { return; }
-    CookieOptions cookie = self.options.cookie;
+    CookieOptions cookie = copy(self.options.cookie);
     if (self.destroyed)
     {
         switch (ResponseDeleteCookie(self.options.cookieName, cookie))

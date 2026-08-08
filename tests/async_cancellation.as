@@ -11,7 +11,7 @@ async Task<int> main()
     if (token.IsCancellationRequested) { Console.WriteLine("true"); }
     else { Console.WriteLine("false"); }
 
-    Task delayed = Task.Delay(1000, token);
+    Task delayed = Task.Delay(1000, copy(token));
     source.Cancel();
     if (source.IsCancellationRequested) { Console.WriteLine("true"); }
     else { Console.WriteLine("false"); }

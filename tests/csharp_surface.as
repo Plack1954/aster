@@ -22,7 +22,7 @@ int main()
     Console.WriteLine(backup.Id);
 
     string title = "Aster";
-    string copiedTitle = title;
+    string copiedTitle = copy(title);
     Console.WriteLine(title);
     Console.WriteLine(copiedTitle);
 

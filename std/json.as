@@ -407,7 +407,7 @@ private JsonElement JsonParseValue(ref JsonParser parser, int depth)
 
     return new()
     {
-        Source = parser.Source,
+        Source = copy(parser.Source),
         Start = start,
         End = parser.Position,
         ValueKind = kind,
@@ -423,7 +423,7 @@ private JsonElement JsonParseComplete(string json)
     };
     JsonElement root = JsonParseValue(ref parser, 0);
     JsonSkipWhiteSpace(ref parser);
-    if (parser.Position != json.Length) { JsonFail(); }
+    if (parser.Position != parser.Source.Length) { JsonFail(); }
     return root;
 }
 
@@ -453,12 +453,13 @@ private void JsonAppendCodePoint(ref StringBuilder builder, uint codePoint)
     }
 }
 
-private string JsonDecodeString(string source, nuint start, nuint end)
+private string JsonDecodeString(
+    const ref string source, nuint start, nuint end)
 {
     StringBuilder builder = new();
     JsonParser parser = new()
     {
-        Source = source,
+        Source = copy(source),
         Position = start + 1,
     };
     nuint contentEnd = end - 1;
@@ -570,10 +571,11 @@ private uint JsonDecodeUtf8CodePoint(ref JsonParser parser)
     return codePoint;
 }
 
-private void JsonAppendEscapedString(ref StringBuilder builder, string value)
+private void JsonAppendEscapedString(
+    ref StringBuilder builder, const ref string value)
 {
     builder.AppendByte(34);
-    JsonParser parser = new() { Source = value, Position = 0 };
+    JsonParser parser = new() { Source = copy(value), Position = 0 };
     while (parser.Position < value.Length)
     {
         byte current = value[parser.Position];
@@ -637,7 +639,7 @@ private void JsonAppendEscapedString(ref StringBuilder builder, string value)
     builder.AppendByte(34);
 }
 
-private string JsonSerializeString(string value)
+private string JsonSerializeString(const ref string value)
 {
     StringBuilder builder = new();
     JsonAppendEscapedString(ref builder, value);
@@ -646,7 +648,7 @@ private string JsonSerializeString(string value)
 
 private string JsonValidateNumberText(string value)
 {
-    JsonElement parsed = JsonParseComplete(value);
+    JsonElement parsed = JsonParseComplete(copy(value));
     if (parsed.ValueKind != JsonValueKind.Number) { JsonFail(); }
     return value;
 }
@@ -749,7 +751,7 @@ public void JsonWriter.WriteEndArray(ref JsonWriter self)
 
 public void JsonWriter.WritePropertyName(
     ref JsonWriter self,
-    string name
+    const ref string name
 )
 {
     if (self.Frames.Count == 0)
@@ -775,14 +777,15 @@ public void JsonWriter.WritePropertyName(
 
 private void JsonWriterWriteText(
     ref JsonWriter writer,
-    string value
+    const ref string value
 )
 {
     JsonWriterBeforeValue(ref writer);
     writer.Output.Append(value);
 }
 
-public void JsonWriter.WriteStringValue(ref JsonWriter self, string value)
+public void JsonWriter.WriteStringValue(
+    ref JsonWriter self, const ref string value)
 {
     JsonWriterBeforeValue(ref self);
     JsonAppendEscapedString(ref self.Output, value);
@@ -827,7 +830,8 @@ public void JsonWriter.WriteNumberValue(ref JsonWriter self, double value)
     JsonWriterWriteText(ref self, JsonValidateNumberText(value.ToString()));
 }
 
-public void JsonWriter.WriteValue(ref JsonWriter self, JsonElement value)
+public void JsonWriter.WriteValue(
+    ref JsonWriter self, const ref JsonElement value)
 {
     JsonWriterWriteText(ref self, value.GetRawText());
 }
@@ -846,14 +850,14 @@ public string JsonWriter.ToString(JsonWriter self)
 // These two generic bodies are compiler synthesis points. Each concrete
 // instantiation is replaced with direct, statically checked field/container
 // code; the placeholders are never emitted for a supported type.
-private void JsonWriteTyped<T>(ref JsonWriter writer, T value)
+private void JsonWriteTyped<T>(ref JsonWriter writer, const ref T value)
 {
     throw new InvalidOperationException(
         "typed JSON writer was not generated"
     );
 }
 
-private T JsonReadTyped<T>(JsonElement jsonValue)
+private T JsonReadTyped<T>(const ref JsonElement jsonValue)
 {
     throw new InvalidOperationException(
         "typed JSON reader was not generated"
@@ -862,7 +866,7 @@ private T JsonReadTyped<T>(JsonElement jsonValue)
 
 private void JsonWriteList<T>(
     ref JsonWriter writer,
-    List<T> values
+    const ref List<T> values
 )
 {
     writer.WriteStartArray();
@@ -873,7 +877,7 @@ private void JsonWriteList<T>(
     writer.WriteEndArray();
 }
 
-private List<T> JsonReadList<T>(JsonElement jsonValue)
+private List<T> JsonReadList<T>(const ref JsonElement jsonValue)
 {
     List<T> values = new();
     for (int index = 0; index < jsonValue.GetArrayLength(); index += 1)
@@ -885,7 +889,7 @@ private List<T> JsonReadList<T>(JsonElement jsonValue)
 
 private void JsonWriteDictionary<T>(
     ref JsonWriter writer,
-    Dictionary<string, T> values
+    const ref Dictionary<string, T> values
 )
 {
     writer.WriteStartObject();
@@ -898,7 +902,7 @@ private void JsonWriteDictionary<T>(
 }
 
 private Dictionary<string, T> JsonReadDictionary<T>(
-    JsonElement jsonValue
+    const ref JsonElement jsonValue
 )
 {
     Dictionary<string, T> values = new();
@@ -914,7 +918,7 @@ private Dictionary<string, T> JsonReadDictionary<T>(
 
 private void JsonWriteOption<T>(
     ref JsonWriter writer,
-    Option<T> value
+    const ref Option<T> value
 )
 {
     switch (value)
@@ -926,13 +930,13 @@ private void JsonWriteOption<T>(
     }
 }
 
-private Option<T> JsonReadOption<T>(JsonElement jsonValue)
+private Option<T> JsonReadOption<T>(const ref JsonElement jsonValue)
 {
     if (jsonValue.ValueKind == JsonValueKind.Null) { return Option.None; }
     return Option.Some(JsonReadTyped(jsonValue));
 }
 
-private string JsonReadRequiredString(JsonElement jsonValue)
+private string JsonReadRequiredString(const ref JsonElement jsonValue)
 {
     switch (jsonValue.GetString())
     {
@@ -948,7 +952,7 @@ private T JsonInvalidEnum<T>()
     throw new JsonException("JSON string is not a valid enum value.");
 }
 
-public string JsonSerializer.Serialize<T>(T value)
+public string JsonSerializer.Serialize<T>(const ref T value)
 {
     JsonWriter writer = JsonWriter.Create();
     JsonWriteTyped(ref writer, value);
@@ -1067,7 +1071,7 @@ public JsonElement JsonElement.Clone(JsonElement self)
 {
     // The source string is immutable and reference counted, so every Aster
     // JsonElement already has the lifetime guarantee .NET Clone provides.
-    return self;
+    return copy(self);
 }
 
 public int JsonElement.GetArrayLength(JsonElement self)
@@ -1075,7 +1079,7 @@ public int JsonElement.GetArrayLength(JsonElement self)
     if (self.ValueKind != JsonValueKind.Array) { JsonFail(); }
     JsonParser parser = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Position = self.Start + 1,
     };
     JsonSkipWhiteSpace(ref parser);
@@ -1099,7 +1103,7 @@ public JsonElement JsonElement.Item(JsonElement self, int index)
     if (self.ValueKind != JsonValueKind.Array || index < 0) { JsonFail(); }
     JsonParser parser = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Position = self.Start + 1,
     };
     JsonSkipWhiteSpace(ref parser);
@@ -1117,7 +1121,7 @@ public JsonElement JsonElement.Item(JsonElement self, int index)
     JsonFail();
     return new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Start = 0,
         End = 0,
         ValueKind = JsonValueKind.Undefined,
@@ -1129,7 +1133,7 @@ public int JsonElement.GetPropertyCount(JsonElement self)
     if (self.ValueKind != JsonValueKind.Object) { JsonFail(); }
     JsonParser parser = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Position = self.Start + 1,
     };
     JsonSkipWhiteSpace(ref parser);
@@ -1155,7 +1159,7 @@ public string JsonElement.GetPropertyName(JsonElement self, int index)
     if (self.ValueKind != JsonValueKind.Object || index < 0) { JsonFail(); }
     JsonParser parser = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Position = self.Start + 1,
     };
     JsonSkipWhiteSpace(ref parser);
@@ -1187,7 +1191,7 @@ public JsonElement JsonElement.GetPropertyAt(JsonElement self, int index)
     if (self.ValueKind != JsonValueKind.Object || index < 0) { JsonFail(); }
     JsonParser parser = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Position = self.Start + 1,
     };
     JsonSkipWhiteSpace(ref parser);
@@ -1208,7 +1212,7 @@ public JsonElement JsonElement.GetPropertyAt(JsonElement self, int index)
     JsonFail();
     return new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Start = 0,
         End = 0,
         ValueKind = JsonValueKind.Undefined,
@@ -1217,21 +1221,21 @@ public JsonElement JsonElement.GetPropertyAt(JsonElement self, int index)
 
 public bool JsonElement.TryGetProperty(
     JsonElement self,
-    string propertyName,
+    const ref string propertyName,
     out JsonElement value
 )
 {
     if (self.ValueKind != JsonValueKind.Object) { JsonFail(); }
     JsonParser parser = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Position = self.Start + 1,
     };
     JsonSkipWhiteSpace(ref parser);
     bool found = false;
     value = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Start = 0,
         End = 0,
         ValueKind = JsonValueKind.Undefined,
@@ -1259,12 +1263,12 @@ public bool JsonElement.TryGetProperty(
 
 public JsonElement JsonElement.GetProperty(
     JsonElement self,
-    string propertyName
+    const ref string propertyName
 )
 {
     JsonElement value = new()
     {
-        Source = self.Source,
+        Source = copy(self.Source),
         Start = 0,
         End = 0,
         ValueKind = JsonValueKind.Undefined,

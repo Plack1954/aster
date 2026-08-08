@@ -81,22 +81,22 @@ int main()
     source.Add("two");
     List<string> ranged = new();
     ranged.Add("zero");
-    ranged.AddRange(source);
+    ranged.AddRange(copy(source));
     if (ranged.Count != 3 || ranged[2] != "two") { return 27; }
     if (source.Count != 2 || source[0] != "one") { return 28; }
 
-    ranged.AddRange(ranged);
+    ranged.AddRange(copy(ranged));
     if (ranged.Count != 6 || ranged[3] != "zero" ||
         ranged[5] != "two") { return 29; }
 
     List<string> inserted = new();
     inserted.Add("left");
     inserted.Add("right");
-    ranged.InsertRange(1, inserted);
+    ranged.InsertRange(1, copy(inserted));
     if (ranged.Count != 8 || ranged[1] != "left" ||
         ranged[2] != "right" || ranged[3] != "one") { return 30; }
     if (inserted.Count != 2) { return 31; }
-    inserted.InsertRange(1, inserted);
+    inserted.InsertRange(1, copy(inserted));
     if (inserted.Count != 4 || inserted[0] != "left" ||
         inserted[1] != "left" || inserted[2] != "right" ||
         inserted[3] != "right") { return 36; }

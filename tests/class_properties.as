@@ -3,9 +3,10 @@ using System;
 private class Counter
 {
     private long Changes;
+    private string StoredName;
 
     public long Value { get; private set; }
-    public string Name { get; }
+    public string Name { get { return copy(StoredName); } }
     public long Doubled => Value * 2;
 
     public long Limited
@@ -40,7 +41,7 @@ private class Counter
     public Counter(long initial, string name)
     {
         Value = initial;
-        Name = name;
+        StoredName = name;
         Changes = 0;
     }
 

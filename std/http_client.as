@@ -3,71 +3,81 @@ namespace System.Net.Http;
 using Aster.Memory;
 
 private extern Result<NativeHandle, string> NativeHttpClientSend(
-    string method,
-    string requestUri,
-    string headers,
+    const ref string method,
+    const ref string requestUri,
+    const ref string headers,
     ReadOnlySpan<byte> body,
     long timeoutMilliseconds,
     long maximumResponseBodyBytes,
     bool followRedirects
 );
 private extern Result<NativeHandle, string> NativeHttpClientStart(
-    string method,
-    string requestUri,
-    string headers,
+    const ref string method,
+    const ref string requestUri,
+    const ref string headers,
     ReadOnlySpan<byte> body,
     long timeoutMilliseconds,
     long maximumResponseBodyBytes,
     bool followRedirects
 );
-private extern long NativeHttpClientPoll(NativeHandle request);
-private extern void NativeHttpClientCancel(NativeHandle request);
+private extern long NativeHttpClientPoll(const ref NativeHandle request);
+private extern void NativeHttpClientCancel(const ref NativeHandle request);
 private extern Result<NativeHandle, string> NativeHttpClientTakeResponse(
-    NativeHandle request
+    const ref NativeHandle request
 );
 private extern Result<NativeHandle, string> NativeHttpClientStartStream(
-    string method,
-    string requestUri,
-    string headers,
+    const ref string method,
+    const ref string requestUri,
+    const ref string headers,
     ReadOnlySpan<byte> body,
     long timeoutMilliseconds,
     long maximumResponseBodyBytes,
     bool followRedirects
 );
-private extern long NativeHttpClientStreamPoll(NativeHandle stream);
+private extern long NativeHttpClientStreamPoll(
+    const ref NativeHandle stream);
 private extern Result<nuint, string> NativeHttpClientStreamRead(
-    NativeHandle stream,
+    const ref NativeHandle stream,
     Span<byte> destination
 );
-private extern bool NativeHttpClientStreamFinished(NativeHandle stream);
-private extern long NativeHttpClientStreamStatus(NativeHandle stream);
-private extern string NativeHttpClientStreamHeaders(NativeHandle stream);
-private extern string NativeHttpClientStreamUrl(NativeHandle stream);
-private extern void NativeHttpClientStreamClose(NativeHandle stream);
+private extern bool NativeHttpClientStreamFinished(
+    const ref NativeHandle stream);
+private extern long NativeHttpClientStreamStatus(
+    const ref NativeHandle stream);
+private extern string NativeHttpClientStreamHeaders(
+    const ref NativeHandle stream);
+private extern string NativeHttpClientStreamUrl(
+    const ref NativeHandle stream);
+private extern void NativeHttpClientStreamClose(
+    const ref NativeHandle stream);
 private extern Result<NativeHandle, string> NativeHttpClientStartUpload(
-    string method,
-    string requestUri,
-    string headers,
+    const ref string method,
+    const ref string requestUri,
+    const ref string headers,
     long contentLength,
     long timeoutMilliseconds,
     long maximumResponseBodyBytes,
     bool followRedirects
 );
 private extern Result<nuint, string> NativeHttpClientUploadWrite(
-    NativeHandle upload,
+    const ref NativeHandle upload,
     ReadOnlySpan<byte> source
 );
 private extern Result<Unit, string> NativeHttpClientUploadComplete(
-    NativeHandle upload
+    const ref NativeHandle upload
 );
 private extern Task Task.Delay(int milliseconds);
 
-private extern long NativeHttpClientResponseStatus(NativeHandle response);
-private extern string NativeHttpClientResponseHeaders(NativeHandle response);
-private extern string NativeHttpClientResponseUrl(NativeHandle response);
-private extern long NativeHttpClientResponseBodyLength(NativeHandle response);
+private extern long NativeHttpClientResponseStatus(
+    const ref NativeHandle response);
+private extern string NativeHttpClientResponseHeaders(
+    const ref NativeHandle response);
+private extern string NativeHttpClientResponseUrl(
+    const ref NativeHandle response);
+private extern long NativeHttpClientResponseBodyLength(
+    const ref NativeHandle response);
 private extern Result<nuint, string> NativeHttpClientResponseCopyBody(
-    NativeHandle response,
+    const ref NativeHandle response,
     Span<byte> destination
 );
 
@@ -118,14 +128,32 @@ public struct HttpResponseMessage
     HttpContent Content;
 }
 
-// An owned native response stream. Close cancels an unfinished transfer;
-// otherwise deterministic NativeHandle cleanup closes it when it leaves scope.
-public struct HttpResponseStream
+// An owned native response stream. It is a class so async reads can retain a
+// zero-cost reference to the same stream state. Close destroys the owner.
+public class HttpResponseStream
 {
-    NativeHandle Handle;
-    int StatusCode;
-    string Headers;
-    string RequestUri;
+    public NativeHandle Handle;
+    public int StatusCode;
+    public string Headers;
+    public string RequestUri;
+
+    public HttpResponseStream(
+        NativeHandle handle,
+        int statusCode,
+        string headers,
+        string requestUri
+    )
+    {
+        Handle = handle;
+        StatusCode = statusCode;
+        Headers = headers;
+        RequestUri = requestUri;
+    }
+
+    ~HttpResponseStream()
+    {
+        NativeHttpClientStreamClose(Handle);
+    }
 }
 
 public bool HttpResponseStream.IsSuccessStatusCode(
@@ -177,14 +205,24 @@ public async Task<nuint> HttpResponseStream.ReadAsync(
 
 public void HttpResponseStream.Close(HttpResponseStream self)
 {
-    NativeHttpClientStreamClose(self.Handle);
+    delete self;
 }
 
 // A fixed-length streaming request body. Bytes are copied only into a bounded
 // native queue; CompleteAsync finishes the transfer and returns its response.
-public struct HttpUploadStream
+public class HttpUploadStream
 {
-    NativeHandle Handle;
+    public NativeHandle Handle;
+
+    public HttpUploadStream(NativeHandle handle)
+    {
+        Handle = handle;
+    }
+
+    ~HttpUploadStream()
+    {
+        NativeHttpClientStreamClose(Handle);
+    }
 }
 
 public async Task HttpUploadStream.WriteAsync(
@@ -264,7 +302,7 @@ public async Task<HttpResponseMessage> HttpUploadStream.CompleteAsync(
 
 public void HttpUploadStream.Close(HttpUploadStream self)
 {
-    NativeHttpClientStreamClose(self.Handle);
+    delete self;
 }
 
 public bool HttpResponseMessage.IsSuccessStatusCode(
@@ -331,8 +369,8 @@ private Unit HttpUnitOrThrow(Result<Unit, string> result)
 
 private void ValidateHttpRequest(
     HttpClient client,
-    string method,
-    string requestUri
+    const ref string method,
+    const ref string requestUri
 )
 {
     if (method.Length == 0) { throw new ArgumentException("method is empty"); }
@@ -380,7 +418,7 @@ private HttpResponseMessage MaterializeHttpResponse(
 
 private NativeHandle StartEmptyHttpStream(
     HttpClient client,
-    string requestUri
+    const ref string requestUri
 )
 {
     Buffer empty = Buffer.allocate(0);
@@ -413,9 +451,8 @@ public HttpUploadStream HttpClient.StartUpload(
     {
         throw new ArgumentException("contentLength cannot be negative");
     }
-    return new()
-    {
-        Handle = HttpResultOrThrow(
+    return new HttpUploadStream(
+        HttpResultOrThrow(
             NativeHttpClientStartUpload(
                 method,
                 requestUri,
@@ -426,7 +463,7 @@ public HttpUploadStream HttpClient.StartUpload(
                 self.FollowRedirects
             )
         )
-    };
+    );
 }
 
 public HttpResponseMessage HttpClient.Send(
@@ -554,13 +591,15 @@ public async Task<HttpResponseStream> HttpClient.GetStreamAsync(
         }
         await Task.Delay(1);
     }
-    return new()
-    {
-        Handle = stream,
-        StatusCode = (int)NativeHttpClientStreamStatus(stream),
-        Headers = NativeHttpClientStreamHeaders(stream),
-        RequestUri = NativeHttpClientStreamUrl(stream)
-    };
+    long statusCode = NativeHttpClientStreamStatus(stream);
+    string responseHeaders = NativeHttpClientStreamHeaders(stream);
+    string responseUrl = NativeHttpClientStreamUrl(stream);
+    return new HttpResponseStream(
+        stream,
+        (int)statusCode,
+        responseHeaders,
+        responseUrl
+    );
 }
 
 public async Task<HttpResponseStream> HttpClient.GetStreamAsync(

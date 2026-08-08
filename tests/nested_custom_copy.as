@@ -22,7 +22,7 @@ int main() {
             inner = new() { value = 41 }
         }
     };
-    OuterValue copied = original;
+    OuterValue copied = copy(original);
     Console.WriteLine(original.middle.inner.value);
     Console.WriteLine(copied.middle.inner.value);
     return 0;

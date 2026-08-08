@@ -17,7 +17,7 @@ int main() {
         id = 1,
         storage = Arena.new(),
     };
-    ResourceValue second = first;
+    ResourceValue second = copy(first);
     Console.WriteLine(first.id);
     return 0;
 }

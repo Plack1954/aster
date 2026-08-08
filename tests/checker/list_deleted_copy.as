@@ -6,6 +6,6 @@ private struct UniqueListItem {
 
 int main() {
     List<UniqueListItem> original = new();
-    List<UniqueListItem> invalid = original;
+    List<UniqueListItem> invalid = copy(original);
     return 0;
 }

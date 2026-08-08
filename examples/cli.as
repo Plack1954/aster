@@ -18,10 +18,9 @@ private Result<int, string> run() {
                 Console.WriteLine(name);
             }
             case CliArgument.Named(named): {
-                string view = named;
                 Console.WriteLine("named");
-                Console.WriteLine(CliNamedName(view));
-                Console.WriteLine(CliNamedValue(view));
+                Console.WriteLine(CliNamedName(named));
+                Console.WriteLine(CliNamedValue(named));
             }
             case CliArgument.Positional(value): {
                 Console.WriteLine("positional");

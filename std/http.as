@@ -6,7 +6,7 @@ using System.IO;
 // Routing, middleware, handlers, and response construction remain Aster.
 
 public extern NativeHandle HttpServerOpenConfig(
-    string address,
+    const ref string address,
     long port,
     long maxHeaderBytes,
     long maxBodyBytes,
@@ -14,7 +14,7 @@ public extern NativeHandle HttpServerOpenConfig(
 );
 
 public extern NativeHandle HttpServerOpenKeepAlive(
-    string address,
+    const ref string address,
     long port,
     long maxHeaderBytes,
     long maxBodyBytes,
@@ -23,7 +23,7 @@ public extern NativeHandle HttpServerOpenKeepAlive(
 );
 
 public extern Result<NativeHandle, string> HttpTryServerOpen(
-    string address,
+    const ref string address,
     long port,
     long maxHeaderBytes,
     long maxBodyBytes,
@@ -32,44 +32,44 @@ public extern Result<NativeHandle, string> HttpTryServerOpen(
 );
 
 public extern long HttpServerPort(
-    NativeHandle server
+    const ref NativeHandle server
 );
 
 public extern NativeHandle HttpAccept(
-    NativeHandle server
+    const ref NativeHandle server
 );
 
 public extern Result<NativeHandle, string> HttpTryAccept(
-    NativeHandle server
+    const ref NativeHandle server
 );
 
 public extern string HttpRequestMethod(
-    NativeHandle request
+    const ref NativeHandle request
 );
 
 public extern string HttpRequestPath(
-    NativeHandle request
+    const ref NativeHandle request
 );
 
 public extern string HttpRequestHeader(
-    NativeHandle request,
-    string name
+    const ref NativeHandle request,
+    const ref string name
 );
 
 // Borrowed compact name/value pairs used by transport-neutral adapters.
 public extern string HttpRequestHeaders(
-    NativeHandle request
+    const ref NativeHandle request
 );
 
 public extern string HttpRequestBody(
-    NativeHandle request
+    const ref NativeHandle request
 );
 
 public extern string HttpRequestRemoteIpAddress(
-    NativeHandle request
+    const ref NativeHandle request
 );
 
-public MemoryStream HttpRequestBodyStream(NativeHandle request)
+public MemoryStream HttpRequestBodyStream(const ref NativeHandle request)
 {
     string body = HttpRequestBody(request);
     List<byte> bytes = new();
@@ -81,79 +81,79 @@ public MemoryStream HttpRequestBodyStream(NativeHandle request)
 }
 
 public extern bool HttpRequestNext(
-    NativeHandle request
+    const ref NativeHandle request
 );
 
 public extern Result<bool, string> HttpTryRequestNext(
-    NativeHandle request
+    const ref NativeHandle request
 );
 
 public extern bool HttpPathMatches(
-    string pattern,
-    string path
+    const ref string pattern,
+    const ref string path
 );
 
 public extern string HttpPathParam(
-    string pattern,
-    string path,
-    string name
+    const ref string pattern,
+    const ref string path,
+    const ref string name
 );
 
 public extern Result<string, string> HttpFormValue(
-    string body,
-    string name
+    const ref string body,
+    const ref string name
 );
 
 public extern long HttpRespondHtml(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string body
+    const ref string body
 );
 
 public extern bool HttpRespondHtmlReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string body
+    const ref string body
 );
 
 public extern Result<bool, string> HttpTryRespondHtmlReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string body
+    const ref string body
 );
 
 // Consumes Html directly. Its existing contiguous buffer is borrowed by the
 // synchronous HTTP write for one call, then deterministically released.
 public extern Result<bool, string> HttpTryRespondHtml(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
     Html body
 );
 
 public extern Result<bool, string> HttpTryRespondRedirectReuse(
-    NativeHandle request,
-    string location
+    const ref NativeHandle request,
+    const ref string location
 );
 
 public extern bool HttpRespondReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string body
+    const ref string contentType,
+    const ref string body
 );
 
 public extern Result<bool, string> HttpTryRespondReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string body
+    const ref string contentType,
+    const ref string body
 );
 
 public Result<bool, string> HttpTryRespondBytesReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    List<byte> body
+    const ref string contentType,
+    const ref List<byte> body
 )
 {
     StringBuilder bytes = new();
@@ -169,49 +169,49 @@ public Result<bool, string> HttpTryRespondBytesReuse(
 // `headers` is a validated sequence of complete `Name: value\r\n` lines.
 // Framework adapters construct it; application code should use typed headers.
 public extern Result<bool, string> HttpTryRespondHeadersReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string headers,
-    string body
+    const ref string contentType,
+    const ref string headers,
+    const ref string body
 );
 
 public extern Result<bool, string> HttpTryRespondEmptyHeadersReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string headers
+    const ref string headers
 );
 
 public extern Result<bool, string> HttpTryRespondHtmlHeadersReuse(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string headers,
+    const ref string headers,
     Html body
 );
 
 public extern long HttpStreamBegin(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType
+    const ref string contentType
 );
 
 public extern long HttpStreamBeginHeaders(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string headers
+    const ref string contentType,
+    const ref string headers
 );
 
 public extern long HttpStreamChunk(
-    NativeHandle request,
-    string data
+    const ref NativeHandle request,
+    const ref string data
 );
 
 public extern long HttpStreamChunkBytes(
-    NativeHandle request,
+    const ref NativeHandle request,
     ReadOnlySpan<byte> data
 );
 
 public extern long HttpStreamFinish(
-    NativeHandle request
+    const ref NativeHandle request
 );

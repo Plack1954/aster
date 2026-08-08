@@ -13,7 +13,10 @@ private byte StaticAsciiLower(byte value)
     return value;
 }
 
-private bool StaticEndsWith(string value, string suffix)
+private bool StaticEndsWith(
+    const ref string value,
+    const ref string suffix
+)
 {
     nuint valueLength = value.Length;
     nuint suffixLength = suffix.Length;
@@ -33,7 +36,7 @@ private bool StaticEndsWith(string value, string suffix)
     return true;
 }
 
-public AssetKind StaticAssetKind(string path)
+public AssetKind StaticAssetKind(const ref string path)
 {
     if (StaticEndsWith(path, ".js")) { return AssetKind.JavaScript; }
     if (StaticEndsWith(path, ".json")) { return AssetKind.Json; }
@@ -52,7 +55,7 @@ public AssetKind StaticAssetKind(string path)
     return AssetKind.Binary;
 }
 
-private bool StaticPathSafe(string path)
+private bool StaticPathSafe(const ref string path)
 {
     nuint length = path.Length;
     if (length < 2 || StringByteAt(path, 0) != 47)
@@ -91,8 +94,8 @@ private bool StaticPathSafe(string path)
 }
 
 public Result<Response, string> StaticFile(
-    string root,
-    string requestPath
+    const ref string root,
+    const ref string requestPath
 )
 {
     if (root.Length == 0)
@@ -134,7 +137,7 @@ public Result<Response, string> StaticFile(
     }
 }
 
-private bool StaticPrefixValid(string prefix)
+private bool StaticPrefixValid(const ref string prefix)
 {
     nuint length = prefix.Length;
     return length >= 3 &&
@@ -168,10 +171,10 @@ private Option<Response> StaticResponseWithCache(
 }
 
 private Option<Response> ResolveStatic(
-    string urlPrefix,
-    string root,
+    const ref string urlPrefix,
+    const ref string root,
     StaticFileOptions options,
-    Request request
+    const ref Request request
 )
 {
     if (!request.Path.StartsWith(urlPrefix))

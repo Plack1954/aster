@@ -1,7 +1,7 @@
 int main()
 {
     string first = "Aster";
-    string second = first;
+    string second = copy(first);
 
     Console.WriteLine(first);
     Console.WriteLine(second);

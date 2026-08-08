@@ -4,6 +4,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool function_parameter_is_receiver(
+    const Function *function, size_t parameter, const Type *type
+) {
+    if (parameter != 0U || function->is_static_member ||
+        function->is_constructor || function->is_drop || type == NULL)
+        return false;
+    if (type->kind == TYPE_CLASS) return false;
+    if (function->owner_type != NULL) return true;
+    const char *separator = strstr(function->name, "::");
+    if (separator == NULL) return false;
+    size_t owner_length = (size_t)(separator - function->name);
+    const char *declared_name = function->params[parameter].type_name;
+    return declared_name != NULL && strlen(declared_name) == owner_length &&
+           strncmp(function->name, declared_name, owner_length) == 0;
+}
+
 static bool type_has_c_abi(Checker *checker, Type *type,
                            const Decl **seen, size_t seen_count) {
     if (type == NULL) return false;
@@ -760,7 +776,7 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 checker.locals[checker.local_count++] = (Local){
                     declaration->name, field_type,
                     true, false, 0U, declaration->span,
-                    binding, true, false
+                    binding, true, false, false, {0}
                 };
             }
         }
@@ -783,24 +799,28 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
             for (size_t parameter = 0U;
                  parameter < function->param_count; ++parameter)
                 if (function->params[parameter].by_ref ||
+                    function->params[parameter].by_const_ref ||
                     function->params[parameter].by_out)
                     lang_diag(
                         diagnostics,
                         function->params[parameter].span,
-                        "async functions cannot have ref or out parameters");
+                        "async functions cannot have ref, const ref, or out parameters");
         for (size_t j = 0U; j < function->param_count; ++j) {
             Type *type = resolve_declared_type(
                 &checker, function->params[j].type_syntax,
                 function->params[j].type_name,
                 function->params[j].span);
             function->params[j].checked_type = type;
-            /* `borrowed` is also used provisionally by parser-created method
-             * receivers. Preserve only source-level reference parameter modes
-             * here; ordinary struct receivers retain their established value
-             * ABI. */
+            /* Instance receivers for value types are borrowed. Class
+             * receivers remain ordinary pointer values in the ABI. An
+             * async value receiver is consumed into the task frame because
+             * a borrow cannot safely outlive the initiating call. */
+            bool implicit_receiver = function_parameter_is_receiver(
+                function, j, type);
             function->params[j].borrowed =
                 function->params[j].by_ref ||
-                function->params[j].by_const_ref;
+                function->params[j].by_const_ref ||
+                (implicit_receiver && !function->is_async);
             function->params[j].binding_id = ++checker.next_local_id;
             checker.locals[checker.local_count++] = (Local){
                 function->params[j].name, type,
@@ -809,7 +829,8 @@ bool lang_check_module(Module *module, LangDiagnostics *diagnostics) {
                 function->params[j].span,
                 function->params[j].binding_id,
                 function->params[j].by_out,
-                !function->params[j].by_out
+                !function->params[j].by_out,
+                !function->params[j].by_out, {0}
             };
         }
         if (function->is_extern || function->is_abstract_member ||

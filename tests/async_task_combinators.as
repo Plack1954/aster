@@ -18,7 +18,7 @@ async Task<int> main()
     values.Add(FinishAfter(1, 10));
     values.Add(FinishAfter(20, 20));
 
-    Task<int> first = await Task.WhenAny(values);
+    Task<int> first = await Task.WhenAny(copy(values));
     Console.WriteLine(await first);
 
     List<int> results = await Task.WhenAll(values);

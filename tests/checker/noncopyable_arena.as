@@ -1,5 +1,5 @@
 int main() {
     Arena arena = Arena.new();
-    Arena impossible = arena;
+    Arena impossible = copy(arena);
     return 0;
 }

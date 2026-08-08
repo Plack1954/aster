@@ -333,7 +333,11 @@ static Stmt *synthesize_json_read_body(
         value = json_call_values(
             checker, span, method, arguments, 1U);
     } else if (json_element_type(type)) {
-        value = json_name(checker, span, "jsonValue");
+        value = json_node(checker, sizeof(*value));
+        value->kind = EXPR_COPY;
+        value->span = span;
+        value->as.copy.value = json_name(
+            checker, span, "jsonValue");
     } else if (type->kind == TYPE_VEC || type->kind == TYPE_OPTION ||
                (type->kind == TYPE_DICTIONARY &&
                 type->element->kind == TYPE_STRING)) {
@@ -605,9 +609,9 @@ static Expr *clone_generic_expr(Module *module, const Expr *source) {
             result->as.assign.value =
                 clone_generic_expr(module, source->as.assign.value);
             break;
-        case EXPR_CLONE:
-            result->as.clone.value =
-                clone_generic_expr(module, source->as.clone.value);
+        case EXPR_COPY:
+            result->as.copy.value =
+                clone_generic_expr(module, source->as.copy.value);
             break;
         case EXPR_TRY:
             result->as.try_.value =
@@ -1103,21 +1107,22 @@ Type *check_generic_call(
                     function->params[i].by_out ? "out" :
                     parameter_ref ? "ref" : "ordinary value syntax");
         }
-        argument_places[i] =
-            (argument->kind == EXPR_NAME &&
-             find_local(checker, argument->as.name) != NULL) ||
-            (argument->kind == EXPR_FIELD &&
-             argument->as.field.object->kind == EXPR_NAME);
-        if (!argument_places[i] && i < function->param_count &&
-            function->params[i].by_ref) {
+        argument_places[i] = checker_expression_is_local_place(
+            checker, argument);
+        bool parameter_borrowed = i < function->param_count &&
+            parameter_mode_is_reference(
+                parameter_mode_from_param(&function->params[i]));
+        bool mutable_reference = i < function->param_count &&
+            function->params[i].by_ref;
+        if (!argument_places[i] && mutable_reference) {
             lang_diag(
                 checker->diagnostics, argument->span,
                 function->params[i].by_out
                     ? "`out` argument must be an available place"
                     : "`ref` argument must be an available place");
         }
-        if (argument_places[i])
-            (void)check_place(checker, argument);
+        if (parameter_borrowed)
+            (void)check_borrowed_expr(checker, argument);
         else
             (void)check_expr(checker, argument);
     }
@@ -1139,9 +1144,6 @@ Type *check_generic_call(
     if (!complete) return &type_error;
 
     for (size_t i = 0U; i < count; ++i) {
-        if (argument_places[i] && !function->params[i].by_ref)
-            (void)check_expr(
-                checker, expr->as.call.arguments.items[i]);
         if (function->params[i].by_ref && argument_places[i]) {
             Expr *root = expr->as.call.arguments.items[i];
             while (root->kind == EXPR_FIELD)

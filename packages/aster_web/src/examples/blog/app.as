@@ -37,13 +37,13 @@ public class Blog
         posts = postValues;
     }
 
-    public Response Home(Request request) { return home(this, request); }
-    public Response Posts(Request request) { return posts(this, request); }
-    public Response About(Request request) { return about(this, request); }
-    public Response Post(Request request) { return post(this, request); }
-    public Response Feed(Request request) { return feed(this, request); }
-    public Response Robots(Request request) { return robots(this, request); }
-    public Response Missing(Request request) { return missing(this, request); }
+    public Response Home(const ref Request request) { return home(this, request); }
+    public Response Posts(const ref Request request) { return posts(this, request); }
+    public Response About(const ref Request request) { return about(this, request); }
+    public Response Post(const ref Request request) { return post(this, request); }
+    public Response Feed(const ref Request request) { return feed(this, request); }
+    public Response Robots(const ref Request request) { return robots(this, request); }
+    public Response Missing(const ref Request request) { return missing(this, request); }
     public List<string> PostPagePaths() { return PostPagePaths(this); }
 }
 
@@ -89,9 +89,9 @@ public Blog BlogNew()
 }
 
 private Html Layout(
-    Blog blog,
-    string pageTitle,
-    string pageDescription,
+    const ref Blog blog,
+    const ref string pageTitle,
+    const ref string pageDescription,
     Html content
 )
 {
@@ -183,7 +183,7 @@ private Html Layout(
     </>;
 }
 
-private Html PostCard(Post post)
+private Html PostCard(const ref Post post)
 {
     string path = $"/blog/{post.slug}/";
     return <li>
@@ -201,7 +201,7 @@ private Html PostCard(Post post)
     </li>;
 }
 
-private Html PostList(List<Post> posts)
+private Html PostList(const ref List<Post> posts)
 {
     return <ul class="post-list">
         foreach (Post post in posts)
@@ -211,7 +211,7 @@ private Html PostList(List<Post> posts)
     </ul>;
 }
 
-private Response home(Blog blog, Request request)
+private Response home(const ref Blog blog, const ref Request request)
 {
     return Results.Html(Layout(
         blog,
@@ -225,7 +225,7 @@ private Response home(Blog blog, Request request)
     ));
 }
 
-private Response posts(Blog blog, Request request)
+private Response posts(const ref Blog blog, const ref Request request)
 {
     return Results.Html(Layout(
         blog,
@@ -238,7 +238,7 @@ private Response posts(Blog blog, Request request)
     ));
 }
 
-private Response about(Blog blog, Request request)
+private Response about(const ref Blog blog, const ref Request request)
 {
     return Results.Html(Layout(
         blog,
@@ -251,7 +251,11 @@ private Response about(Blog blog, Request request)
     ));
 }
 
-private Response PostResponse(List<Post> posts, string slug, Blog blog)
+private Response PostResponse(
+    const ref List<Post> posts,
+    const ref string slug,
+    const ref Blog blog
+)
 {
     foreach (Post post in posts)
     {
@@ -283,7 +287,7 @@ private Response PostResponse(List<Post> posts, string slug, Blog blog)
     ));
 }
 
-private Response post(Blog blog, Request request)
+private Response post(const ref Blog blog, const ref Request request)
 {
     switch (request.RouteValue("slug"))
     {
@@ -296,7 +300,7 @@ private Response post(Blog blog, Request request)
     }
 }
 
-private void XmlAppend(ref StringBuilder output, string value)
+private void XmlAppend(ref StringBuilder output, const ref string value)
 {
     for (nuint index = 0; index < value.Length; index++)
     {
@@ -312,8 +316,8 @@ private void XmlAppend(ref StringBuilder output, string value)
 
 private void AppendFeedItems(
     ref StringBuilder output,
-    string baseUrl,
-    List<Post> posts
+    const ref string baseUrl,
+    const ref List<Post> posts
 )
 {
     foreach (Post post in posts)
@@ -336,7 +340,7 @@ private void AppendFeedItems(
     }
 }
 
-private string FeedXml(Blog blog)
+private string FeedXml(const ref Blog blog)
 {
     StringBuilder output = new();
     output.Append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -352,17 +356,17 @@ private string FeedXml(Blog blog)
     return output.ToString();
 }
 
-private Response feed(Blog blog, Request request)
+private Response feed(const ref Blog blog, const ref Request request)
 {
     return Results.Xml(FeedXml(blog));
 }
 
-private Response robots(Blog blog, Request request)
+private Response robots(const ref Blog blog, const ref Request request)
 {
     return Results.Text("User-agent: *\nAllow: /\n");
 }
 
-private Response missing(Blog blog, Request request)
+private Response missing(const ref Blog blog, const ref Request request)
 {
     return Results.NotFound(Layout(
         blog,
@@ -372,7 +376,7 @@ private Response missing(Blog blog, Request request)
     ));
 }
 
-private List<string> PostPagePathsFrom(List<Post> posts)
+private List<string> PostPagePathsFrom(const ref List<Post> posts)
 {
     List<string> paths = new();
     foreach (Post post in posts)
@@ -382,7 +386,7 @@ private List<string> PostPagePathsFrom(List<Post> posts)
     return paths;
 }
 
-private List<string> PostPagePaths(Blog blog)
+private List<string> PostPagePaths(const ref Blog blog)
 {
     return PostPagePathsFrom(blog.posts);
 }

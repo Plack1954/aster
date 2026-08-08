@@ -9,7 +9,7 @@ public union CliArgument {
     Positional(string),
 }
 
-public string CliNamedName(string value) {
+public string CliNamedName(const ref string value) {
     switch (StringFindByte(value, 61)) {
         case Option.Some(position): {
             return StringSlice(value, 0, position);
@@ -21,7 +21,7 @@ public string CliNamedName(string value) {
     return "";
 }
 
-public string CliNamedValue(string value) {
+public string CliNamedValue(const ref string value) {
     nuint length = value.Length;
     switch (StringFindByte(value, 61)) {
         case Option.Some(position): {
@@ -46,15 +46,14 @@ public Result<List<CliArgument>, string> CliParseProcessArguments() {
             case Result.Err(error): { return Result.Err(error); }
             case Result.Ok(value): { argument = value; }
         }
-        string view = argument;
-        nuint length = view.Length;
+        nuint length = argument.Length;
 
         if (optionsEnabled) {
-            if (view == "--") {
+            if (argument == "--") {
                 optionsEnabled = false;
-            } else if (view.StartsWith("--")) {
+            } else if (argument.StartsWith("--")) {
                 Option<nuint> separator =
-                    StringFindByte(view, 61);
+                    StringFindByte(argument, 61);
                 switch (separator) {
                     case Option.Some(position): {
                         if (position <= 2) {
@@ -63,7 +62,7 @@ public Result<List<CliArgument>, string> CliParseProcessArguments() {
                             );
                         }
                         string named =
-                            StringSlice(view, 2, length)
+                            StringSlice(argument, 2, length)
                         ;
                         output.Add(CliArgument.Named(named),
                         );
@@ -75,16 +74,16 @@ public Result<List<CliArgument>, string> CliParseProcessArguments() {
                             );
                         }
                         string name =
-                            StringSlice(view, 2, length)
+                            StringSlice(argument, 2, length)
                         ;
                         output.Add(CliArgument.Flag(name),
                         );
                     }
                 }
-            } else if (view.StartsWith("-")) {
+            } else if (argument.StartsWith("-")) {
                 if (length > 1) {
                     string name =
-                        StringSlice(view, 1, length);
+                        StringSlice(argument, 1, length);
                     output.Add(CliArgument.Flag(name),
                     );
                 } else {

@@ -17,7 +17,7 @@ int main() {
     Queue<ConditionalCopyItem> queue = new();
     queue.Enqueue(queueSeed);
     ConditionalCopyItem queueResult = new() { value = 99 };
-    if (!queue.TryPeek(out queueResult) || queueResult.value != 12) {
+    if (!queue.TryPeek(out queueResult) || queueResult.value != 11) {
         return 1;
     }
     Console.WriteLine(queueResult.value);
@@ -31,7 +31,7 @@ int main() {
     Stack<ConditionalCopyItem> stack = new();
     stack.Push(stackSeed);
     ConditionalCopyItem stackResult = new() { value = 99 };
-    if (!stack.TryPeek(out stackResult) || stackResult.value != 22) {
+    if (!stack.TryPeek(out stackResult) || stackResult.value != 21) {
         return 3;
     }
     Console.WriteLine(stackResult.value);
@@ -48,7 +48,7 @@ int main() {
         item = new() { value = 99 }
     };
     if (!dictionary.TryGetValue(7, out holder.item) ||
-        holder.item.value != 32) {
+        holder.item.value != 31) {
         return 5;
     }
     Console.WriteLine(holder.item.value);

@@ -21,6 +21,122 @@ static void emit_value_name(FILE *output, IrValueId value) {
     fprintf(output, "v%" PRIu32, value);
 }
 
+static bool emit_borrowed_alias_address(
+    CEmitter *emitter, const IrFunction *function, IrValueId value
+) {
+    const IrInstruction *producer =
+        c_backend_find_value_producer(function, value);
+    if (producer == NULL) return false;
+    FILE *output = emitter->output;
+    switch (producer->opcode) {
+        case IR_OP_LOCAL_LOAD:
+            fprintf(output, "&l%" PRIu32, producer->index);
+            return true;
+        case IR_OP_LOCAL_FIELD_BORROW: {
+            const IrType *owner = &emitter->ir->types[
+                function->locals[producer->index].type];
+            fprintf(output, "&l%" PRIu32 "%sf%" PRIu32,
+                    producer->index,
+                    owner->shape == IR_TYPE_CLASS_REFERENCE ? "->" : ".",
+                    producer->auxiliary);
+            return true;
+        }
+        case IR_OP_FIELD_GET: {
+            if (producer->auxiliary != 1U &&
+                producer->auxiliary != 2U)
+                return false;
+            const IrType *owner = &emitter->ir->types[
+                function->value_types[producer->operands[0]]];
+            fprintf(output, "&v%" PRIu32 "%sf%" PRIu32,
+                    producer->operands[0],
+                    owner->shape == IR_TYPE_CLASS_REFERENCE ? "->" : ".",
+                    producer->index);
+            return true;
+        }
+        case IR_OP_INDEX_GET:
+            if (producer->integer == 0U) return false;
+            fprintf(output,
+                    "&v%" PRIu32 ".items[(size_t)v%" PRIu32 "]",
+                    producer->operands[0], producer->operands[1]);
+            return true;
+        case IR_OP_ENUM_PAYLOAD_BORROW: {
+            const IrInstruction *owner = c_backend_find_value_producer(
+                function, producer->operands[0]);
+            if (owner != NULL && owner->opcode == IR_OP_LOCAL_LOAD)
+                fprintf(output,
+                        "&l%" PRIu32 ".payload.v%" PRIu32,
+                        owner->index, producer->auxiliary);
+            else
+                fprintf(output,
+                        "&v%" PRIu32 ".payload.v%" PRIu32,
+                        producer->operands[0], producer->auxiliary);
+            return true;
+        }
+        case IR_OP_LIST_ELEMENT_BORROW:
+            fprintf(output,
+                    "&v%" PRIu32 "->data[(size_t)v%" PRIu32 "]",
+                    producer->operands[0], producer->operands[1]);
+            return true;
+        case IR_OP_QUEUE_FRONT_BORROW:
+            fprintf(output, "&v%" PRIu32 "->data[v%" PRIu32 "->head]",
+                    producer->operands[0], producer->operands[0]);
+            return true;
+        case IR_OP_STACK_TOP_BORROW:
+            fprintf(output,
+                    "&v%" PRIu32 "->data[v%" PRIu32 "->length - 1U]",
+                    producer->operands[0], producer->operands[0]);
+            return true;
+        case IR_OP_DICTIONARY_GET_BORROW:
+            fprintf(output,
+                    "&v%" PRIu32
+                    "->values[dictionary_borrow_match_%" PRIu32 "]",
+                    producer->operands[0], producer->result);
+            return true;
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW:
+            fprintf(output, "&v%" PRIu32 "->%s[v%" PRIu32 "]",
+                    producer->operands[0],
+                    producer->opcode == IR_OP_DICTIONARY_KEY_BORROW
+                        ? "keys" : "values",
+                    producer->operands[1]);
+            return true;
+        case IR_OP_LOCAL_ITERATOR_NEXT: {
+            IrTypeId iterator_id =
+                function->locals[producer->index].type;
+            const IrType *iterator =
+                &emitter->ir->types[iterator_id];
+            const IrType *source = &emitter->ir->types[
+                iterator->argument_types[0]];
+            if (c_backend_type_is_vec(source))
+                fprintf(output,
+                        "&l%" PRIu32
+                        ".vector->data[l%" PRIu32 ".index - 1U]",
+                        producer->index, producer->index);
+            else if (c_backend_type_is_queue(source))
+                fprintf(output,
+                        "&l%" PRIu32 ".queue->data[(l%" PRIu32
+                        ".queue->head + l%" PRIu32
+                        ".index - 1U) %% l%" PRIu32
+                        ".queue->capacity]",
+                        producer->index, producer->index,
+                        producer->index, producer->index);
+            else if (source->shape == IR_TYPE_ARRAY)
+                fprintf(output,
+                        "&(l%" PRIu32 ".borrowed ? l%" PRIu32
+                        ".borrowed_array : &l%" PRIu32
+                        ".owned_array)->items[l%" PRIu32
+                        ".index - 1U]",
+                        producer->index, producer->index,
+                        producer->index, producer->index);
+            else
+                return false;
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
 void c_backend_emit_byte_string(FILE *output,
                              const char *data, size_t length) {
     fputs("(const unsigned char *)\"", output);
@@ -51,10 +167,13 @@ void emit_borrowed_call_operand(
     }
     if (producer != NULL &&
         producer->opcode == IR_OP_LOCAL_FIELD_BORROW) {
+        const IrType *owner = &emitter->ir->types[
+            function->locals[producer->index].type];
         fprintf(
             emitter->output,
-            "&l%" PRIu32 ".f%" PRIu32,
+            "&l%" PRIu32 "%sf%" PRIu32,
             producer->index,
+            owner->shape == IR_TYPE_CLASS_REFERENCE ? "->" : ".",
             producer->auxiliary
         );
         return;
@@ -438,6 +557,21 @@ void c_backend_emit_instruction(CEmitter *emitter,
         case IR_OP_LOCAL_STORE: {
             IrTypeId local_type =
                 function->locals[instruction->index].type;
+            if (c_backend_local_is_borrowed_alias(
+                    emitter, function, instruction->index)) {
+                fprintf(output, "    l%" PRIu32 "_ref = ",
+                        instruction->index);
+                if (!emit_borrowed_alias_address(
+                        emitter, function,
+                        instruction->operands[0])) {
+                    c_backend_unsupported(
+                        emitter, instruction->span,
+                        "this borrowed aggregate alias");
+                    fputs("NULL", output);
+                }
+                fputs(";\n", output);
+                return;
+            }
             bool reference_local =
                 instruction->index < function->parameter_count &&
                 parameter_mode_is_reference(

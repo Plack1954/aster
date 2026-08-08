@@ -15,6 +15,14 @@ public struct NativeTodo
     string title;
 }
 
+private bool NativeTodoHasKey(
+    const ref NativeTodo todo,
+    const ref string key
+)
+{
+    return todo.key == key;
+}
+
 private struct PersistentTodo
 {
     string key;
@@ -23,6 +31,14 @@ private struct PersistentTodo
     bool disabled;
     bool hidden;
     string tooltip;
+}
+
+private bool PersistentTodoHasKey(
+    const ref PersistentTodo todo,
+    const ref string key
+)
+{
+    return todo.key == key;
 }
 
 private class PersistentTodoList
@@ -61,9 +77,9 @@ private class PersistentTodoList
         {
             rows.Add(
                 <li
-                    key=todo.key
-                    class=todo.className
-                    title=todo.tooltip
+                    key=copy(todo.key)
+                    class=copy(todo.className)
+                    title=copy(todo.tooltip)
                 >
                     <label>
                         <span>Todo: {todo.title}</span>
@@ -112,7 +128,7 @@ private class PersistentTodoList
     {
         for (nuint index = 0; index < this.todos.Count; index++)
         {
-            if (this.todos[index].key == key)
+            if (PersistentTodoHasKey(this.todos[index], key))
             {
                 this.todos.RemoveAt(index);
                 break;
@@ -124,9 +140,9 @@ private class PersistentTodoList
     {
         for (nuint index = 0; index < this.todos.Count; index++)
         {
-            if (this.todos[index].key == key)
+            if (PersistentTodoHasKey(this.todos[index], key))
             {
-                PersistentTodo todo = this.todos[index];
+                PersistentTodo todo = copy(this.todos[index]);
                 todo.title = $"{todo.title}!";
                 todo.className = "renamed";
                 todo.disabled = true;
@@ -402,6 +418,14 @@ private struct SelectionRow
     string className;
 }
 
+private bool SelectionRowHasKey(
+    const ref SelectionRow row,
+    const ref string key
+)
+{
+    return row.key == key;
+}
+
 private class ProjectedCounter
 {
     private int count;
@@ -455,7 +479,8 @@ private class RowSelectionComponent
         this.selectedId = 2;
         for (nuint index = 0; index < this.rows.Count; index++)
         {
-            if (this.rows[index].key == "selection-row-1")
+            if (SelectionRowHasKey(
+                    this.rows[index], "selection-row-1"))
             {
                 this.rows.RemoveAt(index);
                 break;
@@ -463,7 +488,7 @@ private class RowSelectionComponent
         }
         for (nuint index = 0; index < this.rows.Count; index++)
         {
-            SelectionRow row = this.rows[index];
+            SelectionRow row = copy(this.rows[index]);
             row.className = row.key == "selection-row-2" ? "selected" : "";
             this.rows.Set(index, row);
         }
@@ -474,7 +499,7 @@ private class RowSelectionComponent
         List<Html> rendered = new();
         foreach (SelectionRow row in this.rows)
         {
-            rendered.Add(<li key=row.key class=row.className>
+            rendered.Add(<li key=copy(row.key) class=copy(row.className)>
                 {row.label}
                 <input value="browser-owned value" />
             </li>);
@@ -529,7 +554,7 @@ private class AsyncTodoComponent
     public Html Render()
     {
         return <section class="async-todo-component">
-            <output name="asyncStatus" aria-label=this.status --accent=this.status><strong>Status: </strong>{this.status}</output>
+            <output name="asyncStatus" aria-label=copy(this.status) --accent=copy(this.status)><strong>Status: </strong>{this.status}</output>
             <button type="button" onclick=this.SaveSlow>Save slowly</button>
             <button type="button" onclick=this.SaveFast>Save quickly</button>
             <button type="button" onclick=this.FailSave>Fail save</button>
@@ -602,7 +627,7 @@ public async Task<QueryPatch> ProjectQueryLater(string query)
     return QueryPatchFor(query);
 }
 
-public bool ValidateName(string name)
+public bool ValidateName(const ref string name)
 {
     return name.Length >= 2;
 }
@@ -628,7 +653,7 @@ private Html NativeTodoRows(List<NativeTodo> todos)
     foreach (NativeTodo todo in todos)
     {
         rows.Add(
-            <li key=todo.key>
+            <li key=copy(todo.key)>
                 <label>
                     {todo.title}
                     <input value=todo.title />
@@ -651,7 +676,7 @@ public Html RemoveNativeTodo(string key)
     List<NativeTodo> todos = NativeTodos();
     for (nuint index = 0; index < todos.Count; index++)
     {
-        if (todos[index].key == key)
+        if (NativeTodoHasKey(todos[index], key))
         {
             todos.RemoveAt(index);
             break;
@@ -670,9 +695,8 @@ public Html AppendNativeTodo()
 public Html MoveNativeTodo()
 {
     List<NativeTodo> todos = NativeTodos();
-    NativeTodo last = todos[2];
-    todos.RemoveAt(2);
-    todos.Insert(0, last);
+    todos.Reverse();
+    todos.Reverse(1, 2);
     return NativeTodoRows(todos);
 }
 

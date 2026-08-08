@@ -1,8 +1,8 @@
 int main() {
     Result<string, long> first =
         Result.Ok("owned");
-    Result<string, long> second = first;
-    Result<string, long> third = first;
+    Result<string, long> second = copy(first);
+    Result<string, long> third = copy(first);
     Console.WriteLine(0);
     return 0;
 }

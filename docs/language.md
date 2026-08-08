@@ -190,9 +190,9 @@ public void Router.Add(ref Router self, Route route) {
 ```
 
 `self` must be the first parameter of a type-qualified function. An ordinary
-parameter is a value copy. `ref` is the C#-shaped mutable reference form.
-Aster has no consuming parameter modifier and does not invalidate a named
-value after a call.
+by-value parameter copies a trivial value and consumes a non-trivial value.
+`ref` is the C#-shaped mutable reference form and `const ref` is an immutable
+borrow. A moved named value is unavailable until it is reassigned.
 
 Classes may implement nominal interfaces using the C# inheritance-list form,
 and interfaces may inherit multiple interfaces. Interface members are
@@ -222,8 +222,8 @@ these methods accept them.
 
 `.AddRange`, `.InsertRange`, `.RemoveRange`, and `.GetRange` provide checked
 range operations. Collection inputs currently use another `List<T>` and may
-be the destination itself. The source remains available, while the destination
-receives independent Aster values.
+be the destination itself. These APIs borrow their collection input and
+explicitly copy elements into independent destination storage.
 
 `.Reverse()` and `.Reverse(index, count)` reorder values in place.
 `.EnsureCapacity`, writable `.Capacity`, and `.TrimExcess` expose allocation
@@ -231,17 +231,18 @@ control without changing `Count`; capacity can never be set below `Count`.
 
 Lists accept ordinary Aster function values for `.Exists`, `.FindAll`,
 `.FindIndex`, `.FindLastIndex`, `.RemoveAll`, `.ForEach`, and `.TrueForAll`.
-The list is inspected directly; callback arguments receive normal Aster value
-copies, and `FindAll` constructs an independent result.
+The list is inspected directly. Read-only traversal borrows stored elements;
+`FindAll` explicitly constructs an independent result.
 
 `Dictionary<TKey, TValue>` provides target-typed `new()`, `.Add`, `.TryAdd`,
 `.Count`, `.ContainsKey`, `.ContainsValue`, `.Remove`, `.Clear`, and checked
 indexer reads and assignments. Its read-only `.Capacity`,
 `.EnsureCapacity(capacity)`, and both `.TrimExcess()` forms expose predictable
 storage control using Aster `nuint` collection sizes.
-`.KeyAt(index)` and `.ValueAt(index)` return checked value copies from the
-dictionary's dense logical storage. They support allocation-free traversal;
-indices are not stable across structural mutation.
+`.KeyAt(index)` and `.ValueAt(index)` are checked borrowed projections into the
+dictionary's dense logical storage. Use `copy(...)` to retain an independent
+non-trivial result. They support allocation-free traversal; indices are not
+stable across structural mutation.
 Indexer assignment replaces an existing value or inserts a new key. The
 initial implementation accepts scalar, character, `string`, and raw-pointer
 keys with built-in equality and has matching VM and generated-C hash-table
@@ -270,18 +271,20 @@ hashing rules as Dictionary keys in both execution paths.
 
 `Queue<T>` provides target-typed `new()`, `.Enqueue`, `.Dequeue`, `.Peek`,
 `.Clear`, `.Count`, `.Capacity`, `.EnsureCapacity`, and `.TrimExcess()`. Both
-execution paths use FIFO circular-buffer storage and independent value copies.
+execution paths use FIFO circular-buffer storage and the language's explicit
+move/copy policy.
 The .NET `TryDequeue(out T)` and `TryPeek(out T)` members await real Aster
 `out` parameter semantics rather than receiving an invented substitute.
 
 `Stack<T>` provides target-typed `new()`, `.Push`, `.Pop`, `.Peek`, `.Clear`,
 `.Count`, `.Capacity`, `.EnsureCapacity`, and both `.TrimExcess()` forms. It
 has a distinct type and LIFO surface while sharing the established contiguous
-collection allocation and independent-copy implementation.
+collection implementation.
 
-`Add(value)`, ordinary assignment, and by-value calls copy and always leave the
-source available. The VM and generated C use the same recursive copy semantics
-for strings, lists, arrays, structs, and union payloads.
+`Add(value)`, ordinary assignment, and by-value calls move non-trivial values
+and leave trivial sources available. `copy(value)` explicitly requests an
+independent value. The VM and generated C implement the same policy for
+strings, lists, arrays, structs, and union payloads.
 
 The integer types `sbyte`, `short`, `int`, `long`, `byte`, `ushort`, `uint`, `ulong`,
 `nint`, and `nuint` have distinct static identities. Arithmetic traps when
@@ -320,7 +323,8 @@ A future native backend may lower that explicit unsafe form without a check.
 
 `Buffer`, `StringBuilder`, `Url`, `List<T>`, and `Html` are ordinary owning
 values with deterministic cleanup and supported copy behavior. `NativeHandle`
-copies share a reference-counted native resource. `Arena` is noncopyable.
+copies requested with `copy(...)` share a reference-counted native resource.
+`Arena` is noncopyable.
 Arrays, structs, and unions recursively clean up their fields and payloads.
 Values are cleaned up at lexical scope exit and early return. See
 `values-and-cleanup.md`.
@@ -336,7 +340,10 @@ values[next_index()] *= 2; // next_index() runs once
 ```
 
 Replacing a field or element cleans up its old value before installing the new
-one. Reading a copyable field or element copies only the selected value.
+one. A non-trivial projection through borrowed or container storage must be
+borrowed or explicitly copied. Moving a direct non-trivial field from an owned
+struct local transfers that field, cleans up the remaining fields, and makes
+the complete owner unavailable.
 
 Struct construction supports field shorthand when a local has the same name:
 
@@ -384,11 +391,10 @@ private struct BufferOwner {
 }
 ```
 
-Every ordinary copy of `BufferOwner` invokes this constructor, including
-initialization, assignment, by-value parameters, and explicit
-`new BufferOwner(existing)`. Assignment finishes constructing the replacement
-before destroying the destination's previous value, so self-assignment is
-well-defined. The source cannot be mutated through `const ref`.
+`copy(owner)` invokes this constructor. Ordinary initialization, assignment,
+and by-value parameters move `BufferOwner`; explicit
+`new BufferOwner(existing)` remains an ordinary constructor call. The source
+cannot be mutated through `const ref`.
 
 A unique owner can reject copying instead:
 
@@ -400,7 +406,7 @@ private struct UniqueOwner {
 }
 ```
 
-Copying then produces a diagnostic at the copy site with the deleted
+An explicit copy then produces a diagnostic at the copy site with the deleted
 declaration as secondary context. A destructor alone does not disable ordinary
 recursive field copying. Class-variable assignment remains an alias copy and
 does not use value copy constructors; explicit `new ClassName(existing)` may
@@ -419,22 +425,17 @@ index from the copied keys. User structs are not currently admissible
 equality; consequently a user-defined custom copy constructor can presently
 participate in a dictionary value, but not a set or dictionary key.
 Reads from fields, fixed arrays, `List`, `Queue`, `Stack`, and `Dictionary`
-apply the stored value's copy policy. For a custom-copy value, the runtime
-borrows the selected element long enough to call its copy constructor; the
-source aggregate or collection remains unchanged. Returning a `const ref`
-parameter likewise copies because borrowed parameters are never eligible for
-return-value ownership transfer. The conditional read APIs `Queue.TryPeek`,
-`Stack.TryPeek`, and `Dictionary.TryGetValue` follow the same rule on success:
-they borrow the stored value and initialize the `out` destination through its
-copy constructor. On failure they replace the `out` destination with that
-type's default value, without invoking its copy constructor.
+borrow stored non-trivial values unless ownership can be destructively removed.
+Use `copy(...)` when an independent result is required. Returning a `const ref`
+parameter as an owned non-trivial value likewise requires an explicit copy.
+Conditional read APIs borrow storage while producing their documented result;
+they do not silently introduce a deep copy.
 
 `string` is Aster's single immutable UTF-8 string type. Assignment, argument
-passing, field reads, and returns retain the underlying reference-counted byte
-allocation rather than copying its contents. There are no source-level string
-view or ownership-conversion constructors, string moves, or post-call
-invalidation. Native adapters may use temporary pointer-and-length views internally;
-those views are not a second language type.
+passing, and returns move its reference-counted handle. `copy(value)` retains
+the shared allocation, and borrowed reads do neither. Native adapters may use
+temporary pointer-and-length views internally; those views are not a second
+language type.
 
 `StringBuilder builder = new()`, `builder.Append(value)`, and
 `builder.ToString()` provide C#-shaped mutable construction. `ToString()` does
@@ -529,12 +530,12 @@ UTF-8 validation. Invalid indexing traps in the development VM; range copying
 returns a typed error.
 
 `new()` uses its surrounding `List<T>` type. `Add` mutates a list and can store
-a fresh element directly; passing an existing value copies it. `Count` reads
-the list, and `foreach` traverses it without consuming it.
-`list.Get(index)` performs checked indexing and returns a copy,
-so it is restricted to copyable element types.
+a fresh element directly; passing an existing non-trivial value moves it.
+`Count` reads the list, and `foreach` borrows it and its elements by default.
+`list.Get(index)` performs checked borrowed indexing; use `copy(list[index])`
+when an independent non-trivial element is required.
 
-Ordinary aggregate parameters are values:
+Ordinary aggregate parameters consume non-trivial values:
 
 ```text
 private nuint Inspect(List<long> values) {
@@ -542,8 +543,8 @@ private nuint Inspect(List<long> values) {
 }
 ```
 
-The callee receives a copy. A `ref` parameter instead permits in-place
-mutation:
+The callee receives ownership. A `const ref` parameter borrows for read-only
+use, while `ref` permits in-place mutation:
 
 ```text
 private void add_route(ref Router router, Route route) {

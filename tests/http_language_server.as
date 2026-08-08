@@ -1,25 +1,26 @@
-private extern NativeHandle HttpServerOpen(string address, long port);
-private extern long HttpServerPort(NativeHandle server);
-private extern NativeHandle HttpAccept(NativeHandle server);
-private extern string HttpRequestPath(NativeHandle request);
+private extern NativeHandle HttpServerOpen(
+    const ref string address, long port);
+private extern long HttpServerPort(const ref NativeHandle server);
+private extern NativeHandle HttpAccept(const ref NativeHandle server);
+private extern string HttpRequestPath(const ref NativeHandle request);
 private extern long HttpRespondHtml(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string body
+    const ref string body
 );
 private extern Result<bool, string> HttpTryRespondRedirectReuse(
-    NativeHandle request,
-    string location
+    const ref NativeHandle request,
+    const ref string location
 );
 
-private long RouteStatus(string path) {
+private long RouteStatus(const ref string path) {
     if (path == "/health") {
         return 200;
     }
     return 404;
 }
 
-private Html route(string path) {
+private Html route(const ref string path) {
     if (path == "/health") {
         return Html.UnsafeRaw("<strong>healthy</strong>");
     }

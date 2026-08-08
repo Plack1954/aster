@@ -21,13 +21,21 @@ static void lower_finalizers_to(
 static void lower_match(IrBuilder *builder, const Stmt *stmt) {
     const Expr *matched_expr = stmt->as.match_.value;
     const Type *matched_type = matched_expr->type;
-    IrValueId matched = ir_lower_expr(builder, matched_expr);
+    IrValueId borrowed_values[64];
+    size_t borrowed_count = 0U;
+    IrValueId matched = stmt->as.match_.borrowed
+        ? lower_borrowed_expr(
+              builder, matched_expr,
+              borrowed_values, &borrowed_count)
+        : ir_lower_expr(builder, matched_expr);
     uint32_t matched_local = ir_add_local(
         builder, "<match>", 0U, matched_type, false);
     IrInstruction *store = ir_append_instruction(
         builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
         &matched, 1U, matched_expr->span);
     if (store != NULL) store->index = matched_local;
+    if (stmt->as.match_.borrowed)
+        builder->function->locals[matched_local].borrowed = true;
 
     IrBlockId merge = ir_add_block(builder->function);
     bool has_fallthrough_arm = false;
@@ -46,21 +54,41 @@ static void lower_match(IrBuilder *builder, const Stmt *stmt) {
 
         builder->current = arm_block;
         if (arm->binding != NULL && arm->binding_type != NULL) {
-            IrInstruction *payload = ir_emit_local_enum_operation(
-                builder, IR_OP_LOCAL_ENUM_PAYLOAD_MOVE,
-                ir_intern_type(builder->module, arm->binding_type),
-                matched_local, matched_type, arm->variant, arm->span);
+            IrInstruction *payload;
+            if (stmt->as.match_.borrowed) {
+                IrInstruction *load = ir_append_instruction(
+                    builder, IR_OP_LOCAL_LOAD,
+                    ir_intern_type(builder->module, matched_type),
+                    NULL, 0U, arm->span);
+                if (load != NULL) load->index = matched_local;
+                payload = load != NULL
+                    ? ir_emit_enum_payload_borrow(
+                          builder,
+                          ir_intern_type(
+                              builder->module, arm->binding_type),
+                          load->result, matched_type,
+                          arm->variant, arm->span)
+                    : NULL;
+            } else {
+                payload = ir_emit_local_enum_operation(
+                    builder, IR_OP_LOCAL_ENUM_PAYLOAD_MOVE,
+                    ir_intern_type(builder->module, arm->binding_type),
+                    matched_local, matched_type,
+                    arm->variant, arm->span);
+            }
             if (payload == NULL) return;
             binding = ir_add_local(
                 builder, arm->binding, arm->binding_id,
                 arm->binding_type, false);
+            if (stmt->as.match_.borrowed)
+                builder->function->locals[binding].borrowed = true;
             IrValueId value = payload->result;
             IrInstruction *binding_store = ir_append_instruction(
                 builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
                 &value, 1U, arm->span);
             if (binding_store != NULL)
                 binding_store->index = binding;
-        } else {
+        } else if (!stmt->as.match_.borrowed) {
             IrInstruction *drop = ir_append_instruction(
                 builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
                 NULL, 0U, arm->span);
@@ -70,7 +98,8 @@ static void lower_match(IrBuilder *builder, const Stmt *stmt) {
         if (!ir_current_terminated(builder)) {
             /* The payload binding is introduced outside the parsed arm body,
              * so that body's lexical cleanup plan cannot contain it. */
-            if (binding != IR_INVALID_ID &&
+            if (!stmt->as.match_.borrowed &&
+                binding != IR_INVALID_ID &&
                 ir_type_needs_cleanup(
                     builder->module,
                     builder->function->locals[binding].type)) {
@@ -85,10 +114,12 @@ static void lower_match(IrBuilder *builder, const Stmt *stmt) {
         }
         builder->current = next_arm;
     }
-    IrInstruction *drop = ir_append_instruction(
-        builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
-        NULL, 0U, stmt->span);
-    if (drop != NULL) drop->index = matched_local;
+    if (!stmt->as.match_.borrowed) {
+        IrInstruction *drop = ir_append_instruction(
+            builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
+            NULL, 0U, stmt->span);
+        if (drop != NULL) drop->index = matched_local;
+    }
     ir_set_terminator(builder, IR_TERM_TRAP, IR_INVALID_ID,
                    IR_INVALID_ID, IR_INVALID_ID, stmt->span);
     builder->current = merge;
@@ -265,7 +296,8 @@ static void lower_for(IrBuilder *builder, const Stmt *stmt) {
     uint32_t item_local = ir_add_local(
         builder, stmt->as.for_.name,
         stmt->as.for_.binding_id, element_type, true);
-    builder->function->locals[item_local].borrowed = false;
+    builder->function->locals[item_local].borrowed =
+        stmt->as.for_.borrowed;
     IrBlockId condition = ir_add_block(builder->function);
     IrBlockId body = ir_add_block(builder->function);
     IrBlockId cleanup = ir_add_block(builder->function);
@@ -300,20 +332,6 @@ static void lower_for(IrBuilder *builder, const Stmt *stmt) {
     if (next != NULL) next->index = iterator_local;
     if (next != NULL) {
         IrValueId item = next->result;
-        if (stmt->as.for_.borrowed) {
-            if (ir_type_requires_custom_copy(builder, element_type)) {
-                item = ir_emit_recursive_copy(
-                    builder, element_type, item, stmt->span, false);
-            } else {
-                IrInstruction *copy = ir_append_instruction(
-                    builder, IR_OP_VALUE_CLONE, element_ir,
-                    &item, 1U, stmt->span);
-                if (copy != NULL) {
-                    copy->auxiliary = 0U;
-                    item = copy->result;
-                }
-            }
-        }
         IrInstruction *item_store = ir_append_instruction(
             builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
             &item, 1U, stmt->span);
@@ -322,7 +340,8 @@ static void lower_for(IrBuilder *builder, const Stmt *stmt) {
     ir_lower_stmt(builder, stmt->as.for_.body);
     --builder->loop_count;
     if (!ir_current_terminated(builder)) {
-        if (ir_type_needs_cleanup(builder->module, element_ir)) {
+        if (!stmt->as.for_.borrowed &&
+            ir_type_needs_cleanup(builder->module, element_ir)) {
             IrInstruction *drop = ir_append_instruction(
                 builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
                 NULL, 0U, stmt->span);
@@ -449,11 +468,14 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     stmt->as.destructure.checked_types[field];
                 const char *field_name =
                     structure->as.structure.fields[field].name;
-                bool custom = ir_type_requires_custom_copy(
-                    builder, field_type);
+                bool move = field_type != NULL &&
+                    field_type->kind != TYPE_CLASS &&
+                    field_type->kind != TYPE_RAW_POINTER &&
+                    (field_type->requires_cleanup || field_type->managed ||
+                     ir_type_requires_custom_copy(builder, field_type));
                 IrInstruction *field_value = ir_append_instruction(
-                    builder, custom ? IR_OP_LOCAL_FIELD_BORROW
-                                    : IR_OP_LOCAL_FIELD_GET,
+                    builder, move ? IR_OP_LOCAL_FIELD_MOVE
+                                  : IR_OP_LOCAL_FIELD_GET,
                     ir_intern_type(builder->module, field_type),
                     NULL, 0U, stmt->span);
                 if (field_value == NULL) break;
@@ -465,11 +487,7 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     builder, stmt->as.destructure.names[field],
                     stmt->as.destructure.binding_ids[field],
                     field_type, true);
-                IrValueId value = custom
-                    ? ir_emit_recursive_copy(
-                          builder, field_type, field_value->result,
-                          stmt->span, false)
-                    : field_value->result;
+                IrValueId value = field_value->result;
                 IrInstruction *store = ir_append_instruction(
                     builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
                     &value, 1U, stmt->span);
@@ -500,10 +518,6 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
         case STMT_RETURN: {
             const Expr *return_expr = stmt->as.return_value;
             const Expr *return_local_expr = return_expr;
-            if (return_local_expr != NULL &&
-                return_local_expr->kind == EXPR_CLONE &&
-                return_local_expr->as.clone.value->kind == EXPR_NAME)
-                return_local_expr = return_local_expr->as.clone.value;
             uint32_t returned_local = IR_INVALID_ID;
             IrValueId value;
             if (builder->finalizer_count != 0U) {

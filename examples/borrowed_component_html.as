@@ -5,7 +5,7 @@ private struct Article {
     string title;
 }
 
-private Html ArticleCard(Article article) {
+private Html ArticleCard(const ref Article article) {
     return <article><h2>{article.title}</h2></article>;
 }
 

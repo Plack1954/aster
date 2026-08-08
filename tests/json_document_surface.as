@@ -57,7 +57,7 @@ int main()
     string source = "{\"name\":\"Aster\\nLang\",\"count\":42,\"large\":9223372036854775807,\"ratio\":1.25e2,\"ready\":true,\"missing\":null,\"items\":[1,{\"ok\":false},3],\"escaped\":\"\\u0041\\uD83D\\uDE00\",\"duplicate\":1,\"duplicate\":2}";
 
     JsonDocument document = JsonDocument.Parse(source);
-    JsonElement root = document.RootElement;
+    JsonElement root = copy(document.RootElement);
     if (root.ValueKind != JsonValueKind.Object) { return 1; }
     if (root.GetPropertyCount() != 10) { return 2; }
     if (root.GetPropertyName(0) != "name" ||

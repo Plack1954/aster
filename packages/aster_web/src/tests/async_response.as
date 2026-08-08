@@ -25,16 +25,17 @@ private async Task<Response> LoadResponseAsync()
 
 private async Task<Response> HandleAsync(Request request, int id)
 {
+    string method = request.Method;
     await Task.Delay(1);
-    return Results.Text($"{request.Method}:{id}");
+    return Results.Text($"{method}:{id}");
 }
 
-private Response HandleSync(Request request)
+private Response HandleSync(const ref Request request)
 {
     return Results.Text("sync");
 }
 
-private Response Missing(Request request)
+private Response Missing(const ref Request request)
 {
     return Results.NotFound(<h1>Missing</h1>);
 }
@@ -67,7 +68,7 @@ private async Task<Response> AsyncMissing(Request request)
 
 private Response HandleException(Exception error)
 {
-    return Results.Text(error.Message);
+    return Results.Text(copy(error.Message));
 }
 
 private bool ResponseTextEquals(
@@ -106,7 +107,7 @@ private async Task<bool> VerifyEndpointDispatchAsync()
     List<string> methods = new();
     methods.Add("POST");
     methods.Add("PUT");
-    app.MapMethods("/methods", methods, HandleMethodAsync);
+    app.MapMethods("/methods", copy(methods), HandleMethodAsync);
     methods.Add("DELETE");
     app.MapGet("/failure", FailAsync);
     app.MapGet(
@@ -167,7 +168,7 @@ async Task<int> main()
     if (!await VerifyEndpointDispatchAsync()) { return 12; }
 
     Task<Response> pending = LoadResponseAsync();
-    Response first = await pending;
+    Response first = await copy(pending);
     Response second = await pending;
 
     (int firstStatus, ResponseBody firstBody,

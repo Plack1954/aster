@@ -1,6 +1,11 @@
 # Aster TODO
 
-## C++-style value copy control
+## C++-style value copy control (historical plan)
+
+> Superseded by the move-by-default and explicit `copy(value)` design in
+> [`docs/ownership-and-copy.md`](docs/ownership-and-copy.md). The checklist
+> below records the earlier implementation plan and is not the current source
+> semantics.
 
 Resolve custom resource-owning values with conventional C++ copy control. This
 work does not introduce Rust ownership, borrow checking, lifetime annotations,

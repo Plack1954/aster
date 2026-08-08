@@ -9,17 +9,22 @@ short-circuit zero-length library calls and must not perform pointer arithmetic
 on a null data pointer. Empty values therefore require no allocation while
 remaining valid in both backends.
 
-Aster does not use garbage collection and does not have a borrow checker.
-Its model is deliberately C/C++-like:
+Aster does not use garbage collection and does not have a general borrow
+checker. Its ownership model is specified in
+[`ownership-and-copy.md`](ownership-and-copy.md):
 
-- ordinary parameters and assignments copy values;
+- ordinary parameters and assignments copy trivial values and move
+  non-trivial values;
+- `copy(value)` explicitly requests duplication;
 - `ref T` is an explicit mutable reference;
 - `T*` and `const T*` are raw pointers;
 - locals and fields with destructors are destroyed at scope exit;
 - unsafe pointer mistakes remain the programmer's responsibility.
 
-There is no `take`, `borrow`, `owned`, source invalidation, use-after-move
-diagnostic, or lifetime proof in Aster source.
+There is no `take`, rvalue-reference type, reference collapsing, perfect
+forwarding, lifetime annotation, or general lifetime proof in Aster source.
+The checker does track whether a non-trivial local has been moved and rejects
+its use until reassignment.
 
 ### Relationship to C and C++
 
@@ -32,19 +37,19 @@ lead to a double free. The C compiler does not prevent that programmer error.
 
 Aster deliberately keeps that C/C++ trust boundary for pointer and alias
 validity, while taking deterministic destruction and type-defined/deleted copy
-operations from C++. This design is not derived from Rust and does not add
-borrow checking or lifetime annotations.
+operations from C++. It adds local moved-value checking without adding pointer
+lifetime proofs or lifetime annotations.
 
-User copy constructors propagate through enclosing structs, instantiated
+An explicit `copy` propagates user copy constructors through enclosing structs, instantiated
 generic structs, fixed-size arrays, and the active payload of tagged unions,
 including `Option` and `Result`. This propagation is based on the copy policy
 of each field, element, or active payload, independently of whether that type
 needs destruction. `List`, `Stack`, and `Queue` rebuild themselves by copying
 each element. `Dictionary` rebuilds its hash table from copied keys and values,
 so stored hashes describe the destination keys rather than source storage.
-Value-returning reads such as a field projection, fixed-array indexing,
-`List.Get`, `Queue.Peek`, `Stack.Peek`, and `Dictionary.Get` borrow their stored
-value and then apply that same copy policy. They never move from the container.
+Value-returning reads that cannot remove ownership from their storage require an
+explicit `copy` for non-trivial values. They never silently move from or copy a
+container.
 
 Scalars copy directly. Immutable UTF-8 `string` values share reference-counted
 storage. `Buffer` and other ordinary owning containers deep-copy their storage.
@@ -56,7 +61,7 @@ These rules describe observable copies, not mandatory temporary work. Fresh
 construction is lowered directly into its receiving value where possible, and
 returning a managed local transfers that local's storage into the return slot.
 An immutable-reference parameter is borrowed storage and therefore cannot use
-that return elision: returning it constructs a copy.
+that return elision: returning it requires `copy(parameter)`.
 Consequently a returned `Buffer`, `List`, `Html`, or aggregate does not incur a
 deep copy merely because it crossed a function boundary.
 
@@ -73,9 +78,9 @@ articles.Add(new()
 });
 ```
 
-There is no separate copying API. Assignment, by-value calls, returns, field
-reads, indexing, and `List.Add(value)` use the normal copy behavior of the
-value's type.
+`copy(value)` is the single language operation for explicit duplication.
+Assignment, by-value calls, and returns move non-trivial values. Borrowing APIs
+do not consume their arguments.
 
 User-defined destructors use:
 

@@ -3,7 +3,10 @@ namespace Aster.Content;
 using System.IO;
 using System.Text;
 
-private string ContentJoin(string root, string name)
+private string ContentJoin(
+    const ref string root,
+    const ref string name
+)
 {
     if (StringByteAt(root, root.Length - 1) == 47)
     {
@@ -12,7 +15,10 @@ private string ContentJoin(string root, string name)
     return string.Concat(root, "/", name);
 }
 
-private int ContentStringCompare(string left, string right)
+private int ContentStringCompare(
+    const ref string left,
+    const ref string right
+)
 {
     nuint shared = left.Length < right.Length
         ? left.Length : right.Length;
@@ -28,7 +34,10 @@ private int ContentStringCompare(string left, string right)
     return 0;
 }
 
-private bool ContentStringsContain(List<string> values, string wanted)
+private bool ContentStringsContain(
+    const ref List<string> values,
+    const ref string wanted
+)
 {
     foreach (string value in values)
     {
@@ -41,8 +50,8 @@ private bool ContentStringsContain(List<string> values, string wanted)
 // filename order. Content trees choose recursion and metadata policy
 // explicitly rather than inheriting it from the filesystem primitives.
 public Result<List<string>, string> DiscoverFiles(
-    string root,
-    string suffix
+    const ref string root,
+    const ref string suffix
 )
 {
     if (root.Length == 0)
@@ -91,12 +100,12 @@ public Result<List<string>, string> DiscoverFiles(
                     if (!ContentStringsContain(emitted, name) &&
                         (!found || ContentStringCompare(name, selected) < 0))
                     {
-                        selected = name;
+                        selected = copy(name);
                         found = true;
                     }
                 }
-                emitted.Add(selected);
                 paths.Add(ContentJoin(root, selected));
+                emitted.Add(selected);
             }
             return Result.Ok(paths);
         }

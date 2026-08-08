@@ -1,5 +1,9 @@
 # Aster and Clang/LLVM implementation grounding sweep
 
+> Historical note: this report predates Aster's move-by-default and explicit
+> `copy(value)` decision. Its copy-by-default recommendations are superseded by
+> [`ownership-and-copy.md`](ownership-and-copy.md).
+
 ## Purpose and scope
 
 This review compares Aster with the current development source of Clang and

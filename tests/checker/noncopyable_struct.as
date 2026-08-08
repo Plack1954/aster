@@ -5,6 +5,6 @@ private struct Owner {
 int main() {
     Arena arena = Arena.new();
     Owner owner = Owner { arena: arena };
-    Owner copied = owner;
+    Owner copied = copy(owner);
     return 0;
 }

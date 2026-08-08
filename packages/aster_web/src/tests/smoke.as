@@ -27,7 +27,7 @@ private ApplicationOwner NewApplication()
     return new() { Value = WebApplication.Create() };
 }
 
-private Response home(Request request)
+private Response home(const ref Request request)
 {
     return Results.Html(
         <section>
@@ -37,7 +37,7 @@ private Response home(Request request)
     );
 }
 
-private Response article(Request request)
+private Response article(const ref Request request)
 {
     switch (request.RouteValue("slug"))
     {
@@ -50,12 +50,12 @@ private Response article(Request request)
     }
 }
 
-private Response create(Request request)
+private Response create(const ref Request request)
 {
     return Results.SeeOther("/");
 }
 
-private Response search(Request request)
+private Response search(const ref Request request)
 {
     switch (request.QueryValues())
     {
@@ -92,21 +92,21 @@ private Response search(Request request)
     }
 }
 
-private Response missing(Request request)
+private Response missing(const ref Request request)
 {
     return Results.NotFound(
         <section><h1>Not found</h1></section>
     );
 }
 
-private Response broken(Request request)
+private Response broken(const ref Request request)
 {
     throw new Exception("route failed");
 }
 
 private Response HandleRouteException(Exception error)
 {
-    return Results.Text(503, error.Message);
+    return Results.Text(503, copy(error.Message));
 }
 
 private bool ExceptionBoundaryWorks()
@@ -181,12 +181,12 @@ private class SiteState
         Title = title;
     }
 
-    public Response Home(Request request)
+    public Response Home(const ref Request request)
     {
         return Results.Html(<h1>{Title}</h1>);
     }
 
-    public Response Missing(Request request)
+    public Response Missing(const ref Request request)
     {
         return Results.NotFound(<p>{Title}:missing</p>);
     }
@@ -221,7 +221,7 @@ private Request request(string method, string path)
     return RequestNew(method, path, "example.test", "", "", "");
 }
 
-private Response AcceptBody(Request request)
+private Response AcceptBody(const ref Request request)
 {
     return Results.Text("accepted");
 }
@@ -232,7 +232,7 @@ private bool ByteBodiesAndLimitsWork()
     source.Add(0);
     source.Add(65);
     source.Add(255);
-    Response response = Results.Bytes(source);
+    Response response = Results.Bytes(copy(source));
     source.Add(99);
 
     (int status, ResponseBody body,
@@ -467,7 +467,7 @@ private bool ProblemResultsWork()
     }
 }
 
-private Response Origin(Request request)
+private Response Origin(const ref Request request)
 {
     return Results.Text(
         $"{request.Scheme}|{request.Host}|{request.RemoteIpAddress}"
@@ -488,7 +488,7 @@ private bool ForwardedHeadersAreTrustedExplicitly()
     string forwarded = "X-Forwarded-For\0198.51.100.20\0X-Forwarded-Host\0aster.example\0X-Forwarded-Proto\0https\0";
     Request trusted = RequestNewTransport(
         "GET", "/origin", "internal.test", "http", "127.0.0.1",
-        "", "", "", forwarded
+        "", "", "", copy(forwarded)
     );
     Response trustedResponse = app.Dispatch(trusted);
     (int trustedStatus, ResponseBody trustedBody,
@@ -767,12 +767,11 @@ private bool MultipartFormsWork()
 
 private bool PrintHtmlResponse(Response response, int expectedStatus)
 {
-    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
-    if (status != expectedStatus)
+    if (response.StatusCode != expectedStatus)
     {
         return false;
     }
-    switch (body)
+    switch (response.Body)
     {
         case ResponseBody.Empty: { return false; }
         case ResponseBody.Html(page): {
@@ -869,22 +868,22 @@ private bool BoundServiceRoutes()
     );
 }
 
-private Response ParameterRoute(Request request)
+private Response ParameterRoute(const ref Request request)
 {
     return Results.Text("parameter");
 }
 
-private Response ConstrainedRoute(Request request)
+private Response ConstrainedRoute(const ref Request request)
 {
     return Results.Text("constrained");
 }
 
-private Response LiteralRoute(Request request)
+private Response LiteralRoute(const ref Request request)
 {
     return Results.Text("literal");
 }
 
-private Response HeadRoute(Request request)
+private Response HeadRoute(const ref Request request)
 {
     return Results.Text("head");
 }
@@ -909,23 +908,22 @@ private Response TypedBool(bool enabled)
     return Results.Text(enabled ? "bool:true" : "bool:false");
 }
 
-private Response TypedRequestInt(Request request, int id)
+private Response TypedRequestInt(const ref Request request, int id)
 {
     return Results.Text($"{request.Method}:{id}");
 }
 
 private bool TextResponseEquals(
-    Response response,
+    const ref Response response,
     int expectedStatus,
-    string expectedBody
+    const ref string expectedBody
 )
 {
-    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
-    if (status != expectedStatus)
+    if (response.StatusCode != expectedStatus)
     {
         return false;
     }
-    switch (body)
+    switch (response.Body)
     {
         case ResponseBody.Text(text): { return text == expectedBody; }
         case ResponseBody.Empty: { return false; }
@@ -938,10 +936,12 @@ private bool TextResponseEquals(
     }
 }
 
-private bool AllowEquals(Response response, string expected)
+private bool AllowEquals(
+    const ref Response response,
+    const ref string expected
+)
 {
-    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
-    foreach (ResponseHeader header in headers)
+    foreach (ResponseHeader header in response.Headers)
     {
         if (header.Name == "Allow")
         {
@@ -951,11 +951,13 @@ private bool AllowEquals(Response response, string expected)
     return false;
 }
 
-private bool EmptyResponseEquals(Response response, int expectedStatus)
+private bool EmptyResponseEquals(
+    const ref Response response,
+    int expectedStatus
+)
 {
-    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
-    if (status != expectedStatus) { return false; }
-    switch (body)
+    if (response.StatusCode != expectedStatus) { return false; }
+    switch (response.Body)
     {
         case ResponseBody.Empty: { return true; }
         case ResponseBody.Html(page): { return false; }
@@ -968,10 +970,12 @@ private bool EmptyResponseEquals(Response response, int expectedStatus)
     }
 }
 
-private bool LocationEquals(Response response, string expected)
+private bool LocationEquals(
+    const ref Response response,
+    const ref string expected
+)
 {
-    (int status, ResponseBody body, List<ResponseHeader> headers) = response;
-    foreach (ResponseHeader header in headers)
+    foreach (ResponseHeader header in response.Headers)
     {
         if (header.Name == "Location")
         {
@@ -1066,7 +1070,7 @@ private bool StructuralRoutingWorks()
     List<string> multiMethods = new();
     multiMethods.Add("POST");
     multiMethods.Add("PUT");
-    app.MapMethods("/multi", multiMethods, ParameterRoute);
+    app.MapMethods("/multi", copy(multiMethods), ParameterRoute);
     multiMethods.Add("DELETE");
 
     if (!TextResponseEquals(
@@ -1108,12 +1112,8 @@ private bool StructuralRoutingWorks()
     Response multiInvalidMethod = app.Dispatch(request(
         "DELETE", "/multi"
     ));
-    (int optionsStatus, ResponseBody optionsBody,
-    List<ResponseHeader> optionsHeaders) = options;
-    (int invalidStatus, ResponseBody invalidBody,
-    List<ResponseHeader> invalidHeaders) = invalidMethod;
     bool protocolBehavior = EmptyResponseEquals(options, 204) &&
-        invalidStatus == 405 &&
+        invalidMethod.StatusCode == 405 &&
         AllowEquals(options, "GET, HEAD, OPTIONS") &&
         AllowEquals(invalidMethod, "GET, HEAD, OPTIONS") &&
         multiInvalidMethod.StatusCode == 405 &&

@@ -66,13 +66,18 @@ bool c_backend_emit_native_text(
             function->value_types[instruction->operands[1]]];
         if (text_type->shape == IR_TYPE_BUILTIN_OBJECT &&
             strcmp(text_type->name, "string") == 0) {
+            bool borrowed = instruction->argument_mode_count > 1U &&
+                parameter_mode_is_reference(
+                    instruction->argument_modes[1]);
             fprintf(output,
                     "    aster_builder_append(v%" PRIu32
-                    ", aster_string_as_str(v%" PRIu32 "));\n"
-                    "    aster_string_drop(v%" PRIu32 ");\n",
+                    ", aster_string_as_str(v%" PRIu32 "));\n",
                     instruction->operands[0],
-                    instruction->operands[1],
                     instruction->operands[1]);
+            if (!borrowed)
+                fprintf(output,
+                        "    aster_string_drop(v%" PRIu32 ");\n",
+                        instruction->operands[1]);
         } else if (text_type->shape == IR_TYPE_SIGNED_INT)
             fprintf(output,
                     "    aster_builder_append_i64(v%" PRIu32

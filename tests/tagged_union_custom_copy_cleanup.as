@@ -15,6 +15,6 @@ private struct UnionResource {
 int main() {
     Option<UnionResource> original = Option.Some(
         new() { storage = Arena.new(), id = 1 });
-    Option<UnionResource> copied = original;
+    Option<UnionResource> copied = copy(original);
     return 0;
 }

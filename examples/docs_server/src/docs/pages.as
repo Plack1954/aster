@@ -13,7 +13,7 @@ private Html RenderDocument(
     </section>;
 }
 
-public Html home(string path) {
+public Html home(const ref string path) {
     Pair<string, string> metadata =
         pair("section", "home");
     Document<Pair<string, string>> page = document(
@@ -24,7 +24,7 @@ public Html home(string path) {
     return RenderDocument(page);
 }
 
-public Html guide(string path) {
+public Html guide(const ref string path) {
     Pair<string, string> metadata =
         pair("section", "guide");
     Document<Pair<string, string>> page = document(
@@ -35,7 +35,7 @@ public Html guide(string path) {
     return RenderDocument(page);
 }
 
-public Html missing(string path) {
+public Html missing(const ref string path) {
     return <section>
         <h2>Document not found</h2>
         <p>{path}</p>

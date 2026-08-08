@@ -25,6 +25,6 @@ int main() {
             id = 1
         }
     };
-    ResourceWrapper copied = original;
+    ResourceWrapper copied = copy(original);
     return 0;
 }

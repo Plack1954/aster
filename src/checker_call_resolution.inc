@@ -104,8 +104,12 @@ static_call:
                     if (expected_out && argument->kind == EXPR_NAME) {
                         Local *local = find_local(
                             checker, argument->as.name);
-                        if (local != NULL && local->is_out_parameter)
-                            local->definitely_assigned = true;
+                        if (local != NULL) {
+                            if (local->is_out_parameter)
+                                local->definitely_assigned = true;
+                            local->available = true;
+                            local->moved_at = (LangSpan){0};
+                        }
                     }
                 } else {
                     (void)check_expr(checker, argument);
@@ -369,6 +373,12 @@ static_call:
         strcmp(name, "Stack::EnsureCapacity") == 0 ||
         strcmp(name, "Stack::TrimExcess") == 0 ||
         strcmp(name, "Stack::Capacity") == 0;
+    builtin_borrow = builtin_borrow ||
+        strcmp(name, "CancellationTokenSource::Token") == 0 ||
+        strcmp(name, "CancellationTokenSource::Cancel") == 0 ||
+        strcmp(name, "CancellationToken::IsCancellationRequested") == 0 ||
+        strcmp(name,
+               "CancellationToken::ThrowIfCancellationRequested") == 0;
     for (size_t i = 0U; i < expr->as.call.arguments.count; ++i) {
         ParameterMode actual_mode = call_argument_mode(expr, i);
         bool explicit_call_ref =
@@ -408,31 +418,46 @@ static_call:
                 expr->as.call.arguments.items[i]->span,
                 "argument %zu to `%s` must use `out`",
                 i + 1U, name);
-        bool output_local =
+        bool output_place =
             (strcmp(name, "Console::WriteLine") == 0 ||
              strcmp(name, "Console::Write") == 0 ||
              strcmp(name, "Console::Error::WriteLine") == 0 ||
              strcmp(name, "Console::Error::Write") == 0) &&
-            i == 0U &&
-            expr->as.call.arguments.items[i]->kind == EXPR_NAME;
-        bool text_local =
-            strcmp(name, "TextLen") == 0 && i == 0U &&
-            expr->as.call.arguments.items[i]->kind == EXPR_NAME;
+            i == 0U;
+        bool text_place =
+            strcmp(name, "TextLen") == 0 && i == 0U;
         /* Method syntax never evaluates its receiver as an ordinary value.
          * In particular, overload resolution happens after argument typing,
          * so declared_function is temporarily NULL for overloaded methods.
          * Treating the receiver as a value here inserted a defensive clone;
          * the selected ref-self overload then mutated that clone. */
         bool implicit_receiver =
-            expr->as.call.implicit_receiver && i == 0U;
+            expr->as.call.implicit_receiver && i == 0U &&
+            !(declared_function != NULL &&
+              declared_function->is_async);
+        bool builtin_value_borrow =
+            (strcmp(name, "StringBuilder::Append") == 0 && i == 1U) ||
+            ((strcmp(name, "List::Contains") == 0 ||
+              strcmp(name, "List::IndexOf") == 0 ||
+              strcmp(name, "List::LastIndexOf") == 0 ||
+              strcmp(name, "List::Remove") == 0 ||
+              strcmp(name, "Dictionary::ContainsKey") == 0 ||
+              strcmp(name, "Dictionary::Remove") == 0 ||
+              strcmp(name, "Dictionary::Get") == 0 ||
+              strcmp(name, "Dictionary::ContainsValue") == 0) &&
+             i == 1U) ||
+            (strcmp(name, "Dictionary::TryGetValue") == 0 && i == 1U);
         bool borrowed = explicit_call_ref || explicit_call_out ||
             implicit_receiver ||
-            (builtin_borrow && i == 0U) || output_local ||
-            text_local ||
+            (builtin_borrow && i == 0U) || output_place ||
+            text_place || builtin_value_borrow ||
+            (pending_overload && checker_expression_is_local_place(
+                checker, expr->as.call.arguments.items[i])) ||
             (declared_function != NULL &&
              i < declared_function->param_count &&
              (declared_function->params[i].by_ref ||
-              declared_function->params[i].by_const_ref));
+              declared_function->params[i].by_const_ref ||
+              declared_function->params[i].borrowed));
         if (borrowed) {
             bool builtin_place =
                 (strcmp(name, "List::Add") == 0 ||
@@ -511,13 +536,9 @@ static_call:
                   strcmp(name, "Stack::EnsureCapacity") == 0 ||
                   strcmp(name, "Stack::TrimExcess") == 0 ||
                   strcmp(name, "Stack::Capacity") == 0) && i == 0U);
-            ExprKind argument_kind =
-                expr->as.call.arguments.items[i]->kind;
             bool borrowable_place =
-                argument_kind == EXPR_NAME ||
-                (argument_kind == EXPR_FIELD &&
-                 expr->as.call.arguments.items[i]
-                         ->as.field.object->kind == EXPR_NAME);
+                checker_expression_is_local_place(
+                    checker, expr->as.call.arguments.items[i]);
             bool explicit_ref =
                 declared_function != NULL &&
                 i < declared_function->param_count &&
@@ -540,7 +561,10 @@ static_call:
                     checker->allowed_unassigned_out_place;
                 if (expected_out)
                     checker->allowed_unassigned_out_place = argument;
-                (void)check_place(checker, argument);
+                if (builtin_place || explicit_ref || expected_out)
+                    (void)check_place(checker, argument);
+                else
+                    (void)check_borrowed_expr(checker, argument);
                 checker->allowed_unassigned_out_place = previous_allowed;
                 bool mutable_borrow =
                     declared_function != NULL &&
@@ -563,8 +587,12 @@ static_call:
                 }
                 if (expected_out && argument->kind == EXPR_NAME) {
                     Local *local = find_local(checker, argument->as.name);
-                    if (local != NULL && local->is_out_parameter)
-                        local->definitely_assigned = true;
+                    if (local != NULL) {
+                        if (local->is_out_parameter)
+                            local->definitely_assigned = true;
+                        local->available = true;
+                        local->moved_at = (LangSpan){0};
+                    }
                 }
             } else {
                 Type *previous_expected = checker->expected_type;
@@ -576,7 +604,7 @@ static_call:
                         declared_function->params[i].type_name,
                         declared_function->params[i].span,
                         declared_module);
-                (void)check_expr(
+                (void)check_borrowed_expr(
                     checker, expr->as.call.arguments.items[i]);
                 checker->expected_type = previous_expected;
             }
@@ -721,5 +749,34 @@ static_call:
                 ? declared_declaration->module_name
                 : checker->current_module;
             expr->resolved_decl = declared_declaration;
+        }
+        if (declared_function != NULL) {
+            size_t parameter_count = declared_function->param_count <
+                    expr->as.call.arguments.count
+                ? declared_function->param_count
+                : expr->as.call.arguments.count;
+            for (size_t i = 0U; i < parameter_count; ++i) {
+                ParameterMode mode = parameter_mode_from_param(
+                    &declared_function->params[i]);
+                Expr *argument = expr->as.call.arguments.items[i];
+                if (parameter_mode_is_reference(mode) ||
+                    argument->type == NULL ||
+                    !type_moves_by_default(checker, argument->type))
+                    continue;
+                if (argument->kind == EXPR_NAME) {
+                    Local *local = find_local(
+                        checker, argument->as.name);
+                    if (local != NULL)
+                        checker_move_local(
+                            checker, local, argument->span);
+                } else if (checker_expression_is_local_place(
+                               checker, argument) &&
+                           !(argument->kind == EXPR_FIELD &&
+                             argument->as.field.move_out)) {
+                    lang_diag(
+                        checker->diagnostics, argument->span,
+                        "passing a non-trivial projection by value requires `copy(...)`");
+                }
+            }
         }
     }

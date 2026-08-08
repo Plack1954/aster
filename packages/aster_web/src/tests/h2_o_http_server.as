@@ -11,18 +11,16 @@ using System.IO;
 
 private class TestState
 {
-    private SessionStore Sessions;
+    private SessionStore sessions;
 
     public TestState()
     {
-        Sessions = SessionStore.Create();
+        sessions = SessionStore.Create();
     }
 
-    public Response SessionValue(Request request)
+    public Response SessionValue(const ref Request request)
     {
-        SessionStore sessions = Sessions;
-        Session session = sessions.Open(request);
-        Sessions = sessions;
+        Session session = SessionStore.Open(ref this.sessions, request);
         string value = "";
         if (session.IsNew())
         {
@@ -55,7 +53,7 @@ private struct ServerLifetime
     delete self.State;
 }
 
-private Response Hello(Request request)
+private Response Hello(const ref Request request)
 {
     string source = "";
     switch (request.Query("from"))
@@ -90,7 +88,7 @@ private Response Hello(Request request)
     return response;
 }
 
-private Response Form(Request request)
+private Response Form(const ref Request request)
 {
     try
     {
@@ -111,7 +109,7 @@ private Response Form(Request request)
     }
 }
 
-private Response Upload(Request request)
+private Response Upload(const ref Request request)
 {
     FormCollection form = request.ReadForm();
     switch (form.Get("title"))
@@ -131,7 +129,7 @@ private Response Upload(Request request)
     }
 }
 
-private Response Cookie(Request request)
+private Response Cookie(const ref Request request)
 {
     Response response = Results.Text("cookie");
     switch (ResponseCookie("theme", "aster"))
@@ -142,17 +140,17 @@ private Response Cookie(Request request)
     return response;
 }
 
-private Response Redirect(Request request)
+private Response Redirect(const ref Request request)
 {
     return Results.SeeOther("/hello/Aster?from=redirect");
 }
 
-private Response Explode(Request request)
+private Response Explode(const ref Request request)
 {
     throw new InvalidOperationException("intentional H2O failure");
 }
 
-private Response Origin(Request request)
+private Response Origin(const ref Request request)
 {
     return Results.Text(
         $"{request.Scheme}|{request.Host}|{request.RemoteIpAddress}"
@@ -170,12 +168,12 @@ private Response HandleException(Exception error)
     return response;
 }
 
-private Response Stylesheet(Request request)
+private Response Stylesheet(const ref Request request)
 {
     return Results.Css("body { color: aster; }\n");
 }
 
-private Response Binary(Request request)
+private Response Binary(const ref Request request)
 {
     List<byte> bytes = new();
     bytes.Add(65);
@@ -186,7 +184,7 @@ private Response Binary(Request request)
     return Results.Bytes(bytes);
 }
 
-private Response LargeBinary(Request request)
+private Response LargeBinary(const ref Request request)
 {
     MemoryStream stream = MemoryStream.Create();
     List<byte> bytes = new();
@@ -210,12 +208,12 @@ private Response LargeBinary(Request request)
     return Results.Stream(stream, AssetKind.Binary);
 }
 
-private Response DisconnectBinary(Request request)
+private Response DisconnectBinary(const ref Request request)
 {
     return Results.Stream(File.OpenRead("/dev/zero"), AssetKind.Binary);
 }
 
-private Response Missing(Request request)
+private Response Missing(const ref Request request)
 {
     return Results.NotFound(<h1>Missing</h1>);
 }

@@ -69,7 +69,7 @@ public extern bool ByteSliceEndsWith(
 );
 
 // This view borrows its source storage and must not outlive it.
-public extern ReadOnlySpan<byte> StringAsByteSlice(string bytes);
+public extern ReadOnlySpan<byte> StringAsByteSlice(const ref string bytes);
 
 // Copies the half-open byte range into one owned string. string storage is
 // UTF-8-oriented, but this low-level operation does not validate encoding.

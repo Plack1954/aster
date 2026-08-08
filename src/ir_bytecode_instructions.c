@@ -46,6 +46,18 @@ static void lower_call(IrBytecodeBuilder *builder,
         store_result(builder, instruction);
         return;
     }
+    bool direct_string_builtin =
+        instruction->opcode == IR_OP_CALL_DIRECT &&
+        instruction->symbol != NULL &&
+        ((strcmp(instruction->symbol, "string::StartsWith") == 0 &&
+          instruction->operand_count == 2U) ||
+         (strcmp(instruction->symbol, "string::EndsWith") == 0 &&
+          instruction->operand_count == 2U) ||
+         (strcmp(instruction->symbol, "string::Contains") == 0 &&
+          instruction->operand_count == 2U) ||
+         (strcmp(instruction->symbol, "string::IndexOf") == 0 &&
+          (instruction->operand_count == 2U ||
+           instruction->operand_count == 3U)));
     for (size_t i = 0U; i < instruction->operand_count; ++i) {
         IrValueId value = instruction->operands[i];
         uint32_t local = value < builder->source->value_count
@@ -56,7 +68,8 @@ static void lower_call(IrBytecodeBuilder *builder,
         bool reference_argument =
             (instruction->opcode == IR_OP_CALL_DIRECT ||
              instruction->opcode == IR_OP_CALL_VIRTUAL)
-                ? parameter_mode_is_reference(mode)
+                ? parameter_mode_is_reference(mode) &&
+                      !direct_string_builtin
                 : instruction->opcode == IR_OP_CALL_NATIVE
                 ? parameter_mode_is_mutable(mode)
                 : false;
@@ -123,9 +136,11 @@ static void lower_call(IrBytecodeBuilder *builder,
                 call_site->argument_modes = ir_bc_resize(
                     NULL, call_site->argument_count,
                     sizeof(*call_site->argument_modes));
-                for (size_t i = 0U;
-                     i < call_site->argument_count; ++i)
-                    call_site->argument_modes[i] = PARAMETER_MODE_VALUE;
+                memcpy(
+                    call_site->argument_modes,
+                    instruction->argument_modes,
+                    call_site->argument_count *
+                        sizeof(*call_site->argument_modes));
             }
         }
     } else {
@@ -441,7 +456,8 @@ void lower_instruction(IrBytecodeBuilder *builder,
                 builder, arithmetic_opcode(instruction->opcode),
                 (int32_t)vm_type_kind(
                     &builder->ir->types[operand_type]),
-                0, instruction->span);
+                (int32_t)instruction->auxiliary,
+                instruction->span);
             store_result(builder, instruction);
             return;
             }
@@ -872,7 +888,10 @@ void lower_instruction(IrBytecodeBuilder *builder,
             call_site->argument_count = 2U;
             call_site->argument_modes = ir_bc_resize(
                 NULL, 2U, sizeof(*call_site->argument_modes));
-            call_site->argument_modes[0] = PARAMETER_MODE_VALUE;
+            call_site->argument_modes[0] =
+                instruction->opcode == IR_OP_RAW_ALLOC
+                    ? PARAMETER_MODE_IMMUTABLE_REFERENCE
+                    : PARAMETER_MODE_VALUE;
             call_site->argument_modes[1] = PARAMETER_MODE_VALUE;
             }
             store_result(builder, instruction);

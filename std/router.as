@@ -2,7 +2,7 @@ namespace Aster.Web.Router;
 
 using Aster.Net.Http;
 
-public delegate Html Handler(string path);
+public delegate Html Handler(const ref string path);
 
 public struct Route {
     string path;
@@ -28,22 +28,18 @@ public Router RouterAdd(
     Handler handler
 ) {
     Router output = router;
-    List<Route> routes = output.routes;
-    routes.Add(new() {
+    output.routes.Add(new() {
         path = path,
         handler = handler,
     });
-    output.routes = routes;
     return output;
 }
 
 public Html RouterDispatch(
-    Router router,
-    string path
+    const ref Router router,
+    const ref string path
 ) {
-    nuint length = router.routes.Count;
-    for (nuint index = 0; index < length; index++) {
-        Route route = router.routes[index];
+    foreach (Route route in router.routes) {
         if (HttpPathMatches(route.path, path)) {
             Handler handler = route.handler;
             return handler(path);

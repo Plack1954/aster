@@ -1,5 +1,5 @@
 private extern NativeHandle NativeHandleOpenId(long id);
-private extern long NativeHandleId(NativeHandle handle);
+private extern long NativeHandleId(const ref NativeHandle handle);
 private extern long NativeHandleDropLog();
 
 private struct ArticleResource {

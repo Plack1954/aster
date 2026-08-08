@@ -27,12 +27,11 @@ These influences are guides rather than compatibility promises. Aster can use
 C or C++ syntax where it is clearer than a C# spelling, and it does not reject
 a design merely because it resembles C or C++.
 
-Rust is not an inspiration for Aster and is not a direction in which the
-language is intended to converge. Aster does not adopt Rust's borrow checker,
-lifetime annotations, move-only-by-default values, ownership types, or
-ownership ceremony. Similarities in isolated, widely used features do not
-imply Rust lineage. Aster follows the C and C++ trust boundary instead:
-deterministic copying and destruction are language concerns, while the
+Aster does not adopt Rust's borrow checker, lifetime annotations, ownership
+types, or general lifetime calculus. Its local move checking is a bounded
+definite-state analysis, not a proof of pointer, alias, or reference lifetime.
+Aster follows the C and C++ trust boundary for those concerns: ownership
+transfer, explicit copying, and destruction are language concerns, while the
 validity and lifetime of pointers, references, aliases, and borrowed views
 remain the programmer's responsibility.
 
@@ -42,7 +41,8 @@ Aster should make these properties true in ordinary application code:
 
 - destruction is deterministic and does not depend on a tracing collector;
 - immutable strings and shared native handles use narrow reference counting;
-- ordinary assignment and calls copy values without invalidating their source;
+- ordinary assignment and calls move non-trivial values, while `copy(value)`
+  explicitly requests duplication;
 - allocation, noncopyable resources, and unsafe operations remain visible;
 - common read-only operations do not duplicate storage;
 - typed HTML, routing, validation, SQLite, configuration, and file processing
@@ -112,8 +112,8 @@ language thesis.
 - matching another language feature-for-feature;
 - restricting Aster to exclusively C#-derived syntax or rejecting useful C or
   C++ syntax and semantics;
-- adopting Rust-inspired ownership, lifetime, borrow-checking, move-only
-  defaults, or source-level ownership ceremony;
+- adopting a general borrow checker, lifetime annotations, ownership types, or
+  source-level lifetime ceremony;
 - adding traits, reflection, or a custom machine-code backend before
   applications demonstrate a concrete need;
 - replacing proven C libraries merely to maximize the amount of Aster code;

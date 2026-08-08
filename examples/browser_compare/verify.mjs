@@ -65,7 +65,7 @@ try {
     let html = render(component);
     if ((html.match(/data-aster-key="row-/g) ?? []).length !== 1000)
         throw new Error("Wasm did not render 1,000 keyed rows");
-    if (!html.includes("BenchmarkTable_DeleteRow|v|x:BenchmarkTable|s:key"))
+    if (!html.includes("BenchmarkTable_DeleteRow|v|x:BenchmarkTable|l:key"))
         throw new Error("native row removal metadata is missing");
 
     beginMutations(component);

@@ -49,20 +49,20 @@ private async Task<PageResponse> LoadResponseAsync()
 async Task<int> main()
 {
     Task<string> titleTask = LoadTitleAsync();
-    string titleFirst = await titleTask;
+    string titleFirst = await copy(titleTask);
     string titleSecond = await titleTask;
     Console.WriteLine(titleFirst);
     Console.WriteLine(titleSecond);
 
     Task<List<int>> numbersTask = LoadNumbersAsync();
-    List<int> firstNumbers = await numbersTask;
+    List<int> firstNumbers = await copy(numbersTask);
     firstNumbers.Add(30);
     List<int> secondNumbers = await numbersTask;
     Console.WriteLine(firstNumbers.Count);
     Console.WriteLine(secondNumbers.Count);
 
     Task<PageResponse> responseTask = LoadResponseAsync();
-    PageResponse first = await responseTask;
+    PageResponse first = await copy(responseTask);
     first.Headers.Add("x-first: yes");
     PageResponse second = await responseTask;
     Console.WriteLine(first.StatusCode);

@@ -34,7 +34,7 @@ int main()
         badge = Badge.Text("Featured"),
         views = 11
     };
-    articles.Add(reusable);
+    articles.Add(copy(reusable));
 
     Console.WriteLine(reusable.title);
     Console.WriteLine(reusable.tags.Count);

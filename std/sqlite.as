@@ -52,96 +52,100 @@ public enum TransactionMode
     Exclusive,
 }
 
-private extern Result<NativeHandle, SqliteError> NativeSqliteOpen(string path);
+private extern Result<NativeHandle, SqliteError> NativeSqliteOpen(
+    const ref string path);
 private extern Result<Unit, SqliteError> NativeSqliteExecute(
-    NativeHandle database,
-    string sql
+    const ref NativeHandle database,
+    const ref string sql
 );
 private extern Result<NativeHandle, SqliteError> NativeSqlitePrepare(
-    NativeHandle database,
-    string sql
+    const ref NativeHandle database,
+    const ref string sql
 );
 private extern Result<Unit, SqliteError> NativeSqliteBindI64(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index,
     long value
 );
 private extern Result<Unit, SqliteError> NativeSqliteBindText(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index,
-    string value
+    const ref string value
 );
 private extern Result<Unit, SqliteError> NativeSqliteBindDouble(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index,
     double value
 );
 private extern Result<Unit, SqliteError> NativeSqliteBindNull(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index
 );
 private extern Result<Unit, SqliteError> NativeSqliteBindBlob(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index,
     ReadOnlySpan<byte> value
 );
 private extern Result<long, SqliteError> NativeSqliteParameterIndex(
-    NativeHandle statement,
-    string name
+    const ref NativeHandle statement,
+    const ref string name
 );
-private extern Result<bool, SqliteError> NativeSqliteStep(NativeHandle statement);
+private extern Result<bool, SqliteError> NativeSqliteStep(
+    const ref NativeHandle statement);
 private extern Result<long, SqliteError> NativeSqliteColumnI64(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index
 );
 private extern Result<string, SqliteError> NativeSqliteColumnText(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index
 );
 private extern Result<double, SqliteError> NativeSqliteColumnDouble(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index
 );
 private extern Result<long, SqliteError> NativeSqliteColumnType(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index
 );
 private extern Result<long, SqliteError> NativeSqliteColumnCount(
-    NativeHandle statement
+    const ref NativeHandle statement
 );
 private extern Result<string, SqliteError> NativeSqliteColumnName(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index
 );
 private extern Result<long, SqliteError> NativeSqliteColumnBlobLength(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index
 );
 private extern Result<Unit, SqliteError> NativeSqliteColumnBlobCopy(
-    NativeHandle statement,
+    const ref NativeHandle statement,
     long index,
     Span<byte> destination
 );
-private extern Result<Unit, SqliteError> NativeSqliteReset(NativeHandle statement);
+private extern Result<Unit, SqliteError> NativeSqliteReset(
+    const ref NativeHandle statement);
 private extern Result<Unit, SqliteError> NativeSqliteClearBindings(
-    NativeHandle statement
+    const ref NativeHandle statement
 );
 private extern Result<long, SqliteError> NativeSqliteStatementChanges(
-    NativeHandle statement
+    const ref NativeHandle statement
 );
-private extern Result<long, SqliteError> NativeSqliteChanges(NativeHandle database);
+private extern Result<long, SqliteError> NativeSqliteChanges(
+    const ref NativeHandle database);
 private extern Result<long, SqliteError> NativeSqliteLastInsertId(
-    NativeHandle database
+    const ref NativeHandle database
 );
 private extern Result<NativeHandle, SqliteError> NativeSqliteBeginTransaction(
-    NativeHandle database,
+    const ref NativeHandle database,
     long mode
 );
 private extern Result<Unit, SqliteError> NativeSqliteCommitTransaction(
-    NativeHandle transaction
+    const ref NativeHandle transaction
 );
 private extern Result<Unit, SqliteError> NativeSqliteRollbackTransaction(
-    NativeHandle transaction
+    const ref NativeHandle transaction
 );
 
 private T SqliteResultOrThrow<T>(Result<T, SqliteError> result)
@@ -153,14 +157,17 @@ private T SqliteResultOrThrow<T>(Result<T, SqliteError> result)
     }
 }
 
-private long Statement.ParameterIndex(Statement self, string name)
+private long Statement.ParameterIndex(
+    Statement self,
+    const ref string name
+)
 {
     return SqliteResultOrThrow(
         NativeSqliteParameterIndex(self.Handle, name)
     );
 }
 
-private long Row.ColumnIndex(Row self, string name)
+private long Row.ColumnIndex(Row self, const ref string name)
 {
     long count = self.Statement.ColumnCount();
     for (long index = 0; index < count; index += 1)
@@ -176,14 +183,14 @@ public Database Database.Open(string path)
     return new() { Handle = handle };
 }
 
-public void Database.Execute(Database self, string sql)
+public void Database.Execute(Database self, const ref string sql)
 {
     Unit ignored = SqliteResultOrThrow(
         NativeSqliteExecute(self.Handle, sql)
     );
 }
 
-public Statement Database.Prepare(Database self, string sql)
+public Statement Database.Prepare(Database self, const ref string sql)
 {
     NativeHandle handle = SqliteResultOrThrow(
         NativeSqlitePrepare(self.Handle, sql)
@@ -231,7 +238,11 @@ public void Statement.Bind(Statement self, long index, float value)
     self.Bind(index, (double)value);
 }
 
-public void Statement.Bind(Statement self, long index, string value)
+public void Statement.Bind(
+    Statement self,
+    long index,
+    const ref string value
+)
 {
     Unit ignored = SqliteResultOrThrow(
         NativeSqliteBindText(self.Handle, index, value)
@@ -245,7 +256,11 @@ public void Statement.BindNull(Statement self, long index)
     );
 }
 
-public void Statement.Bind(Statement self, long index, List<byte> value)
+public void Statement.Bind(
+    Statement self,
+    long index,
+    const ref List<byte> value
+)
 {
     Buffer buffer = Buffer.allocate((long)value.Count);
     unsafe
@@ -261,42 +276,50 @@ public void Statement.Bind(Statement self, long index, List<byte> value)
     }
 }
 
-public void Statement.Bind(Statement self, string name, long value)
+public void Statement.Bind(Statement self, const ref string name, long value)
 {
     self.Bind(self.ParameterIndex(name), value);
 }
 
-public void Statement.Bind(Statement self, string name, int value)
+public void Statement.Bind(Statement self, const ref string name, int value)
 {
     self.Bind(self.ParameterIndex(name), value);
 }
 
-public void Statement.Bind(Statement self, string name, bool value)
+public void Statement.Bind(Statement self, const ref string name, bool value)
 {
     self.Bind(self.ParameterIndex(name), value);
 }
 
-public void Statement.Bind(Statement self, string name, double value)
+public void Statement.Bind(Statement self, const ref string name, double value)
 {
     self.Bind(self.ParameterIndex(name), value);
 }
 
-public void Statement.Bind(Statement self, string name, float value)
+public void Statement.Bind(Statement self, const ref string name, float value)
 {
     self.Bind(self.ParameterIndex(name), value);
 }
 
-public void Statement.Bind(Statement self, string name, string value)
+public void Statement.Bind(
+    Statement self,
+    const ref string name,
+    const ref string value
+)
 {
     self.Bind(self.ParameterIndex(name), value);
 }
 
-public void Statement.Bind(Statement self, string name, List<byte> value)
+public void Statement.Bind(
+    Statement self,
+    const ref string name,
+    const ref List<byte> value
+)
 {
     self.Bind(self.ParameterIndex(name), value);
 }
 
-public void Statement.BindNull(Statement self, string name)
+public void Statement.BindNull(Statement self, const ref string name)
 {
     self.BindNull(self.ParameterIndex(name));
 }
@@ -317,7 +340,7 @@ public bool Statement.Read(Statement self)
 
 public Row Statement.CurrentRow(Statement self)
 {
-    return new() { Statement = self };
+    return new() { Statement = copy(self) };
 }
 
 public long Statement.Execute(Statement self)
@@ -541,7 +564,7 @@ public Transaction Database.BeginTransaction(
     NativeHandle state = SqliteResultOrThrow(
         NativeSqliteBeginTransaction(self.Handle, nativeMode)
     );
-    return new() { Database = self, State = state };
+    return new() { Database = copy(self), State = state };
 }
 
 public void Transaction.Commit(Transaction self)
@@ -558,14 +581,14 @@ public void Transaction.Rollback(Transaction self)
     );
 }
 
-private List<string> MigrationFiles(string directory)
+private List<string> MigrationFiles(const ref string directory)
 {
     List<string> files = Directory.GetFiles(directory);
     List<string> selected = new();
     List<string> sorted = new();
     foreach (string file in files)
     {
-        if (file.EndsWith(".sql")) { selected.Add(file); }
+        if (file.EndsWith(".sql")) { selected.Add(copy(file)); }
     }
     while (sorted.Count < selected.Count)
     {
@@ -576,7 +599,7 @@ private List<string> MigrationFiles(string directory)
             if (!sorted.Contains(file) &&
                 (!found || string.CompareOrdinal(file, next) < 0))
             {
-                next = file;
+                next = copy(file);
                 found = true;
             }
         }

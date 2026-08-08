@@ -4,6 +4,70 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void begin_loop_flow(
+    Checker *checker, size_t loop, const LocalFlowState entry[256],
+    size_t outer_count
+) {
+    memcpy(checker->loop_entry_flow[loop], entry,
+           outer_count * sizeof(*entry));
+    checker->loop_has_break[loop] = false;
+}
+
+static void require_loop_backedge_flow(
+    Checker *checker, size_t loop, size_t outer_count, LangSpan span
+) {
+    for (size_t local = 0U; local < outer_count; ++local) {
+        const LocalFlowState *entry =
+            &checker->loop_entry_flow[loop][local];
+        const Local *current = &checker->locals[local];
+        if (!entry->available || current->available) continue;
+        LangDiagnostic *diagnostic = lang_diag(
+            checker->diagnostics, span,
+            "loop moves `%s` without reassigning it before the next iteration",
+            current->name);
+        if (current->moved_at.file != NULL)
+            lang_diag_secondary(
+                diagnostic, current->moved_at, "value moved here");
+    }
+}
+
+static void record_loop_break_flow(Checker *checker, size_t loop) {
+    size_t count = checker->loop_local_bases[loop];
+    LocalFlowState current[256];
+    snapshot_local_flow(checker, current);
+    if (!checker->loop_has_break[loop]) {
+        memcpy(checker->loop_break_flow[loop], current,
+               count * sizeof(*current));
+        checker->loop_has_break[loop] = true;
+        return;
+    }
+    for (size_t local = 0U; local < count; ++local) {
+        LocalFlowState *merged =
+            &checker->loop_break_flow[loop][local];
+        if (merged->definitely_assigned &&
+            !current[local].definitely_assigned)
+            merged->definitely_assigned = false;
+        if (merged->available && !current[local].available) {
+            merged->available = false;
+            merged->moved_at = current[local].moved_at;
+        }
+    }
+}
+
+static void merge_loop_exit_flow(
+    Checker *checker, size_t loop, size_t outer_count
+) {
+    if (!checker->loop_has_break[loop]) return;
+    for (size_t local = 0U; local < outer_count; ++local) {
+        const LocalFlowState *broken =
+            &checker->loop_break_flow[loop][local];
+        if (checker->locals[local].available && !broken->available) {
+            checker->locals[local].available = false;
+            checker->locals[local].moved_at = broken->moved_at;
+        }
+    }
+}
+
 bool check_stmt(Checker *checker, Stmt *stmt) {
     switch (stmt->kind) {
         case STMT_DELETE: {
@@ -51,7 +115,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             checker->locals[checker->local_count++] = (Local){
                 stmt->as.let.name, declared, stmt->as.let.mutable_,
                 false, checker->depth, stmt->span,
-                ++checker->next_local_id, false, true
+                ++checker->next_local_id, false, true, true, {0}
             };
             stmt->as.let.binding_id =
                 checker->locals[checker->local_count - 1U].id;
@@ -77,6 +141,12 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                     aggregate->name);
                 break;
             }
+            Local *source_local = find_local(
+                checker, value_expr->as.name);
+            if (source_local != NULL &&
+                type_moves_by_default(checker, aggregate))
+                checker_move_local(
+                    checker, source_local, value_expr->span);
             const Decl *structure = aggregate->declaration;
             size_t field_count = structure->as.structure.field_count;
             if (stmt->as.destructure.count != field_count) {
@@ -109,8 +179,6 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                     checker, stmt->as.destructure.type_syntaxes[field],
                     stmt->as.destructure.type_names[field], stmt->span);
                 stmt->as.destructure.checked_types[field] = expected;
-                (void)checker_require_copyable(
-                    checker, expected, stmt->span);
                 if (!same_type(expected, declared))
                     lang_diag(
                         checker->diagnostics, stmt->span,
@@ -129,7 +197,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 checker->locals[checker->local_count++] = (Local){
                     name, expected, true, false,
                     checker->depth, stmt->span,
-                    binding_id, false, true
+                    binding_id, false, true, true, {0}
                 };
                 stmt->as.destructure.binding_ids[field] = binding_id;
             }
@@ -213,18 +281,18 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 : 0U;
             set_cleanup_plan(
                 checker, &stmt->exit_cleanup, transfer_base);
-            bool before_try[256];
-            bool body_state[256];
-            bool catch_state[256];
-            snapshot_out_assignment(checker, before_try);
+            LocalFlowState before_try[256];
+            LocalFlowState body_state[256];
+            LocalFlowState catch_state[256];
+            snapshot_local_flow(checker, before_try);
             checker->exception_local_bases[checker->exception_depth++] =
                 checker->local_count;
             bool body_falls = check_stmt(checker, stmt->as.try_.body);
-            snapshot_out_assignment(checker, body_state);
+            snapshot_local_flow(checker, body_state);
             --checker->exception_depth;
             bool catch_falls = false;
             if (stmt->as.try_.catch_body != NULL) {
-                restore_out_assignment(checker, before_try);
+                restore_local_flow(checker, before_try);
                 Type *caught = resolve_declared_type(
                     checker, stmt->as.try_.catch_type_syntax,
                     stmt->as.try_.catch_type_name, stmt->span);
@@ -237,7 +305,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 checker->locals[checker->local_count++] = (Local){
                     stmt->as.try_.catch_name, caught, false, false,
                     checker->depth + 1U, stmt->span, binding,
-                    false, true
+                    false, true, true, {0}
                 };
                 stmt->as.try_.catch_binding_id = binding;
                 bool catch_has_finally_handler =
@@ -266,7 +334,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 }
                 catch_falls = check_stmt(
                     checker, stmt->as.try_.catch_body);
-                snapshot_out_assignment(checker, catch_state);
+                snapshot_local_flow(checker, catch_state);
                 if (pushed_catch)
                     --checker->catch_depth;
                 if (catch_has_finally_handler)
@@ -274,13 +342,13 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 checker->local_count = base;
             }
             if (body_falls && catch_falls)
-                merge_out_assignment(checker, body_state, catch_state);
+                merge_local_flow(checker, body_state, catch_state);
             else if (body_falls)
-                restore_out_assignment(checker, body_state);
+                restore_local_flow(checker, body_state);
             else if (catch_falls)
-                restore_out_assignment(checker, catch_state);
+                restore_local_flow(checker, catch_state);
             else
-                restore_out_assignment(checker, before_try);
+                restore_local_flow(checker, before_try);
             bool finally_falls = true;
             if (stmt->as.try_.finally_body != NULL) {
                 ++checker->finally_depth;
@@ -294,31 +362,31 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             if (check_expr(checker, stmt->as.if_.condition)->kind != TYPE_BOOL)
                 lang_diag(checker->diagnostics, stmt->as.if_.condition->span,
                           "`if` condition must be `bool`");
-            bool before[256];
-            bool then_state[256];
-            bool else_state[256];
-            snapshot_out_assignment(checker, before);
+            LocalFlowState before[256];
+            LocalFlowState then_state[256];
+            LocalFlowState else_state[256];
+            snapshot_local_flow(checker, before);
             bool then_falls = check_stmt(checker, stmt->as.if_.then_branch);
-            snapshot_out_assignment(checker, then_state);
-            restore_out_assignment(checker, before);
+            snapshot_local_flow(checker, then_state);
+            restore_local_flow(checker, before);
             bool else_falls = true;
             if (stmt->as.if_.else_branch != NULL)
                 else_falls = check_stmt(checker, stmt->as.if_.else_branch);
-            snapshot_out_assignment(checker, else_state);
+            snapshot_local_flow(checker, else_state);
             if (then_falls && else_falls)
-                merge_out_assignment(checker, then_state, else_state);
+                merge_local_flow(checker, then_state, else_state);
             else if (then_falls)
-                restore_out_assignment(checker, then_state);
+                restore_local_flow(checker, then_state);
             else if (else_falls)
-                restore_out_assignment(checker, else_state);
+                restore_local_flow(checker, else_state);
             return then_falls || else_falls;
         }
         case STMT_WHILE: {
             if (check_expr(checker, stmt->as.while_.condition)->kind != TYPE_BOOL)
                 lang_diag(checker->diagnostics, stmt->as.while_.condition->span,
                           "`while` condition must be `bool`");
-            bool before_loop[256];
-            snapshot_out_assignment(checker, before_loop);
+            LocalFlowState before_loop[256];
+            snapshot_local_flow(checker, before_loop);
             size_t count = checker->local_count;
             if (checker->loop_depth >=
                 sizeof(checker->loop_local_bases) /
@@ -328,10 +396,16 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 break;
             }
             checker->loop_local_bases[checker->loop_depth] = count;
+            size_t loop = checker->loop_depth;
+            begin_loop_flow(checker, loop, before_loop, count);
             ++checker->loop_depth;
-            (void)check_stmt(checker, stmt->as.while_.body);
+            bool body_falls = check_stmt(checker, stmt->as.while_.body);
+            if (body_falls)
+                require_loop_backedge_flow(
+                    checker, loop, count, stmt->span);
             --checker->loop_depth;
-            restore_out_assignment(checker, before_loop);
+            restore_local_flow(checker, before_loop);
+            merge_loop_exit_flow(checker, loop, count);
             break;
         }
         case STMT_FOR: {
@@ -415,17 +489,17 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                         "`foreach` variable expects `%s`, found `%s`",
                         declared->name, element->name);
             }
-            bool before_loop[256];
-            snapshot_out_assignment(checker, before_loop);
+            LocalFlowState before_loop[256];
+            snapshot_local_flow(checker, before_loop);
             size_t outer_count = checker->local_count;
             ++checker->depth;
             if (checker->local_count < 256U)
                 checker->locals[checker->local_count++] = (Local){
                     stmt->as.for_.name,
                     element,
-                    true, false,
+                    true, stmt->as.for_.borrowed,
                     checker->depth, stmt->span,
-                    ++checker->next_local_id, false, true
+                    ++checker->next_local_id, false, true, true, {0}
                 };
             if (checker->local_count > outer_count)
                 stmt->as.for_.binding_id =
@@ -440,11 +514,17 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 break;
             }
             checker->loop_local_bases[checker->loop_depth] = outer_count;
+            size_t loop = checker->loop_depth;
+            begin_loop_flow(checker, loop, before_loop, outer_count);
             ++checker->loop_depth;
-            (void)check_stmt(checker, stmt->as.for_.body);
+            bool body_falls = check_stmt(checker, stmt->as.for_.body);
+            if (body_falls)
+                require_loop_backedge_flow(
+                    checker, loop, outer_count, stmt->span);
             --checker->loop_depth;
             checker->local_count = outer_count;
-            restore_out_assignment(checker, before_loop);
+            restore_local_flow(checker, before_loop);
+            merge_loop_exit_flow(checker, loop, outer_count);
             --checker->depth;
             break;
         }
@@ -461,8 +541,8 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                           stmt->as.c_for.condition->span,
                           "`for` condition must be `bool`");
 
-            bool before_loop[256];
-            snapshot_out_assignment(checker, before_loop);
+            LocalFlowState before_loop[256];
+            snapshot_local_flow(checker, before_loop);
 
             size_t loop_count = checker->local_count;
             if (checker->loop_depth >=
@@ -473,14 +553,23 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             } else {
                 checker->loop_local_bases[checker->loop_depth] =
                     loop_count;
+                size_t loop = checker->loop_depth;
+                begin_loop_flow(
+                    checker, loop, before_loop, loop_count);
                 ++checker->loop_depth;
-                (void)check_stmt(checker, stmt->as.c_for.body);
+                bool body_falls = check_stmt(
+                    checker, stmt->as.c_for.body);
                 if (stmt->as.c_for.increment != NULL)
                     (void)check_expr(
                         checker, stmt->as.c_for.increment);
+                if (body_falls)
+                    require_loop_backedge_flow(
+                        checker, loop, loop_count, stmt->span);
                 --checker->loop_depth;
+                restore_local_flow(checker, before_loop);
+                merge_loop_exit_flow(
+                    checker, loop, loop_count);
             }
-            restore_out_assignment(checker, before_loop);
             set_cleanup_plan(
                 checker, &stmt->exit_cleanup, outer_count);
             checker->local_count = outer_count;
@@ -488,13 +577,25 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             break;
         }
         case STMT_MATCH: {
-            Type *matched = check_expr(checker, stmt->as.match_.value);
+            Local *matched_local =
+                stmt->as.match_.value->kind == EXPR_NAME
+                ? find_local(checker, stmt->as.match_.value->as.name)
+                : NULL;
+            stmt->as.match_.borrowed =
+                (matched_local != NULL && matched_local->borrowed) ||
+                (matched_local == NULL &&
+                 checker_expression_is_borrowable(
+                     checker, stmt->as.match_.value));
+            Type *matched = stmt->as.match_.borrowed
+                ? check_borrowed_expr(
+                      checker, stmt->as.match_.value)
+                : check_expr(checker, stmt->as.match_.value);
             const Decl *enum_decl = NULL;
             size_t match_local_count = checker->local_count;
             bool have_fallthrough_arm = false;
-            bool before_match[256];
-            bool merged_match[256];
-            snapshot_out_assignment(checker, before_match);
+            LocalFlowState before_match[256];
+            LocalFlowState merged_match[256];
+            snapshot_local_flow(checker, before_match);
             if (matched->kind == TYPE_NAMED &&
                 matched->declaration != NULL &&
                 matched->declaration->kind == DECL_ENUM)
@@ -507,7 +608,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             }
             for (size_t a = 0U; a < stmt->as.match_.arm_count; ++a) {
                 checker->local_count = match_local_count;
-                restore_out_assignment(checker, before_match);
+                restore_local_flow(checker, before_match);
                 MatchArm *arm = &stmt->as.match_.arms[a];
                 if (enum_decl != NULL) {
                     const char *separator =
@@ -608,9 +709,10 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 if (arm->binding != NULL && payload != NULL &&
                     checker->local_count < 256U)
                     checker->locals[checker->local_count++] = (Local){
-                        arm->binding, payload, false, false,
+                        arm->binding, payload, false,
+                        stmt->as.match_.borrowed,
                         checker->depth + 1U, arm->span,
-                        ++checker->next_local_id, false, true
+                        ++checker->next_local_id, false, true, true, {0}
                     };
                 if (arm->binding != NULL && payload != NULL &&
                     checker->local_count > match_local_count)
@@ -618,17 +720,25 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                         checker->locals[checker->local_count - 1U].id;
                 bool arm_falls = check_stmt(checker, arm->body);
                 if (arm_falls) {
-                    bool arm_state[256];
-                    snapshot_out_assignment(checker, arm_state);
+                    LocalFlowState arm_state[256];
+                    snapshot_local_flow(checker, arm_state);
                     if (!have_fallthrough_arm) {
                         memcpy(merged_match, arm_state,
                                match_local_count *
                                    sizeof(*merged_match));
                     } else {
                         for (size_t local = 0U;
-                             local < match_local_count; ++local)
-                            merged_match[local] =
-                                merged_match[local] && arm_state[local];
+                             local < match_local_count; ++local) {
+                            if (merged_match[local].definitely_assigned &&
+                                !arm_state[local].definitely_assigned)
+                                merged_match[local].definitely_assigned = false;
+                            if (merged_match[local].available &&
+                                !arm_state[local].available) {
+                                merged_match[local].available = false;
+                                merged_match[local].moved_at =
+                                    arm_state[local].moved_at;
+                            }
+                        }
                     }
                     have_fallthrough_arm = true;
                 }
@@ -672,7 +782,7 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             }
             checker->local_count = match_local_count;
             if (have_fallthrough_arm)
-                restore_out_assignment(checker, merged_match);
+                restore_local_flow(checker, merged_match);
             return have_fallthrough_arm;
         }
         case STMT_BREAK:
@@ -683,9 +793,13 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 lang_diag(checker->diagnostics, stmt->span,
                           "`break` can only be used inside a loop");
             else
+            {
+                record_loop_break_flow(
+                    checker, checker->loop_depth - 1U);
                 set_cleanup_plan(
                     checker, &stmt->exit_cleanup,
                     checker->loop_local_bases[checker->loop_depth - 1U]);
+            }
             return false;
         case STMT_CONTINUE:
             if (checker->finally_depth != 0U)
@@ -695,9 +809,15 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
                 lang_diag(checker->diagnostics, stmt->span,
                           "`continue` can only be used inside a loop");
             else
+            {
+                require_loop_backedge_flow(
+                    checker, checker->loop_depth - 1U,
+                    checker->loop_local_bases[checker->loop_depth - 1U],
+                    stmt->span);
                 set_cleanup_plan(
                     checker, &stmt->exit_cleanup,
                     checker->loop_local_bases[checker->loop_depth - 1U]);
+            }
             return false;
         case STMT_BLOCK: {
             bool function_body = checker->depth == 0U;
@@ -705,14 +825,14 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             size_t start = checker->local_count;
             bool falls_through = true;
             for (size_t i = 0U; i < stmt->as.block.count; ++i) {
-                bool before_unreachable[256];
+                LocalFlowState before_unreachable[256];
                 if (!falls_through)
-                    snapshot_out_assignment(checker, before_unreachable);
+                    snapshot_local_flow(checker, before_unreachable);
                 bool statement_falls =
                     check_stmt(checker, stmt->as.block.items[i]);
                 if (falls_through) falls_through = statement_falls;
                 else
-                    restore_out_assignment(checker, before_unreachable);
+                    restore_local_flow(checker, before_unreachable);
             }
             set_cleanup_plan(
                 checker, &stmt->exit_cleanup,

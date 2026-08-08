@@ -32,7 +32,7 @@ public H2OServerOptions H2OServerOptions()
 }
 
 private extern Result<NativeHandle, string> H2OTryServerOpenNative(
-    string address,
+    const ref string address,
     long port,
     long maxBodyBytes,
     long timeoutMilliseconds,
@@ -56,76 +56,77 @@ public Result<NativeHandle, string> H2OTryServerOpen(
     );
 }
 
-public extern long H2OServerPort(NativeHandle server);
-public extern bool H2OStopRequested(NativeHandle server);
+public extern long H2OServerPort(const ref NativeHandle server);
+public extern bool H2OStopRequested(const ref NativeHandle server);
 public extern Result<bool, string> H2OTryShutdown(
-    NativeHandle server
+    const ref NativeHandle server
 );
 public extern Result<NativeHandle, string> H2OTryAccept(
-    NativeHandle server
+    const ref NativeHandle server
 );
-public extern string H2ORequestMethod(NativeHandle request);
-public extern string H2ORequestTarget(NativeHandle request);
-public extern string H2ORequestAuthority(NativeHandle request);
+public extern string H2ORequestMethod(const ref NativeHandle request);
+public extern string H2ORequestTarget(const ref NativeHandle request);
+public extern string H2ORequestAuthority(const ref NativeHandle request);
 public extern string H2ORequestHeader(
-    NativeHandle request,
-    string name
+    const ref NativeHandle request,
+    const ref string name
 );
-public extern string H2ORequestHeaders(NativeHandle request);
-public extern string H2ORequestBody(NativeHandle request);
-public extern string H2ORequestRemoteIpAddress(NativeHandle request);
-public extern string H2ORequestScheme(NativeHandle request);
+public extern string H2ORequestHeaders(const ref NativeHandle request);
+public extern string H2ORequestBody(const ref NativeHandle request);
+public extern string H2ORequestRemoteIpAddress(
+    const ref NativeHandle request);
+public extern string H2ORequestScheme(const ref NativeHandle request);
 public extern Result<bool, string> H2OTryRespond(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string headers,
-    string body,
+    const ref string contentType,
+    const ref string headers,
+    const ref string body,
     bool head
 );
 public extern Result<bool, string> H2OTryRespondBytes(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string headers,
+    const ref string contentType,
+    const ref string headers,
     ReadOnlySpan<byte> body,
     bool head
 );
 public extern Result<bool, string> H2OTryRespondEmpty(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string headers
+    const ref string headers
 );
 public extern Result<NativeHandle, string> H2OTryStreamBegin(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string headers,
+    const ref string contentType,
+    const ref string headers,
     bool head
 );
 public extern Result<bool, string> H2OTryStreamWrite(
-    NativeHandle stream,
-    string bytes,
+    const ref NativeHandle stream,
+    const ref string bytes,
     bool final
 );
 public extern Result<bool, string> H2OTryStreamWriteBytes(
-    NativeHandle stream,
+    const ref NativeHandle stream,
     ReadOnlySpan<byte> bytes,
     bool final
 );
 public extern Result<bool, string> H2ORegisterStatic(
-    NativeHandle server,
-    string root
+    const ref NativeHandle server,
+    const ref string root
 );
 public extern Result<bool, string> H2OTryRespondFile(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string headers,
-    string path
+    const ref string headers,
+    const ref string path
 );
 
 public Result<bool, string> H2OBind(
-    NativeHandle server,
+    const ref NativeHandle server,
     WebApplication app
 )
 {
@@ -162,10 +163,10 @@ private string H2OAssetContentType(AssetKind kind)
 }
 
 private Result<bool, string> H2OSendStream(
-    NativeHandle request,
+    const ref NativeHandle request,
     long status,
-    string contentType,
-    string headers,
+    const ref string contentType,
+    const ref string headers,
     bool head,
     Stream stream
 )
@@ -208,7 +209,7 @@ private Result<bool, string> H2OSendStream(
     return Result.Err("H2O response stream ended unexpectedly");
 }
 
-public Request H2ORequest(NativeHandle request)
+public Request H2ORequest(const ref NativeHandle request)
 {
     return RequestNewTransport(
         H2ORequestMethod(request),
@@ -224,7 +225,7 @@ public Request H2ORequest(NativeHandle request)
 }
 
 public Result<bool, string> H2OSend(
-    NativeHandle request,
+    const ref NativeHandle request,
     Response response
 )
 {

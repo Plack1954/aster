@@ -4,12 +4,33 @@ using Aster.Html;
 
 private extern Task Task.Delay(int milliseconds);
 
-private struct FinalTodo
+private class FinalTodo
 {
-    string key;
-    string title;
-    string className;
-    bool saved;
+    public string key;
+    public string title;
+    public string className;
+    public bool saved;
+
+    public FinalTodo(
+        string keyValue,
+        string titleValue,
+        string classNameValue,
+        bool savedValue
+    )
+    {
+        key = keyValue;
+        title = titleValue;
+        className = classNameValue;
+        saved = savedValue;
+    }
+}
+
+private bool FinalTodoKeyEquals(
+    const ref FinalTodo todo,
+    const ref string key
+)
+{
+    return todo.key == key;
 }
 
 private class TodoBadge
@@ -59,28 +80,23 @@ private class FinalTodoList
     public FinalTodoList(string region, string firstTitle, int start)
     {
         todos = new();
-        this.region = region;
-        this.firstTitle = firstTitle;
+        this.firstTitle = copy(firstTitle);
         this.start = start;
         this.nextId = start + 2;
-        todos.Add(new()
-        {
-            key = $"{region}-{start}",
-            title = firstTitle,
-            className = "server-loaded",
-            saved = true
-        });
-        todos.Add(new()
-        {
-            key = $"{region}-{start + 1}",
-            title = $"{firstTitle} follow-up",
-            className = "",
-            saved = false
-        });
+        todos.Add(new FinalTodo(
+            $"{region}-{start}", copy(firstTitle),
+            "server-loaded", true
+        ));
+        todos.Add(new FinalTodo(
+            $"{region}-{start + 1}",
+            $"{firstTitle} follow-up", "", false
+        ));
+        this.region = region;
     }
 
     ~FinalTodoList()
     {
+        foreach (FinalTodo todo in this.todos) { delete todo; }
         dropped += 1;
     }
 
@@ -90,13 +106,9 @@ private class FinalTodoList
     {
         int id = this.nextId;
         this.nextId += 1;
-        FinalTodo todo = new()
-        {
-            key = $"{this.region}-{id}",
-            title = $"Todo {id}",
-            className = "",
-            saved = false
-        };
+        FinalTodo todo = new FinalTodo(
+            $"{this.region}-{id}", $"Todo {id}", "", false
+        );
         this.todos.Add(todo);
     }
 
@@ -104,12 +116,11 @@ private class FinalTodoList
     {
         for (nuint index = 0; index < this.todos.Count; index++)
         {
-            if (this.todos[index].key == key)
+            if (FinalTodoKeyEquals(this.todos[index], key))
             {
                 FinalTodo todo = this.todos[index];
                 todo.title = $"{todo.title}!";
                 todo.className = "renamed";
-                this.todos.Set(index, todo);
                 return;
             }
         }
@@ -119,9 +130,11 @@ private class FinalTodoList
     {
         for (nuint index = 0; index < this.todos.Count; index++)
         {
-            if (this.todos[index].key == key)
+            if (FinalTodoKeyEquals(this.todos[index], key))
             {
+                FinalTodo removed = this.todos[index];
                 this.todos.RemoveAt(index);
+                delete removed;
                 return;
             }
         }
@@ -130,14 +143,12 @@ private class FinalTodoList
     private void Reorder()
     {
         if (this.todos.Count < 2) { return; }
-        FinalTodo first = this.todos[0];
-        FinalTodo second = this.todos[1];
-        this.todos.Set(0, second);
-        this.todos.Set(1, first);
+        this.todos.Reverse(0, 2);
     }
 
     private void Clear()
     {
+        foreach (FinalTodo todo in this.todos) { delete todo; }
         this.todos.Clear();
     }
 
@@ -146,12 +157,11 @@ private class FinalTodoList
         await Task.Delay(10);
         for (nuint index = 0; index < this.todos.Count; index++)
         {
-            if (this.todos[index].key == key)
+            if (FinalTodoKeyEquals(this.todos[index], key))
             {
                 FinalTodo todo = this.todos[index];
                 todo.saved = true;
                 todo.className = "saved";
-                this.todos.Set(index, todo);
                 return;
             }
         }
@@ -169,14 +179,14 @@ private class FinalTodoList
         List<Html> rows = new();
         foreach (FinalTodo todo in this.todos)
         {
-            rows.Add(<li key=todo.key class=todo.className>
+            rows.Add(<li key=copy(todo.key) class=copy(todo.className)>
                 <label>
                     <span>{todo.title}</span>
                     <input value=todo.title />
                     <small hidden=todo.saved>Pending save</small>
                     <small hidden=!todo.saved>Saved</small>
                 </label>
-                <TodoBadge label=todo.title />
+                <TodoBadge label=copy(todo.title) />
                 <button type="button" name="key" value=todo.key aria-controls=listId onclick=this.Rename>Rename</button>
                 <button type="button" name="key" value=todo.key aria-controls=listId onclick=this.Save>Save</button>
                 <button type="button" name="key" value=todo.key aria-controls=listId onclick=this.FailSave>Fail save</button>

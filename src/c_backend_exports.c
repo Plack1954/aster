@@ -250,7 +250,14 @@ void c_backend_emit_public_export_wrapper(
          parameter < function->parameter_count; ++parameter) {
         const IrType *type = &emitter->ir->types[
             function->parameters[parameter].type];
-        if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
+        bool reference = parameter_mode_is_reference(
+            function->parameters[parameter].mode);
+        if (type->shape == IR_TYPE_STRING_VIEW && reference)
+            fprintf(emitter->output,
+                    "    aster_str p%zu_value = "
+                    "(aster_str){p%zu_data, p%zu_length};\n",
+                    parameter, parameter, parameter);
+        else if (type->shape == IR_TYPE_BUILTIN_OBJECT &&
             strcmp(type->name, "string") == 0)
             fprintf(emitter->output,
                     "    aster_string *p%zu_value = aster_string_from("
@@ -274,16 +281,36 @@ void c_backend_emit_public_export_wrapper(
         if (parameter != 0U) fputs(", ", emitter->output);
         const IrType *type = &emitter->ir->types[
             function->parameters[parameter].type];
-        if (type->shape == IR_TYPE_STRING_VIEW)
-            fprintf(emitter->output,
-                    "(aster_str){p%zu_data, p%zu_length}",
-                    parameter, parameter);
-        else if (web_parameter_is_string(type))
-            fprintf(emitter->output, "p%zu_value", parameter);
-        else
-            fprintf(emitter->output, "p%zu", parameter);
+        bool reference = parameter_mode_is_reference(
+            function->parameters[parameter].mode);
+        if (type->shape == IR_TYPE_STRING_VIEW) {
+            if (reference)
+                fprintf(emitter->output, "&p%zu_value", parameter);
+            else
+                fprintf(emitter->output,
+                        "(aster_str){p%zu_data, p%zu_length}",
+                        parameter, parameter);
+        } else if (web_parameter_is_string(type)) {
+            fprintf(emitter->output, "%sp%zu_value",
+                    reference ? "&" : "", parameter);
+        } else {
+            fprintf(emitter->output, "%sp%zu",
+                    reference ? "&" : "", parameter);
+        }
     }
-    fputs(");\n    return value;\n}\n\n", emitter->output);
+    fputs(");\n", emitter->output);
+    for (size_t parameter = 0U;
+         parameter < function->parameter_count; ++parameter) {
+        const IrType *type = &emitter->ir->types[
+            function->parameters[parameter].type];
+        if (parameter_mode_is_reference(
+                function->parameters[parameter].mode) &&
+            type->shape == IR_TYPE_BUILTIN_OBJECT &&
+            strcmp(type->name, "string") == 0)
+            fprintf(emitter->output,
+                    "    aster_string_drop(p%zu_value);\n", parameter);
+    }
+    fputs("    return value;\n}\n\n", emitter->output);
 }
 
 void c_backend_emit_public_async_result_accessor(
@@ -695,29 +722,58 @@ void c_backend_emit_web_component_abis(
              parameter < constructor->parameter_count; ++parameter) {
             const IrType *parameter_type = &ir->types[
                 constructor->parameters[parameter].type];
-            if (parameter_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+            bool reference = parameter_mode_is_reference(
+                constructor->parameters[parameter].mode);
+            if (parameter_type->shape == IR_TYPE_STRING_VIEW && reference)
+                fprintf(emitter->output,
+                        "    aster_str p%zu_value = "
+                        "(aster_str){p%zu_data, p%zu_length};\n",
+                        parameter, parameter, parameter);
+            else if (parameter_type->shape == IR_TYPE_BUILTIN_OBJECT &&
                 strcmp(parameter_type->name, "string") == 0)
                 fprintf(emitter->output,
                         "    aster_string *p%zu_value = aster_string_from("
                         "(aster_str){p%zu_data, p%zu_length});\n",
                         parameter, parameter, parameter);
         }
-        fprintf(emitter->output, "    return aster_fn_%zu(", constructor_index);
+        fputs("    ", emitter->output);
+        c_backend_emit_type(emitter, type_id);
+        fprintf(emitter->output, " value = aster_fn_%zu(", constructor_index);
         for (size_t parameter = 0U;
              parameter < constructor->parameter_count; ++parameter) {
             if (parameter != 0U) fputs(", ", emitter->output);
             const IrType *parameter_type = &ir->types[
                 constructor->parameters[parameter].type];
-            if (parameter_type->shape == IR_TYPE_STRING_VIEW)
-                fprintf(emitter->output,
-                        "(aster_str){p%zu_data, p%zu_length}",
-                        parameter, parameter);
-            else if (web_parameter_is_string(parameter_type))
-                fprintf(emitter->output, "p%zu_value", parameter);
-            else
-                fprintf(emitter->output, "p%zu", parameter);
+            bool reference = parameter_mode_is_reference(
+                constructor->parameters[parameter].mode);
+            if (parameter_type->shape == IR_TYPE_STRING_VIEW) {
+                if (reference)
+                    fprintf(emitter->output, "&p%zu_value", parameter);
+                else
+                    fprintf(emitter->output,
+                            "(aster_str){p%zu_data, p%zu_length}",
+                            parameter, parameter);
+            } else if (web_parameter_is_string(parameter_type)) {
+                fprintf(emitter->output, "%sp%zu_value",
+                        reference ? "&" : "", parameter);
+            } else {
+                fprintf(emitter->output, "%sp%zu",
+                        reference ? "&" : "", parameter);
+            }
         }
-        fputs(");\n}\n", emitter->output);
+        fputs(");\n", emitter->output);
+        for (size_t parameter = 0U;
+             parameter < constructor->parameter_count; ++parameter) {
+            const IrType *parameter_type = &ir->types[
+                constructor->parameters[parameter].type];
+            if (parameter_mode_is_reference(
+                    constructor->parameters[parameter].mode) &&
+                parameter_type->shape == IR_TYPE_BUILTIN_OBJECT &&
+                strcmp(parameter_type->name, "string") == 0)
+                fprintf(emitter->output,
+                        "    aster_string_drop(p%zu_value);\n", parameter);
+        }
+        fputs("    return value;\n}\n", emitter->output);
         c_backend_emit_type(emitter, render->return_type);
         fputs(" aster_export_component_", emitter->output);
         emit_web_identifier(emitter->output, method->owner_type);

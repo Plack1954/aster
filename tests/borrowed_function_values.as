@@ -6,10 +6,10 @@ private struct State
     int count;
 }
 
-private delegate int Read(State state, int amount);
+private delegate int Read(const ref State state, int amount);
 private delegate void Update(ref State state, int amount);
 
-private int read(State state, int amount)
+private int read(const ref State state, int amount)
 {
     return state.count + amount;
 }

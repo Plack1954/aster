@@ -42,18 +42,13 @@ public struct FormField
 
 public struct FormFile
 {
-    string name;
-    string fileName;
-    string contentType;
+    string Name;
+    string FileName;
+    string ContentType;
     string bytes;
     NativeHandle? temporaryFile;
-    long length;
-
-    public string Name => name;
-    public string FileName => fileName;
-    public string ContentType => contentType;
-    public long Length => this.length;
-    public bool IsBuffered => this.temporaryFile == null;
+    long Length;
+    bool IsBuffered;
 }
 
 public struct FormCollection
@@ -78,43 +73,48 @@ public MemoryStream FormFile.OpenReadStream(FormFile self)
     }
 }
 
-public Option<string> FormCollection.Get(FormCollection self, string name)
+public Option<string> FormCollection.Get(
+    FormCollection self,
+    const ref string name
+)
 {
     foreach (FormField field in self.fields)
     {
-        if (field.name == name) { return Option.Some(field.value); }
+        if (field.name == name) {
+            return Option.Some(copy(field.value));
+        }
     }
     return Option.None;
 }
 
 public List<string> FormCollection.GetValues(
     FormCollection self,
-    string name
+    const ref string name
 )
 {
     List<string> values = new();
     foreach (FormField field in self.fields)
     {
-        if (field.name == name) { values.Add(field.value); }
+        if (field.name == name) { values.Add(copy(field.value)); }
     }
     return values;
 }
 
 public Option<FormFile> FormCollection.GetFile(
     FormCollection self,
-    string name
+    const ref string name
 )
 {
     foreach (FormFile file in self.files)
     {
-        if (file.name == name) { return Option.Some(file); }
+        if (file.Name == name) { return Option.Some(copy(file)); }
     }
     return Option.None;
 }
 
 public List<FormFile> FormCollection.Files(FormCollection self)
 {
-    return self.files;
+    return copy(self.files);
 }
 
 private byte FormAsciiLower(byte value)
@@ -123,7 +123,10 @@ private byte FormAsciiLower(byte value)
     return value;
 }
 
-private bool FormAsciiEqual(string left, string right)
+private bool FormAsciiEqual(
+    const ref string left,
+    const ref string right
+)
 {
     if (left.Length != right.Length) { return false; }
     for (nuint index = 0; index < left.Length; index += 1)
@@ -137,7 +140,10 @@ private bool FormAsciiEqual(string left, string right)
     return true;
 }
 
-private bool FormMediaTypeIs(string value, string expected)
+private bool FormMediaTypeIs(
+    const ref string value,
+    const ref string expected
+)
 {
     nuint index = 0;
     while (index < value.Length &&
@@ -165,7 +171,7 @@ private bool FormMediaTypeIs(string value, string expected)
     return index == value.Length || StringByteAt(value, index) == 59;
 }
 
-private string TrimHttpWhitespace(string value)
+private string TrimHttpWhitespace(const ref string value)
 {
     nuint start = 0;
     nuint end = value.Length;
@@ -184,7 +190,7 @@ private string TrimHttpWhitespace(string value)
     return value.Substring(start, end - start);
 }
 
-private string UnquoteHeaderValue(string value)
+private string UnquoteHeaderValue(const ref string value)
 {
     string trimmed = TrimHttpWhitespace(value);
     if (trimmed.Length >= 2 && StringByteAt(trimmed, 0) == 34 &&
@@ -195,7 +201,10 @@ private string UnquoteHeaderValue(string value)
     return trimmed;
 }
 
-private Option<string> HeaderParameter(string value, string parameter)
+private Option<string> HeaderParameter(
+    const ref string value,
+    const ref string parameter
+)
 {
     nuint cursor = 0;
     while (cursor < value.Length)
@@ -275,7 +284,10 @@ private Option<string> HeaderParameter(string value, string parameter)
     return Option.None;
 }
 
-private Option<string> PartHeader(string headers, string name)
+private Option<string> PartHeader(
+    const ref string headers,
+    const ref string name
+)
 {
     nuint cursor = 0;
     while (cursor < headers.Length)
@@ -309,7 +321,7 @@ private Option<string> PartHeader(string headers, string name)
     return Option.None;
 }
 
-private FormCollection ParseUrlEncodedForm(string body)
+private FormCollection ParseUrlEncodedForm(const ref string body)
 {
     List<FormField> fields = new();
     List<FormFile> files = new();
@@ -351,7 +363,7 @@ private FormCollection ParseUrlEncodedForm(string body)
     return new() { fields = fields, files = files };
 }
 
-private void ValidateFormOptions(FormOptions options)
+private void ValidateFormOptions(const ref FormOptions options)
 {
     if (options.MemoryBufferThreshold < 0 ||
         options.MultipartBodyLengthLimit < 0 ||
@@ -367,7 +379,7 @@ private void ValidateFormOptions(FormOptions options)
 
 private Option<nuint> FindMultipartBytes(
     ReadOnlySpan<byte> source,
-    string value,
+    const ref string value,
     nuint start
 )
 {
@@ -394,7 +406,7 @@ private Option<nuint> FindMultipartBytes(
 
 private Option<nuint> FindMultipartBoundary(
     ReadOnlySpan<byte> source,
-    string marker,
+    const ref string marker,
     nuint start
 )
 {
@@ -439,7 +451,7 @@ private NativeHandle SpillMultipartFile(
     ReadOnlySpan<byte> body,
     nuint start,
     nuint end,
-    string directory
+    const ref string directory
 )
 {
     switch (NativeFileCreateTemporary(directory))
@@ -472,8 +484,8 @@ private NativeHandle SpillMultipartFile(
 
 private FormCollection ParseMultipartForm(
     ReadOnlySpan<byte> body,
-    string contentType,
-    FormOptions options
+    const ref string contentType,
+    const ref FormOptions options
 )
 {
     ValidateFormOptions(options);
@@ -627,14 +639,16 @@ private FormCollection ParseMultipartForm(
                         options.TemporaryDirectory
                     );
                 }
+                bool isBuffered = temporaryFile == null;
                 files.Add(new()
                 {
-                    name = name,
-                    fileName = fileName,
-                    contentType = partContentType,
+                    Name = name,
+                    FileName = fileName,
+                    ContentType = partContentType,
                     bytes = bytes,
                     temporaryFile = temporaryFile,
-                    length = (long)contentLength
+                    Length = (long)contentLength,
+                    IsBuffered = isBuffered
                 });
             }
             case Option.None: {
@@ -667,15 +681,18 @@ public FormCollection Request.ReadForm(Request self)
 
 public FormCollection Request.ReadForm(Request self, FormOptions options)
 {
-    string contentType = self.ContentType;
-    string body = self.Body;
-    if (FormMediaTypeIs(contentType, "application/x-www-form-urlencoded"))
+    if (FormMediaTypeIs(
+        self.ContentType,
+        "application/x-www-form-urlencoded"
+    ))
     {
-        return ParseUrlEncodedForm(body);
+        return ParseUrlEncodedForm(self.Body);
     }
-    if (FormMediaTypeIs(contentType, "multipart/form-data"))
+    if (FormMediaTypeIs(self.ContentType, "multipart/form-data"))
     {
-        return ParseMultipartForm(self.BodyBytes(), contentType, options);
+        return ParseMultipartForm(
+            self.BodyBytes(), self.ContentType, options
+        );
     }
     throw new InvalidOperationException(
         "The request does not contain form data."

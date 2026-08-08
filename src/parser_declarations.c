@@ -689,7 +689,17 @@ static Decl *parse_delegate_decl(Parser *parser, Token start) {
     ParserArrayBuilder modes = parser_array_builder(sizeof(ParameterMode));
     while (parser->current.kind != TOK_RPAREN &&
            parser->current.kind != TOK_EOF) {
-        bool by_ref = parser_accept(parser, TOK_REF);
+        bool immutable_ref = false;
+        if (parser->current.kind == TOK_CONST) {
+            Parser probe = *parser;
+            parser_next(&probe);
+            if (probe.current.kind == TOK_REF) {
+                parser_next(parser);
+                parser_next(parser);
+                immutable_ref = true;
+            }
+        }
+        bool by_ref = !immutable_ref && parser_accept(parser, TOK_REF);
         bool by_out = !by_ref && parser_accept(parser, TOK_OUT);
         TypeSyntax *parameter_syntax = NULL;
         const char *parameter_type = parse_type(
@@ -699,8 +709,10 @@ static Decl *parse_delegate_decl(Parser *parser, Token start) {
             "expected parameter name after delegate parameter type");
         parse_declarator_suffix(
             parser, &parameter_syntax, &parameter_type);
-        ParameterMode mode = by_out ? PARAMETER_MODE_OUT : by_ref
-            ? PARAMETER_MODE_MUTABLE_REFERENCE : PARAMETER_MODE_VALUE;
+        ParameterMode mode = by_out ? PARAMETER_MODE_OUT
+            : by_ref ? PARAMETER_MODE_MUTABLE_REFERENCE
+            : immutable_ref ? PARAMETER_MODE_IMMUTABLE_REFERENCE
+            : PARAMETER_MODE_VALUE;
         parser_array_push(&parameters, &parameter_syntax);
         parser_array_push(&modes, &mode);
         (void)parameter;

@@ -31,7 +31,7 @@ private string AssetContentType(AssetKind kind)
     }
 }
 
-public Request CurrentHttpRequest(NativeHandle request)
+public Request CurrentHttpRequest(const ref NativeHandle request)
 {
     return RequestNewTransport(
         HttpRequestMethod(request),
@@ -47,7 +47,7 @@ public Request CurrentHttpRequest(NativeHandle request)
 }
 
 public Result<bool, string> CurrentHttpSend(
-    NativeHandle request,
+    const ref NativeHandle request,
     Response response
 )
 {

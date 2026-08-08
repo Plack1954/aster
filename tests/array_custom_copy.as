@@ -11,7 +11,7 @@ int main() {
         new() { value = 1 },
         new() { value = 2 }
     ];
-    ArrayItem copied[2] = original;
+    ArrayItem copied[2] = copy(original);
     Console.WriteLine(original[0].value);
     Console.WriteLine(original[1].value);
     Console.WriteLine(copied[0].value);

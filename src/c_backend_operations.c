@@ -217,18 +217,17 @@ void c_backend_emit_operation_instruction(
                         emitter,
                         function->value_types[
                             instruction->operands[0]])) {
-                    c_backend_emit_drop_call(
-                        emitter,
-                        function->value_types[
-                            instruction->operands[0]],
-                        "v", instruction->operands[0]);
-                    fputs(";\n", output);
-                    c_backend_emit_drop_call(
-                        emitter,
-                        function->value_types[
-                            instruction->operands[1]],
-                        "v", instruction->operands[1]);
-                    fputs(";\n", output);
+                    for (size_t operand = 0U; operand < 2U; ++operand) {
+                        if ((instruction->auxiliary &
+                             (1U << operand)) != 0U)
+                            continue;
+                        c_backend_emit_drop_call(
+                            emitter,
+                            function->value_types[
+                                instruction->operands[operand]],
+                            "v", instruction->operands[operand]);
+                        fputs(";\n", output);
+                    }
                 }
             } else if (operand_type->shape == IR_TYPE_BUILTIN_OBJECT &&
                        strcmp(operand_type->name, "string") == 0 &&
@@ -237,15 +236,18 @@ void c_backend_emit_operation_instruction(
                 fprintf(output,
                         "    v%" PRIu32 " = %saster_str_equal("
                         "aster_string_as_str(v%" PRIu32 "), "
-                        "aster_string_as_str(v%" PRIu32 "));\n"
-                        "    aster_string_drop(v%" PRIu32 ");\n"
-                        "    aster_string_drop(v%" PRIu32 ");\n",
+                        "aster_string_as_str(v%" PRIu32 "));\n",
                         instruction->result,
                         instruction->opcode == IR_OP_NOT_EQUAL ? "!" : "",
                         instruction->operands[0],
-                        instruction->operands[1],
-                        instruction->operands[0],
                         instruction->operands[1]);
+                for (size_t operand = 0U; operand < 2U; ++operand)
+                    if ((instruction->auxiliary &
+                         (1U << operand)) == 0U)
+                        fprintf(
+                            output,
+                            "    aster_string_drop(v%" PRIu32 ");\n",
+                            instruction->operands[operand]);
             } else {
                 fprintf(output,
                         "    v%" PRIu32 " = v%" PRIu32

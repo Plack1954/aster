@@ -81,12 +81,16 @@ bool same_ir_type_identity(const Type *left, const Type *right);
 IrOpcode binary_opcode(TokenKind token, bool floating);
 IrValueId lower_try(IrBuilder *builder, const Expr *expr);
 bool expression_is_local_place(const Expr *expr);
+bool expression_is_borrowable(const Expr *expr);
 IrValueId lower_local_place_borrow(
     IrBuilder *builder, const Expr *expr,
     IrValueId *borrowed_values, size_t *borrowed_count);
 void discard_local_place_borrows(
     IrBuilder *builder, const IrValueId *values,
     size_t count, LangSpan span);
+IrValueId lower_borrowed_expr(
+    IrBuilder *builder, const Expr *expr,
+    IrValueId *borrowed_values, size_t *borrowed_count);
 IrValueId lower_call(IrBuilder *builder, const Expr *expr);
 IrValueId lower_logical_expr(
     IrBuilder *builder, const Expr *expr, IrTypeId type);
@@ -117,6 +121,9 @@ IrInstruction *ir_emit_local_enum_operation(
     IrBuilder *builder, IrOpcode opcode, IrTypeId result_type,
     uint32_t local, const Type *type, const char *variant,
     LangSpan span);
+IrInstruction *ir_emit_enum_payload_borrow(
+    IrBuilder *builder, IrTypeId result_type, IrValueId value,
+    const Type *enum_type, const char *variant, LangSpan span);
 IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr);
 void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt);
 bool ir_type_requires_custom_copy(

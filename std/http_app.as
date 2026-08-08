@@ -50,13 +50,11 @@ public Router RouterAdd(
     Handler handler
 ) {
     Router output = router;
-    List<Route> routes = output.routes;
-    routes.Add(new() {
+    output.routes.Add(new() {
         method = method,
         path = path,
         handler = handler,
     });
-    output.routes = routes;
     return output;
 }
 
@@ -106,12 +104,10 @@ public void RouterPostMut(
 }
 
 public Response RouterDispatch(
-    Router router,
+    const ref Router router,
     Request request
 ) {
-    nuint length = router.routes.Count;
-    for (nuint index = 0; index < length; index++) {
-        Route route = router.routes[index];
+    foreach (Route route in router.routes) {
         if (route.method == request.method &&
          HttpPathMatches(route.path, request.path)) {
             Handler handler = route.handler;
@@ -123,7 +119,7 @@ public Response RouterDispatch(
 }
 
 public Result<bool, string> ResponseSend(
-    NativeHandle request,
+    const ref NativeHandle request,
     Response response
 ) {
     switch (response) {

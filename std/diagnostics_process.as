@@ -3,41 +3,46 @@ namespace System.Diagnostics;
 using Aster.Memory;
 
 private extern Result<NativeHandle, string> NativeProcessCreate(
-    string executable,
-    string workingDirectory,
+    const ref string executable,
+    const ref string workingDirectory,
     bool redirectStandardInput,
     bool redirectStandardOutput,
     bool redirectStandardError
 );
 private extern Result<Unit, string> NativeProcessAddArgument(
-    NativeHandle process,
-    string argument
+    const ref NativeHandle process,
+    const ref string argument
 );
 private extern Result<Unit, string> NativeProcessSetEnvironment(
-    NativeHandle process,
-    string name,
-    string value
+    const ref NativeHandle process,
+    const ref string name,
+    const ref string value
 );
-private extern Result<Unit, string> NativeProcessLaunch(NativeHandle process);
-private extern Result<int, string> NativeProcessWait(NativeHandle process);
-private extern Result<bool, string> NativeProcessHasExited(NativeHandle process);
-private extern Result<int, string> NativeProcessExitCode(NativeHandle process);
+private extern Result<Unit, string> NativeProcessLaunch(
+    const ref NativeHandle process);
+private extern Result<int, string> NativeProcessWait(
+    const ref NativeHandle process);
+private extern Result<bool, string> NativeProcessHasExited(
+    const ref NativeHandle process);
+private extern Result<int, string> NativeProcessExitCode(
+    const ref NativeHandle process);
 private extern Result<nuint, string> NativeProcessWriteInput(
-    NativeHandle process,
+    const ref NativeHandle process,
     ReadOnlySpan<byte> source
 );
 private extern Result<nuint, string> NativeProcessReadOutput(
-    NativeHandle process,
+    const ref NativeHandle process,
     Span<byte> destination
 );
 private extern Result<nuint, string> NativeProcessReadError(
-    NativeHandle process,
+    const ref NativeHandle process,
     Span<byte> destination
 );
 private extern Result<Unit, string> NativeProcessCloseInput(
-    NativeHandle process
+    const ref NativeHandle process
 );
-private extern Result<Unit, string> NativeProcessKill(NativeHandle process);
+private extern Result<Unit, string> NativeProcessKill(
+    const ref NativeHandle process);
 
 public struct ProcessEnvironmentVariable
 {
@@ -109,9 +114,8 @@ public Process Process.Start(ProcessStartInfo startInfo)
             NativeProcessAddArgument(handle, startInfo.Arguments[index])
         );
     }
-    for (nuint index = 0; index < startInfo.Environment.Count; index++)
+    foreach (ProcessEnvironmentVariable variable in startInfo.Environment)
     {
-        ProcessEnvironmentVariable variable = startInfo.Environment[index];
         if (variable.Name.Length == 0)
         {
             throw new ArgumentException(

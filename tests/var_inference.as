@@ -15,10 +15,10 @@ int main() {
     var returned = CreateUser("Grace");
     var boxed = new Box<User> { value = returned };
     var count = 1;
-    var message = user.name;
+    var message = copy(user.name);
 
     count = count + 1;
-    message = boxed.value.name;
+    message = copy(boxed.value.name);
 
     Console.WriteLine(user.name);
     Console.WriteLine(count);

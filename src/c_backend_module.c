@@ -202,7 +202,9 @@ static bool instruction_consumes_operand(
                        function, instruction->operands[operand]);
         case IR_OP_EQUAL:
         case IR_OP_NOT_EQUAL:
-            return c_backend_type_needs_drop(
+            return (instruction->auxiliary &
+                    (1U << operand)) == 0U &&
+                c_backend_type_needs_drop(
                 emitter,
                 function->value_types[
                     instruction->operands[operand]]);
@@ -643,6 +645,16 @@ static void emit_function_variant(
                         "    bool l%zu_live = false;\n", l);
             continue;
         }
+        if (c_backend_local_is_borrowed_alias(
+                emitter, function, (uint32_t)l)) {
+            fputs("    ", emitter->output);
+            c_backend_emit_type(emitter, function->locals[l].type);
+            fprintf(emitter->output,
+                    " *l%zu_ref = NULL;\n"
+                    "#define l%zu (*l%zu_ref)\n",
+                    l, l, l);
+            continue;
+        }
         fputs("    ", emitter->output);
         c_backend_emit_type(emitter, function->locals[l].type);
         fprintf(emitter->output, " l%zu = {0};\n", l);
@@ -728,8 +740,11 @@ static void emit_function_variant(
             return;
         }
     }
-    for (size_t l = 0U; l < function->parameter_count; ++l)
-        if (parameter_mode_is_reference(function->parameters[l].mode))
+    for (size_t l = 0U; l < function->local_count; ++l)
+        if ((l < function->parameter_count &&
+             parameter_mode_is_reference(function->parameters[l].mode)) ||
+            c_backend_local_is_borrowed_alias(
+                emitter, function, (uint32_t)l))
             fprintf(emitter->output, "#undef l%zu\n", l);
     fputs("}\n\n", emitter->output);
     free(direct_local_tags);

@@ -13,7 +13,15 @@ typedef struct Local {
     size_t id;
     bool is_out_parameter;
     bool definitely_assigned;
+    bool available;
+    LangSpan moved_at;
 } Local;
+
+typedef struct LocalFlowState {
+    bool definitely_assigned;
+    bool available;
+    LangSpan moved_at;
+} LocalFlowState;
 
 typedef struct Checker {
     Module *module;
@@ -26,12 +34,17 @@ typedef struct Checker {
     unsigned depth;
     unsigned loop_depth;
     size_t loop_local_bases[32];
+    LocalFlowState loop_entry_flow[32][256];
+    LocalFlowState loop_break_flow[32][256];
+    bool loop_has_break[32];
     size_t exception_local_bases[32];
     unsigned exception_depth;
     unsigned finally_depth;
     const char *catch_names[32];
     unsigned catch_depth;
     unsigned unsafe_depth;
+    unsigned copy_depth;
+    unsigned borrow_depth;
     Type *expected_type;
     const char *resolving_aliases[64];
     size_t resolving_alias_count;
@@ -41,6 +54,8 @@ typedef struct Checker {
     size_t generic_instantiation_depth;
     bool html_interpolation_destination;
     const Expr *allowed_unassigned_out_place;
+    size_t last_unavailable_local_id;
+    LangSpan last_unavailable_use;
 } Checker;
 
 extern Type type_error;
@@ -120,11 +135,20 @@ const char *type_display_name(Checker *checker, const Type *type);
 bool coerce_literal(Checker *checker, Expr *expr, Type *expected);
 bool type_is_copyable(Checker *checker, Type *type);
 bool type_uses_custom_copy(Checker *checker, Type *type);
+bool type_moves_by_default(Checker *checker, Type *type);
 bool checker_require_copyable(
     Checker *checker, Type *type, LangSpan copy_span);
 const Decl *type_copy_constructor(const Type *type);
 
 Local *find_local(Checker *checker, const char *name);
+bool checker_expression_is_local_place(
+    Checker *checker, const Expr *expr);
+bool checker_expression_is_borrowable(
+    Checker *checker, const Expr *expr);
+bool checker_require_available(
+    Checker *checker, const Local *local, LangSpan use_span);
+void checker_move_local(
+    Checker *checker, Local *local, LangSpan move_span);
 bool class_member_accessible(
     const Checker *checker, const Decl *owner, bool is_public);
 Function *declared_property_accessor(
@@ -134,12 +158,13 @@ Function *static_property_accessor(
     Checker *checker, const char *name, bool setter);
 void set_cleanup_plan(
     Checker *checker, CleanupPlan *plan, size_t begin);
-void snapshot_out_assignment(
-    const Checker *checker, bool assigned[256]);
-void restore_out_assignment(
-    Checker *checker, const bool assigned[256]);
-void merge_out_assignment(
-    Checker *checker, const bool left[256], const bool right[256]);
+void snapshot_local_flow(
+    const Checker *checker, LocalFlowState state[256]);
+void restore_local_flow(
+    Checker *checker, const LocalFlowState state[256]);
+void merge_local_flow(
+    Checker *checker, const LocalFlowState left[256],
+    const LocalFlowState right[256]);
 void require_assigned_out_parameters(
     Checker *checker, LangSpan span);
 Function *find_function(Checker *checker, const char *name,
@@ -154,6 +179,7 @@ Type *resolve_declared_type_in_module(
     Checker *checker, const TypeSyntax *syntax, const char *fallback_name,
     LangSpan span, const char *module_name);
 Type *check_place(Checker *checker, Expr *expr);
+Type *check_borrowed_expr(Checker *checker, Expr *expr);
 Type *checker_check_name(Checker *checker, Expr *expr);
 FieldDecl *checker_static_field_from_path(
     Checker *checker, const char *path, const Decl **out_owner);

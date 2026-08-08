@@ -5,6 +5,37 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool instruction_result_is_borrowed(
+    const IrFunction *function,
+    const IrInstruction *instruction
+) {
+    if (instruction->result == IR_INVALID_ID) return false;
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_LOAD:
+        case IR_OP_LOCAL_FIELD_BORROW:
+        case IR_OP_ENUM_PAYLOAD_BORROW:
+        case IR_OP_LIST_ELEMENT_BORROW:
+        case IR_OP_QUEUE_FRONT_BORROW:
+        case IR_OP_STACK_TOP_BORROW:
+        case IR_OP_DICTIONARY_GET_BORROW:
+        case IR_OP_DICTIONARY_KEY_BORROW:
+        case IR_OP_DICTIONARY_VALUE_BORROW:
+        case IR_OP_LOCAL_ITERATOR_NEXT:
+            return true;
+        case IR_OP_FIELD_GET:
+            return instruction->auxiliary == 1U ||
+                   instruction->auxiliary == 2U;
+        case IR_OP_INDEX_GET:
+            return instruction->integer != 0U;
+        case IR_OP_PARAMETER:
+            return instruction->index < function->parameter_count &&
+                parameter_mode_is_reference(
+                    function->parameters[instruction->index].mode);
+        default:
+            return false;
+    }
+}
+
 static void lower_terminator(IrBytecodeBuilder *builder,
                              const IrTerminator *terminator) {
     switch (terminator->kind) {
@@ -92,6 +123,15 @@ static bool lower_function(IrBytecodeBuilder *builder) {
         function->local_destructors[i] =
             i < source->local_count && source->locals[i].borrowed
                 ? -2 : -1;
+    for (size_t block = 0U; block < source->block_count; ++block)
+        for (size_t index = 0U;
+             index < source->blocks[block].instruction_count; ++index) {
+            const IrInstruction *instruction =
+                &source->blocks[block].instructions[index];
+            if (instruction_result_is_borrowed(source, instruction))
+                function->local_destructors[
+                    source->local_count + instruction->result] = -2;
+        }
     builder->value_base = source->local_count;
     builder->value_source_locals = ir_bc_resize(
         NULL, source->value_count, sizeof(*builder->value_source_locals));

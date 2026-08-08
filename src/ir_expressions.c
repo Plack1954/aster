@@ -70,10 +70,17 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             }
             uint32_t local = ir_find_local(
                 builder, expr->resolved_local_id, expr->span);
+            bool move = expr->type != NULL &&
+                expr->type->kind != TYPE_CLASS &&
+                expr->type->kind != TYPE_RAW_POINTER &&
+                (expr->type->requires_cleanup || expr->type->managed ||
+                 ir_type_requires_custom_copy(builder, expr->type));
             instruction = ir_append_instruction(
-                builder, IR_OP_LOCAL_LOAD, type, NULL, 0U, expr->span);
+                builder, move ? IR_OP_LOCAL_MOVE : IR_OP_LOCAL_LOAD,
+                type, NULL, 0U, expr->span);
             if (instruction != NULL) instruction->index = local;
-            if (instruction != NULL && load_requires_clone(expr->type)) {
+            if (!move && instruction != NULL &&
+                load_requires_clone(expr->type)) {
                 IrValueId operand = instruction->result;
                 instruction = ir_append_instruction(
                     builder, IR_OP_VALUE_CLONE, type, &operand, 1U,
@@ -121,10 +128,19 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 }
                 break;
             }
-            IrValueId operands[2] = {
-                ir_lower_expr(builder, expr->as.binary.left),
-                ir_lower_expr(builder, expr->as.binary.right)
-            };
+            IrValueId borrowed_values[2][64];
+            size_t borrowed_counts[2] = {0U, 0U};
+            IrValueId operands[2];
+            operands[0] = expr->as.binary.borrow_left
+                ? lower_borrowed_expr(
+                      builder, expr->as.binary.left,
+                      borrowed_values[0], &borrowed_counts[0])
+                : ir_lower_expr(builder, expr->as.binary.left);
+            operands[1] = expr->as.binary.borrow_right
+                ? lower_borrowed_expr(
+                      builder, expr->as.binary.right,
+                      borrowed_values[1], &borrowed_counts[1])
+                : ir_lower_expr(builder, expr->as.binary.right);
             IrOpcode opcode = binary_opcode(
                 expr->as.binary.op,
                 is_float_type(expr->as.binary.left->type));
@@ -136,7 +152,21 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             }
             instruction = ir_append_instruction(
                 builder, opcode, type, operands, 2U, expr->span);
-            break;
+            IrValueId binary_result = instruction != NULL
+                ? instruction->result : IR_INVALID_ID;
+            if (instruction != NULL)
+                instruction->auxiliary =
+                    (expr->as.binary.borrow_left ? 1U : 0U) |
+                    (expr->as.binary.borrow_right ? 2U : 0U);
+            if (expr->as.binary.borrow_left)
+                discard_local_place_borrows(
+                    builder, borrowed_values[0],
+                    borrowed_counts[0], expr->span);
+            if (expr->as.binary.borrow_right)
+                discard_local_place_borrows(
+                    builder, borrowed_values[1],
+                    borrowed_counts[1], expr->span);
+            return binary_result;
         }
         case EXPR_UNARY: {
             if (expr->as.unary.op == TOK_MINUS &&
@@ -427,41 +457,61 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             }
             return ir_emit_unit(builder, expr->span, expr->type);
         }
-        case EXPR_CLONE: {
+        case EXPR_COPY: {
             IrValueId operand;
-            const Expr *source = expr->as.clone.value;
-            if (source->kind == EXPR_NAME) {
-                uint32_t local = ir_find_local(
-                    builder, source->resolved_local_id, source->span);
-                IrInstruction *load = ir_append_instruction(
-                    builder, IR_OP_LOCAL_LOAD,
-                    ir_intern_type(builder->module, source->type),
-                    NULL, 0U, source->span);
-                if (load == NULL) return IR_INVALID_ID;
-                load->index = local;
-                operand = load->result;
-            } else {
+            const Expr *source = expr->as.copy.value;
+            bool local_place = expression_is_local_place(source);
+            IrValueId borrowed_values[64];
+            size_t borrowed_count = 0U;
+            if (local_place)
+                operand = lower_local_place_borrow(
+                    builder, source,
+                    borrowed_values, &borrowed_count);
+            else
                 operand = ir_lower_expr(builder, source);
-            }
+            if (!local_place &&
+                (source->kind == EXPR_FIELD ||
+                 source->kind == EXPR_INDEX ||
+                 (source->kind == EXPR_CALL &&
+                 source->as.call.callee->kind == EXPR_NAME &&
+                 (strcmp(source->as.call.callee->as.name,
+                         "List::Get") == 0 ||
+                  strcmp(source->as.call.callee->as.name,
+                         "Queue::Peek") == 0 ||
+                  strcmp(source->as.call.callee->as.name,
+                         "Stack::Peek") == 0 ||
+                  strcmp(source->as.call.callee->as.name,
+                         "Dictionary::Get") == 0 ||
+                  strcmp(source->as.call.callee->as.name,
+                         "Dictionary::KeyAt") == 0 ||
+                  strcmp(source->as.call.callee->as.name,
+                         "Dictionary::ValueAt") == 0))))
+                return operand;
+            IrValueId copied;
             if (ir_type_requires_custom_copy(builder, expr->type)) {
-                IrValueId copied = ir_emit_recursive_copy(
+                copied = ir_emit_recursive_copy(
                     builder, expr->type, operand, expr->span, true);
-                IrInstruction *discard = ir_append_instruction(
-                    builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
-                    &operand, 1U, expr->span);
-                if (discard != NULL)
-                    discard->auxiliary =
-                        source->kind == EXPR_NAME ? 1U : 0U;
-                return copied;
             } else {
                 instruction = ir_append_instruction(
                     builder, IR_OP_VALUE_CLONE, type,
                     &operand, 1U, expr->span);
                 if (instruction != NULL)
-                    instruction->auxiliary =
-                        source->kind == EXPR_NAME ? 0U : 1U;
+                    instruction->auxiliary = local_place ? 0U : 1U;
+                copied = instruction != NULL
+                    ? instruction->result : IR_INVALID_ID;
             }
-            break;
+            if (local_place) {
+                discard_local_place_borrows(
+                    builder, borrowed_values,
+                    borrowed_count, expr->span);
+            } else if (ir_type_requires_custom_copy(
+                           builder, expr->type)) {
+                IrInstruction *discard = ir_append_instruction(
+                    builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
+                    &operand, 1U, expr->span);
+                (void)discard;
+            }
+            return copied;
         }
         case EXPR_TRY:
             return lower_try(builder, expr);
@@ -655,6 +705,26 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                     builder, IR_OP_LOCAL_ENUM_PAYLOAD_MOVE, type,
                     local, object->type, "Option::Some", expr->span);
                 break;
+            }
+            if (expr->as.field.move_out &&
+                object->kind == EXPR_NAME) {
+                uint32_t local = ir_find_local(
+                    builder, object->resolved_local_id, object->span);
+                instruction = ir_append_instruction(
+                    builder, IR_OP_LOCAL_FIELD_MOVE, type,
+                    NULL, 0U, expr->span);
+                if (instruction == NULL) return IR_INVALID_ID;
+                instruction->index = local;
+                instruction->auxiliary = ir_field_index(
+                    object->type, expr->as.field.field);
+                instruction->symbol = expr->as.field.field;
+                instruction->symbol_length = strlen(instruction->symbol);
+                IrValueId moved = instruction->result;
+                IrInstruction *drop = ir_append_instruction(
+                    builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
+                    NULL, 0U, expr->span);
+                if (drop != NULL) drop->index = local;
+                return moved;
             }
             if (expression_is_local_place(expr)) {
                 IrValueId borrowed_values[64];

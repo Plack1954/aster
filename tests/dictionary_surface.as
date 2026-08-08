@@ -34,7 +34,7 @@ int main()
     if (scores["New"] != 30) { return 7; }
     if (scores.Count != 4) { return 8; }
 
-    Dictionary<string, int> copied = scores;
+    Dictionary<string, int> copied = copy(scores);
     scores["Aster"] = 99;
     if (copied["Aster"] != 15) { return 15; }
 

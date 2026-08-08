@@ -18,13 +18,13 @@ private struct CountedBox {
 int main() {
     {
         CountedCopy source = new() { generation = 1 };
-        CountedCopy assigned = source;
-        source = source;
+        CountedCopy assigned = copy(source);
+        source = copy(source);
 
-        CountedBox box = new() { value = source, marker = 1 };
-        CountedCopy field = box.value;
-        CountedCopy values[1] = [source];
-        CountedCopy indexed = values[0];
+        CountedBox box = new() { value = copy(source), marker = 1 };
+        CountedCopy field = copy(box.value);
+        CountedCopy values[1] = [copy(source)];
+        CountedCopy indexed = copy(values[0]);
         Console.WriteLine(99);
     }
     return 0;

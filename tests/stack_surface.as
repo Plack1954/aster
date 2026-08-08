@@ -46,7 +46,7 @@ int main()
     {
         return 16;
     }
-    Stack<string> copied = names;
+    Stack<string> copied = copy(names);
     string top = names.Pop();
     if (top != "Pear" || names.Peek() != "Aster") { return 9; }
     if (copied.Pop() != "Pear" || copied.Pop() != "Aster") { return 10; }

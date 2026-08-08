@@ -24,11 +24,11 @@ public bool ToggleDetails(bool expanded) {
     return !expanded;
 }
 
-public bool ValidateName(string name) {
+public bool ValidateName(const ref string name) {
     return name.Length >= 2;
 }
 
-public bool ValidateEmail(string email) {
+public bool ValidateEmail(const ref string email) {
     return email.Length >= 5 && email.Contains("@");
 }
 

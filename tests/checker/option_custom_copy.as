@@ -7,6 +7,6 @@ private struct OptionItem {
 int main() {
     Option<OptionItem> original = Option.Some(
         new() { value = 1 });
-    Option<OptionItem> invalid = original;
+    Option<OptionItem> invalid = copy(original);
     return 0;
 }

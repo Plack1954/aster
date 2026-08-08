@@ -12,11 +12,11 @@ private long Inspect(CountedValue value) {
 
 int main() {
     CountedValue original = new() { value = 41 };
-    CountedValue copied = original;
-    original = original;
+    CountedValue copied = copy(original);
+    original = copy(original);
     Console.WriteLine(copied.value);
     Console.WriteLine(original.value);
-    Console.WriteLine(Inspect(original));
+    Console.WriteLine(Inspect(copy(original)));
     CountedValue explicitCopy = new CountedValue(original);
     Console.WriteLine(explicitCopy.value);
     return 0;

@@ -377,10 +377,10 @@
                         .tag=LANG_VALUE_BOOL,
                         .as.boolean=kind == 4U ? found >= 0
                             : found == (int64_t)start};
-                drop_runtime_value(
-                    vm, function, value_slot, LOCAL(value_slot));
-                drop_runtime_value(
-                    vm, function, needle_slot, LOCAL(needle_slot));
+                /* StringIndexOfOrdinal takes both strings by const reference.
+                 * These slots are non-owning SSA views, so consuming the
+                 * optimized instruction must invalidate them without
+                 * releasing either backing string. */
                 initialized[value_slot] = false;
                 initialized[needle_slot] = false;
                 if (kind == 1U)

@@ -24,7 +24,7 @@ private Response UpdateArticle(string id)
     return Results.Text(id);
 }
 
-private Response Health(Request request)
+private Response Health(const ref Request request)
 {
     return Results.Text("ready");
 }

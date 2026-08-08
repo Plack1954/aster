@@ -47,7 +47,10 @@ private string OpenApiStatusDescription(int status)
     return "Response";
 }
 
-private bool OpenApiPathSeen(List<string> paths, string path)
+private bool OpenApiPathSeen(
+    const ref List<string> paths,
+    const ref string path
+)
 {
     foreach (string existing in paths)
     {
@@ -190,7 +193,6 @@ public string GenerateOpenApi(
         string openApiPath = first.OpenApiPath;
         if (!OpenApiPathSeen(paths, openApiPath))
         {
-            paths.Add(openApiPath);
             writer.WritePropertyName(openApiPath);
             writer.WriteStartObject();
             List<string> operations = new();
@@ -214,15 +216,16 @@ public string GenerateOpenApi(
                                 "multiple endpoints map to one OpenAPI operation"
                             );
                         }
-                        operations.Add(operation);
                         writer.WritePropertyName(operation);
                         writer.WriteStartObject();
                         WriteOpenApiOperation(ref writer, candidate);
                         writer.WriteEndObject();
+                        operations.Add(operation);
                     }
                 }
             }
             writer.WriteEndObject();
+            paths.Add(openApiPath);
         }
     }
     writer.WriteEndObject();

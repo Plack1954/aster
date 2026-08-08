@@ -67,11 +67,11 @@ public struct DateTime {
         return FormatDateTime(unixTicks, 0);
     }
 
-    public static DateTime Parse(string value) {
+    public static DateTime Parse(const ref string value) {
         return ParseDateTimeOffset(value).UtcDateTime;
     }
 
-    public static bool TryParse(string value, out DateTime result) {
+    public static bool TryParse(const ref string value, out DateTime result) {
         result = new() { unixTicks = 0 };
         try { result = DateTime.Parse(value); return true; }
         catch (Exception error) { return false; }
@@ -97,8 +97,15 @@ public struct DateTime {
         }
     }
 
-    public TimeSpan TimeOfDay =>
-        TimeSpan.FromTicks(unixTicks - this.Date.unixTicks);
+    public TimeSpan TimeOfDay {
+        get {
+            DateParts parts = DatePartsFromUnixTicks(unixTicks);
+            long dayTicks = DaysFromCivil(
+                parts.year, parts.month, parts.day
+            ) * 864000000000;
+            return TimeSpan.FromTicks(unixTicks - dayTicks);
+        }
+    }
 }
 public struct DateTimeOffset {
     long unixTicks;
@@ -172,11 +179,12 @@ public struct DateTimeOffset {
         return FormatDateTime(unixTicks, offsetMinutes);
     }
 
-    public static DateTimeOffset Parse(string value) {
+    public static DateTimeOffset Parse(const ref string value) {
         return ParseDateTimeOffset(value);
     }
 
-    public static bool TryParse(string value, out DateTimeOffset result) {
+    public static bool TryParse(
+        const ref string value, out DateTimeOffset result) {
         result = DateTimeOffset.FromUnixTimeMilliseconds(0);
         try { result = DateTimeOffset.Parse(value); return true; }
         catch (Exception error) { return false; }
@@ -211,11 +219,11 @@ public struct DateOnly {
         };
     }
 
-    public static DateOnly Parse(string value) {
+    public static DateOnly Parse(const ref string value) {
         return ParseDateOnly(value);
     }
 
-    public static bool TryParse(string value, out DateOnly result) {
+    public static bool TryParse(const ref string value, out DateOnly result) {
         result = new() { dayNumber = 0 };
         try { result = DateOnly.Parse(value); return true; }
         catch (Exception error) { return false; }
@@ -259,7 +267,9 @@ public struct TimeOnly {
     long ticks;
 
     public static TimeOnly FromDateTime(DateTime dateTime) {
-        return new() { ticks = dateTime.TimeOfDay.ticks };
+        long result = dateTime.unixTicks % 864000000000;
+        if (result < 0) { result += 864000000000; }
+        return new() { ticks = result };
     }
 
     public static TimeOnly FromTimeSpan(TimeSpan timeSpan) {
@@ -271,11 +281,11 @@ public struct TimeOnly {
         return new() { ticks = timeSpan.ticks };
     }
 
-    public static TimeOnly Parse(string value) {
+    public static TimeOnly Parse(const ref string value) {
         return ParseTimeOnly(value);
     }
 
-    public static bool TryParse(string value, out TimeOnly result) {
+    public static bool TryParse(const ref string value, out TimeOnly result) {
         result = new() { ticks = 0 };
         try { result = TimeOnly.Parse(value); return true; }
         catch (Exception error) { return false; }
@@ -446,7 +456,7 @@ private string FormatDateTime(long unixTicks, short offsetMinutes)
     return builder.ToString();
 }
 
-private int DateDigit(string value, nuint index)
+private int DateDigit(const ref string value, nuint index)
 {
     byte digit = value[index];
     if (digit < 48 || digit > 57)
@@ -456,7 +466,7 @@ private int DateDigit(string value, nuint index)
     return (int)(digit - 48);
 }
 
-private int DateTwoDigits(string value, nuint index)
+private int DateTwoDigits(const ref string value, nuint index)
 {
     return DateDigit(value, index) * 10 + DateDigit(value, index + 1);
 }
@@ -473,7 +483,7 @@ private int DaysInMonth(int year, int month)
     return 31;
 }
 
-private DateTimeOffset ParseDateTimeOffset(string value)
+private DateTimeOffset ParseDateTimeOffset(const ref string value)
 {
     bool utc = value.Length == 24 && value[23] == 90;
     bool explicitOffset = value.Length == 29 &&
@@ -514,7 +524,7 @@ private DateTimeOffset ParseDateTimeOffset(string value)
     };
 }
 
-private DateOnly ParseDateOnly(string value)
+private DateOnly ParseDateOnly(const ref string value)
 {
     if (value.Length != 10 || value[4] != 45 || value[7] != 45)
     {
@@ -535,7 +545,7 @@ private DateOnly ParseDateOnly(string value)
     };
 }
 
-private TimeOnly ParseTimeOnly(string value)
+private TimeOnly ParseTimeOnly(const ref string value)
 {
     bool minutePrecision = value.Length == 5 && value[2] == 58;
     bool secondPrecision = value.Length == 8 &&

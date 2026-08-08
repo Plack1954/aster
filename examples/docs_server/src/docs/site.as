@@ -28,15 +28,15 @@ public MiddlewareChain SiteMiddleware() {
 }
 
 public Html RenderPath(
-    HtmlRouter.Router router,
+    const ref HtmlRouter.Router router,
     MiddlewareChain middleware,
-    string path
+    const ref string path
 ) {
     Html page = HtmlRouter.RouterDispatch(router, path);
     return MiddlewareApply(middleware, page);
 }
 
-public long StatusFor(string path) {
+public long StatusFor(const ref string path) {
     if (path == "/") {
         return 200;
     }

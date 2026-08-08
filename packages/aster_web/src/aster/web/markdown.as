@@ -3,7 +3,10 @@ namespace Aster.Web.Markdown;
 using Aster.Html;
 using System.Text;
 
-private void MarkdownAppendEscaped(ref StringBuilder output, string value)
+private void MarkdownAppendEscaped(
+    ref StringBuilder output,
+    const ref string value
+)
 {
     for (nuint index = 0; index < value.Length; index++)
     {
@@ -16,7 +19,10 @@ private void MarkdownAppendEscaped(ref StringBuilder output, string value)
     }
 }
 
-private void MarkdownAppendInline(ref StringBuilder output, string value)
+private void MarkdownAppendInline(
+    ref StringBuilder output,
+    const ref string value
+)
 {
     nuint cursor = 0;
     nuint segment = 0;
@@ -44,7 +50,7 @@ private void MarkdownAppendInline(ref StringBuilder output, string value)
     if (strong) { output.Append("</strong>"); }
 }
 
-private bool MarkdownOrderedItem(string line)
+private bool MarkdownOrderedItem(const ref string line)
 {
     nuint cursor = 0;
     while (cursor < line.Length &&
@@ -58,7 +64,7 @@ private bool MarkdownOrderedItem(string line)
         StringByteAt(line, cursor + 1) == 32;
 }
 
-private nuint MarkdownOrderedTextStart(string line)
+private nuint MarkdownOrderedTextStart(const ref string line)
 {
     nuint cursor = 0;
     while (cursor < line.Length &&
@@ -70,7 +76,7 @@ private nuint MarkdownOrderedTextStart(string line)
     return cursor + 2;
 }
 
-private nuint MarkdownHeadingLevel(string line)
+private nuint MarkdownHeadingLevel(const ref string line)
 {
     nuint level = 0;
     while (level < line.Length && level < 6 &&

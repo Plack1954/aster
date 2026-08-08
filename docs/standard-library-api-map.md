@@ -323,14 +323,14 @@ The first bounded dictionary surface is implemented in the VM and generated C:
 | `values[key]` | same | Checked read and insert-or-replace assignment |
 | `values.Remove(key)` | same | Exact Boolean result |
 | `values.Clear()` | same | Exact |
-| `values.KeyAt(index)` | no direct equivalent | Checked key copy by dense logical index |
-| `values.ValueAt(index)` | no direct equivalent | Checked value copy by dense logical index |
+| `values.KeyAt(index)` | no direct equivalent | Checked borrowed key projection by dense logical index |
+| `values.ValueAt(index)` | no direct equivalent | Checked borrowed value projection by dense logical index |
 
 Keys are currently limited to scalar, character, `string`, and raw-pointer
 types with defined built-in equality. The VM and generated C keep dense
 key/value storage plus an open-addressed hash index, giving average constant-
-time key lookup while retaining deterministic cleanup and copying. Dictionary
-assignment performs an independent value copy, including keys and values.
+time key lookup while retaining deterministic cleanup. Dictionary assignment
+moves the dictionary; `copy(dictionary)` explicitly duplicates keys and values.
 `Keys` and `Values` remain pending because .NET exposes live read-only
 collection views. Aster will not disguise copied `List<T>` snapshots under
 those names. `KeyAt` and `ValueAt` are bounded Aster extensions used for

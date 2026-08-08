@@ -15,11 +15,12 @@ int main() {
         value = new() { value = 1 },
         marker = 2,
     };
-    UniqueProjection field = box.value;
+    UniqueProjection field = copy(box.value);
 
     UniqueProjection values[1] = [new() { value = 3 }];
-    UniqueProjection indexed = values[0];
+    UniqueProjection indexed = copy(values[0]);
 
-    (UniqueProjection deconstructed, long marker) = box;
+    ProjectionBox copiedBox = copy(box);
+    (UniqueProjection deconstructed, long marker) = copiedBox;
     return 0;
 }

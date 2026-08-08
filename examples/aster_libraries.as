@@ -8,16 +8,16 @@ using Aster.Web.Router;
 using System.Text;
 using System.Collections.Generic;
 
-private Html home(string path) {
+private Html home(const ref string path) {
     return <section><h2>Home</h2></section>;
 }
 
-private Html health(string path) {
+private Html health(const ref string path) {
     string id = HttpPathParam("/users/:id", path, "id");
     return <strong>{id}</strong>;
 }
 
-private Html missing(string path) {
+private Html missing(const ref string path) {
     return <p>{path}</p>;
 }
 

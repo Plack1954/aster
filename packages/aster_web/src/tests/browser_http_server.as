@@ -18,16 +18,14 @@ private class BrowserState
         assets = value;
     }
 
-    public Response Home(Request request)
+    public Response Home(const ref Request request)
     {
-        BrowserAssets current = assets;
-        return Results.Html(BrowserPage(current.loader()));
+        return Results.Html(BrowserPage(this.assets.loader()));
     }
 
-    public Response BrowserAsset(Request request)
+    public Response BrowserAsset(const ref Request request)
     {
-        BrowserAssets current = assets;
-        switch (current.serve(request))
+        switch (this.assets.serve(request))
         {
             case Result.Ok(response): { return response; }
             case Result.Err(error): {
@@ -36,7 +34,7 @@ private class BrowserState
         }
     }
 
-    public Response FormFallback(Request request)
+    public Response FormFallback(const ref Request request)
     {
         switch (request.FormValues())
         {
@@ -62,7 +60,7 @@ private struct BrowserLifetime
     delete self.State;
 }
 
-private Response missing(Request request)
+private Response missing(const ref Request request)
 {
     return Results.NotFound(<h1>Missing</h1>);
 }

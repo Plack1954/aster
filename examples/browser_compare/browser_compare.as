@@ -37,9 +37,8 @@ private class AsyncProbe
 
 private struct BenchmarkRow
 {
-    string key;
     int id;
-    string label;
+    bool updated;
 }
 
 private class BenchmarkTable
@@ -58,12 +57,7 @@ private class BenchmarkTable
         for (int offset = 0; offset < count; offset++)
         {
             int id = this.nextId + offset;
-            this.rows.Add(new()
-            {
-                key = $"row-{id}",
-                id = id,
-                label = $"row {id}"
-            });
+            this.rows.Add(new() { id = id, updated = false });
         }
         this.nextId += count;
     }
@@ -85,7 +79,7 @@ private class BenchmarkTable
         for (nuint index = 0; index < this.rows.Count; index += 10)
         {
             BenchmarkRow row = this.rows[index];
-            row.label = $"row {row.id} !!!";
+            row.updated = true;
             this.rows.Set(index, row);
         }
     }
@@ -98,11 +92,11 @@ private class BenchmarkTable
         this.rows.Set(998, first);
     }
 
-    private void DeleteRow(string key)
+    private void DeleteRow(int key)
     {
         for (nuint index = 0; index < this.rows.Count; index++)
         {
-            if (this.rows[index].key == key)
+            if (this.rows[index].id == key)
             {
                 this.rows.RemoveAt(index);
                 return;
@@ -120,10 +114,13 @@ private class BenchmarkTable
         List<Html> rendered = new();
         foreach (BenchmarkRow row in this.rows)
         {
-            rendered.Add(<tr key=row.key id=row.key>
+            string key = $"row-{row.id}";
+            string label = row.updated
+                ? $"row {row.id} !!!" : $"row {row.id}";
+            rendered.Add(<tr key=copy(key) id=copy(key)>
                 <td>{row.id}</td>
-                <td>{row.label}</td>
-                <td><button type="button" name="key" value=row.key aria-controls="row-list" onclick=this.DeleteRow>Delete</button></td>
+                <td>{label}</td>
+                <td><button type="button" name="key" value=$"{row.id}" aria-controls="row-list" onclick=this.DeleteRow>Delete</button></td>
             </tr>);
         }
         return <>{rendered}</>;

@@ -6,7 +6,7 @@ int main() {
     Box<string> original = Box {
         value: "owned",
     };
-    Box<string> invalid = original;
-    Box<string> invalidAgain = original;
+    Box<string> invalid = copy(original);
+    Box<string> invalidAgain = copy(original);
     return 0;
 }

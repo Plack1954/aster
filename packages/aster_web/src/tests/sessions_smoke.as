@@ -2,6 +2,14 @@ namespace Tests.SessionsSmoke;
 
 using Aster.Web;
 using Aster.Web.Sessions;
+
+private bool HeaderValueContains(
+    const ref ResponseHeader header,
+    const ref string value
+)
+{
+    return header.Value.Contains(value);
+}
 using System.Text;
 
 private Request MakeRequest(string cookie)
@@ -58,7 +66,7 @@ int main()
     (int rotatedStatus, ResponseBody rotatedBody,
      List<ResponseHeader> rotatedHeaders) = rotatedResponse;
     if (rotatedHeaders.Count != 1 ||
-        !rotatedHeaders[0].value.Contains(second.Id()))
+        !HeaderValueContains(rotatedHeaders[0], second.Id()))
     {
         return 10;
     }
@@ -82,7 +90,7 @@ int main()
     (int destroyedStatus, ResponseBody destroyedBody,
      List<ResponseHeader> destroyedHeaders) = destroyedResponse;
     if (destroyedHeaders.Count != 1 ||
-        !destroyedHeaders[0].value.Contains("Max-Age=0"))
+        !HeaderValueContains(destroyedHeaders[0], "Max-Age=0"))
     {
         return 13;
     }

@@ -390,11 +390,13 @@
                 }
                 Object *state = stack[sp - 1U].as.object;
                 if (state == NULL || state->kind != OBJECT_CANCELLATION) {
-                    vm_value_drop_owned(vm, POP());
+                    (void)POP();
                     runtime_error(vm, instruction,
                                   "CancellationTokenSource.Token requires a source");
                     goto fail;
                 }
+                LangValue source = POP();
+                PUSH(vm_value_clone(source));
                 break;
             }
             VM_LABEL(cancellation_cancel)
@@ -407,13 +409,11 @@
                 LangValue value = POP();
                 Object *state = value.as.object;
                 if (state == NULL || state->kind != OBJECT_CANCELLATION) {
-                    vm_value_drop_owned(vm, value);
                     runtime_error(vm, instruction,
                                   "CancellationTokenSource.Cancel requires a source");
                     goto fail;
                 }
                 state->as.cancellation.requested = true;
-                vm_value_drop_owned(vm, value);
                 PUSH(((LangValue){.tag=LANG_VALUE_UNIT}));
                 break;
             }
@@ -429,7 +429,6 @@
                 bool requested = state != NULL &&
                     state->kind == OBJECT_CANCELLATION &&
                     state->as.cancellation.requested;
-                vm_value_drop_owned(vm, value);
                 PUSH(((LangValue){.tag=LANG_VALUE_BOOL,
                                   .as.boolean=requested}));
                 break;
@@ -446,7 +445,6 @@
                 bool requested = state != NULL &&
                     state->kind == OBJECT_CANCELLATION &&
                     state->as.cancellation.requested;
-                vm_value_drop_owned(vm, value);
                 if (requested)
                     vm_raise_exception_typed(
                         vm, "OperationCanceledException",

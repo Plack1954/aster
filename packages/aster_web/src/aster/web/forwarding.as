@@ -55,7 +55,7 @@ private bool UsesForwardedProto(ForwardedHeaders value)
 }
 
 public void ValidateForwardedHeadersOptions(
-    ForwardedHeadersOptions options
+    const ref ForwardedHeadersOptions options
 )
 {
     if (options.ForwardLimit < 1)
@@ -73,7 +73,10 @@ public void ValidateForwardedHeadersOptions(
     }
 }
 
-private bool IsKnownProxy(List<string> knownProxies, string address)
+private bool IsKnownProxy(
+    const ref List<string> knownProxies,
+    const ref string address
+)
 {
     foreach (string knownProxy in knownProxies)
     {
@@ -85,7 +88,10 @@ private bool IsKnownProxy(List<string> knownProxies, string address)
     return false;
 }
 
-private Option<string> ForwardedValueFromRight(string values, long offset)
+private Option<string> ForwardedValueFromRight(
+    const ref string values,
+    long offset
+)
 {
     if (offset < 0)
     {
@@ -119,7 +125,7 @@ private Option<string> ForwardedValueFromRight(string values, long offset)
     return Option.None;
 }
 
-private bool IsSafeForwardedHost(string value)
+private bool IsSafeForwardedHost(const ref string value)
 {
     if (value.Length == 0)
     {
@@ -137,22 +143,24 @@ private bool IsSafeForwardedHost(string value)
     return true;
 }
 
-public ForwardedOrigin ApplyForwardedHeaders(
-    ForwardedOrigin origin,
-    Option<string> forwardedFor,
-    Option<string> forwardedHost,
-    Option<string> forwardedProto,
-    ForwardedHeadersOptions options
+public void ApplyForwardedHeadersInPlace(
+    ref string host,
+    ref string scheme,
+    ref string remoteIpAddress,
+    const ref Option<string> forwardedFor,
+    const ref Option<string> forwardedHost,
+    const ref Option<string> forwardedProto,
+    const ref ForwardedHeadersOptions options
 )
 {
     if (options.ForwardedHeaders == ForwardedHeaders.None ||
-        !IsKnownProxy(options.KnownProxies, origin.RemoteIpAddress))
+        !IsKnownProxy(options.KnownProxies, remoteIpAddress))
     {
-        return origin;
+        return;
     }
     for (long hop = 0; hop < options.ForwardLimit; hop++)
     {
-        if (!IsKnownProxy(options.KnownProxies, origin.RemoteIpAddress))
+        if (!IsKnownProxy(options.KnownProxies, remoteIpAddress))
         {
             break;
         }
@@ -167,7 +175,7 @@ public ForwardedOrigin ApplyForwardedHeaders(
                         case Option.Some(value): {
                             if (IsSafeForwardedHost(value))
                             {
-                                origin.Host = value;
+                                host = value;
                             }
                         }
                         case Option.None: { }
@@ -187,7 +195,7 @@ public ForwardedOrigin ApplyForwardedHeaders(
                         case Option.Some(value): {
                             if (value == "http" || value == "https")
                             {
-                                origin.Scheme = value;
+                                scheme = value;
                             }
                         }
                         case Option.None: { }
@@ -208,7 +216,7 @@ public ForwardedOrigin ApplyForwardedHeaders(
                 switch (ForwardedValueFromRight(values, hop))
                 {
                     case Option.Some(value): {
-                        origin.RemoteIpAddress = value;
+                        remoteIpAddress = value;
                         foundAddress = true;
                     }
                     case Option.None: { }
@@ -221,5 +229,24 @@ public ForwardedOrigin ApplyForwardedHeaders(
             break;
         }
     }
+}
+
+public ForwardedOrigin ApplyForwardedHeaders(
+    ForwardedOrigin origin,
+    const ref Option<string> forwardedFor,
+    const ref Option<string> forwardedHost,
+    const ref Option<string> forwardedProto,
+    const ref ForwardedHeadersOptions options
+)
+{
+    ApplyForwardedHeadersInPlace(
+        ref origin.Host,
+        ref origin.Scheme,
+        ref origin.RemoteIpAddress,
+        forwardedFor,
+        forwardedHost,
+        forwardedProto,
+        options
+    );
     return origin;
 }

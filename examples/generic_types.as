@@ -30,7 +30,7 @@ int main() {
     Box<string> box = new() {
         value = "resource",
     };
-    Box<string> boxCopy = box;
+    Box<string> boxCopy = copy(box);
     ConsumeBox(box);
     ConsumeBox(boxCopy);
 

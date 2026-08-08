@@ -25,7 +25,10 @@ private T SsgResultOrThrow<T>(Result<T, string> result)
     }
 }
 
-private bool SsgStringsContains(List<string> values, string value)
+private bool SsgStringsContains(
+    const ref List<string> values,
+    const ref string value
+)
 {
     foreach (string existing in values)
     {
@@ -34,7 +37,7 @@ private bool SsgStringsContains(List<string> values, string value)
     return false;
 }
 
-private Result<bool, string> SsgEnsureDirectory(string path)
+private Result<bool, string> SsgEnsureDirectory(const ref string path)
 {
     bool exists = try NativePathExists(path);
     if (exists)
@@ -49,7 +52,7 @@ private Result<bool, string> SsgEnsureDirectory(string path)
     return Result.Ok(true);
 }
 
-private Result<bool, string> SsgEnsureTree(string path)
+private Result<bool, string> SsgEnsureTree(const ref string path)
 {
     nuint length = path.Length;
     if (length == 0) { return Result.Err("SSG output root cannot be empty"); }
@@ -77,15 +80,15 @@ private Result<bool, string> SsgEnsureTree(string path)
     return Result.Ok(true);
 }
 
-private bool SsgPathEndsSlash(string path)
+private bool SsgPathEndsSlash(const ref string path)
 {
     return path.Length != 0 &&
         StringByteAt(path, path.Length - 1) == 47;
 }
 
 private string SsgOutputPath(
-    string outputRoot,
-    string url,
+    const ref string outputRoot,
+    const ref string url,
     bool html,
     bool directHtml
 )
@@ -104,7 +107,7 @@ private string SsgOutputPath(
     return output.ToString();
 }
 
-private Result<bool, string> SsgEnsureParent(string path)
+private Result<bool, string> SsgEnsureParent(const ref string path)
 {
     nuint separator = 0;
     for (nuint index = 0; index < path.Length; index++)
@@ -115,7 +118,10 @@ private Result<bool, string> SsgEnsureParent(string path)
     return SsgEnsureTree(StringSlice(path, 0, separator));
 }
 
-private Result<bool, string> SsgWrite(string path, string bytes)
+private Result<bool, string> SsgWrite(
+    const ref string path,
+    const ref string bytes
+)
 {
     try SsgEnsureParent(path);
     NativeHandle output = try NativeFileOpen(path, "wb");
@@ -128,7 +134,7 @@ private Result<bool, string> SsgWrite(string path, string bytes)
 }
 
 private Result<SsgResponse, string> SsgResponseBytes(
-    string url,
+    const ref string url,
     int expectedStatus,
     bool directHtml,
     Response response
@@ -262,7 +268,7 @@ private Result<SsgResponse, string> SsgResponseBytes(
 
 private Result<bool, string> SsgMaterialize(
     string url,
-    string outputRoot,
+    const ref string outputRoot,
     int expectedStatus,
     bool directHtml,
     Response response,
@@ -290,7 +296,10 @@ private Result<bool, string> SsgMaterialize(
     return Result.Ok(true);
 }
 
-private string SsgJoinPath(string root, string relative)
+private string SsgJoinPath(
+    const ref string root,
+    const ref string relative
+)
 {
     StringBuilder path = new();
     path.Append(root);
@@ -302,9 +311,12 @@ private string SsgJoinPath(string root, string relative)
     return path.ToString();
 }
 
-private string SsgJoinRelative(string parent, string name)
+private string SsgJoinRelative(
+    const ref string parent,
+    const ref string name
+)
 {
-    if (parent.Length == 0) { return name; }
+    if (parent.Length == 0) { return copy(name); }
     StringBuilder path = new();
     path.Append(parent);
     path.Append("/");
@@ -312,7 +324,10 @@ private string SsgJoinRelative(string parent, string name)
     return path.ToString();
 }
 
-private string SsgStaticUrl(string prefix, string relative)
+private string SsgStaticUrl(
+    const ref string prefix,
+    const ref string relative
+)
 {
     StringBuilder url = new();
     url.Append(prefix);
@@ -320,17 +335,28 @@ private string SsgStaticUrl(string prefix, string relative)
     return url.ToString();
 }
 
+private Result<DirectoryStream, string> SsgOpenStaticDirectory(
+    const ref StaticDirectory mounted,
+    const ref string relative
+)
+{
+    if (relative.Length == 0)
+    {
+        return NativeDirectoryOpen(mounted.root);
+    }
+    string sourcePath = SsgJoinPath(mounted.root, relative);
+    return NativeDirectoryOpen(sourcePath);
+}
+
 private Result<int, string> SsgCopyStaticTree(
-    StaticDirectory mounted,
-    string relative,
-    string outputRoot,
+    const ref StaticDirectory mounted,
+    const ref string relative,
+    const ref string outputRoot,
     ref List<string> urls,
     ref List<string> outputs
 )
 {
-    string sourcePath = relative.Length == 0
-        ? mounted.root : SsgJoinPath(mounted.root, relative);
-    DirectoryStream source = try NativeDirectoryOpen(sourcePath);
+    DirectoryStream source = try SsgOpenStaticDirectory(mounted, relative);
     int files = 0;
     for (;;)
     {
@@ -352,8 +378,8 @@ private Result<int, string> SsgCopyStaticTree(
                         mounted,
                         childRelative,
                         outputRoot,
-                        urls,
-                        outputs
+                        ref urls,
+                        ref outputs
                     );
                     continue;
                 }
@@ -365,7 +391,7 @@ private Result<int, string> SsgCopyStaticTree(
                     mounted.urlPrefix, childRelative
                 );
                 Request request = RequestNew(
-                    "GET", url, "", "", "", ""
+                    "GET", copy(url), "", "", "", ""
                 );
                 StaticResolver resolver = mounted.resolver;
                 switch (resolver(
@@ -381,7 +407,7 @@ private Result<int, string> SsgCopyStaticTree(
                     case Option.Some(response): {
                         try SsgMaterialize(
                             url, outputRoot, 200, false,
-                            response, urls, outputs
+                            response, ref urls, ref outputs
                         );
                         files += 1;
                     }
@@ -393,8 +419,8 @@ private Result<int, string> SsgCopyStaticTree(
 }
 
 private Result<int, string> SsgCopyStaticDirectories(
-    List<StaticDirectory> directories,
-    string outputRoot,
+    const ref List<StaticDirectory> directories,
+    const ref string outputRoot,
     ref List<string> urls,
     ref List<string> outputs
 )
@@ -407,16 +433,16 @@ private Result<int, string> SsgCopyStaticDirectories(
             return Result.Err("static directory root does not exist");
         }
         files += try SsgCopyStaticTree(
-            directory, "", outputRoot, urls, outputs
+            directory, "", outputRoot, ref urls, ref outputs
         );
     }
     return Result.Ok(files);
 }
 
 private Result<SiteBuild, string> SsgBuildAppPages(
-    List<BuildPage> pages,
+    const ref List<BuildPage> pages,
     WebApplication app,
-    string outputRoot
+    const ref string outputRoot
 )
 {
     try SsgEnsureTree(outputRoot);
@@ -425,28 +451,27 @@ private Result<SiteBuild, string> SsgBuildAppPages(
     int files = 0;
     foreach (BuildPage page in pages)
     {
-        string path = page.path;
-        Request request = RequestNew("GET", path, "", "", "", "");
+        Request request = RequestNew(
+            "GET", copy(page.path), "", "", "", "");
         try SsgMaterialize(
-            path, outputRoot, 200, false,
-            app.Dispatch(request), urls, outputs
+            copy(page.path), outputRoot, 200, false,
+            app.Dispatch(request), ref urls, ref outputs
         );
         files += 1;
     }
     files += try SsgCopyStaticDirectories(
-        app.staticDirectories, outputRoot, urls, outputs
+        app.staticDirectories, outputRoot, ref urls, ref outputs
     );
     Request missing = RequestNew("GET", "/404.html", "", "", "", "");
     try SsgMaterialize(
         "/404.html", outputRoot, 404, true,
-        app.DispatchFallback(missing), urls, outputs
+        app.DispatchFallback(missing), ref urls, ref outputs
     );
     files += 1;
     return Result.Ok(new() { files = files });
 }
 
 private async Task<Result<SiteBuild, string>> SsgBuildAppPagesAsync(
-    List<BuildPage> pages,
     WebApplication app,
     string outputRoot
 )
@@ -457,24 +482,24 @@ private async Task<Result<SiteBuild, string>> SsgBuildAppPagesAsync(
         List<string> urls = new();
         List<string> outputs = new();
         int files = 0;
-        foreach (BuildPage page in pages)
+        foreach (BuildPage page in app.pages)
         {
-            string path = page.path;
-            Request request = RequestNew("GET", path, "", "", "", "");
+            Request request = RequestNew(
+                "GET", copy(page.path), "", "", "", "");
             Response response = await app.DispatchAsync(request);
             bool materialized = SsgResultOrThrow(SsgMaterialize(
-                path,
+                copy(page.path),
                 outputRoot,
                 200,
                 false,
                 response,
-                urls,
-                outputs
+                ref urls,
+                ref outputs
             ));
             files += 1;
         }
         files += SsgResultOrThrow(SsgCopyStaticDirectories(
-            app.staticDirectories, outputRoot, urls, outputs
+            app.staticDirectories, outputRoot, ref urls, ref outputs
         ));
         Request missing = RequestNew(
             "GET", "/404.html", "", "", "", ""
@@ -485,15 +510,15 @@ private async Task<Result<SiteBuild, string>> SsgBuildAppPagesAsync(
             404,
             true,
             await app.DispatchFallbackAsync(missing),
-            urls,
-            outputs
+            ref urls,
+            ref outputs
         ));
         files += 1;
         return Result.Ok(new() { files = files });
     }
     catch (Exception error)
     {
-        return Result.Err(error.Message);
+        return Result.Err(copy(error.Message));
     }
 }
 
@@ -510,5 +535,5 @@ public async Task<Result<SiteBuild, string>> SiteBuildAsync(
     string outputRoot
 )
 {
-    return await SsgBuildAppPagesAsync(app.pages, app, outputRoot);
+    return await SsgBuildAppPagesAsync(app, outputRoot);
 }

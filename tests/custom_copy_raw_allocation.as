@@ -21,7 +21,7 @@ private struct DeepNumber {
 
 int main() {
     DeepNumber source = new DeepNumber(10);
-    DeepNumber copied = source;
+    DeepNumber copied = copy(source);
     unsafe {
         *copied.value = 20;
         Console.WriteLine(*source.value);

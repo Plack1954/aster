@@ -2,6 +2,12 @@
 
 Date: 2026-08-05
 
+> Historical note: this report predates Aster's move-by-default and explicit
+> `copy(value)` decision. Its observations about the implementation at the
+> inspected commit remain historical evidence, but its recommendations for
+> copy-by-default source semantics are superseded by
+> [`ownership-and-copy.md`](ownership-and-copy.md).
+
 ## Scope and method
 
 This is a read-only engineering comparison. No Aster implementation source was

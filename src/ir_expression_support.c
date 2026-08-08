@@ -6,15 +6,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+bool load_requires_clone(const Type *type) {
+    return type != NULL &&
+        (type->kind == TYPE_ARRAY || type->kind == TYPE_OPTION ||
+         type->kind == TYPE_RESULT || type->kind == TYPE_NAMED);
+}
+
 bool is_float_type(const Type *type) {
     return type != NULL &&
            (type->kind == TYPE_F32 || type->kind == TYPE_F64);
-}
-
-bool load_requires_clone(const Type *type) {
-    return type != NULL &&
-           (type->managed || type->kind == TYPE_ARRAY || type->kind == TYPE_OPTION ||
-            type->kind == TYPE_RESULT || type->kind == TYPE_NAMED);
 }
 
 uint32_t ir_field_index(const Type *object_type, const char *name) {
@@ -181,6 +181,11 @@ static bool builtin_borrows_first_place(const char *name) {
             strcmp(name, "Stack::EnsureCapacity") == 0 ||
             strcmp(name, "Stack::TrimExcess") == 0 ||
             strcmp(name, "Stack::Capacity") == 0 ||
+            strcmp(name, "CancellationTokenSource::Token") == 0 ||
+            strcmp(name, "CancellationTokenSource::Cancel") == 0 ||
+            strcmp(name, "CancellationToken::IsCancellationRequested") == 0 ||
+            strcmp(name,
+                   "CancellationToken::ThrowIfCancellationRequested") == 0 ||
             strcmp(name, "BufferAsMutSlice") == 0 ||
             strcmp(name, "BufferAsSlice") == 0);
 }
@@ -192,6 +197,25 @@ static bool builtin_borrows_named_first(const char *name) {
             strcmp(name, "Console::Error::WriteLine") == 0 ||
             strcmp(name, "Console::Error::Write") == 0 ||
             strcmp(name, "TextLen") == 0);
+}
+
+static bool builtin_borrows_argument(
+    const char *name, size_t index
+) {
+    if (name == NULL) return false;
+    if (index == 1U &&
+        (strcmp(name, "StringBuilder::Append") == 0 ||
+         strcmp(name, "List::Contains") == 0 ||
+         strcmp(name, "List::IndexOf") == 0 ||
+         strcmp(name, "List::LastIndexOf") == 0 ||
+         strcmp(name, "List::Remove") == 0 ||
+         strcmp(name, "Dictionary::ContainsKey") == 0 ||
+         strcmp(name, "Dictionary::Remove") == 0 ||
+         strcmp(name, "Dictionary::Get") == 0 ||
+         strcmp(name, "Dictionary::ContainsValue") == 0 ||
+         strcmp(name, "Dictionary::TryGetValue") == 0))
+        return true;
+    return false;
 }
 
 IrOpcode binary_opcode(TokenKind token, bool floating) {
@@ -255,6 +279,22 @@ IrInstruction *ir_emit_local_enum_operation(
         builder, opcode, result_type, NULL, 0U, span);
     if (instruction != NULL) {
         instruction->index = local;
+        instruction->auxiliary =
+            type_variant_index(enum_type, variant);
+        instruction->symbol = unqualified_variant(variant);
+        instruction->symbol_length = strlen(instruction->symbol);
+    }
+    return instruction;
+}
+
+IrInstruction *ir_emit_enum_payload_borrow(
+    IrBuilder *builder, IrTypeId result_type, IrValueId value,
+    const Type *enum_type, const char *variant, LangSpan span
+) {
+    IrInstruction *instruction = ir_append_instruction(
+        builder, IR_OP_ENUM_PAYLOAD_BORROW, result_type,
+        &value, 1U, span);
+    if (instruction != NULL) {
         instruction->auxiliary =
             type_variant_index(enum_type, variant);
         instruction->symbol = unqualified_variant(variant);
@@ -362,6 +402,24 @@ bool expression_is_local_place(const Expr *expr) {
     return false;
 }
 
+bool expression_is_borrowable(const Expr *expr) {
+    if (expression_is_local_place(expr)) return true;
+    if (expr == NULL || expr->kind != EXPR_CALL ||
+        expr->as.call.callee->kind != EXPR_NAME ||
+        expr->as.call.arguments.count == 0U)
+        return false;
+    const char *name = expr->as.call.callee->as.name;
+    bool projection =
+        strcmp(name, "List::Get") == 0 ||
+        strcmp(name, "Queue::Peek") == 0 ||
+        strcmp(name, "Stack::Peek") == 0 ||
+        strcmp(name, "Dictionary::Get") == 0 ||
+        strcmp(name, "Dictionary::KeyAt") == 0 ||
+        strcmp(name, "Dictionary::ValueAt") == 0;
+    return projection && expression_is_local_place(
+        expr->as.call.arguments.items[0]);
+}
+
 IrValueId lower_local_place_borrow(
     IrBuilder *builder, const Expr *expr,
     IrValueId *borrowed_values, size_t *borrowed_count
@@ -384,6 +442,42 @@ IrValueId lower_local_place_borrow(
         return load->result;
     }
     if (expr->kind == EXPR_FIELD) {
+        if (expr->as.field.object->type != NULL &&
+            expr->as.field.object->type->kind == TYPE_OPTION &&
+            strcmp(expr->as.field.field, "Value") == 0) {
+            IrValueId option = lower_local_place_borrow(
+                builder, expr->as.field.object,
+                borrowed_values, borrowed_count);
+            if (option == IR_INVALID_ID) return IR_INVALID_ID;
+            IrInstruction *some = ir_append_instruction(
+                builder, IR_OP_ENUM_IS,
+                ir_intern_type(builder->module, &ir_bool_type),
+                &option, 1U, expr->span);
+            if (some == NULL) return IR_INVALID_ID;
+            some->auxiliary = 1U;
+            some->symbol = "Option::Some";
+            some->symbol_length = strlen(some->symbol);
+            IrBlockId present = ir_add_block(builder->function);
+            IrBlockId absent = ir_add_block(builder->function);
+            ir_set_terminator(
+                builder, IR_TERM_BRANCH, some->result,
+                present, absent, expr->span);
+            builder->current = absent;
+            ir_set_terminator(
+                builder, IR_TERM_TRAP, IR_INVALID_ID,
+                IR_INVALID_ID, IR_INVALID_ID, expr->span);
+            builder->current = present;
+            IrInstruction *payload = ir_append_instruction(
+                builder, IR_OP_ENUM_PAYLOAD_BORROW,
+                ir_intern_type(builder->module, expr->type),
+                &option, 1U, expr->span);
+            if (payload == NULL) return IR_INVALID_ID;
+            payload->auxiliary = 1U;
+            payload->symbol = "Option::Some";
+            payload->symbol_length = strlen(payload->symbol);
+            borrowed_values[(*borrowed_count)++] = payload->result;
+            return payload->result;
+        }
         if (expr->as.field.object->kind == EXPR_NAME) {
             const Expr *owner = expr->as.field.object;
             IrInstruction *field = ir_append_instruction(
@@ -449,6 +543,55 @@ void discard_local_place_borrows(
             &value, 1U, span);
         if (discard != NULL) discard->auxiliary = 1U;
     }
+}
+
+IrValueId lower_borrowed_expr(
+    IrBuilder *builder, const Expr *expr,
+    IrValueId *borrowed_values, size_t *borrowed_count
+) {
+    if (expression_is_local_place(expr))
+        return lower_local_place_borrow(
+            builder, expr, borrowed_values, borrowed_count);
+    if (!expression_is_borrowable(expr)) return IR_INVALID_ID;
+
+    const char *name = expr->as.call.callee->as.name;
+    IrValueId collection = lower_local_place_borrow(
+        builder, expr->as.call.arguments.items[0],
+        borrowed_values, borrowed_count);
+    if (collection == IR_INVALID_ID) return IR_INVALID_ID;
+    IrOpcode opcode;
+    IrValueId operands[2] = {collection, IR_INVALID_ID};
+    size_t operand_count = 1U;
+    if (strcmp(name, "Queue::Peek") == 0)
+        opcode = IR_OP_QUEUE_FRONT_BORROW;
+    else if (strcmp(name, "Stack::Peek") == 0)
+        opcode = IR_OP_STACK_TOP_BORROW;
+    else {
+        operands[1] = ir_lower_expr(
+            builder, expr->as.call.arguments.items[1]);
+        operand_count = 2U;
+        if (strcmp(name, "List::Get") == 0)
+            opcode = IR_OP_LIST_ELEMENT_BORROW;
+        else if (strcmp(name, "Dictionary::Get") == 0)
+            opcode = IR_OP_DICTIONARY_GET_BORROW;
+        else if (strcmp(name, "Dictionary::KeyAt") == 0)
+            opcode = IR_OP_DICTIONARY_KEY_BORROW;
+        else
+            opcode = IR_OP_DICTIONARY_VALUE_BORROW;
+    }
+    IrInstruction *borrow = ir_append_instruction(
+        builder, opcode,
+        ir_intern_type(builder->module, expr->type),
+        operands, operand_count, expr->span);
+    if (borrow == NULL) return IR_INVALID_ID;
+    if (*borrowed_count >= 64U) {
+        lang_diag(builder->diagnostics, expr->span,
+                  "IR place nesting limit exceeded");
+        builder->failed = true;
+        return IR_INVALID_ID;
+    }
+    borrowed_values[(*borrowed_count)++] = borrow->result;
+    return borrow->result;
 }
 
 static void emit_store_to_out_place(
@@ -588,14 +731,20 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         ? expr->as.call.callee->as.name : NULL;
     if (callee_name != NULL &&
         strcmp(callee_name, "ArenaAlloc") == 0) {
+        IrValueId borrowed_values[64];
+        size_t borrowed_count = 0U;
         IrValueId operands[2] = {
-            ir_lower_expr(builder, expr->as.call.arguments.items[0]),
+            lower_borrowed_expr(
+                builder, expr->as.call.arguments.items[0],
+                borrowed_values, &borrowed_count),
             ir_lower_expr(builder, expr->as.call.arguments.items[1])
         };
         IrInstruction *allocation = ir_append_instruction(
             builder, IR_OP_RAW_ALLOC,
             ir_intern_type(builder->module, expr->type),
             operands, 2U, expr->span);
+        discard_local_place_borrows(
+            builder, borrowed_values, borrowed_count, expr->span);
         return allocation != NULL
              ? allocation->result : IR_INVALID_ID;
     }
@@ -931,6 +1080,15 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     uint32_t *borrowed_temporary_locals = ir_resize(
         NULL, argument_count, sizeof(*borrowed_temporary_locals));
     size_t borrowed_temporary_count = 0U;
+    IrValueId *borrowed_place_values = ir_resize(
+        NULL, argument_count * 64U,
+        sizeof(*borrowed_place_values));
+    size_t *borrowed_place_counts = ir_resize(
+        NULL, argument_count, sizeof(*borrowed_place_counts));
+    if (argument_count != 0U)
+        memset(
+            borrowed_place_counts, 0,
+            argument_count * sizeof(*borrowed_place_counts));
     size_t offset = 0U;
     const Type *indirect_function_type = indirect
         ? expr->as.call.callee->type : NULL;
@@ -941,9 +1099,10 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         Expr *argument = expr->as.call.arguments.items[i];
         bool builtin_borrow =
             i == 0U &&
-            (builtin_borrows_first_place(callee_name) ||
-             (builtin_borrows_named_first(callee_name) &&
-              argument->kind == EXPR_NAME));
+             (builtin_borrows_first_place(callee_name) ||
+              builtin_borrows_named_first(callee_name));
+        builtin_borrow = builtin_borrow ||
+            builtin_borrows_argument(callee_name, i);
         bool indirect_borrow = indirect_function_type != NULL &&
             parameter_mode_is_reference(
                 indirect_function_type->parameter_modes[i]);
@@ -960,34 +1119,13 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         bool borrowed =
             indirect_borrow || declared_borrow || builtin_borrow ||
             explicit_borrow;
-        bool borrowed_local = borrowed &&
-            (argument->kind == EXPR_NAME ||
-             (argument->kind == EXPR_FIELD &&
-              argument->as.field.object->kind == EXPR_NAME));
-        if (borrowed_local) {
-            const Expr *place = argument->kind == EXPR_FIELD
-                              ? argument->as.field.object : argument;
-            uint32_t local = ir_find_local(
-                builder, place->resolved_local_id, place->span);
-            IrInstruction *load = ir_append_instruction(
-                builder,
-                argument->kind == EXPR_FIELD
-                    ? IR_OP_LOCAL_FIELD_BORROW
-                    : IR_OP_LOCAL_LOAD,
-                ir_intern_type(builder->module, argument->type),
-                NULL, 0U, argument->span);
-            if (load != NULL) {
-                load->index = local;
-                if (argument->kind == EXPR_FIELD) {
-                    load->auxiliary = ir_field_index(
-                        place->type, argument->as.field.field);
-                    load->symbol = argument->as.field.field;
-                    load->symbol_length =
-                        strlen(argument->as.field.field);
-                }
-            }
-            operands[offset + i] =
-                load != NULL ? load->result : IR_INVALID_ID;
+        bool borrowed_place = borrowed &&
+            expression_is_borrowable(argument);
+        if (borrowed_place) {
+            operands[offset + i] = lower_borrowed_expr(
+                builder, argument,
+                &borrowed_place_values[i * 64U],
+                &borrowed_place_counts[i]);
         } else if (borrowed) {
             IrValueId owner = ir_lower_expr(builder, argument);
             IrTypeId owner_type = ir_intern_type(
@@ -1025,6 +1163,8 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     free(operands);
     if (call == NULL) {
         free(borrowed_temporary_locals);
+        free(borrowed_place_values);
+        free(borrowed_place_counts);
         return IR_INVALID_ID;
     }
     call->argument_mode_count = argument_count;
@@ -1041,10 +1181,12 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
                  i < target->as.function.param_count)
             mode = parameter_mode_from_param(
                 &target->as.function.params[i]);
-        else if (mode == PARAMETER_MODE_VALUE && i == 0U &&
+        if (mode == PARAMETER_MODE_VALUE && i == 0U &&
                  (builtin_borrows_first_place(callee_name) ||
-                  (builtin_borrows_named_first(callee_name) &&
-                   expr->as.call.arguments.items[0]->kind == EXPR_NAME)))
+                  builtin_borrows_named_first(callee_name)))
+            mode = PARAMETER_MODE_IMMUTABLE_REFERENCE;
+        else if (mode == PARAMETER_MODE_VALUE &&
+                 builtin_borrows_argument(callee_name, i))
             mode = PARAMETER_MODE_IMMUTABLE_REFERENCE;
         call->argument_modes[i] = mode;
     }
@@ -1081,6 +1223,12 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             drop->index = borrowed_temporary_locals[i - 1U];
     }
     free(borrowed_temporary_locals);
+    for (size_t i = 0U; i < argument_count; ++i)
+        discard_local_place_borrows(
+            builder, &borrowed_place_values[i * 64U],
+            borrowed_place_counts[i], expr->span);
+    free(borrowed_place_values);
+    free(borrowed_place_counts);
     bool registered_native = target != NULL &&
         target->kind == DECL_FUNCTION && target->as.function.is_extern;
     bool builtin_may_throw = callee_name != NULL &&
@@ -1363,9 +1511,18 @@ IrValueId lower_owned_interpolation(
          i < expr->as.interpolation.part_count; ++i) {
         const InterpolationPart *part =
             &expr->as.interpolation.parts[i];
-        IrValueId value = part->expression != NULL
-            ? ir_lower_expr(builder, part->expression)
-            : emit_interpolation_literal(builder, part);
+        IrValueId borrowed_values[64];
+        size_t borrowed_count = 0U;
+        bool borrowed_part =
+            part->expression != NULL &&
+            part->borrow_owned_string;
+        IrValueId value = part->expression == NULL
+            ? emit_interpolation_literal(builder, part)
+            : borrowed_part
+                ? lower_borrowed_expr(
+                      builder, part->expression,
+                      borrowed_values, &borrowed_count)
+                : ir_lower_expr(builder, part->expression);
         if (value == IR_INVALID_ID ||
             ir_current_terminated(builder))
             return IR_INVALID_ID;
@@ -1399,7 +1556,11 @@ IrValueId lower_owned_interpolation(
         IrValueId owned_text = IR_INVALID_ID;
         uint32_t owned_text_local = IR_INVALID_ID;
         IrValueId text = value;
-        if (value_type->kind == TYPE_STRING) {
+        if (value_type->kind == TYPE_STRING && borrowed_part) {
+            text = ir_emit_synthetic_native_call(
+                builder, "StringView", &ir_str_type,
+                &value, 1U, 1U, part->span);
+        } else if (value_type->kind == TYPE_STRING) {
             owned_text = value;
         }
         if (owned_text != IR_INVALID_ID) {
@@ -1448,6 +1609,9 @@ IrValueId lower_owned_interpolation(
             if (drop_text != NULL)
                 drop_text->index = owned_text_local;
         }
+        discard_local_place_borrows(
+            builder, borrowed_values,
+            borrowed_count, part->span);
     }
 
     IrInstruction *move = ir_append_instruction(

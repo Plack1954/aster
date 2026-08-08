@@ -13,6 +13,6 @@ int main() {
     {
         item = new() { value = 1 }
     };
-    UniqueWrapper invalid = original;
+    UniqueWrapper invalid = copy(original);
     return (int)invalid.item.value;
 }

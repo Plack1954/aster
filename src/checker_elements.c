@@ -343,6 +343,14 @@ static Type *check_element_attribute_value(
     Checker *checker, ElementProperty *property, Type *schema_type,
     bool allow_optional_value, bool allow_owned_text,
     bool allow_interpolated_borrow) {
+    Type *value_type = schema_type->kind == TYPE_OPTION
+                     ? schema_type->element : schema_type;
+    bool borrow_owned_string = allow_owned_text &&
+        (value_type->kind == TYPE_STR ||
+         value_type->kind == TYPE_STRING) &&
+        (property->value->kind == EXPR_NAME ||
+         (property->value->kind == EXPR_FIELD &&
+          property->value->as.field.object->kind == EXPR_NAME));
     Type *previous_expected = checker->expected_type;
     bool previous_html_destination =
         checker->html_interpolation_destination;
@@ -350,13 +358,15 @@ static Type *check_element_attribute_value(
     checker->html_interpolation_destination =
         allow_owned_text &&
         property->value->kind == EXPR_INTERPOLATION;
-    Type *actual = check_expr(checker, property->value);
+    Type *actual = borrow_owned_string
+        ? check_borrowed_expr(checker, property->value)
+        : check_expr(checker, property->value);
     checker->expected_type = previous_expected;
     checker->html_interpolation_destination =
         previous_html_destination;
 
-    Type *value_type = schema_type->kind == TYPE_OPTION
-                     ? schema_type->element : schema_type;
+    if (borrow_owned_string && actual->kind == TYPE_STRING)
+        property->value->borrow_html_string = true;
     if (allow_interpolated_borrow &&
         property->value->kind == EXPR_INTERPOLATION &&
         value_type->kind == TYPE_STR &&
@@ -367,7 +377,8 @@ static Type *check_element_attribute_value(
     if (same_type(actual, schema_type) ||
         same_type(actual, value_type) ||
         (allow_owned_text &&
-         value_type->kind == TYPE_STR &&
+         (value_type->kind == TYPE_STR ||
+          value_type->kind == TYPE_STRING) &&
          actual->kind == TYPE_STRING))
         return actual;
     if (allow_optional_value &&

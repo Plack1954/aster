@@ -3,18 +3,18 @@ using Aster.Net.Http;
 using Aster.Web.Middleware;
 using Aster.Web.Router;
 
-private Html home(string path) {
+private Html home(const ref string path) {
     return <section>
         <h2>Aster HTTP server</h2>
         <p>{path}</p>
     </section>;
 }
 
-private Html health(string path) {
+private Html health(const ref string path) {
     return <strong>healthy</strong>;
 }
 
-private Html NotFound(string path) {
+private Html NotFound(const ref string path) {
     return <section>
         <h2>Not found</h2>
         <p>{path}</p>
@@ -29,7 +29,7 @@ private Html IdentityMiddleware(Html page) {
     return page;
 }
 
-private long RouteStatus(string path) {
+private long RouteStatus(const ref string path) {
     if (path == "/") {
         return 200;
     }
@@ -40,8 +40,8 @@ private long RouteStatus(string path) {
 }
 
 private Html RenderRequest(
-    string path,
-    Router router,
+    const ref string path,
+    const ref Router router,
     MiddlewareChain middleware
 ) {
     Html routed = RouterDispatch(router, path);

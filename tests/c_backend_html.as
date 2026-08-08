@@ -23,8 +23,8 @@ private Html choose(bool early) {
 
 int main() {
     Html original = card(true);
-    Html copy = original;
-    Console.WriteLine(copy.ToHtmlString());
+    Html duplicate = copy(original);
+    Console.WriteLine(duplicate.ToHtmlString());
     Console.WriteLine(original.ToHtmlString());
     Console.WriteLine(card(false).ToHtmlString());
     Console.WriteLine(choose(true).ToHtmlString());

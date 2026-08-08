@@ -16,7 +16,8 @@ private ResponseParts MakeResponse() {
 
 int main() {
     ResponseParts response = MakeResponse();
-    (int status, string body, List<string> headers) = response;
+    ResponseParts responseCopy = copy(response);
+    (int status, string body, List<string> headers) = responseCopy;
     Console.WriteLine(status);
     Console.WriteLine(body);
     Console.WriteLine(headers.Count);

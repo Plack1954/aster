@@ -70,8 +70,12 @@
             case OP_REFERENCE_FIELD_LOCAL: {
                 size_t slot = (size_t)instruction.a;
                 Object *object = initialized[slot] &&
-                    LOCAL(slot).tag == LANG_VALUE_OBJECT
-                    ? LOCAL(slot).as.object : NULL;
+                    (LOCAL(slot).tag == LANG_VALUE_OBJECT ||
+                     LOCAL(slot).tag == LANG_VALUE_RAW_POINTER)
+                    ? (LOCAL(slot).tag == LANG_VALUE_OBJECT
+                        ? LOCAL(slot).as.object
+                        : LOCAL(slot).as.pointer)
+                    : NULL;
                 LangStringView field =
                     vm->module->constants[(size_t)instruction.b]
                         .value.as.string;

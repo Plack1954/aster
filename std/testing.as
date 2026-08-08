@@ -32,9 +32,9 @@ public TestResult AssertFalse(bool value, string message) {
 }
 
 public TestResult AssertEqStr(
-    string actual,
-    string expected,
-    string context
+    const ref string actual,
+    const ref string expected,
+    const ref string context
 ) {
     if (actual == expected) {
         return TestPass();
@@ -50,9 +50,9 @@ public TestResult AssertEqStr(
 }
 
 public TestResult AssertContains(
-    string actual,
-    string expectedPart,
-    string context
+    const ref string actual,
+    const ref string expectedPart,
+    const ref string context
 ) {
     if (actual.Contains(expectedPart)) {
         return TestPass();

@@ -19,6 +19,6 @@ int main() {
     };
     List<ListResource> original = new();
     original.Add(item);
-    List<ListResource> copied = original;
+    List<ListResource> copied = copy(original);
     return 0;
 }

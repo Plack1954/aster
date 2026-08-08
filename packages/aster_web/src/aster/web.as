@@ -10,37 +10,24 @@ using System.Text.Json;
 
 public struct Request
 {
-    string method;
-    string path;
-    string host;
-    string scheme;
-    string remoteIpAddress;
-    string contentType;
+    string Method;
+    string Path;
+    string Host;
+    string Scheme;
+    string RemoteIpAddress;
+    string ContentType;
     string cookieHeader;
-    string body;
-    string target;
-    string queryString;
-    Option<RoutePattern> routePattern;
+    string Body;
+    string Target;
+    string QueryString;
+    Route selectedRoute;
     string headerData;
-
-    public string Method => method;
-    public string Path => path;
-    public string Host => host;
-    public string Scheme => scheme;
-    public string RemoteIpAddress => remoteIpAddress;
-    public string ContentType => contentType;
-    public string Body => body;
-    public string Target => target;
-    public string QueryString => queryString;
 }
 
 public struct ResponseHeader
 {
-    string name;
-    string value;
-
-    public string Name => name;
-    public string Value => value;
+    string Name;
+    string Value;
 }
 
 public enum AssetKind
@@ -100,11 +87,9 @@ public union ResponseBody
 
 public struct Response
 {
-    int status;
-    ResponseBody body;
-    List<ResponseHeader> headers;
-
-    public int StatusCode => status;
+    int StatusCode;
+    ResponseBody Body;
+    List<ResponseHeader> Headers;
 }
 
 public struct Results
@@ -196,9 +181,9 @@ private Response HtmlResponse(int status, Html page)
     List<ResponseHeader> headers = new();
     return new()
     {
-        status = status,
-        body = ResponseBody.Html(page),
-        headers = headers
+        StatusCode = status,
+        Body = ResponseBody.Html(page),
+        Headers = headers
     };
 }
 
@@ -213,9 +198,9 @@ private Response EmptyResponse(int status)
     List<ResponseHeader> headers = new();
     return new()
     {
-        status = status,
-        body = ResponseBody.Empty,
-        headers = headers
+        StatusCode = status,
+        Body = ResponseBody.Empty,
+        Headers = headers
     };
 }
 
@@ -265,9 +250,9 @@ public Response Results.Text(int status, string body)
     List<ResponseHeader> headers = new();
     return new()
     {
-        status = status,
-        body = ResponseBody.Text(body),
-        headers = headers
+        StatusCode = status,
+        Body = ResponseBody.Text(body),
+        Headers = headers
     };
 }
 
@@ -277,9 +262,9 @@ public Response Results.Css(int status, string body)
     List<ResponseHeader> headers = new();
     return new()
     {
-        status = status,
-        body = ResponseBody.Css(body),
-        headers = headers
+        StatusCode = status,
+        Body = ResponseBody.Css(body),
+        Headers = headers
     };
 }
 
@@ -298,9 +283,9 @@ public Response Results.Asset(
     };
     return new()
     {
-        status = status,
-        body = ResponseBody.Asset(asset),
-        headers = headers
+        StatusCode = status,
+        Body = ResponseBody.Asset(asset),
+        Headers = headers
     };
 }
 
@@ -319,9 +304,9 @@ public Response Results.Bytes(
     };
     return new()
     {
-        status = status,
-        body = ResponseBody.Bytes(byteBody),
-        headers = headers
+        StatusCode = status,
+        Body = ResponseBody.Bytes(byteBody),
+        Headers = headers
     };
 }
 
@@ -372,9 +357,9 @@ public Response Results.Text(string body)
     List<ResponseHeader> headers = new();
     return new()
     {
-        status = 200,
-        body = ResponseBody.Text(body),
-        headers = headers
+        StatusCode = 200,
+        Body = ResponseBody.Text(body),
+        Headers = headers
     };
 }
 
@@ -383,9 +368,9 @@ public Response Results.Css(string body)
     List<ResponseHeader> headers = new();
     return new()
     {
-        status = 200,
-        body = ResponseBody.Css(body),
-        headers = headers
+        StatusCode = 200,
+        Body = ResponseBody.Css(body),
+        Headers = headers
     };
 }
 
@@ -399,9 +384,9 @@ public Response Results.Asset(string bytes, AssetKind kind)
     };
     return new()
     {
-        status = 200,
-        body = ResponseBody.Asset(asset),
-        headers = headers
+        StatusCode = 200,
+        Body = ResponseBody.Asset(asset),
+        Headers = headers
     };
 }
 
@@ -450,9 +435,9 @@ public Response Results.Stream(Stream stream, AssetKind kind)
     };
     return new()
     {
-        status = 200,
-        body = ResponseBody.Stream(body),
-        headers = headers
+        StatusCode = 200,
+        Body = ResponseBody.Stream(body),
+        Headers = headers
     };
 }
 
@@ -464,7 +449,7 @@ public Response Results.Stream(
 {
     EnsureResponseBodyAllowed(status);
     Response response = Results.Stream(stream, kind);
-    response.status = status;
+    response.StatusCode = status;
     return response;
 }
 
@@ -478,9 +463,9 @@ public Response Results.File(string path, AssetKind kind)
     };
     return new()
     {
-        status = 200,
-        body = ResponseBody.File(body),
-        headers = headers
+        StatusCode = 200,
+        Body = ResponseBody.File(body),
+        Headers = headers
     };
 }
 
@@ -615,17 +600,21 @@ public Response Results.ServiceUnavailable()
     return EmptyResponse(StatusCodes.Status503ServiceUnavailable);
 }
 
-public delegate Response Handler(Request request);
+public delegate Response Handler(const ref Request request);
 public delegate Task<Response> AsyncHandler(Request request);
 
 public delegate Response StringRouteHandler(string value);
 public delegate Response IntRouteHandler(int value);
 public delegate Response LongRouteHandler(long value);
 public delegate Response BoolRouteHandler(bool value);
-public delegate Response RequestStringRouteHandler(Request request, string value);
-public delegate Response RequestIntRouteHandler(Request request, int value);
-public delegate Response RequestLongRouteHandler(Request request, long value);
-public delegate Response RequestBoolRouteHandler(Request request, bool value);
+public delegate Response RequestStringRouteHandler(
+    const ref Request request, string value);
+public delegate Response RequestIntRouteHandler(
+    const ref Request request, int value);
+public delegate Response RequestLongRouteHandler(
+    const ref Request request, long value);
+public delegate Response RequestBoolRouteHandler(
+    const ref Request request, bool value);
 
 public delegate Task<Response> AsyncStringRouteHandler(string value);
 public delegate Task<Response> AsyncIntRouteHandler(int value);
@@ -681,7 +670,7 @@ public JsonBody FromJsonBody()
 
 public T JsonBody.Deserialize<T>(JsonBody self)
 {
-    T value = JsonSerializer.Deserialize(self.Value);
+    T value = JsonSerializer.Deserialize(copy(self.Value));
     return value;
 }
 
@@ -760,10 +749,10 @@ private struct AsyncRouteJsonBindingEndpoint
 public delegate List<string> BuildSource();
 
 public delegate Option<Response> StaticResolver(
-    string urlPrefix,
-    string root,
+    const ref string urlPrefix,
+    const ref string root,
     StaticFileOptions options,
-    Request request
+    const ref Request request
 );
 
 public union FilterResult
@@ -772,9 +761,9 @@ public union FilterResult
     Respond(Response),
 }
 
-public delegate FilterResult RequestFilter(Request request);
+public delegate FilterResult RequestFilter(const ref Request request);
 public delegate Html HtmlMiddleware(
-    Request request,
+    const ref Request request,
     Html page
 );
 public delegate Response ExceptionHandler(Exception error);
@@ -807,6 +796,16 @@ private union RouteHandler
     AsyncBoundRouteHeader(AsyncRouteHeaderBindingEndpoint),
     AsyncBoundRouteJson(AsyncRouteJsonBindingEndpoint),
 }
+
+private class RouteHandlerBox
+{
+    public RouteHandler Value;
+
+    public RouteHandlerBox(RouteHandler value)
+    {
+        Value = value;
+    }
+}
 private struct UrlValue
 {
     string name;
@@ -822,7 +821,7 @@ private class Route
 {
     public List<string> methods;
     public RoutePattern pattern;
-    public RouteHandler handler;
+    public RouteHandlerBox handler;
     public EndpointMetadata metadata;
 
     public Route(
@@ -834,18 +833,19 @@ private class Route
     {
         pattern = routePattern;
         methods = routeMethods;
-        handler = routeHandler;
+        handler = new RouteHandlerBox(routeHandler);
         metadata = endpointMetadata;
     }
 
     ~Route()
     {
+        delete handler;
         delete metadata;
     }
 }
 
-private List<Route> InsertRouteByPrecedence(
-    List<Route> routes,
+private void InsertRouteByPrecedence(
+    ref List<Route> routes,
     Route route
 )
 {
@@ -860,12 +860,11 @@ private List<Route> InsertRouteByPrecedence(
         index += 1;
     }
     routes.Insert(index, route);
-    return routes;
 }
 
 private Option<Route> MatchOrderedRoutes(
-    List<Route> routes,
-    string path
+    const ref List<Route> routes,
+    const ref string path
 )
 {
     foreach (Route route in routes)
@@ -878,7 +877,7 @@ private Option<Route> MatchOrderedRoutes(
     return Option.None;
 }
 
-private string FirstPathSegment(string path)
+private string FirstPathSegment(const ref string path)
 {
     if (path.Length <= 1) { return ""; }
     nuint end = 1;
@@ -900,19 +899,19 @@ private class RouteLiteralBucket
         Routes = new();
     }
 
-    public bool Handles(string literal)
+    public bool Handles(const ref string literal)
     {
-        return AsciiEqualIgnoringCase(Literal, literal);
+        return AsciiEqualIgnoringCase(this.Literal, literal);
     }
 
     public void Add(Route route)
     {
-        Routes = InsertRouteByPrecedence(Routes, route);
+        InsertRouteByPrecedence(ref this.Routes, route);
     }
 
-    public Option<Route> Match(string path)
+    public Option<Route> Match(const ref string path)
     {
-        return MatchOrderedRoutes(Routes, path);
+        return MatchOrderedRoutes(this.Routes, path);
     }
 }
 
@@ -929,9 +928,9 @@ private class RouteMethodBucket
         LiteralBuckets = new();
     }
 
-    public bool Handles(string method)
+    public bool Handles(const ref string method)
     {
-        return Method == method;
+        return this.Method == method;
     }
 
     public void Add(Route route)
@@ -949,19 +948,15 @@ private class RouteMethodBucket
                 }
                 RouteLiteralBucket bucket = new RouteLiteralBucket(literal);
                 bucket.Add(route);
-                List<RouteLiteralBucket> buckets = LiteralBuckets;
-                buckets.Add(bucket);
-                LiteralBuckets = buckets;
+                this.LiteralBuckets.Add(bucket);
             }
             case Option.None: {
-                DynamicRoutes = InsertRouteByPrecedence(
-                    DynamicRoutes, route
-                );
+                InsertRouteByPrecedence(ref this.DynamicRoutes, route);
             }
         }
     }
 
-    public Option<Route> Match(string path)
+    public Option<Route> Match(const ref string path)
     {
         string literal = FirstPathSegment(path);
         foreach (RouteLiteralBucket bucket in LiteralBuckets)
@@ -1014,16 +1009,17 @@ private class RouteTable
             }
             if (!found)
             {
-                RouteMethodBucket bucket = new RouteMethodBucket(method);
+                RouteMethodBucket bucket = new RouteMethodBucket(copy(method));
                 bucket.Add(route);
-                List<RouteMethodBucket> buckets = Buckets;
-                buckets.Add(bucket);
-                Buckets = buckets;
+                this.Buckets.Add(bucket);
             }
         }
     }
 
-    public Option<Route> Match(string method, string path)
+    public Option<Route> Match(
+        const ref string method,
+        const ref string path
+    )
     {
         foreach (RouteMethodBucket bucket in Buckets)
         {
@@ -1160,7 +1156,7 @@ public struct RouteEndpoint
     {
         get
         {
-            return this.Validate().metadata.Name;
+            return copy(this.Validate().metadata.Name);
         }
     }
 
@@ -1168,7 +1164,7 @@ public struct RouteEndpoint
     {
         get
         {
-            return this.Validate().metadata.Description;
+            return copy(this.Validate().metadata.Description);
         }
     }
 
@@ -1188,7 +1184,7 @@ public struct RouteEndpoint
         {
             throw new ArgumentException("endpoint method index is out of range");
         }
-        return endpoint.methods[index];
+        return copy(endpoint.methods[index]);
     }
 
     public nuint TagCount
@@ -1207,7 +1203,7 @@ public struct RouteEndpoint
         {
             throw new ArgumentException("endpoint tag index is out of range");
         }
-        return metadata.Tags[index];
+        return copy(metadata.Tags[index]);
     }
 
     public nuint ProducedStatusCount
@@ -1265,7 +1261,7 @@ public class WebApplication
     public List<RequestFilter> filters;
     public List<HtmlMiddleware> htmlMiddleware;
     public List<StaticDirectory> staticDirectories;
-    public RouteHandler fallback;
+    public RouteHandlerBox fallback;
     public ExceptionHandler exceptionHandler;
     public Option<ForwardedHeadersOptions> forwardedHeaders;
     public long maxRequestBodySize;
@@ -1282,7 +1278,7 @@ public class WebApplication
         filters = new();
         htmlMiddleware = new();
         staticDirectories = new();
-        fallback = RouteHandler.Sync(DefaultNotFound);
+        fallback = new RouteHandlerBox(RouteHandler.Sync(DefaultNotFound));
         exceptionHandler = DefaultExceptionResponse;
         forwardedHeaders = Option.None;
         maxRequestBodySize = 1048576;
@@ -1306,6 +1302,7 @@ public class WebApplication
 
     ~WebApplication()
     {
+        delete fallback;
         delete routeTable;
         foreach (RouteGroupState group in routeGroups)
         {
@@ -1338,15 +1335,15 @@ public struct RouteGroup
                 throw new InvalidOperationException("route group is invalid");
             }
             RouteGroupState state = State;
-            return state.Prefix;
+            return copy(state.Prefix);
         }
     }
 }
 
 public Result<string, string> LinkGenerator.GetPathByName(
     LinkGenerator self,
-    string endpointName,
-    RouteValues values
+    const ref string endpointName,
+    const ref RouteValues values
 )
 {
     if (self.Application == null)
@@ -1376,7 +1373,7 @@ public Result<string, string> LinkGenerator.GetPathByName(
 
 public Result<string, string> LinkGenerator.GetPathByName(
     LinkGenerator self,
-    string endpointName
+    const ref string endpointName
 )
 {
     return self.GetPathByName(endpointName, RouteValues.Create());
@@ -1388,7 +1385,7 @@ private Response DefaultExceptionResponse(Exception error)
     return Results.InternalServerError(<h1>Internal server error</h1>);
 }
 
-private Response DefaultNotFound(Request request)
+private Response DefaultNotFound(const ref Request request)
 {
     return Results.NotFound(<h1>Not found</h1>);
 }
@@ -1402,21 +1399,21 @@ private T AsterWebResultOrThrow<T>(Result<T, string> result)
     }
 }
 
-private RoutePattern ParseRoutePattern(string pattern)
+private RoutePattern ParseRoutePattern(const ref string pattern)
 {
-    switch (RoutePattern.TryParse(pattern))
+    switch (RoutePattern.TryParse(copy(pattern)))
     {
         case Result.Ok(parsed): { return parsed; }
         case Result.Err(error): { throw new ArgumentException(error); }
     }
 }
 
-private bool RouteHasParameter(string path)
+private bool RouteHasParameter(const ref string path)
 {
     return ParseRoutePattern(path).HasParameters;
 }
 
-private bool BuildPagePathValid(string path)
+private bool BuildPagePathValid(const ref string path)
 {
     nuint length = path.Length;
     if (length == 0 || StringByteAt(path, 0) != 47)
@@ -1456,7 +1453,10 @@ private bool BuildPagePathValid(string path)
     return true;
 }
 
-private bool BuildPagesContains(List<BuildPage> pages, string path)
+private bool BuildPagesContains(
+    const ref List<BuildPage> pages,
+    const ref string path
+)
 {
     foreach (BuildPage page in pages)
     {
@@ -1466,8 +1466,8 @@ private bool BuildPagesContains(List<BuildPage> pages, string path)
 }
 
 private bool BuildPageMatchesRoutes(
-    List<Route> routes,
-    string path
+    const ref List<Route> routes,
+    const ref string path
 )
 {
     foreach (Route route in routes)
@@ -1482,7 +1482,10 @@ private bool BuildPageMatchesRoutes(
     return false;
 }
 
-private bool RouteMatches(string pattern, string path)
+private bool RouteMatches(
+    const ref string pattern,
+    const ref string path
+)
 {
     return ParseRoutePattern(pattern).IsMatch(path);
 }
@@ -1496,7 +1499,7 @@ private int RequestPathHex(byte value)
 }
 
 private bool TryRequestPathByte(
-    string value,
+    const ref string value,
     nuint index,
     out byte decoded
 )
@@ -1528,7 +1531,7 @@ private int RequestPathUtf8Length(byte first)
 // was malformed or was not valid UTF-8 and must remain literal.
 private Result<nuint, string> AppendRequestPathEscape(
     ref StringBuilder output,
-    string value,
+    const ref string value,
     nuint index
 )
 {
@@ -1582,7 +1585,7 @@ private Result<nuint, string> AppendRequestPathEscape(
     return Result.Ok((nuint)(sequenceLength * 3));
 }
 
-private Result<string, string> DecodeRequestPath(string value)
+private Result<string, string> DecodeRequestPath(const ref string value)
 {
     StringBuilder output = new();
     nuint index = 0;
@@ -1670,9 +1673,9 @@ private string RemoveRequestPathDotSegments(string path)
     return normalized;
 }
 
-private Result<string, string> NormalizeRequestPath(string rawPath)
+private Result<string, string> NormalizeRequestPath(const ref string rawPath)
 {
-    if (rawPath == "*") { return Result.Ok(rawPath); }
+    if (rawPath == "*") { return Result.Ok(copy(rawPath)); }
     if (rawPath.Length == 0 || rawPath[0] != 47)
     {
         return Result.Err("request path must begin with '/'");
@@ -1683,6 +1686,15 @@ private Result<string, string> NormalizeRequestPath(string rawPath)
         case Result.Ok(decoded): {
             return Result.Ok(RemoveRequestPathDotSegments(decoded));
         }
+    }
+}
+
+private string NormalizeRequestPathOrThrow(const ref string rawPath)
+{
+    switch (NormalizeRequestPath(rawPath))
+    {
+        case Result.Err(error): { throw new ArgumentException(error); }
+        case Result.Ok(normalized): { return normalized; }
     }
 }
 
@@ -1714,40 +1726,35 @@ public Request RequestNewTransport(
     string headerData
 )
 {
-    string rawPath = target;
     string queryString = "";
+    string path = "";
     switch (StringFindByte(target, 63))
     {
         case Option.Some(separator): {
-            rawPath = StringSlice(target, 0, separator);
+            string rawPath = StringSlice(target, 0, separator);
+            path = NormalizeRequestPathOrThrow(rawPath);
             queryString = StringSlice(
                 target, separator + 1, target.Length
             );
         }
         case Option.None: {
+            path = NormalizeRequestPathOrThrow(target);
         }
-    }
-
-    string path = "";
-    switch (NormalizeRequestPath(rawPath))
-    {
-        case Result.Err(error): { throw new ArgumentException(error); }
-        case Result.Ok(normalized): { path = normalized; }
     }
 
     return new()
     {
-        method = method,
-        path = path,
-        host = host,
-        scheme = scheme,
-        remoteIpAddress = remoteIpAddress,
-        contentType = contentType,
+        Method = method,
+        Path = path,
+        Host = host,
+        Scheme = scheme,
+        RemoteIpAddress = remoteIpAddress,
+        ContentType = contentType,
         cookieHeader = cookieHeader,
-        body = body,
-        target = target,
-        queryString = queryString,
-        routePattern = Option.None,
+        Body = body,
+        Target = target,
+        QueryString = queryString,
+        selectedRoute = null,
         headerData = headerData
     };
 }
@@ -1776,15 +1783,15 @@ public Request RequestNew(
 // lifetime.
 public ReadOnlySpan<byte> Request.BodyBytes(Request self)
 {
-    return StringAsByteSlice(self.body);
+    return StringAsByteSlice(self.Body);
 }
 
 public nuint Request.BodyLength(Request self)
 {
-    return self.body.Length;
+    return self.Body.Length;
 }
 
-public Option<string> Request.Header(Request self, string name)
+public Option<string> Request.Header(Request self, const ref string name)
 {
     nuint length = self.headerData.Length;
     nuint cursor = 0;
@@ -1827,29 +1834,28 @@ public Option<string> Request.Header(Request self, string name)
 }
 
 private Request ApplyConfiguredForwardedHeaders(
-    Option<ForwardedHeadersOptions> configured,
+    const ref Option<ForwardedHeadersOptions> configured,
     Request request
 )
 {
     switch (configured)
     {
         case Option.Some(options): {
-            ForwardedOrigin origin = new()
-            {
-                Host = request.host,
-                Scheme = request.scheme,
-                RemoteIpAddress = request.remoteIpAddress
-            };
-            origin = ApplyForwardedHeaders(
-                origin,
-                request.Header("X-Forwarded-For"),
-                request.Header("X-Forwarded-Host"),
-                request.Header("X-Forwarded-Proto"),
+            Option<string> forwardedFor =
+                request.Header("X-Forwarded-For");
+            Option<string> forwardedHost =
+                request.Header("X-Forwarded-Host");
+            Option<string> forwardedProto =
+                request.Header("X-Forwarded-Proto");
+            ApplyForwardedHeadersInPlace(
+                ref request.Host,
+                ref request.Scheme,
+                ref request.RemoteIpAddress,
+                forwardedFor,
+                forwardedHost,
+                forwardedProto,
                 options
             );
-            request.host = origin.Host;
-            request.scheme = origin.Scheme;
-            request.remoteIpAddress = origin.RemoteIpAddress;
             return request;
         }
         case Option.None: {
@@ -1858,52 +1864,47 @@ private Request ApplyConfiguredForwardedHeaders(
     }
 }
 
-public Option<string> Request.RouteValue(Request self, string name)
+public Option<string> Request.RouteValue(Request self, const ref string name)
 {
-    switch (self.routePattern)
-    {
-        case Option.Some(pattern): {
-            return pattern.Parameter(self.path, name);
-        }
-        case Option.None: { return Option.None; }
-    }
+    Route route = self.selectedRoute;
+    if (route == null) { return Option.None; }
+    return route.pattern.Parameter(self.Path, name);
 }
 
-private void SelectRoute(ref Request request, RoutePattern pattern)
+private void SelectRoute(ref Request request, Route route)
 {
-    Option<RoutePattern> selected = Option.Some(pattern);
-    request.routePattern = selected;
+    request.selectedRoute = route;
 }
 
 // Query names and values are borrowed raw target bytes. Percent decoding is a
 // separate operation so lookup itself stays allocation-free.
-public Option<string> Request.QueryRaw(Request self, string name)
+public Option<string> Request.QueryRaw(Request self, const ref string name)
 {
-    nuint length = self.queryString.Length;
+    nuint length = self.QueryString.Length;
     nuint pairStart = 0;
 
     while (pairStart < length)
     {
         nuint pairEnd = pairStart;
         while (pairEnd < length &&
-            StringByteAt(self.queryString, pairEnd) != 38)
+            StringByteAt(self.QueryString, pairEnd) != 38)
         {
             pairEnd += 1;
         }
 
         nuint separator = pairStart;
         while (separator < pairEnd &&
-            StringByteAt(self.queryString, separator) != 61)
+            StringByteAt(self.QueryString, separator) != 61)
         {
             separator += 1;
         }
 
-        if (StringSlice(self.queryString, pairStart, separator) == name)
+        if (StringSlice(self.QueryString, pairStart, separator) == name)
         {
             if (separator < pairEnd)
             {
                 return Option.Some(StringSlice(
-                    self.queryString, separator + 1, pairEnd
+                    self.QueryString, separator + 1, pairEnd
                 ));
             }
             return Option.Some("");
@@ -1915,7 +1916,7 @@ public Option<string> Request.QueryRaw(Request self, string name)
     return Option.None;
 }
 
-public Option<string> Request.Cookie(Request self, string name)
+public Option<string> Request.Cookie(Request self, const ref string name)
 {
     if (name.Length == 0)
     {
@@ -2015,7 +2016,7 @@ private int HexValue(byte value)
     return -1;
 }
 
-public Result<string, string> UrlDecode(string value)
+public Result<string, string> UrlDecode(const ref string value)
 {
     StringBuilder output = new();
     nuint length = value.Length;
@@ -2052,8 +2053,8 @@ public Result<string, string> UrlDecode(string value)
 }
 
 public Result<Option<string>, string> FormValue(
-    string encoded,
-    string name
+    const ref string encoded,
+    const ref string name
 )
 {
     nuint length = encoded.Length;
@@ -2110,7 +2111,7 @@ public Result<Option<string>, string> FormValue(
     return Result.Ok(Option.None);
 }
 
-public Result<UrlValues, string> UrlValuesParse(string encoded)
+public Result<UrlValues, string> UrlValuesParse(const ref string encoded)
 {
     List<UrlValue> values = new();
     nuint length = encoded.Length;
@@ -2177,21 +2178,21 @@ public Result<UrlValues, string> UrlValuesParse(string encoded)
 }
 
 private Option<string> UrlValuesGet(
-    List<UrlValue> values,
-    string name
+    const ref List<UrlValue> values,
+    const ref string name
 )
 {
     foreach (UrlValue value in values)
     {
         if (value.name == name)
         {
-            return Option.Some(value.value);
+            return Option.Some(copy(value.value));
         }
     }
     return Option.None;
 }
 
-public Option<string> UrlValues.Get(UrlValues self, string name)
+public Option<string> UrlValues.Get(UrlValues self, const ref string name)
 {
     return UrlValuesGet(self.values, name);
 }
@@ -2210,7 +2211,10 @@ private byte AsciiLower(byte value)
     return value;
 }
 
-private bool AsciiEqualIgnoringCase(string left, string right)
+private bool AsciiEqualIgnoringCase(
+    const ref string left,
+    const ref string right
+)
 {
     if (left.Length != right.Length)
     {
@@ -2238,7 +2242,7 @@ private bool HeaderNameByte(byte value)
         value == 96 || value == 124 || value == 126;
 }
 
-private bool ResponseHeaderNameValid(string name)
+private bool ResponseHeaderNameValid(const ref string name)
 {
     if (name.Length == 0)
     {
@@ -2258,7 +2262,7 @@ private bool ResponseHeaderNameValid(string name)
         !AsciiEqualIgnoringCase(name, "X-Content-Type-Options");
 }
 
-private bool ResponseHeaderValueValid(string value)
+private bool ResponseHeaderValueValid(const ref string value)
 {
     for (nuint index = 0; index < value.Length; index++)
     {
@@ -2286,12 +2290,12 @@ public Result<ResponseHeader, string> ResponseHeader(
     }
     return Result.Ok(new()
     {
-        name = name,
-        value = value
+        Name = name,
+        Value = value
     });
 }
 
-private bool CookieValueValid(string value)
+private bool CookieValueValid(const ref string value)
 {
     for (nuint index = 0; index < value.Length; index++)
     {
@@ -2306,8 +2310,8 @@ private bool CookieValueValid(string value)
 }
 
 public Result<ResponseHeader, string> ResponseCookie(
-    string name,
-    string value
+    const ref string name,
+    const ref string value
 )
 {
     return ResponseCookieWith(name, value, CookieOptions());
@@ -2326,7 +2330,7 @@ public CookieOptions CookieOptions()
     };
 }
 
-private bool CookieScopeValid(string value)
+private bool CookieScopeValid(const ref string value)
 {
     if (value.Length == 0)
     {
@@ -2344,8 +2348,8 @@ private bool CookieScopeValid(string value)
 }
 
 public Result<ResponseHeader, string> ResponseCookieWith(
-    string name,
-    string value,
+    const ref string name,
+    const ref string value,
     CookieOptions options
 )
 {
@@ -2421,13 +2425,13 @@ public Result<ResponseHeader, string> ResponseCookieWith(
     }
     return Result.Ok(new()
     {
-        name = "Set-Cookie",
-        value = output.ToString()
+        Name = "Set-Cookie",
+        Value = output.ToString()
     });
 }
 
 public Result<ResponseHeader, string> ResponseDeleteCookie(
-    string name,
+    const ref string name,
     CookieOptions options
 )
 {
@@ -2438,10 +2442,13 @@ public Result<ResponseHeader, string> ResponseDeleteCookie(
 
 public void Response.AddHeader(ref Response self, ResponseHeader header)
 {
-    self.headers.Add(header);
+    self.Headers.Add(header);
 }
 
-private bool MediaTypeIs(string value, string expected)
+private bool MediaTypeIs(
+    const ref string value,
+    const ref string expected
+)
 {
     nuint length = value.Length;
     nuint expectedLength = expected.Length;
@@ -2478,7 +2485,7 @@ private bool MediaTypeIs(string value, string expected)
     return index == length || StringByteAt(value, index) == 59;
 }
 
-private bool IsUrlencodedForm(string contentType)
+private bool IsUrlencodedForm(const ref string contentType)
 {
     return MediaTypeIs(
         contentType,
@@ -2488,59 +2495,61 @@ private bool IsUrlencodedForm(string contentType)
 
 public Result<string, string> Request.Json(Request self)
 {
-    if (!MediaTypeIs(self.contentType, "application/json"))
+    if (!MediaTypeIs(self.ContentType, "application/json"))
     {
         return Result.Err("expected application/json");
     }
-    return Result.Ok(self.body);
+    return Result.Ok(copy(self.Body));
 }
 
 public Result<Option<string>, string> Request.Query(
     Request self,
-    string name
+    const ref string name
 )
 {
-    return FormValue(self.queryString, name);
+    return FormValue(self.QueryString, name);
 }
 
 public Result<Option<string>, string> Request.Form(
     Request self,
-    string name
+    const ref string name
 )
 {
-    if (!IsUrlencodedForm(self.contentType))
+    if (!IsUrlencodedForm(self.ContentType))
     {
         return Result.Err(
             "expected application/x-www-form-urlencoded"
         );
     }
-    return FormValue(self.body, name);
+    return FormValue(self.Body, name);
 }
 
 public Result<UrlValues, string> Request.QueryValues(Request self)
 {
-    return UrlValuesParse(self.queryString);
+    return UrlValuesParse(self.QueryString);
 }
 
 public Result<UrlValues, string> Request.FormValues(Request self)
 {
-    if (!IsUrlencodedForm(self.contentType))
+    if (!IsUrlencodedForm(self.ContentType))
     {
         return Result.Err(
             "expected application/x-www-form-urlencoded"
         );
     }
-    return UrlValuesParse(self.body);
+    return UrlValuesParse(self.Body);
 }
 
 public void WebApplication.MapFallback(WebApplication self, Handler handler)
 {
-    self.fallback = RouteHandler.Sync(handler);
+    delete self.fallback;
+    self.fallback = new RouteHandlerBox(RouteHandler.Sync(handler));
 }
 
 public void WebApplication.MapFallback(WebApplication self, AsyncHandler handler)
 {
-    self.fallback = RouteHandler.Async(handler);
+    delete self.fallback;
+    self.fallback = new RouteHandlerBox(RouteHandler.Async(handler));
 }
 
 public void WebApplication.UseForwardedHeaders(
@@ -2583,7 +2592,7 @@ public List<string> WebApplication.StaticRoots(WebApplication self)
     List<string> roots = new();
     foreach (StaticDirectory directory in self.staticDirectories)
     {
-        roots.Add(directory.root);
+        roots.Add(copy(directory.root));
     }
     return roots;
 }
@@ -2629,7 +2638,7 @@ private EndpointBuilder WebApplication.MapEndpoint(
 private EndpointBuilder WebApplication.MapMethod(
     WebApplication self,
     string method,
-    string path,
+    const ref string path,
     Handler handler
 )
 {
@@ -2650,7 +2659,7 @@ private EndpointBuilder WebApplication.MapMethod(
 private EndpointBuilder WebApplication.MapMethodAsync(
     WebApplication self,
     string method,
-    string path,
+    const ref string path,
     AsyncHandler handler
 )
 {
@@ -2671,7 +2680,7 @@ private EndpointBuilder WebApplication.MapMethodAsync(
 private EndpointBuilder WebApplication.MapTypedMethod(
     WebApplication self,
     string method,
-    string path,
+    const ref string path,
     RouteHandler handler
 )
 {
@@ -2696,11 +2705,8 @@ private EndpointBuilder WebApplication.MapTypedMethod(
 private EndpointBuilder WebApplication.MapExplicitBindingMethod(
     WebApplication self,
     string method,
-    string path,
-    RouteHandler handler,
-    nuint routeParameterCount,
-    string firstRouteName,
-    Option<string> secondRouteName
+    RoutePattern pattern,
+    RouteHandler handler
 )
 {
     if (!HttpMethodValid(method))
@@ -2709,6 +2715,17 @@ private EndpointBuilder WebApplication.MapExplicitBindingMethod(
             "HTTP method must be a non-empty uppercase token"
         );
     }
+    List<string> methods = new();
+    methods.Add(method);
+    return self.MapEndpoint(pattern, methods, handler);
+}
+
+private RoutePattern ValidateExplicitBindingPath(
+    const ref string path,
+    nuint routeParameterCount,
+    const ref string firstRouteName
+)
+{
     RoutePattern pattern = ParseRoutePattern(path);
     if (pattern.ParameterCount != routeParameterCount)
     {
@@ -2722,24 +2739,28 @@ private EndpointBuilder WebApplication.MapExplicitBindingMethod(
             "route binding name does not occur in the route pattern"
         );
     }
-    switch (secondRouteName)
-    {
-        case Option.Some(name): {
-            if (!pattern.HasParameter(name))
-            {
-                throw new ArgumentException(
-                    "route binding name does not occur in the route pattern"
-                );
-            }
-        }
-        case Option.None: { }
-    }
-    List<string> methods = new();
-    methods.Add(method);
-    return self.MapEndpoint(pattern, methods, handler);
+    return pattern;
 }
 
-private void ValidateBindingName(string name)
+private RoutePattern ValidateExplicitBindingPath(
+    const ref string path,
+    nuint routeParameterCount,
+    const ref string firstRouteName,
+    const ref string secondRouteName
+)
+{
+    RoutePattern pattern = ValidateExplicitBindingPath(
+        path, routeParameterCount, firstRouteName);
+    if (!pattern.HasParameter(secondRouteName))
+    {
+        throw new ArgumentException(
+            "route binding name does not occur in the route pattern"
+        );
+    }
+    return pattern;
+}
+
+private void ValidateBindingName(const ref string name)
 {
     if (name.Length == 0)
     {
@@ -2753,19 +2774,22 @@ public EndpointBuilder WebApplication.MapGet(
     RouteRouteBindingHandler handler
 )
 {
-    ValidateBindingName(first.Name);
-    ValidateBindingName(second.Name);
-    if (first.Name == second.Name)
+    (string firstName, string ignoredFirstValue) = first;
+    (string secondName, string ignoredSecondValue) = second;
+    ValidateBindingName(firstName);
+    ValidateBindingName(secondName);
+    if (firstName == secondName)
     {
         throw new ArgumentException("route binding name is duplicated");
     }
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 2, firstName, secondName);
     RouteRouteBindingEndpoint endpoint = new()
     {
-        first = first.Name, second = second.Name, handler = handler
+        first = firstName, second = secondName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "GET", path, RouteHandler.BoundRouteRoute(endpoint), 2,
-        first.Name, Option.Some(second.Name)
+        "GET", routePattern, RouteHandler.BoundRouteRoute(endpoint)
     );
 }
 
@@ -2775,15 +2799,18 @@ public EndpointBuilder WebApplication.MapGet(
     RouteQueryBindingHandler handler
 )
 {
-    ValidateBindingName(route.Name);
-    ValidateBindingName(query.Name);
+    (string routeName, string ignoredRouteValue) = route;
+    (string queryName, string ignoredQueryValue) = query;
+    ValidateBindingName(routeName);
+    ValidateBindingName(queryName);
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 1, routeName);
     RouteQueryBindingEndpoint endpoint = new()
     {
-        route = route.Name, query = query.Name, handler = handler
+        route = routeName, query = queryName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "GET", path, RouteHandler.BoundRouteQuery(endpoint), 1,
-        route.Name, Option.None
+        "GET", routePattern, RouteHandler.BoundRouteQuery(endpoint)
     );
 }
 
@@ -2793,15 +2820,18 @@ public EndpointBuilder WebApplication.MapGet(
     RouteHeaderBindingHandler handler
 )
 {
-    ValidateBindingName(route.Name);
-    ValidateBindingName(header.Name);
+    (string routeName, string ignoredRouteValue) = route;
+    (string headerName, string ignoredHeaderValue) = header;
+    ValidateBindingName(routeName);
+    ValidateBindingName(headerName);
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 1, routeName);
     RouteHeaderBindingEndpoint endpoint = new()
     {
-        route = route.Name, header = header.Name, handler = handler
+        route = routeName, header = headerName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "GET", path, RouteHandler.BoundRouteHeader(endpoint), 1,
-        route.Name, Option.None
+        "GET", routePattern, RouteHandler.BoundRouteHeader(endpoint)
     );
 }
 
@@ -2811,14 +2841,16 @@ public EndpointBuilder WebApplication.MapPost(
     RouteJsonBindingHandler handler
 )
 {
-    ValidateBindingName(route.Name);
+    (string routeName, string ignoredRouteValue) = route;
+    ValidateBindingName(routeName);
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 1, routeName);
     RouteJsonBindingEndpoint endpoint = new()
     {
-        route = route.Name, handler = handler
+        route = routeName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "POST", path, RouteHandler.BoundRouteJson(endpoint), 1,
-        route.Name, Option.None
+        "POST", routePattern, RouteHandler.BoundRouteJson(endpoint)
     );
 }
 
@@ -2828,19 +2860,22 @@ public EndpointBuilder WebApplication.MapGet(
     AsyncRouteRouteBindingHandler handler
 )
 {
-    ValidateBindingName(first.Name);
-    ValidateBindingName(second.Name);
-    if (first.Name == second.Name)
+    (string firstName, string ignoredFirstValue) = first;
+    (string secondName, string ignoredSecondValue) = second;
+    ValidateBindingName(firstName);
+    ValidateBindingName(secondName);
+    if (firstName == secondName)
     {
         throw new ArgumentException("route binding name is duplicated");
     }
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 2, firstName, secondName);
     AsyncRouteRouteBindingEndpoint endpoint = new()
     {
-        first = first.Name, second = second.Name, handler = handler
+        first = firstName, second = secondName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "GET", path, RouteHandler.AsyncBoundRouteRoute(endpoint), 2,
-        first.Name, Option.Some(second.Name)
+        "GET", routePattern, RouteHandler.AsyncBoundRouteRoute(endpoint)
     );
 }
 
@@ -2850,15 +2885,18 @@ public EndpointBuilder WebApplication.MapGet(
     AsyncRouteQueryBindingHandler handler
 )
 {
-    ValidateBindingName(route.Name);
-    ValidateBindingName(query.Name);
+    (string routeName, string ignoredRouteValue) = route;
+    (string queryName, string ignoredQueryValue) = query;
+    ValidateBindingName(routeName);
+    ValidateBindingName(queryName);
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 1, routeName);
     AsyncRouteQueryBindingEndpoint endpoint = new()
     {
-        route = route.Name, query = query.Name, handler = handler
+        route = routeName, query = queryName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "GET", path, RouteHandler.AsyncBoundRouteQuery(endpoint), 1,
-        route.Name, Option.None
+        "GET", routePattern, RouteHandler.AsyncBoundRouteQuery(endpoint)
     );
 }
 
@@ -2868,15 +2906,18 @@ public EndpointBuilder WebApplication.MapGet(
     AsyncRouteHeaderBindingHandler handler
 )
 {
-    ValidateBindingName(route.Name);
-    ValidateBindingName(header.Name);
+    (string routeName, string ignoredRouteValue) = route;
+    (string headerName, string ignoredHeaderValue) = header;
+    ValidateBindingName(routeName);
+    ValidateBindingName(headerName);
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 1, routeName);
     AsyncRouteHeaderBindingEndpoint endpoint = new()
     {
-        route = route.Name, header = header.Name, handler = handler
+        route = routeName, header = headerName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "GET", path, RouteHandler.AsyncBoundRouteHeader(endpoint), 1,
-        route.Name, Option.None
+        "GET", routePattern, RouteHandler.AsyncBoundRouteHeader(endpoint)
     );
 }
 
@@ -2886,18 +2927,20 @@ public EndpointBuilder WebApplication.MapPost(
     AsyncRouteJsonBindingHandler handler
 )
 {
-    ValidateBindingName(route.Name);
+    (string routeName, string ignoredRouteValue) = route;
+    ValidateBindingName(routeName);
+    RoutePattern routePattern = ValidateExplicitBindingPath(
+        path, 1, routeName);
     AsyncRouteJsonBindingEndpoint endpoint = new()
     {
-        route = route.Name, handler = handler
+        route = routeName, handler = handler
     };
     return self.MapExplicitBindingMethod(
-        "POST", path, RouteHandler.AsyncBoundRouteJson(endpoint), 1,
-        route.Name, Option.None
+        "POST", routePattern, RouteHandler.AsyncBoundRouteJson(endpoint)
     );
 }
 
-private void ValidateHttpMethods(List<string> methods)
+private void ValidateHttpMethods(const ref List<string> methods)
 {
     if (methods.Count == 0)
     {
@@ -2905,12 +2948,11 @@ private void ValidateHttpMethods(List<string> methods)
     }
     for (nuint index = 0; index < methods.Count; index += 1)
     {
-        string method = methods[index];
-        if (method.Length == 0)
+        if (StringLen(methods[index]) == 0)
         {
             throw new ArgumentException("HTTP method cannot be empty");
         }
-        if (!HttpMethodValid(method))
+        if (!HttpMethodValid(methods[index]))
         {
             throw new ArgumentException(
                 "HTTP method must be an uppercase token"
@@ -2918,7 +2960,7 @@ private void ValidateHttpMethods(List<string> methods)
         }
         for (nuint other = 0; other < index; other += 1)
         {
-            if (methods[other] == method)
+            if (methods[other] == methods[index])
             {
                 throw new ArgumentException("HTTP method is duplicated");
             }
@@ -2928,7 +2970,7 @@ private void ValidateHttpMethods(List<string> methods)
 
 private EndpointBuilder WebApplication.MapTypedMethods(
     WebApplication self,
-    string path,
+    const ref string path,
     List<string> methods,
     RouteHandler handler
 )
@@ -2981,7 +3023,7 @@ public EndpointBuilder WebApplication.MapGet(
     EndpointBuilder endpoint = self.MapMethod("GET", path, handler);
     if (BuildPagePathValid(path) && !RouteHasParameter(path))
     {
-        self.pages.Add(new() { path = path });
+        self.pages.Add(new() { path = copy(path) });
     }
     return endpoint;
 }
@@ -2995,7 +3037,7 @@ public EndpointBuilder WebApplication.MapGet(
     EndpointBuilder endpoint = self.MapMethodAsync("GET", path, handler);
     if (BuildPagePathValid(path) && !RouteHasParameter(path))
     {
-        self.pages.Add(new() { path = path });
+        self.pages.Add(new() { path = copy(path) });
     }
     return endpoint;
 }
@@ -3182,7 +3224,7 @@ public Result<EndpointBuilder, string> WebApplication.TryMapGetFrom(
         {
             return Result.Err("duplicate build page path");
         }
-        self.pages.Add(new() { path = path });
+        self.pages.Add(new() { path = copy(path) });
     }
     EndpointBuilder endpoint = self.MapMethod("GET", pattern, handler);
     return Result.Ok(endpoint);
@@ -4281,18 +4323,16 @@ private void ApplyRouteGroupState(
     switch (state.Description)
     {
         case Option.Some(description): {
-            Option<string> configured = Option.Some(description);
+            Option<string> configured = Option.Some(copy(description));
             endpoint.Description = configured;
         }
         case Option.None: { }
     }
     foreach (string tag in state.Tags)
     {
-        AddMetadataTag(endpoint, tag);
+        AddMetadataTag(endpoint, copy(tag));
     }
-    List<EndpointMetadata> endpoints = state.Endpoints;
-    endpoints.Add(endpoint);
-    state.Endpoints = endpoints;
+    state.Endpoints.Add(endpoint);
 }
 
 private EndpointBuilder RouteGroup.TrackEndpoint(
@@ -4319,11 +4359,11 @@ public RouteGroup RouteGroup.WithDescription(
 {
     RouteGroupState state = ValidateRouteGroup(self);
     Option<string> configured = Option.Some(description);
-    state.Description = configured;
     foreach (EndpointMetadata endpoint in state.Endpoints)
     {
-        endpoint.Description = configured;
+        endpoint.Description = copy(configured);
     }
+    state.Description = configured;
     return self;
 }
 
@@ -4338,23 +4378,24 @@ public RouteGroup RouteGroup.WithTag(RouteGroup self, string tag)
     {
         if (existing == tag) { return self; }
     }
-    List<string> tags = state.Tags;
-    tags.Add(tag);
-    state.Tags = tags;
+    state.Tags.Add(copy(tag));
     foreach (EndpointMetadata endpoint in state.Endpoints)
     {
-        AddMetadataTag(endpoint, tag);
+        AddMetadataTag(endpoint, copy(tag));
     }
     return self;
 }
 
-private string GroupPattern(string prefix, string pattern)
+private string GroupPattern(
+    const ref string prefix,
+    const ref string pattern
+)
 {
     if (pattern.Length == 0 || pattern[0] != 47)
     {
         throw new ArgumentException("group route must begin with `/`");
     }
-    if (prefix == "/") { return pattern; }
+    if (prefix == "/") { return copy(pattern); }
     if (pattern == "/") { return string.Concat(prefix, "/"); }
     return string.Concat(prefix, pattern);
 }
@@ -4374,9 +4415,7 @@ public RouteGroup WebApplication.MapGroup(
     }
     RoutePattern ignored = ParseRoutePattern(prefix);
     RouteGroupState state = new RouteGroupState(prefix, null);
-    List<RouteGroupState> groups = self.routeGroups;
-    groups.Add(state);
-    self.routeGroups = groups;
+    self.routeGroups.Add(state);
     return new()
     {
         Application = self,
@@ -4391,9 +4430,7 @@ public RouteGroup RouteGroup.MapGroup(RouteGroup self, string prefix)
     RoutePattern ignored = ParseRoutePattern(combined);
     RouteGroupState state = new RouteGroupState(combined, parent);
     WebApplication application = self.Application;
-    List<RouteGroupState> groups = application.routeGroups;
-    groups.Add(state);
-    application.routeGroups = groups;
+    application.routeGroups.Add(state);
     return new() { Application = application, State = state };
 }
 
@@ -5805,8 +5842,8 @@ public EndpointBuilder RouteGroup.MapMethods(
 // END GENERATED TYPED ROUTE OVERLOADS: ROUTEGROUP
 
 private Html ApplyHtml(
-    List<HtmlMiddleware> middleware,
-    Request request,
+    const ref List<HtmlMiddleware> middleware,
+    const ref Request request,
     Html page
 )
 {
@@ -5818,8 +5855,8 @@ private Html ApplyHtml(
 }
 
 private Response ApplyHtmlMiddleware(
-    List<HtmlMiddleware> middleware,
-    Request request,
+    const ref List<HtmlMiddleware> middleware,
+    const ref Request request,
     Response response
 )
 {
@@ -5829,75 +5866,75 @@ private Response ApplyHtmlMiddleware(
         case ResponseBody.Empty: {
             return new()
             {
-                status = status,
-                body = ResponseBody.Empty,
-                headers = headers
+                StatusCode = status,
+                Body = ResponseBody.Empty,
+                Headers = headers
             };
         }
         case ResponseBody.Html(page): {
             return new()
             {
-                status = status,
-                body = ResponseBody.Html(
+                StatusCode = status,
+                Body = ResponseBody.Html(
                     ApplyHtml(middleware, request, page)
                 ),
-                headers = headers
+                Headers = headers
             };
         }
         case ResponseBody.Text(text): {
             return new()
             {
-                status = status,
-                body = ResponseBody.Text(text),
-                headers = headers
+                StatusCode = status,
+                Body = ResponseBody.Text(text),
+                Headers = headers
             };
         }
         case ResponseBody.Css(text): {
             return new()
             {
-                status = status,
-                body = ResponseBody.Css(text),
-                headers = headers
+                StatusCode = status,
+                Body = ResponseBody.Css(text),
+                Headers = headers
             };
         }
         case ResponseBody.Asset(asset): {
             return new()
             {
-                status = status,
-                body = ResponseBody.Asset(asset),
-                headers = headers
+                StatusCode = status,
+                Body = ResponseBody.Asset(asset),
+                Headers = headers
             };
         }
         case ResponseBody.Bytes(byteBody): {
             return new()
             {
-                status = status,
-                body = ResponseBody.Bytes(byteBody),
-                headers = headers
+                StatusCode = status,
+                Body = ResponseBody.Bytes(byteBody),
+                Headers = headers
             };
         }
         case ResponseBody.Stream(stream): {
             return new()
             {
-                status = status,
-                body = ResponseBody.Stream(stream),
-                headers = headers
+                StatusCode = status,
+                Body = ResponseBody.Stream(stream),
+                Headers = headers
             };
         }
         case ResponseBody.File(file): {
             return new()
             {
-                status = status,
-                body = ResponseBody.File(file),
-                headers = headers
+                StatusCode = status,
+                Body = ResponseBody.File(file),
+                Headers = headers
             };
         }
     }
 }
 
 private FilterResult ApplyRequestFilters(
-    List<RequestFilter> filters,
-    Request request
+    const ref List<RequestFilter> filters,
+    const ref Request request
 )
 {
     foreach (RequestFilter filter in filters)
@@ -5943,7 +5980,7 @@ private Response DispatchAppUnchecked(WebApplication self, Request request)
         self.staticDirectories,
         self.htmlMiddleware,
         self.fallback,
-        request
+        ref request
     );
 }
 
@@ -5986,14 +6023,7 @@ private async Task<Response> DispatchAppUncheckedAsync(
         }
     }
 
-    return await DispatchRoutesAsync(
-        self.routes,
-        self.routeTable,
-        self.staticDirectories,
-        self.htmlMiddleware,
-        self.fallback,
-        request
-    );
+    return await DispatchRoutesAsync(self, request);
 }
 
 public async Task<Response> WebApplication.DispatchAsync(WebApplication self, Request request)
@@ -6077,9 +6107,12 @@ public async Task<Response> WebApplication.DispatchFallbackAsync(
                 );
             }
         }
+        if (self.htmlMiddleware.Count == 0)
+        {
+            return await InvokeRouteHandlerAsync(self.fallback, request);
+        }
         Response response = await InvokeRouteHandlerAsync(
-            self.fallback, request
-        );
+            self.fallback, copy(request));
         return ApplyHtmlMiddleware(
             self.htmlMiddleware, request, response
         );
@@ -6091,7 +6124,10 @@ public async Task<Response> WebApplication.DispatchFallbackAsync(
     }
 }
 
-private bool MethodContains(List<string> methods, string method)
+private bool MethodContains(
+    const ref List<string> methods,
+    const ref string method
+)
 {
     foreach (string existing in methods)
     {
@@ -6103,7 +6139,10 @@ private bool MethodContains(List<string> methods, string method)
     return false;
 }
 
-private bool MethodsOverlap(List<string> left, List<string> right)
+private bool MethodsOverlap(
+    const ref List<string> left,
+    const ref List<string> right
+)
 {
     foreach (string method in left)
     {
@@ -6112,7 +6151,7 @@ private bool MethodsOverlap(List<string> left, List<string> right)
     return false;
 }
 
-private bool HttpMethodValid(string method)
+private bool HttpMethodValid(const ref string method)
 {
     if (method.Length == 0)
     {
@@ -6136,11 +6175,14 @@ private bool HttpMethodValid(string method)
     return true;
 }
 
-private void AddAllowedMethod(ref List<string> methods, string method)
+private void AddAllowedMethod(
+    ref List<string> methods,
+    const ref string method
+)
 {
     if (!MethodContains(methods, method))
     {
-        methods.Add(method);
+        methods.Add(copy(method));
     }
 }
 
@@ -6162,15 +6204,11 @@ private Response WithAllowedMethods(Response response, List<string> methods)
     return response;
 }
 
-private Option<string> SingleRouteValue(Request request)
+private Option<string> SingleRouteValue(const ref Request request)
 {
-    switch (request.routePattern)
-    {
-        case Option.Some(pattern): {
-            return pattern.SingleParameter(request.path);
-        }
-        case Option.None: { return Option.None; }
-    }
+    Route route = request.selectedRoute;
+    if (route == null) { return Option.None; }
+    return route.pattern.SingleParameter(request.Path);
 }
 
 private Response RouteBindingBadRequest()
@@ -6181,18 +6219,24 @@ private Response RouteBindingBadRequest()
     );
 }
 
-private Option<RouteBinding> BindRoute(Request request, string name)
+private Option<RouteBinding> BindRoute(
+    const ref Request request,
+    const ref string name
+)
 {
     switch (request.RouteValue(name))
     {
         case Option.Some(value): {
-            return Option.Some(new() { Name = name, Value = value });
+            return Option.Some(new() { Name = copy(name), Value = value });
         }
         case Option.None: { return Option.None; }
     }
 }
 
-private Option<QueryBinding> BindQuery(Request request, string name)
+private Option<QueryBinding> BindQuery(
+    const ref Request request,
+    const ref string name
+)
 {
     switch (request.Query(name))
     {
@@ -6200,7 +6244,9 @@ private Option<QueryBinding> BindQuery(Request request, string name)
             switch (value)
             {
                 case Option.Some(found): {
-                    return Option.Some(new() { Name = name, Value = found });
+                    return Option.Some(new() {
+                        Name = copy(name), Value = found
+                    });
                 }
                 case Option.None: { return Option.None; }
             }
@@ -6209,18 +6255,21 @@ private Option<QueryBinding> BindQuery(Request request, string name)
     }
 }
 
-private Option<HeaderBinding> BindHeader(Request request, string name)
+private Option<HeaderBinding> BindHeader(
+    const ref Request request,
+    const ref string name
+)
 {
     switch (request.Header(name))
     {
         case Option.Some(value): {
-            return Option.Some(new() { Name = name, Value = value });
+            return Option.Some(new() { Name = copy(name), Value = value });
         }
         case Option.None: { return Option.None; }
     }
 }
 
-private Option<JsonBody> BindJsonBody(Request request)
+private Option<JsonBody> BindJsonBody(const ref Request request)
 {
     switch (request.Json())
     {
@@ -6231,7 +6280,7 @@ private Option<JsonBody> BindJsonBody(Request request)
     }
 }
 
-private Option<bool> ParseRouteBool(string value)
+private Option<bool> ParseRouteBool(const ref string value)
 {
     if (AsciiEqualIgnoringCase(value, "true"))
     {
@@ -6245,11 +6294,11 @@ private Option<bool> ParseRouteBool(string value)
 }
 
 private Response InvokeRouteHandler(
-    RouteHandler routeHandler,
-    Request request
+    RouteHandlerBox routeHandler,
+    const ref Request request
 )
 {
-    switch (routeHandler)
+    switch (routeHandler.Value)
     {
         case RouteHandler.Sync(handler): {
             Handler invoke = handler;
@@ -6478,11 +6527,11 @@ private Response InvokeRouteHandler(
 }
 
 private async Task<Response> InvokeRouteHandlerAsync(
-    RouteHandler routeHandler,
+    RouteHandlerBox routeHandler,
     Request request
 )
 {
-    switch (routeHandler)
+    switch (routeHandler.Value)
     {
         case RouteHandler.Sync(handler): {
             Handler invoke = handler;
@@ -6694,18 +6743,18 @@ private async Task<Response> InvokeRouteHandlerAsync(
 }
 
 private Response DispatchRoutes(
-    List<Route> routes,
+    const ref List<Route> routes,
     RouteTable routeTable,
-    List<StaticDirectory> staticDirectories,
-    List<HtmlMiddleware> middleware,
-    RouteHandler fallback,
-    Request request
+    const ref List<StaticDirectory> staticDirectories,
+    const ref List<HtmlMiddleware> middleware,
+    RouteHandlerBox fallback,
+    ref Request request
 )
 {
-    switch (routeTable.Match(request.method, request.path))
+    switch (routeTable.Match(request.Method, request.Path))
     {
         case Option.Some(route): {
-                SelectRoute(request, route.pattern);
+                SelectRoute(ref request, route);
                 return ApplyHtmlMiddleware(
                     middleware,
                     request,
@@ -6715,12 +6764,12 @@ private Response DispatchRoutes(
         case Option.None: { }
     }
 
-    if (request.method == "HEAD")
+    if (request.Method == "HEAD")
     {
-        switch (routeTable.Match("GET", request.path))
+        switch (routeTable.Match("GET", request.Path))
         {
             case Option.Some(route): {
-                SelectRoute(request, route.pattern);
+                SelectRoute(ref request, route);
                 return ApplyHtmlMiddleware(
                     middleware,
                     request,
@@ -6734,22 +6783,22 @@ private Response DispatchRoutes(
     List<string> allowedMethods = new();
     foreach (Route route in routes)
     {
-        if (route.pattern.IsMatch(request.path))
+        if (route.pattern.IsMatch(request.Path))
         {
             foreach (string method in route.methods)
             {
-                AddAllowedMethod(allowedMethods, method);
+                AddAllowedMethod(ref allowedMethods, method);
                 if (method == "GET")
                 {
-                    AddAllowedMethod(allowedMethods, "HEAD");
+                    AddAllowedMethod(ref allowedMethods, "HEAD");
                 }
             }
         }
     }
     if (allowedMethods.Count > 0)
     {
-        AddAllowedMethod(allowedMethods, "OPTIONS");
-        if (request.method == "OPTIONS")
+        AddAllowedMethod(ref allowedMethods, "OPTIONS");
+        if (request.Method == "OPTIONS")
         {
             return ApplyHtmlMiddleware(
                 middleware,
@@ -6772,11 +6821,11 @@ private Response DispatchRoutes(
     }
 
 
-    if (request.method == "GET" || request.method == "HEAD")
+    if (request.Method == "GET" || request.Method == "HEAD")
     {
         foreach (StaticDirectory directory in staticDirectories)
         {
-            if (!request.path.StartsWith(directory.urlPrefix))
+            if (!request.Path.StartsWith(directory.urlPrefix))
             {
                 continue;
             }
@@ -6805,69 +6854,76 @@ private Response DispatchRoutes(
 }
 
 private async Task<Response> DispatchRoutesAsync(
-    List<Route> routes,
-    RouteTable routeTable,
-    List<StaticDirectory> staticDirectories,
-    List<HtmlMiddleware> middleware,
-    RouteHandler fallback,
+    WebApplication application,
     Request request
 )
 {
-    switch (routeTable.Match(request.method, request.path))
+    switch (application.routeTable.Match(request.Method, request.Path))
     {
         case Option.Some(route): {
-            SelectRoute(request, route.pattern);
+            SelectRoute(ref request, route);
+            if (application.htmlMiddleware.Count == 0)
+            {
+                return await InvokeRouteHandlerAsync(route.handler, request);
+            }
             Response response = await InvokeRouteHandlerAsync(
-                route.handler, request
+                route.handler, copy(request)
             );
-            return ApplyHtmlMiddleware(middleware, request, response);
+            return ApplyHtmlMiddleware(
+                application.htmlMiddleware, request, response);
         }
         case Option.None: { }
     }
 
-    if (request.method == "HEAD")
+    if (request.Method == "HEAD")
     {
-        switch (routeTable.Match("GET", request.path))
+        switch (application.routeTable.Match("GET", request.Path))
         {
             case Option.Some(route): {
-                SelectRoute(request, route.pattern);
+                SelectRoute(ref request, route);
+                if (application.htmlMiddleware.Count == 0)
+                {
+                    return await InvokeRouteHandlerAsync(
+                        route.handler, request);
+                }
                 Response response = await InvokeRouteHandlerAsync(
-                    route.handler, request
+                    route.handler, copy(request)
                 );
-                return ApplyHtmlMiddleware(middleware, request, response);
+                return ApplyHtmlMiddleware(
+                    application.htmlMiddleware, request, response);
             }
             case Option.None: { }
         }
     }
 
     List<string> allowedMethods = new();
-    foreach (Route route in routes)
+    foreach (Route route in application.routes)
     {
-        if (route.pattern.IsMatch(request.path))
+        if (route.pattern.IsMatch(request.Path))
         {
             foreach (string method in route.methods)
             {
-                AddAllowedMethod(allowedMethods, method);
+                AddAllowedMethod(ref allowedMethods, method);
                 if (method == "GET")
                 {
-                    AddAllowedMethod(allowedMethods, "HEAD");
+                    AddAllowedMethod(ref allowedMethods, "HEAD");
                 }
             }
         }
     }
     if (allowedMethods.Count > 0)
     {
-        AddAllowedMethod(allowedMethods, "OPTIONS");
-        if (request.method == "OPTIONS")
+        AddAllowedMethod(ref allowedMethods, "OPTIONS");
+        if (request.Method == "OPTIONS")
         {
             return ApplyHtmlMiddleware(
-                middleware,
+                application.htmlMiddleware,
                 request,
                 WithAllowedMethods(Results.NoContent(), allowedMethods)
             );
         }
         return ApplyHtmlMiddleware(
-            middleware,
+            application.htmlMiddleware,
             request,
             WithAllowedMethods(
                 Results.MethodNotAllowed(<h1>Method not allowed</h1>),
@@ -6876,11 +6932,11 @@ private async Task<Response> DispatchRoutesAsync(
         );
     }
 
-    if (request.method == "GET" || request.method == "HEAD")
+    if (request.Method == "GET" || request.Method == "HEAD")
     {
-        foreach (StaticDirectory directory in staticDirectories)
+        foreach (StaticDirectory directory in application.staticDirectories)
         {
-            if (!request.path.StartsWith(directory.urlPrefix))
+            if (!request.Path.StartsWith(directory.urlPrefix))
             {
                 continue;
             }
@@ -6894,7 +6950,7 @@ private async Task<Response> DispatchRoutesAsync(
             {
                 case Option.Some(response): {
                     return ApplyHtmlMiddleware(
-                        middleware, request, response
+                        application.htmlMiddleware, request, response
                     );
                 }
                 case Option.None: { }
@@ -6902,6 +6958,13 @@ private async Task<Response> DispatchRoutesAsync(
         }
     }
 
-    Response response = await InvokeRouteHandlerAsync(fallback, request);
-    return ApplyHtmlMiddleware(middleware, request, response);
+    if (application.htmlMiddleware.Count == 0)
+    {
+        return await InvokeRouteHandlerAsync(
+            application.fallback, request);
+    }
+    Response response = await InvokeRouteHandlerAsync(
+        application.fallback, copy(request));
+    return ApplyHtmlMiddleware(
+        application.htmlMiddleware, request, response);
 }

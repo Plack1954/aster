@@ -178,7 +178,7 @@ typedef enum ExprKind {
     EXPR_INT, EXPR_FLOAT, EXPR_STRING, EXPR_INTERPOLATION,
     EXPR_BOOL, EXPR_NULL, EXPR_NAME,
     EXPR_BINARY, EXPR_UNARY, EXPR_CALL, EXPR_ASSIGN,
-    EXPR_CLONE, EXPR_TRY, EXPR_AWAIT, EXPR_CAST,
+    EXPR_COPY, EXPR_TRY, EXPR_AWAIT, EXPR_CAST,
     EXPR_ARRAY, EXPR_INDEX, EXPR_FIELD,
     EXPR_STRUCT, EXPR_ELEMENT, EXPR_IF, EXPR_MATCH
 } ExprKind;
@@ -290,7 +290,13 @@ struct Expr {
             size_t part_count;
         } interpolation;
         const char *name;
-        struct { TokenKind op; Expr *left; Expr *right; } binary;
+        struct {
+            TokenKind op;
+            Expr *left;
+            Expr *right;
+            bool borrow_left;
+            bool borrow_right;
+        } binary;
         struct { TokenKind op; Expr *operand; } unary;
         struct {
             Expr *callee;
@@ -306,7 +312,7 @@ struct Expr {
             Expr *value;
             TokenKind compound_op; /* TOK_ERROR for plain `=`. */
         } assign;
-        struct { Expr *value; } clone;
+        struct { Expr *value; } copy;
         struct { Expr *value; } try_;
         struct {
             Expr *value;
@@ -324,6 +330,8 @@ struct Expr {
             const char *field;
             bool bound_method;
             bool static_field;
+            /* Consuming a direct field consumes and cleans up its owner. */
+            bool move_out;
         } field;
         struct {
             const char *name;
@@ -332,7 +340,12 @@ struct Expr {
             size_t field_count;
         } structure;
         struct { Expr *condition; Stmt *then_branch; Stmt *else_branch; } if_;
-        struct { Expr *value; MatchArm *arms; size_t arm_count; } match_;
+        struct {
+            Expr *value;
+            MatchArm *arms;
+            size_t arm_count;
+            bool borrowed;
+        } match_;
         struct {
             const char *name;
             ElementProperty *properties;
@@ -397,7 +410,12 @@ struct Stmt {
             Expr *increment;
             Stmt *body;
         } c_for;
-        struct { Expr *value; MatchArm *arms; size_t arm_count; } match_;
+        struct {
+            Expr *value;
+            MatchArm *arms;
+            size_t arm_count;
+            bool borrowed;
+        } match_;
         struct {
             Stmt *body;
             const char *catch_type_name;

@@ -1,5 +1,11 @@
 # Manual memory management evaluation
 
+> Historical note: this evaluation predates Aster's move-by-default and
+> explicit `copy(value)` decision. Its evidence about the inspected
+> implementation remains useful, but its copy-by-default recommendations and
+> descriptions are superseded by
+> [`ownership-and-copy.md`](ownership-and-copy.md).
+
 ## Scope and position
 
 Aster deliberately avoids a tracing garbage collector. That is a valid and

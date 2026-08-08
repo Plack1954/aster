@@ -181,6 +181,14 @@ static bool type_is_c_supported_inner(
         resolved[type_id] = supported;
         return supported;
     }
+    /* A class value is a pointer in the C ABI.  Its pointee is emitted and
+     * validated independently, so crossing a class-reference boundary must
+     * not turn legal cycles (Request -> Route -> Handler -> Request) into an
+     * unsupported by-value recursive type. */
+    if (type->shape == IR_TYPE_CLASS_REFERENCE) {
+        resolved[type_id] = true;
+        return true;
+    }
     if (type->shape == IR_TYPE_FUNCTION) {
         visiting[type_id] = true;
         bool supported = type_is_c_supported_inner(
@@ -218,7 +226,6 @@ static bool type_is_c_supported_inner(
     }
     if (type->shape != IR_TYPE_ARRAY &&
         type->shape != IR_TYPE_STRUCT &&
-        type->shape != IR_TYPE_CLASS_REFERENCE &&
         type->shape != IR_TYPE_UNION)
         return false;
     visiting[type_id] = true;
@@ -786,6 +793,24 @@ bool c_backend_local_tracks_drop(
            !function->locals[local_index].borrowed &&
            c_backend_type_needs_drop(
                emitter, function->locals[local_index].type);
+}
+
+bool c_backend_local_is_borrowed_alias(
+    const CEmitter *emitter, const IrFunction *function,
+    uint32_t local_index
+) {
+    if (local_index >= function->local_count ||
+        !function->locals[local_index].borrowed)
+        return false;
+    if (local_index < function->parameter_count &&
+        parameter_mode_is_reference(
+            function->parameters[local_index].mode))
+        return false;
+    IrTypeShape shape = emitter->ir->types[
+        function->locals[local_index].type].shape;
+    return shape == IR_TYPE_STRUCT ||
+           shape == IR_TYPE_ARRAY ||
+           shape == IR_TYPE_UNION;
 }
 
 void c_backend_emit_drop_call(

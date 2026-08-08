@@ -6,6 +6,6 @@ private struct UniqueValue {
 
 int main() {
     UniqueValue original = new() { value = 42 };
-    UniqueValue copied = original;
+    UniqueValue copied = copy(original);
     return (int)copied.value;
 }

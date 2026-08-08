@@ -82,7 +82,7 @@ private void CleanupCatchBeforeExceptionalFinally() {
         }
         catch (IOException error) {
             Tracked caught = new() { id = 9 };
-            throw new FormatException(error.Message);
+            throw new FormatException(copy(error.Message));
         }
         finally {
             Console.WriteLine(90);

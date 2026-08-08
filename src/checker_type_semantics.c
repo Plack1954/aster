@@ -181,11 +181,8 @@ bool coerce_literal(Checker *checker, Expr *expr, Type *expected) {
             &checker->module->arena, sizeof(Expr *));
         expr->as.call.arguments.items[0] = value;
         expr->as.call.arguments.count = 1U;
-        Type *previous_expected = checker->expected_type;
-        checker->expected_type = expected;
-        Type *wrapped = check_expr(checker, expr);
-        checker->expected_type = previous_expected;
-        return same_type(wrapped, expected);
+        expr->type = expected;
+        return true;
     }
     if (expected->kind == TYPE_READONLY_SPAN && expr->type != NULL &&
         expr->type->kind == TYPE_SLICE &&
@@ -348,6 +345,14 @@ static bool type_uses_custom_copy_inner(
 
 bool type_uses_custom_copy(Checker *checker, Type *type) {
     return type_uses_custom_copy_inner(checker, type, NULL, 0U);
+}
+
+bool type_moves_by_default(Checker *checker, Type *type) {
+    return type != NULL && type->kind != TYPE_CLASS &&
+        type->kind != TYPE_FUNCTION &&
+        type->kind != TYPE_RAW_POINTER &&
+        (type->requires_cleanup || type->managed ||
+         type_uses_custom_copy(checker, type));
 }
 
 bool checker_require_copyable(

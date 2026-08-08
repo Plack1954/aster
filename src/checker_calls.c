@@ -436,21 +436,9 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
             lang_diag(checker->diagnostics, expr->span,
                       "`out` parameter `%s` cannot be read before assignment",
                       local->name);
-        (void)checker_require_copyable(
-            checker, local->type, expr->span);
-        if (local->type->kind == TYPE_NAMED ||
-            local->type->kind == TYPE_ARRAY ||
-            ((local->type->kind == TYPE_OPTION ||
-              local->type->kind == TYPE_RESULT) &&
-             type_uses_custom_copy(checker, local->type)) ||
-            local->type->requires_cleanup) {
-            Expr *source = lang_arena_alloc(
-                &checker->module->arena, sizeof(*source));
-            *source = *expr;
-            source->type = local->type;
-            expr->kind = EXPR_CLONE;
-            expr->as.clone.value = source;
-        }
+        if (checker_require_available(checker, local, expr->span) &&
+            type_moves_by_default(checker, local->type))
+            checker_move_local(checker, local, expr->span);
         return local->type;
     }
     Local *this_local = find_local(checker, "this");
@@ -652,6 +640,19 @@ const char *checker_static_call_path(Checker *checker, Expr *expr) {
 }
 
 Type *checker_check_call(Checker *checker, Expr *expr) {
+    if (expr->as.call.callee->kind == EXPR_NAME &&
+        strcmp(expr->as.call.callee->as.name, "copy") == 0) {
+        if (expr->as.call.arguments.count != 1U) {
+            lang_diag(
+                checker->diagnostics, expr->span,
+                "`copy` expects exactly one value");
+            return &type_error;
+        }
+        Expr *value = expr->as.call.arguments.items[0];
+        expr->kind = EXPR_COPY;
+        expr->as.copy.value = value;
+        return check_expr(checker, expr);
+    }
 #include "checker_call_instance.inc"
 #include "checker_call_resolution.inc"
 #include "checker_call_primitives.inc"

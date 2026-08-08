@@ -66,13 +66,13 @@ public struct RouteValues
         this.values.Add(new() { name = name, value = value });
     }
 
-    public readonly Option<string> Get(string name)
+    public readonly Option<string> Get(const ref string name)
     {
         foreach (RouteValue value in this.values)
         {
             if (AsciiEqualsIgnoringCase(value.name, name))
             {
-                return Option.Some(value.value);
+                return Option.Some(copy(value.value));
             }
         }
         return Option.None;
@@ -112,7 +112,7 @@ public struct RoutePattern
     List<RouteSegment> segments;
     bool trailingSlash;
 
-    public string RawText => rawText;
+    public string RawText => copy(rawText);
     public nuint SegmentCount => this.segments.Count;
 
     public bool HasParameters
@@ -146,7 +146,7 @@ public struct RoutePattern
         }
     }
 
-    public readonly bool HasParameter(string name)
+    public readonly bool HasParameter(const ref string name)
     {
         foreach (RouteSegment segment in segments)
         {
@@ -166,7 +166,7 @@ public struct RoutePattern
         {
             if (segment.kind != RouteSegmentKind.Literal)
             {
-                if (current == index) { return segment.value; }
+                if (current == index) { return copy(segment.value); }
                 current += 1;
             }
         }
@@ -209,17 +209,11 @@ public struct RoutePattern
             {
                 return Option.None;
             }
-            RouteSegment first = this.segments[0];
-            if (first.kind != RouteSegmentKind.Literal)
-            {
-                return Option.None;
-            }
-            Option<string> literal = Option.Some(first.value);
-            return literal;
+            return FirstLiteral(this.segments[0]);
         }
     }
 
-    public readonly Option<string> SingleParameter(string path)
+    public readonly Option<string> SingleParameter(const ref string path)
     {
         if (this.ParameterCount != 1 || !this.IsMatch(path))
         {
@@ -298,7 +292,7 @@ public struct RoutePattern
         });
     }
 
-    public readonly bool IsMatch(string path)
+    public readonly bool IsMatch(const ref string path)
     {
         if (path.Length == 0 || path[0] != 47)
         {
@@ -310,9 +304,9 @@ public struct RoutePattern
         }
 
         nuint cursor = 1;
-        for (nuint index = 0; index < this.segments.Count; index += 1)
+        nuint index = 0;
+        foreach (RouteSegment segment in this.segments)
         {
-            RouteSegment segment = this.segments[index];
             bool finalSegment = index + 1 == this.segments.Count;
 
             if (segment.kind == RouteSegmentKind.CatchAll)
@@ -360,17 +354,15 @@ public struct RoutePattern
             {
                 if (cursor == path.Length)
                 {
-                    RouteSegment next = this.segments[index + 1];
                     return index + 2 == this.segments.Count &&
-                        (next.optional ||
-                         (next.kind == RouteSegmentKind.CatchAll &&
-                          EmptyCaptureMatches(next)));
+                        SegmentAcceptsEmpty(this.segments[index + 1]);
                 }
                 if (cursor >= path.Length || path[cursor] != 47)
                 {
                     return false;
                 }
                 cursor += 1;
+                index += 1;
                 continue;
             }
 
@@ -380,7 +372,10 @@ public struct RoutePattern
         return false;
     }
 
-    public readonly Option<string> Parameter(string path, string name)
+    public readonly Option<string> Parameter(
+        const ref string path,
+        const ref string name
+    )
     {
         if (!this.IsMatch(path))
         {
@@ -388,9 +383,8 @@ public struct RoutePattern
         }
 
         nuint cursor = 1;
-        for (nuint index = 0; index < this.segments.Count; index += 1)
+        foreach (RouteSegment segment in this.segments)
         {
-            RouteSegment segment = this.segments[index];
             if (segment.kind == RouteSegmentKind.CatchAll)
             {
                 if (AsciiEqualsIgnoringCase(segment.value, name))
@@ -437,7 +431,7 @@ public struct RoutePattern
     // Negative means this pattern has higher inbound precedence. Literal
     // segments outrank constrained parameters, then unconstrained parameters,
     // constrained catch-alls, and unconstrained catch-alls.
-    public readonly int ComparePrecedence(RoutePattern other)
+    public readonly int ComparePrecedence(const ref RoutePattern other)
     {
         nuint shared = this.segments.Count;
         if (other.segments.Count < shared)
@@ -468,7 +462,7 @@ public struct RoutePattern
         return 0;
     }
 
-    public readonly bool ConflictsWith(RoutePattern other)
+    public readonly bool ConflictsWith(const ref RoutePattern other)
     {
         if (this.ComparePrecedence(other) != 0 ||
             this.segments.Count != other.segments.Count)
@@ -477,9 +471,8 @@ public struct RoutePattern
         }
         for (nuint index = 0; index < this.segments.Count; index += 1)
         {
-            RouteSegment left = this.segments[index];
-            RouteSegment right = other.segments[index];
-            if (!SegmentsOverlap(left, right))
+            if (!SegmentsOverlapAt(
+                    this.segments, other.segments, index))
             {
                 return false;
             }
@@ -487,7 +480,9 @@ public struct RoutePattern
         return true;
     }
 
-    public readonly Result<string, string> GetPath(RouteValues values)
+    public readonly Result<string, string> GetPath(
+        const ref RouteValues values
+    )
     {
         if (this.segments.Count == 0)
         {
@@ -495,7 +490,6 @@ public struct RoutePattern
         }
 
         StringBuilder output = new();
-        List<string> consumed = new();
         foreach (RouteSegment segment in this.segments)
         {
             if (segment.kind == RouteSegmentKind.Literal)
@@ -524,7 +518,6 @@ public struct RoutePattern
                         {
                             output.Append("/");
                         }
-                        consumed.Add(segment.value);
                         continue;
                     }
                     return Result.Err(
@@ -561,7 +554,6 @@ public struct RoutePattern
                         segment.kind == RouteSegmentKind.CatchAll &&
                             segment.preserveCatchAllSlashes
                     );
-                    consumed.Add(segment.value);
                 }
             }
         }
@@ -574,7 +566,7 @@ public struct RoutePattern
         bool firstQuery = true;
         foreach (RouteValue value in values.values)
         {
-            if (StringListContains(consumed, value.name))
+            if (SegmentsConsumeName(this.segments, value.name))
             {
                 continue;
             }
@@ -588,10 +580,51 @@ public struct RoutePattern
     }
 }
 
+private Option<string> FirstLiteral(const ref RouteSegment segment)
+{
+    if (segment.kind != RouteSegmentKind.Literal)
+    {
+        return Option.None;
+    }
+    return Option.Some(copy(segment.value));
+}
+
+private bool SegmentAcceptsEmpty(const ref RouteSegment segment)
+{
+    return segment.optional ||
+        (segment.kind == RouteSegmentKind.CatchAll &&
+         EmptyCaptureMatches(segment));
+}
+
+private bool SegmentsOverlapAt(
+    const ref List<RouteSegment> left,
+    const ref List<RouteSegment> right,
+    nuint index
+)
+{
+    return SegmentsOverlap(left[index], right[index]);
+}
+
+private bool SegmentsConsumeName(
+    const ref List<RouteSegment> segments,
+    const ref string name
+)
+{
+    foreach (RouteSegment segment in segments)
+    {
+        if (segment.kind != RouteSegmentKind.Literal &&
+            AsciiEqualsIgnoringCase(segment.value, name))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 private Result<RouteSegment, string> TryParseSegment(
     string text,
     bool finalSegment,
-    List<RouteSegment> existing
+    const ref List<RouteSegment> existing
 )
 {
     bool opens = text.Length > 0 && text[0] == 123;
@@ -759,15 +792,15 @@ private Result<RouteSegment, string> TryParseSegment(
     return Result.Ok(result);
 }
 
-private bool EmptyCaptureMatches(RouteSegment segment)
+private bool EmptyCaptureMatches(const ref RouteSegment segment)
 {
     return segment.constraintCount == 0 ||
         ConstraintMatches(segment, "");
 }
 
 private Result<long, string> TryConstraintInteger(
-    string constraint,
-    string prefix
+    const ref string constraint,
+    const ref string prefix
 )
 {
     if (!constraint.StartsWith(prefix) || !constraint.EndsWith(")") ||
@@ -787,8 +820,8 @@ private Result<long, string> TryConstraintInteger(
 }
 
 private Result<ParsedConstraint, string> TrySingleIntegerConstraint(
-    string constraint,
-    string prefix,
+    const ref string constraint,
+    const ref string prefix,
     RouteConstraintKind kind,
     bool nonnegative
 )
@@ -813,7 +846,9 @@ private Result<ParsedConstraint, string> TrySingleIntegerConstraint(
     }
 }
 
-private Result<ParsedConstraint, string> TryRangeConstraint(string constraint)
+private Result<ParsedConstraint, string> TryRangeConstraint(
+    const ref string constraint
+)
 {
     string prefix = "range(";
     if (!constraint.StartsWith(prefix) || !constraint.EndsWith(")"))
@@ -862,7 +897,9 @@ private Result<ParsedConstraint, string> TryRangeConstraint(string constraint)
     });
 }
 
-private Result<ParsedConstraint, string> TryParseConstraint(string constraint)
+private Result<ParsedConstraint, string> TryParseConstraint(
+    const ref string constraint
+)
 {
     if (constraint == "int")
     {
@@ -936,7 +973,7 @@ private Result<ParsedConstraint, string> TryParseConstraint(string constraint)
     return Result.Err("route constraint is unknown");
 }
 
-private bool ParameterNameValid(string name)
+private bool ParameterNameValid(const ref string name)
 {
     if (name.Length == 0)
     {
@@ -960,7 +997,10 @@ private bool ParameterNameValid(string name)
     return true;
 }
 
-private ParsedConstraint ConstraintAt(RouteSegment segment, nuint index)
+private ParsedConstraint ConstraintAt(
+    const ref RouteSegment segment,
+    nuint index
+)
 {
     return new()
     {
@@ -970,7 +1010,10 @@ private ParsedConstraint ConstraintAt(RouteSegment segment, nuint index)
     };
 }
 
-private bool ConstraintMatches(RouteSegment segment, string value)
+private bool ConstraintMatches(
+    const ref RouteSegment segment,
+    const ref string value
+)
 {
     if (segment.constraintCount == 0) { return value.Length > 0; }
     for (nuint index = 0; index < segment.constraintCount; index += 1)
@@ -983,7 +1026,7 @@ private bool ConstraintMatches(RouteSegment segment, string value)
 
 private bool ConstraintMatchesOne(
     ParsedConstraint constraint,
-    string value
+    const ref string value
 )
 {
     switch (constraint.kind)
@@ -1046,7 +1089,7 @@ private bool ConstraintMatchesOne(
     }
 }
 
-private int InboundPrecedence(RouteSegment segment)
+private int InboundPrecedence(const ref RouteSegment segment)
 {
     if (segment.kind == RouteSegmentKind.Literal)
     {
@@ -1060,7 +1103,10 @@ private int InboundPrecedence(RouteSegment segment)
     return constrained ? 4 : 5;
 }
 
-private bool SegmentsOverlap(RouteSegment left, RouteSegment right)
+private bool SegmentsOverlap(
+    const ref RouteSegment left,
+    const ref RouteSegment right
+)
 {
     if (left.kind == RouteSegmentKind.Literal &&
         right.kind == RouteSegmentKind.Literal)
@@ -1079,8 +1125,8 @@ private bool SegmentsOverlap(RouteSegment left, RouteSegment right)
 }
 
 private bool ConstraintsOverlap(
-    RouteSegment left,
-    RouteSegment right
+    const ref RouteSegment left,
+    const ref RouteSegment right
 )
 {
     if (left.constraintCount == 0 || right.constraintCount == 0)
@@ -1137,7 +1183,7 @@ private bool LengthConstraint(RouteConstraintKind kind)
 }
 
 private bool HasConstraint(
-    RouteSegment segment,
+    const ref RouteSegment segment,
     RouteConstraintKind kind
 )
 {
@@ -1149,7 +1195,7 @@ private bool HasConstraint(
     return false;
 }
 
-private bool HasNumericConstraint(RouteSegment segment)
+private bool HasNumericConstraint(const ref RouteSegment segment)
 {
     for (nuint index = 0; index < segment.constraintCount; index += 1)
     {
@@ -1177,7 +1223,7 @@ private void ApplyRangeUpper(ref ConstraintRange range, long value)
     }
 }
 
-private ConstraintRange NumericRange(RouteSegment segment)
+private ConstraintRange NumericRange(const ref RouteSegment segment)
 {
     ConstraintRange range = new()
     {
@@ -1216,7 +1262,9 @@ private ConstraintRange NumericRange(RouteSegment segment)
     return range;
 }
 
-private ConstraintRange EffectiveLengthRange(RouteSegment segment)
+private ConstraintRange EffectiveLengthRange(
+    const ref RouteSegment segment
+)
 {
     ConstraintRange range = new()
     {
@@ -1290,7 +1338,7 @@ private bool RangesOverlap(ConstraintRange left, ConstraintRange right)
 }
 
 private Result<bool, string> ValidateConstraintSet(
-    RouteSegment segment
+    const ref RouteSegment segment
 )
 {
     bool numeric = HasNumericConstraint(segment);
@@ -1313,7 +1361,10 @@ private Result<bool, string> ValidateConstraintSet(
     return Result.Ok(true);
 }
 
-private bool StringListContains(List<string> values, string wanted)
+private bool StringListContains(
+    const ref List<string> values,
+    const ref string wanted
+)
 {
     foreach (string value in values)
     {
@@ -1334,7 +1385,10 @@ private byte AsciiLower(byte value)
     return value;
 }
 
-private bool AsciiEqualsIgnoringCase(string left, string right)
+private bool AsciiEqualsIgnoringCase(
+    const ref string left,
+    const ref string right
+)
 {
     if (left.Length != right.Length)
     {
@@ -1360,7 +1414,7 @@ private bool IsUnreserved(byte value)
 
 private void AppendPercentEncoded(
     ref StringBuilder output,
-    string value,
+    const ref string value,
     bool preserveSlash
 )
 {
