@@ -91,22 +91,27 @@ cannot be consumed.
 
 ## Fields and containers
 
-A direct field of an owned struct local follows the same liveness rule. If the
-owner is dead afterward, the field is moved out, the remaining fields are
-cleaned up, and the owner becomes empty. If the owner remains live, the field
-is copied instead.
+A direct field of an owned struct local is tracked as its own place. It moves
+when neither that field nor the complete owner is used before the field is
+reinitialized. Sibling fields remain available, and the aggregate stays alive
+until its normal lexical cleanup. The moved field contains its defined empty
+value, so later aggregate destruction remains safe.
 
 ```aster
 Envelope envelope = MakeEnvelope();
-Html body = envelope.body; // copies because envelope is used below
-Use(envelope);
-
-Html finalBody = envelope.body; // moves on the final use
+Html body = envelope.body;  // moves; only the sibling is used below
+Use(envelope.headers);
 ```
 
-An index read cannot remove an element while preserving its container shape.
-It therefore copies a copyable non-trivial element. A noncopyable stored value
-must be accessed through a borrowing or consuming collection API instead.
+Fixed-array elements use the same partial-place model without changing array
+shape. Moving `items[0]` empties slot zero while `items[1]` remains available.
+Distinct constant indices are proven disjoint. A runtime index may move only
+when no later indexed or whole-array observation is reachable, because it may
+alias every slot. Assigning a moved field or fixed-array slot reinitializes it.
+
+Dynamically sized collection index reads still copy: changing their internal
+slot ownership requires an explicit collection operation whose contract can
+account for reallocation and shape changes.
 
 Collection callbacks whose parameter is passed by value follow the same rule.
 `List<T>.ForEach`, predicate methods, and `FindAll` pass each retained list
@@ -138,10 +143,11 @@ and before either the VM or C backend sees the program.
 
 ## Performance assertions and inspection
 
-`ensure_move(value)` asserts that a direct local or field is transferred by
-move. `assert_move(value)` is an equivalent spelling intended for tests. Both
-return the value normally and generate no runtime work. Compilation fails with
-the blocking reason when a live borrow or reachable later use requires a copy.
+`ensure_move(value)` asserts that a direct local, field, or fixed-array element
+is transferred by move. `assert_move(value)` is an equivalent spelling intended
+for tests. Both return the value normally and generate no runtime work.
+Compilation fails with the blocking reason when a live borrow or reachable
+later use requires a copy.
 
 `assert_no_semantic_copies()` is a function-level test assertion. If any path
 in the containing function contains an explicit or compiler-selected semantic

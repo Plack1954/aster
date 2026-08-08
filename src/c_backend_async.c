@@ -33,6 +33,7 @@ static bool async_local_reads(const CEmitter *emitter,
         case IR_OP_LOCAL_FIELD_SET:
         case IR_OP_LOCAL_FIELD_DEFAULT:
         case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_MOVE:
         case IR_OP_LOCAL_INDEX_SET:
         case IR_OP_LOCAL_ENUM_IS:
         case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:

@@ -62,6 +62,33 @@
                 PUSH(vm_value_clone(array->as.array.items[offset]));
                 break;
             }
+            VM_LABEL(get_index_local_move)
+            case OP_GET_INDEX_LOCAL_MOVE: {
+                LangValue index = POP();
+                size_t slot = (size_t)instruction.a;
+                Object *array =
+                    initialized[slot] &&
+                    LOCAL(slot).tag == LANG_VALUE_OBJECT
+                    ? LOCAL(slot).as.object : NULL;
+                bool valid_index =
+                    array != NULL && array->kind == OBJECT_ARRAY &&
+                    ((index.tag == LANG_VALUE_I64 && index.as.i64 >= 0 &&
+                      (uint64_t)index.as.i64 < array->as.array.count) ||
+                     (index.tag == LANG_VALUE_U64 &&
+                      index.as.u64 < array->as.array.count));
+                if (!valid_index) {
+                    runtime_error(vm, instruction,
+                                  "array move index out of bounds");
+                    goto fail;
+                }
+                size_t offset = index.tag == LANG_VALUE_I64
+                    ? (size_t)index.as.i64 : (size_t)index.as.u64;
+                LangValue item = array->as.array.items[offset];
+                array->as.array.items[offset] =
+                    (LangValue){.tag=LANG_VALUE_UNIT};
+                PUSH(item);
+                break;
+            }
             VM_LABEL(set_index_local)
             case OP_SET_INDEX_LOCAL: {
                 LangValue value = POP();

@@ -1147,6 +1147,26 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     ? ");\n" : ";\n", output);
             return;
         }
+        case IR_OP_LOCAL_INDEX_MOVE: {
+            const IrType *array =
+                &emitter->ir->types[
+                    function->locals[instruction->index].type];
+            emit_index_guard(
+                emitter, function, instruction->operands[0],
+                array->array_length);
+            fprintf(output,
+                    "    v%" PRIu32 " = l%" PRIu32
+                    ".items[(size_t)v%" PRIu32 "];\n"
+                    "    memset(&l%" PRIu32
+                    ".items[(size_t)v%" PRIu32
+                    "], 0, sizeof(l%" PRIu32
+                    ".items[(size_t)v%" PRIu32 "]));\n",
+                    instruction->result, instruction->index,
+                    instruction->operands[0], instruction->index,
+                    instruction->operands[0], instruction->index,
+                    instruction->operands[0]);
+            return;
+        }
         case IR_OP_INDEX_GET: {
             IrTypeId array_type =
                 function->value_types[instruction->operands[0]];

@@ -325,6 +325,7 @@ struct Expr {
             Expr *object;
             Expr *index;
             bool unchecked; /* Written in unsafe context; VM still traps. */
+            bool move_out;
         } index;
         struct {
             Expr *object;
@@ -759,6 +760,9 @@ typedef enum IrOpcode {
     IR_OP_INDEX_GET,
     IR_OP_INDEX_SET,
     IR_OP_LOCAL_INDEX_GET,
+    IR_OP_LOCAL_INDEX_MOVE,
+    /* Lowering-only: resolved before the IR leaves the frontend. */
+    IR_OP_LOCAL_INDEX_TRANSFER,
     IR_OP_LOCAL_INDEX_SET,
     IR_OP_LOCAL_ENUM_IS,
     IR_OP_LOCAL_ENUM_PAYLOAD_MOVE,
@@ -878,6 +882,8 @@ typedef struct IrInstruction {
     IrBlockId exception_handler;
     bool has_exception_handler;
     bool require_move;
+    bool has_constant_index;
+    uint64_t constant_index;
     LangSpan span;
 } IrInstruction;
 
@@ -1051,7 +1057,8 @@ typedef enum OpCode {
     OP_CANCELLATION_TOKEN_GET, OP_CANCELLATION_CANCEL,
     OP_CANCELLATION_IS_REQUESTED,
     OP_CANCELLATION_THROW_IF_REQUESTED,
-    OP_MAKE_ARRAY, OP_GET_INDEX, OP_GET_INDEX_LOCAL, OP_SET_INDEX_LOCAL,
+    OP_MAKE_ARRAY, OP_GET_INDEX, OP_GET_INDEX_LOCAL,
+    OP_GET_INDEX_LOCAL_MOVE, OP_SET_INDEX_LOCAL,
     OP_MAKE_STRUCT, OP_MAKE_CLASS, OP_DELETE_CLASS,
     OP_GET_FIELD, OP_GET_FIELD_LOCAL,
     OP_GET_FIELD_LOCAL_MOVE, OP_GET_FIELD_BORROW,

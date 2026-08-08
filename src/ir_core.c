@@ -177,6 +177,51 @@ static IrCopyPolicy type_copy_policy(const Type *type) {
     }
 }
 
+static bool ir_type_has_noncopyable_component(
+    const IrModule *module, const IrType *type
+) {
+    if (type->element_type != IR_INVALID_ID &&
+        type->element_type < module->type_count &&
+        module->types[type->element_type].copy_policy ==
+            IR_COPY_NONCOPYABLE)
+        return true;
+    if (type->error_type != IR_INVALID_ID &&
+        type->error_type < module->type_count &&
+        module->types[type->error_type].copy_policy ==
+            IR_COPY_NONCOPYABLE)
+        return true;
+    for (size_t field = 0U; field < type->field_count; ++field)
+        if (type->field_types[field] != IR_INVALID_ID &&
+            type->field_types[field] < module->type_count &&
+            module->types[type->field_types[field]].copy_policy ==
+                IR_COPY_NONCOPYABLE)
+            return true;
+    for (size_t variant = 0U; variant < type->variant_count; ++variant)
+        if (type->variant_payload_types[variant] != IR_INVALID_ID &&
+            type->variant_payload_types[variant] < module->type_count &&
+            module->types[type->variant_payload_types[variant]].copy_policy ==
+                IR_COPY_NONCOPYABLE)
+            return true;
+    return false;
+}
+
+static void ir_propagate_noncopyable_types(IrModule *module) {
+    bool changed;
+    do {
+        changed = false;
+        for (size_t type_index = 0U;
+             type_index < module->type_count; ++type_index) {
+            IrType *type = &module->types[type_index];
+            if ((type->copy_policy != IR_COPY_TRIVIAL &&
+                 type->copy_policy != IR_COPY_DEEP) ||
+                !ir_type_has_noncopyable_component(module, type))
+                continue;
+            type->copy_policy = IR_COPY_NONCOPYABLE;
+            changed = true;
+        }
+    } while (changed);
+}
+
 static IrDropPolicy type_drop_policy(const Type *type) {
     if (type == NULL || (!type->requires_cleanup && !type->managed))
         return IR_DROP_TRIVIAL;
@@ -432,6 +477,8 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
             NULL, count, sizeof(*module->types[id].field_names));
         module->types[id].field_types = ir_resize(
             NULL, count, sizeof(*module->types[id].field_types));
+        for (size_t i = 0U; i < count; ++i)
+            module->types[id].field_types[i] = IR_INVALID_ID;
         module->types[id].field_spans = ir_resize(
             NULL, count, sizeof(*module->types[id].field_spans));
         module->types[id].field_offsets = ir_resize(
@@ -461,6 +508,8 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
         module->types[id].variant_payload_types = ir_resize(
             NULL, count,
             sizeof(*module->types[id].variant_payload_types));
+        for (size_t i = 0U; i < count; ++i)
+            module->types[id].variant_payload_types[i] = IR_INVALID_ID;
         module->types[id].variant_spans = ir_resize(
             NULL, count, sizeof(*module->types[id].variant_spans));
         module->types[id].variant_discriminants = ir_resize(
@@ -520,6 +569,10 @@ IrTypeId ir_intern_type(IrModule *module, const Type *type) {
         }
         resolve_variant_member_layout(module, id);
     }
+    /* A recursively interned child can make this type, or an earlier member
+     * of a recursive type cycle, noncopyable. Close that property over the
+     * complete graph known at this point before returning the type ID. */
+    ir_propagate_noncopyable_types(module);
     return id;
 }
 

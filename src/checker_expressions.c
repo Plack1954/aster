@@ -917,9 +917,10 @@ Type *check_expr(Checker *checker, Expr *expr) {
         case EXPR_ENSURE_MOVE: {
             Expr *value = expr->as.copy.value;
             result = check_expr(checker, value);
-            if (value->kind != EXPR_NAME && value->kind != EXPR_FIELD)
+            if (value->kind != EXPR_NAME && value->kind != EXPR_FIELD &&
+                value->kind != EXPR_INDEX)
                 lang_diag(checker->diagnostics, expr->span,
-                          "`ensure_move` requires a direct local or field");
+                          "`ensure_move` requires a direct local, field, or array element");
             if (!type_is_copyable(checker, result))
                 lang_diag(checker->diagnostics, expr->span,
                           "`ensure_move` requires a copyable owned value");
@@ -1069,11 +1070,12 @@ Type *check_expr(Checker *checker, Expr *expr) {
                 type_moves_by_default(checker, result) &&
                 checker->copy_depth == 0U &&
                 checker->borrow_depth == 0U &&
-                !type_is_copyable(checker, result))
-                lang_diag(
-                    checker->diagnostics, expr->span,
-                    "cannot copy noncopyable array element `%s`",
-                    result->name);
+                object_expr->kind == EXPR_NAME) {
+                Local *owner = find_local(
+                    checker, object_expr->as.name);
+                expr->as.index.move_out = owner != NULL &&
+                    owner->available && !owner->borrowed;
+            }
             break;
         }
         case EXPR_FIELD: {
@@ -1513,9 +1515,6 @@ Type *check_expr(Checker *checker, Expr *expr) {
                             checker, owner_expr->as.name);
                         bool movable = owner != NULL &&
                             owner->available && !owner->borrowed;
-                        if (!copyable && owner != NULL)
-                            checker_move_local(
-                                checker, owner, owner_expr->span);
                         expr->as.field.move_out = movable;
                     } else if (!copyable) {
                         lang_diag(

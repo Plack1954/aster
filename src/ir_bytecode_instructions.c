@@ -1183,13 +1183,17 @@ void lower_instruction(IrBytecodeBuilder *builder,
             store_result(builder, instruction);
             return;
         case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_MOVE:
             move_value(
                 builder, instruction->operands[0], instruction->span);
             if (!as_i32(builder, instruction->index,
                         instruction->span, &index))
                 return;
             (void)emit_instruction(
-                builder, OP_GET_INDEX_LOCAL, index,
+                builder,
+                instruction->opcode == IR_OP_LOCAL_INDEX_MOVE
+                    ? OP_GET_INDEX_LOCAL_MOVE : OP_GET_INDEX_LOCAL,
+                index,
                 instruction->auxiliary == 1U ? 1 : 0,
                 instruction->span);
             store_result(builder, instruction);

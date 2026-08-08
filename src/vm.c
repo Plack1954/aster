@@ -353,6 +353,7 @@ static LangValue vm_execute_function_core(
         [OP_MAKE_ARRAY]=&&vm_dispatch_make_array,
         [OP_GET_INDEX]=&&vm_dispatch_get_index,
         [OP_GET_INDEX_LOCAL]=&&vm_dispatch_get_index_local,
+        [OP_GET_INDEX_LOCAL_MOVE]=&&vm_dispatch_get_index_local_move,
         [OP_SET_INDEX_LOCAL]=&&vm_dispatch_set_index_local,
         [OP_MAKE_STRUCT]=&&vm_dispatch_make_struct,
         [OP_MAKE_CLASS]=&&vm_dispatch_make_class,

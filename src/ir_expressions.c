@@ -484,6 +484,12 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                         target->as.index.object->span);
                     instruction->auxiliary =
                         target->as.index.unchecked ? 1U : 0U;
+                    if (compound == TOK_ERROR &&
+                        target->as.index.index->kind == EXPR_INT) {
+                        instruction->has_constant_index = true;
+                        instruction->constant_index =
+                            target->as.index.index->as.integer;
+                    }
                 }
             } else {
                 lang_diag(builder->diagnostics, expr->span,
@@ -572,7 +578,8 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 IrInstruction *candidate = &block->instructions[i - 1U];
                 if (candidate->result != value) continue;
                 if (candidate->opcode == IR_OP_LOCAL_TRANSFER ||
-                    candidate->opcode == IR_OP_LOCAL_FIELD_TRANSFER) {
+                    candidate->opcode == IR_OP_LOCAL_FIELD_TRANSFER ||
+                    candidate->opcode == IR_OP_LOCAL_INDEX_TRANSFER) {
                     candidate->require_move = true;
                     found = true;
                 }
@@ -656,6 +663,29 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             break;
         }
         case EXPR_INDEX: {
+            if (expr->as.index.move_out &&
+                expr->as.index.object->kind == EXPR_NAME) {
+                IrValueId index = ir_lower_expr(
+                    builder, expr->as.index.index);
+                instruction = ir_append_instruction(
+                    builder, IR_OP_LOCAL_INDEX_TRANSFER, type,
+                    &index, 1U, expr->span);
+                if (instruction == NULL) return IR_INVALID_ID;
+                instruction->index = ir_find_local(
+                    builder,
+                    expr->as.index.object->resolved_local_id,
+                    expr->as.index.object->span);
+                instruction->auxiliary =
+                    expr->as.index.unchecked ? 1U : 0U;
+                if (expr->as.index.index->kind == EXPR_INT) {
+                    instruction->has_constant_index = true;
+                    instruction->constant_index =
+                        expr->as.index.index->as.integer;
+                }
+                ir_set_transfer_exception_context(
+                    builder, instruction, &expr->error_cleanup);
+                return instruction->result;
+            }
             if (expression_is_local_place(expr)) {
                 IrValueId borrowed_values[64];
                 size_t borrowed_count = 0U;
@@ -710,6 +740,11 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                         expr->as.index.object->span);
                     instruction->auxiliary =
                         expr->as.index.unchecked ? 1U : 0U;
+                    if (expr->as.index.index->kind == EXPR_INT) {
+                        instruction->has_constant_index = true;
+                        instruction->constant_index =
+                            expr->as.index.index->as.integer;
+                    }
                 }
             } else {
                 IrValueId operands[2] = {
@@ -791,11 +826,7 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 uint32_t local = ir_find_local(
                     builder, object->resolved_local_id, object->span);
                 instruction = ir_append_instruction(
-                    builder,
-                    builder->module->types[type].copy_policy !=
-                            IR_COPY_NONCOPYABLE
-                        ? IR_OP_LOCAL_FIELD_TRANSFER
-                        : IR_OP_LOCAL_FIELD_MOVE,
+                    builder, IR_OP_LOCAL_FIELD_TRANSFER,
                     type, NULL, 0U, expr->span);
                 if (instruction == NULL) return IR_INVALID_ID;
                 instruction->index = local;
@@ -803,15 +834,8 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                     object->type, expr->as.field.field);
                 instruction->symbol = expr->as.field.field;
                 instruction->symbol_length = strlen(instruction->symbol);
-                if (instruction->opcode == IR_OP_LOCAL_FIELD_TRANSFER)
-                    ir_set_transfer_exception_context(
-                        builder, instruction, &expr->error_cleanup);
-                if (instruction->opcode == IR_OP_LOCAL_FIELD_MOVE) {
-                    IrInstruction *drop = ir_append_instruction(
-                        builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
-                        NULL, 0U, expr->span);
-                    if (drop != NULL) drop->index = local;
-                }
+                ir_set_transfer_exception_context(
+                    builder, instruction, &expr->error_cleanup);
                 return instruction->result;
             }
             if (expression_is_local_place(expr)) {

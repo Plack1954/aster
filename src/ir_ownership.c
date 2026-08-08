@@ -23,6 +23,8 @@ static bool local_use(const IrInstruction *instruction) {
         case IR_OP_LOCAL_FIELD_SET:
         case IR_OP_LOCAL_FIELD_DEFAULT:
         case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_MOVE:
+        case IR_OP_LOCAL_INDEX_TRANSFER:
         case IR_OP_LOCAL_INDEX_SET:
         case IR_OP_LOCAL_ENUM_IS:
         case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
@@ -147,6 +149,127 @@ static bool compute_liveness(IrFunction *function,
     return true;
 }
 
+static bool field_operation(IrOpcode opcode) {
+    return opcode == IR_OP_LOCAL_FIELD_GET ||
+           opcode == IR_OP_LOCAL_FIELD_MOVE ||
+           opcode == IR_OP_LOCAL_FIELD_TRANSFER ||
+           opcode == IR_OP_LOCAL_FIELD_BORROW ||
+           opcode == IR_OP_LOCAL_FIELD_SET ||
+           opcode == IR_OP_LOCAL_FIELD_DEFAULT;
+}
+
+static bool index_operation(IrOpcode opcode) {
+    return opcode == IR_OP_LOCAL_INDEX_GET ||
+           opcode == IR_OP_LOCAL_INDEX_MOVE ||
+           opcode == IR_OP_LOCAL_INDEX_TRANSFER ||
+           opcode == IR_OP_LOCAL_INDEX_SET;
+}
+
+static bool projection_redefined(
+    const IrInstruction *candidate, const IrInstruction *later
+) {
+    if (candidate->index != later->index) return false;
+    if (candidate->opcode == IR_OP_LOCAL_FIELD_TRANSFER)
+        return (later->opcode == IR_OP_LOCAL_FIELD_SET ||
+                later->opcode == IR_OP_LOCAL_FIELD_DEFAULT) &&
+               candidate->auxiliary == later->auxiliary;
+    if (candidate->opcode == IR_OP_LOCAL_INDEX_TRANSFER)
+        return later->opcode == IR_OP_LOCAL_INDEX_SET &&
+               candidate->has_constant_index &&
+               later->has_constant_index &&
+               candidate->constant_index == later->constant_index;
+    return false;
+}
+
+static bool projection_overlaps(
+    const IrInstruction *candidate, const IrInstruction *later
+) {
+    if (candidate->index != later->index || !local_use(later))
+        return false;
+    if (candidate->opcode == IR_OP_LOCAL_FIELD_TRANSFER) {
+        if (!field_operation(later->opcode)) return true;
+        return candidate->auxiliary == later->auxiliary;
+    }
+    if (candidate->opcode == IR_OP_LOCAL_INDEX_TRANSFER) {
+        if (!index_operation(later->opcode)) return true;
+        return !candidate->has_constant_index ||
+               !later->has_constant_index ||
+               candidate->constant_index == later->constant_index;
+    }
+    return true;
+}
+
+static bool projection_has_later_use(
+    const IrFunction *function, size_t candidate_block,
+    size_t candidate_instruction, const IrInstruction *candidate
+) {
+    size_t blocks = function->block_count;
+    if (blocks > (SIZE_MAX - 2U) / 2U) return true;
+    bool *visited = calloc(blocks == 0U ? 1U : blocks, sizeof(*visited));
+    size_t work_capacity = blocks * 2U + 2U;
+    IrBlockId *work = ir_resize(
+        NULL, work_capacity == 0U ? 1U : work_capacity,
+        sizeof(*work));
+    if (visited == NULL || work == NULL) {
+        free(work);
+        free(visited);
+        return true;
+    }
+    size_t work_count = 0U;
+    const IrBlock *initial = &function->blocks[candidate_block];
+    for (size_t i = candidate_instruction + 1U;
+         i < initial->instruction_count; ++i) {
+        const IrInstruction *later = &initial->instructions[i];
+        if (later->index == candidate->index && local_kill(later->opcode))
+            goto done_initial;
+        if (projection_redefined(candidate, later)) goto done_initial;
+        if (projection_overlaps(candidate, later)) goto found;
+    }
+    {
+        const IrTerminator *term = &initial->terminator;
+        if ((term->kind == IR_TERM_JUMP || term->kind == IR_TERM_BRANCH) &&
+            term->target < blocks)
+            work[work_count++] = term->target;
+        if (term->kind == IR_TERM_BRANCH && term->alternate < blocks)
+            work[work_count++] = term->alternate;
+    }
+done_initial:
+    while (work_count != 0U) {
+        IrBlockId block_id = work[--work_count];
+        if (visited[block_id]) continue;
+        visited[block_id] = true;
+        const IrBlock *block = &function->blocks[block_id];
+        bool stopped = false;
+        for (size_t i = 0U; i < block->instruction_count; ++i) {
+            const IrInstruction *later = &block->instructions[i];
+            if (later->index == candidate->index &&
+                local_kill(later->opcode)) {
+                stopped = true;
+                break;
+            }
+            if (projection_redefined(candidate, later)) {
+                stopped = true;
+                break;
+            }
+            if (projection_overlaps(candidate, later)) goto found;
+        }
+        if (stopped) continue;
+        const IrTerminator *term = &block->terminator;
+        if ((term->kind == IR_TERM_JUMP || term->kind == IR_TERM_BRANCH) &&
+            term->target < blocks)
+            work[work_count++] = term->target;
+        if (term->kind == IR_TERM_BRANCH && term->alternate < blocks)
+            work[work_count++] = term->alternate;
+    }
+    free(work);
+    free(visited);
+    return false;
+found:
+    free(work);
+    free(visited);
+    return true;
+}
+
 static bool mark_transfer_decisions(IrBuilder *builder, IrFunction *function,
                                     const uint8_t *live_out) {
     const size_t locals = function->local_count;
@@ -160,12 +283,33 @@ static bool mark_transfer_decisions(IrBuilder *builder, IrFunction *function,
             IrInstruction *instruction = &block->instructions[i - 1U];
             if (instruction->index >= locals) continue;
             if (instruction->opcode == IR_OP_LOCAL_TRANSFER ||
-                instruction->opcode == IR_OP_LOCAL_FIELD_TRANSFER) {
+                instruction->opcode == IR_OP_LOCAL_FIELD_TRANSFER ||
+                instruction->opcode == IR_OP_LOCAL_INDEX_TRANSFER) {
                 bool borrowed =
                     function->locals[instruction->index].borrowed;
-                bool later_use = live[instruction->index] != 0U;
+                bool later_use =
+                    instruction->opcode == IR_OP_LOCAL_TRANSFER
+                    ? live[instruction->index] != 0U
+                    : projection_has_later_use(
+                        function, b, i - 1U, instruction);
                 bool copy = borrowed || later_use;
                 instruction->integer = copy;
+                bool copyable = instruction->result_type <
+                        builder->module->type_count &&
+                    builder->module->types[instruction->result_type]
+                        .copy_policy != IR_COPY_NONCOPYABLE;
+                if (copy && !copyable) {
+                    LangDiagnostic *diagnostic = lang_diag(
+                        builder->diagnostics, instruction->span,
+                        "cannot transfer noncopyable `%s`: a semantic copy is required",
+                        builder->module->types[
+                            instruction->result_type].name);
+                    lang_diag_note(
+                        diagnostic, borrowed
+                            ? "the source is borrowed"
+                            : "an overlapping use remains reachable");
+                    builder->failed = true;
+                }
                 if (instruction->require_move && copy) {
                     LangDiagnostic *diagnostic = lang_diag(
                         builder->diagnostics, instruction->span,
@@ -227,6 +371,9 @@ static void move_instruction_metadata(IrInstruction *destination,
     destination->error_cleanup = source->error_cleanup;
     destination->exception_handler = source->exception_handler;
     destination->has_exception_handler = source->has_exception_handler;
+    destination->require_move = source->require_move;
+    destination->has_constant_index = source->has_constant_index;
+    destination->constant_index = source->constant_index;
     source->labels = NULL;
     source->argument_modes = NULL;
     source->native_call = NULL;
@@ -234,7 +381,8 @@ static void move_instruction_metadata(IrInstruction *destination,
 
 static IrValueId expand_transfer(
     IrBuilder *builder, const IrInstruction *old,
-    const IrBlockId *blocks, size_t old_block_count
+    const IrBlockId *blocks, size_t old_block_count,
+    const IrValueId *values, size_t old_value_count
 ) {
     bool copy = old->integer != 0U;
     const Type *checked = old->result_type < builder->module->type_count
@@ -267,15 +415,30 @@ static IrValueId expand_transfer(
         return result;
     }
 
+    IrValueId index = IR_INVALID_ID;
+    const IrValueId *operands = NULL;
+    size_t operand_count = 0U;
+    IrOpcode copy_opcode = IR_OP_LOCAL_FIELD_BORROW;
+    IrOpcode move_opcode = IR_OP_LOCAL_FIELD_MOVE;
+    if (old->opcode == IR_OP_LOCAL_INDEX_TRANSFER) {
+        index = remap_value(
+            builder, values, old_value_count,
+            old->operands[0], old->span);
+        operands = &index;
+        operand_count = 1U;
+        copy_opcode = IR_OP_LOCAL_INDEX_GET;
+        move_opcode = IR_OP_LOCAL_INDEX_MOVE;
+    }
     IrInstruction *source = ir_append_instruction(
-        builder, copy ? IR_OP_LOCAL_FIELD_BORROW
-                      : IR_OP_LOCAL_FIELD_MOVE,
-        old->result_type, NULL, 0U, old->span);
+        builder, copy ? copy_opcode : move_opcode,
+        old->result_type, operands, operand_count, old->span);
     if (source == NULL) return IR_INVALID_ID;
     source->index = old->index;
     source->auxiliary = old->auxiliary;
     source->symbol = old->symbol;
     source->symbol_length = old->symbol_length;
+    source->has_constant_index = old->has_constant_index;
+    source->constant_index = old->constant_index;
     if (copy) {
         IrBlockId previous_handler = builder->copy_exception_handler;
         bool previous_has_handler = builder->copy_has_exception_handler;
@@ -291,11 +454,7 @@ static IrValueId expand_transfer(
         builder->copy_has_exception_handler = previous_has_handler;
         return copied;
     }
-    IrValueId result = source->result;
-    IrInstruction *drop = ir_append_instruction(
-        builder, IR_OP_LOCAL_DROP, IR_INVALID_ID, NULL, 0U, old->span);
-    if (drop != NULL) drop->index = old->index;
-    return result;
+    return source->result;
 }
 
 static void free_old_blocks(IrBlock *blocks, size_t block_count) {
@@ -401,9 +560,11 @@ bool ir_resolve_ownership_transfers(IrBuilder *builder) {
             IrInstruction *old = &old_block->instructions[i];
             IrValueId result;
             if (old->opcode == IR_OP_LOCAL_TRANSFER ||
-                old->opcode == IR_OP_LOCAL_FIELD_TRANSFER) {
+                old->opcode == IR_OP_LOCAL_FIELD_TRANSFER ||
+                old->opcode == IR_OP_LOCAL_INDEX_TRANSFER) {
                 result = expand_transfer(
-                    builder, old, blocks, old_block_count);
+                    builder, old, blocks, old_block_count,
+                    values, old_value_count);
             } else {
                 IrValueId *operands = ir_resize(
                     NULL, old->operand_count,

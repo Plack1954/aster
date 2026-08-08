@@ -35,6 +35,7 @@ static bool instruction_reads_local(const IrInstruction *instruction) {
         case IR_OP_LOCAL_FIELD_SET:
         case IR_OP_LOCAL_FIELD_DEFAULT:
         case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_MOVE:
         case IR_OP_LOCAL_INDEX_SET:
         case IR_OP_LOCAL_ENUM_IS:
         case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
@@ -226,6 +227,261 @@ static bool verify_local_availability(
     return ok;
 }
 
+static size_t local_projection_count(
+    const IrModule *ir, const IrFunction *function, size_t local
+) {
+    if (local >= function->local_count ||
+        function->locals[local].type >= ir->type_count)
+        return 0U;
+    const IrType *type = &ir->types[function->locals[local].type];
+    if (type->shape == IR_TYPE_STRUCT) return type->field_count;
+    if (type->shape == IR_TYPE_ARRAY) return type->array_length;
+    return 0U;
+}
+
+static void set_projection_range(
+    uint8_t *state, const size_t *offsets, size_t local, uint8_t value
+) {
+    for (size_t slot = offsets[local]; slot < offsets[local + 1U]; ++slot)
+        state[slot] = value;
+}
+
+static bool projection_instruction_whole_read(
+    const IrInstruction *instruction
+) {
+    if (!instruction_reads_local(instruction)) return false;
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_FIELD_GET:
+        case IR_OP_LOCAL_FIELD_MOVE:
+        case IR_OP_LOCAL_FIELD_BORROW:
+        case IR_OP_LOCAL_FIELD_SET:
+        case IR_OP_LOCAL_FIELD_DEFAULT:
+        case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_MOVE:
+        case IR_OP_LOCAL_INDEX_SET:
+            return false;
+        default:
+            return true;
+    }
+}
+
+static bool projection_read_available(
+    const IrInstruction *instruction, const uint8_t *state,
+    const size_t *offsets, size_t local
+) {
+    size_t begin = offsets[local];
+    size_t count = offsets[local + 1U] - begin;
+    if (count == 0U) return true;
+    if (instruction->opcode == IR_OP_LOCAL_FIELD_GET ||
+        instruction->opcode == IR_OP_LOCAL_FIELD_MOVE ||
+        instruction->opcode == IR_OP_LOCAL_FIELD_BORROW) {
+        return instruction->auxiliary < count &&
+               state[begin + instruction->auxiliary] == IR_LOCAL_AVAILABLE;
+    }
+    if (instruction->opcode == IR_OP_LOCAL_INDEX_GET ||
+        instruction->opcode == IR_OP_LOCAL_INDEX_MOVE) {
+        if (instruction->has_constant_index)
+            return instruction->constant_index < count &&
+                   state[begin + (size_t)instruction->constant_index] ==
+                       IR_LOCAL_AVAILABLE;
+        for (size_t slot = begin; slot < begin + count; ++slot)
+            if (state[slot] != IR_LOCAL_AVAILABLE) return false;
+        return true;
+    }
+    if (!projection_instruction_whole_read(instruction)) return true;
+    for (size_t slot = begin; slot < begin + count; ++slot)
+        if (state[slot] != IR_LOCAL_AVAILABLE) return false;
+    return true;
+}
+
+static void update_projection_availability(
+    const IrInstruction *instruction, uint8_t *state,
+    const size_t *offsets, size_t locals
+) {
+    if (instruction->index >= locals) return;
+    size_t local = instruction->index;
+    size_t begin = offsets[local];
+    size_t count = offsets[local + 1U] - begin;
+    if (count == 0U) return;
+    switch (instruction->opcode) {
+        case IR_OP_PARAMETER:
+        case IR_OP_LOCAL_STORE:
+        case IR_OP_LOCAL_DEFAULT:
+            set_projection_range(
+                state, offsets, local, IR_LOCAL_AVAILABLE);
+            return;
+        case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
+        case IR_OP_LOCAL_DROP:
+        case IR_OP_LOCAL_INVALIDATE:
+            set_projection_range(
+                state, offsets, local, IR_LOCAL_UNAVAILABLE);
+            return;
+        case IR_OP_LOCAL_FIELD_MOVE:
+            if (instruction->auxiliary < count)
+                state[begin + instruction->auxiliary] =
+                    IR_LOCAL_UNAVAILABLE;
+            return;
+        case IR_OP_LOCAL_FIELD_SET:
+        case IR_OP_LOCAL_FIELD_DEFAULT:
+            if (instruction->auxiliary < count)
+                state[begin + instruction->auxiliary] =
+                    IR_LOCAL_AVAILABLE;
+            return;
+        case IR_OP_LOCAL_INDEX_MOVE:
+            if (instruction->has_constant_index &&
+                instruction->constant_index < count)
+                state[begin + (size_t)instruction->constant_index] =
+                    IR_LOCAL_UNAVAILABLE;
+            else
+                set_projection_range(
+                    state, offsets, local, IR_LOCAL_MAYBE_AVAILABLE);
+            return;
+        case IR_OP_LOCAL_INDEX_SET:
+            if (instruction->has_constant_index &&
+                instruction->constant_index < count) {
+                state[begin + (size_t)instruction->constant_index] =
+                    IR_LOCAL_AVAILABLE;
+            } else {
+                bool all_available = true;
+                for (size_t slot = begin; slot < begin + count; ++slot)
+                    if (state[slot] != IR_LOCAL_AVAILABLE) {
+                        all_available = false;
+                        break;
+                    }
+                if (!all_available)
+                    set_projection_range(
+                        state, offsets, local, IR_LOCAL_MAYBE_AVAILABLE);
+            }
+            return;
+        default:
+            return;
+    }
+}
+
+static bool verify_projection_availability(
+    const IrModule *ir, const IrFunction *function,
+    LangDiagnostics *diagnostics
+) {
+    size_t locals = function->local_count;
+    size_t *offsets = ir_resize(
+        NULL, locals + 1U, sizeof(*offsets));
+    offsets[0] = 0U;
+    for (size_t local = 0U; local < locals; ++local) {
+        size_t count = local_projection_count(ir, function, local);
+        if (offsets[local] > SIZE_MAX - count) {
+            free(offsets);
+            lang_diag(diagnostics, function->span,
+                      "IR function `%s` has too much projection state",
+                      function->name);
+            return false;
+        }
+        offsets[local + 1U] = offsets[local] + count;
+    }
+    size_t projections = offsets[locals];
+    if (projections == 0U) {
+        free(offsets);
+        return true;
+    }
+    size_t blocks = function->block_count;
+    if (blocks > SIZE_MAX / projections) {
+        free(offsets);
+        lang_diag(diagnostics, function->span,
+                  "IR function `%s` has too much projection state",
+                  function->name);
+        return false;
+    }
+    uint8_t *entry = calloc(blocks * projections, 1U);
+    uint8_t *exit = calloc(blocks * projections, 1U);
+    uint8_t *scratch = calloc(projections, 1U);
+    bool *known_entry = calloc(blocks, sizeof(*known_entry));
+    bool *known_exit = calloc(blocks, sizeof(*known_exit));
+    bool *queued = calloc(blocks, sizeof(*queued));
+    IrBlockId *work = ir_resize(NULL, blocks, sizeof(*work));
+    if (entry == NULL || exit == NULL || scratch == NULL ||
+        known_entry == NULL || known_exit == NULL || queued == NULL ||
+        work == NULL) {
+        free(work); free(queued); free(known_exit); free(known_entry);
+        free(scratch); free(exit); free(entry); free(offsets);
+        lang_diag(diagnostics, function->span,
+                  "out of memory verifying projections in `%s`",
+                  function->name);
+        return false;
+    }
+    size_t work_count = 0U;
+    known_entry[function->entry_block] = true;
+    queued[function->entry_block] = true;
+    work[work_count++] = function->entry_block;
+    while (work_count != 0U) {
+        IrBlockId block_id = work[--work_count];
+        queued[block_id] = false;
+        memcpy(scratch, entry + (size_t)block_id * projections,
+               projections);
+        const IrBlock *block = &function->blocks[block_id];
+        for (size_t i = 0U; i < block->instruction_count; ++i)
+            update_projection_availability(
+                &block->instructions[i], scratch, offsets, locals);
+        bool changed = !known_exit[block_id] ||
+            memcmp(exit + (size_t)block_id * projections,
+                   scratch, projections) != 0;
+        if (!changed) continue;
+        memcpy(exit + (size_t)block_id * projections,
+               scratch, projections);
+        known_exit[block_id] = true;
+        size_t successors = terminator_successor_count(
+            &block->terminator, blocks);
+        for (size_t edge = 0U; edge < successors; ++edge) {
+            IrBlockId next = terminator_successor(
+                &block->terminator, edge);
+            uint8_t *next_entry =
+                entry + (size_t)next * projections;
+            bool next_changed = !known_entry[next];
+            if (!known_entry[next]) {
+                memcpy(next_entry, scratch, projections);
+                known_entry[next] = true;
+            } else {
+                for (size_t slot = 0U; slot < projections; ++slot) {
+                    uint8_t merged = meet_local_availability(
+                        next_entry[slot], scratch[slot]);
+                    if (merged != next_entry[slot]) {
+                        next_entry[slot] = merged;
+                        next_changed = true;
+                    }
+                }
+            }
+            if (next_changed && !queued[next]) {
+                work[work_count++] = next;
+                queued[next] = true;
+            }
+        }
+    }
+    bool ok = true;
+    for (size_t b = 0U; b < blocks; ++b) {
+        if (!known_entry[b]) continue;
+        memcpy(scratch, entry + b * projections, projections);
+        const IrBlock *block = &function->blocks[b];
+        for (size_t i = 0U; i < block->instruction_count; ++i) {
+            const IrInstruction *instruction = &block->instructions[i];
+            if (instruction->index < locals &&
+                !projection_read_available(
+                    instruction, scratch, offsets,
+                    instruction->index)) {
+                lang_diag(
+                    diagnostics, instruction->span,
+                    "IR `%s` reads an unavailable projection of local %u in `%s`",
+                    ir_opcode_name(instruction->opcode),
+                    instruction->index, function->name);
+                ok = false;
+            }
+            update_projection_availability(
+                instruction, scratch, offsets, locals);
+        }
+    }
+    free(work); free(queued); free(known_exit); free(known_entry);
+    free(scratch); free(exit); free(entry); free(offsets);
+    return ok;
+}
+
 static void compute_dominators(const IrFunction *function,
                                bool *reachable, bool *dominators) {
     size_t count = function->block_count;
@@ -317,6 +573,37 @@ static bool value_available(const IrFunction *function,
                       definition_block];
 }
 
+static bool copyable_type_contains_noncopyable(
+    const IrModule *ir, const IrType *type
+) {
+    if (type->copy_policy == IR_COPY_NONCOPYABLE ||
+        type->copy_policy == IR_COPY_CUSTOM)
+        return false;
+    if (type->element_type != IR_INVALID_ID &&
+        ir_verify_type(ir, type->element_type) &&
+        ir->types[type->element_type].copy_policy == IR_COPY_NONCOPYABLE)
+        return true;
+    if (type->error_type != IR_INVALID_ID &&
+        ir_verify_type(ir, type->error_type) &&
+        ir->types[type->error_type].copy_policy == IR_COPY_NONCOPYABLE)
+        return true;
+    for (size_t field = 0U;
+         type->field_types != NULL && field < type->field_count; ++field)
+        if (ir_verify_type(ir, type->field_types[field]) &&
+            ir->types[type->field_types[field]].copy_policy ==
+                IR_COPY_NONCOPYABLE)
+            return true;
+    for (size_t variant = 0U;
+         type->variant_payload_types != NULL &&
+         variant < type->variant_count; ++variant)
+        if (type->variant_payload_types[variant] != IR_INVALID_ID &&
+            ir_verify_type(ir, type->variant_payload_types[variant]) &&
+            ir->types[type->variant_payload_types[variant]].copy_policy ==
+                IR_COPY_NONCOPYABLE)
+            return true;
+    return false;
+}
+
 bool lang_ir_verify_module(const IrModule *ir,
                            LangDiagnostics *diagnostics) {
     if (ir == NULL ||
@@ -349,6 +636,7 @@ bool lang_ir_verify_module(const IrModule *ir,
              (type->requires_cleanup || type->managed)) ||
             (type->copy_function != IR_INVALID_ID &&
              type->copy_policy != IR_COPY_CUSTOM) ||
+            copyable_type_contains_noncopyable(ir, type) ||
             (type->destructor_function != IR_INVALID_ID &&
              type->drop_policy != IR_DROP_CUSTOM &&
              !(type->shape == IR_TYPE_CLASS_REFERENCE &&
@@ -933,6 +1221,7 @@ bool lang_ir_verify_module(const IrModule *ir,
                      instruction->opcode == IR_OP_LOCAL_FIELD_BORROW ||
                      instruction->opcode == IR_OP_LOCAL_FIELD_SET ||
                      instruction->opcode == IR_OP_LOCAL_INDEX_GET ||
+                     instruction->opcode == IR_OP_LOCAL_INDEX_MOVE ||
                      instruction->opcode == IR_OP_LOCAL_INDEX_SET ||
                      instruction->opcode == IR_OP_LOCAL_ENUM_IS ||
                      instruction->opcode ==
@@ -1044,6 +1333,36 @@ bool lang_ir_verify_module(const IrModule *ir,
             for (size_t i = 0U; i < block->instruction_count; ++i) {
                 const IrInstruction *instruction =
                     &block->instructions[i];
+                if ((instruction->opcode == IR_OP_LOCAL_INDEX_GET ||
+                     instruction->opcode == IR_OP_LOCAL_INDEX_MOVE ||
+                     instruction->opcode == IR_OP_LOCAL_INDEX_SET) &&
+                    instruction->has_constant_index) {
+                    IrValueId index_value = instruction->operand_count != 0U
+                        ? instruction->operands[0] : IR_INVALID_ID;
+                    bool proven = index_value < function->value_count &&
+                        definition_blocks[index_value] <
+                            function->block_count &&
+                        definition_instructions[index_value] <
+                            function->blocks[
+                                definition_blocks[index_value]]
+                                .instruction_count;
+                    if (proven) {
+                        const IrInstruction *definition =
+                            &function->blocks[
+                                definition_blocks[index_value]].instructions[
+                                definition_instructions[index_value]];
+                        proven = definition->opcode == IR_OP_CONST_INT &&
+                            definition->integer ==
+                                instruction->constant_index;
+                    }
+                    if (!proven) {
+                        lang_diag(
+                            diagnostics, instruction->span,
+                            "IR `%s` has unproven constant-index ownership metadata",
+                            ir_opcode_name(instruction->opcode));
+                        ok = false;
+                    }
+                }
                 if (instruction->operand_count != 0U &&
                     instruction->operands == NULL)
                     continue;
@@ -1099,6 +1418,8 @@ bool lang_ir_verify_module(const IrModule *ir,
         free(dominators);
         free(reachable);
         if (!verify_local_availability(ir, function, diagnostics))
+            ok = false;
+        if (!verify_projection_availability(ir, function, diagnostics))
             ok = false;
         free(definition_instructions);
         free(definition_blocks);

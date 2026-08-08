@@ -344,8 +344,9 @@ values[next_index()] *= 2; // next_index() runs once
 Replacing a field or element cleans up its old value before installing the new
 one. A non-trivial projection through borrowed or container storage must be
 borrowed or explicitly copied. Moving a direct non-trivial field from an owned
-struct local transfers that field, cleans up the remaining fields, and makes
-the complete owner unavailable.
+struct local empties only that field. Sibling fields remain available and the
+complete owner remains safely destructible. A later assignment reinitializes
+the emptied field.
 
 Struct construction supports field shorthand when a local has the same name:
 
@@ -427,10 +428,13 @@ index from the copied keys. User structs are not currently admissible
 `Dictionary` or `HashSet` keys because those collections require built-in
 equality; consequently a user-defined custom copy constructor can presently
 participate in a dictionary value, but not a set or dictionary key.
-Reads from fields move at the owning local's last use and otherwise copy a
-copyable field. Fixed-array and collection index reads cannot change container
-shape, so they copy copyable non-trivial elements. Noncopyable elements require
-a borrowing or consuming API. Returning a `const ref` parameter as an owned
+Direct fields and fixed-array elements are tracked as separate ownership
+places. A read moves when no overlapping use remains, leaving that field or
+slot empty without changing aggregate shape; otherwise it copies when the
+element is copyable. Constant fixed-array indices can be proven disjoint,
+while runtime indices conservatively alias every slot. Dynamically sized
+collection index reads copy and noncopyable collection elements require a
+borrowing or consuming API. Returning a `const ref` parameter as an owned
 non-trivial value copies because borrowed storage cannot be consumed.
 
 `string` is Aster's single immutable UTF-8 string type. Assignment, argument

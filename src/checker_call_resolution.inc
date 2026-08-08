@@ -773,7 +773,9 @@ static_call:
                 } else if (checker_expression_is_local_place(
                                checker, argument) &&
                            !(argument->kind == EXPR_FIELD &&
-                             argument->as.field.move_out)) {
+                             argument->as.field.move_out) &&
+                           !(argument->kind == EXPR_INDEX &&
+                             argument->as.index.move_out)) {
                     lang_diag(
                         checker->diagnostics, argument->span,
                         "passing a non-trivial projection by value requires `copy(...)`");

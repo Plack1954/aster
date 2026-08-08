@@ -26,7 +26,8 @@ const char *ir_opcode_name(IrOpcode opcode) {
         "local_field_transfer",
         "local_field_borrow",
         "local_field_set", "local_field_default", "index_get",
-        "index_set", "local_index_get", "local_index_set",
+        "index_set", "local_index_get", "local_index_move",
+        "local_index_transfer", "local_index_set",
         "local_enum_is", "local_enum_payload_move", "enum_is",
         "enum_payload_borrow", "collection_count", "list_element_borrow",
         "queue_front_borrow", "stack_top_borrow",
@@ -177,6 +178,8 @@ bool ir_verify_operand_count(const IrInstruction *instruction) {
         case IR_OP_BIT_NOT: case IR_OP_BOUND_METHOD_REF:
         case IR_OP_CAST: case IR_OP_FIELD_GET: case IR_OP_FIELD_SET:
         case IR_OP_LOCAL_FIELD_SET: case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_MOVE:
+        case IR_OP_LOCAL_INDEX_TRANSFER:
         case IR_OP_ITERATOR_BEGIN:
         case IR_OP_RAW_LOAD:
         case IR_OP_CLASS_DELETE:
@@ -262,7 +265,8 @@ bool ir_verify_result_type(const IrModule *ir,
         case IR_OP_LOCAL_FIELD_GET: case IR_OP_LOCAL_FIELD_MOVE:
         case IR_OP_LOCAL_FIELD_TRANSFER:
         case IR_OP_LOCAL_FIELD_BORROW: case IR_OP_INDEX_GET:
-        case IR_OP_LOCAL_INDEX_GET: case IR_OP_LOCAL_ENUM_IS:
+        case IR_OP_LOCAL_INDEX_GET: case IR_OP_LOCAL_INDEX_MOVE:
+        case IR_OP_LOCAL_INDEX_TRANSFER: case IR_OP_LOCAL_ENUM_IS:
         case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
         case IR_OP_ENUM_IS: case IR_OP_ENUM_PAYLOAD_BORROW:
         case IR_OP_COLLECTION_COUNT:
@@ -401,6 +405,7 @@ bool ir_verify_instruction_signature(
     switch (instruction->opcode) {
         case IR_OP_LOCAL_TRANSFER:
         case IR_OP_LOCAL_FIELD_TRANSFER:
+        case IR_OP_LOCAL_INDEX_TRANSFER:
             /* Frontend-only opcodes must be gone before verification. */
             return false;
         case IR_OP_PARAMETER:
@@ -989,15 +994,19 @@ bool ir_verify_instruction_signature(
                        aggregate->field_types[instruction->index];
         }
         case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_MOVE:
         case IR_OP_LOCAL_INDEX_SET: {
             if (local == NULL || !ir_verify_type(ir, local->type))
                 return false;
             const IrType *aggregate = &ir->types[local->type];
             if (aggregate->shape != IR_TYPE_ARRAY ||
                 aggregate->element_type == IR_INVALID_ID ||
+                (instruction->has_constant_index &&
+                 instruction->constant_index >= aggregate->array_length) ||
                 instruction->operand_count !=
-                    (instruction->opcode ==
-                         IR_OP_LOCAL_INDEX_GET ? 1U : 2U) ||
+                    ((instruction->opcode == IR_OP_LOCAL_INDEX_GET ||
+                      instruction->opcode == IR_OP_LOCAL_INDEX_MOVE)
+                        ? 1U : 2U) ||
                 !ir_verify_value(function, instruction->operands[0]))
                 return false;
             IrTypeId index_type;
@@ -1008,7 +1017,8 @@ bool ir_verify_instruction_signature(
             if (index_shape != IR_TYPE_SIGNED_INT &&
                 index_shape != IR_TYPE_UNSIGNED_INT)
                 return false;
-            if (instruction->opcode == IR_OP_LOCAL_INDEX_GET)
+            if (instruction->opcode == IR_OP_LOCAL_INDEX_GET ||
+                instruction->opcode == IR_OP_LOCAL_INDEX_MOVE)
                 return instruction->result_type ==
                        aggregate->element_type;
             return instruction->operand_count == 2U &&

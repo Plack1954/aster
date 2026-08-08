@@ -223,6 +223,7 @@ static bool verify_function_stack(const BytecodeFunction *function) {
                 required = 2; popped = 2; pushed = 1;
                 break;
             case OP_GET_INDEX_LOCAL:
+            case OP_GET_INDEX_LOCAL_MOVE:
                 required = 1; popped = 1; pushed = 1;
                 break;
             case OP_SET_INDEX_LOCAL:
@@ -499,6 +500,7 @@ bool vm_verify_bytecode_module(const BytecodeModule *module) {
                 case OP_MOVE_LOCAL:
                 case OP_SET_LOCAL:
                 case OP_GET_INDEX_LOCAL:
+                case OP_GET_INDEX_LOCAL_MOVE:
                 case OP_SET_INDEX_LOCAL:
                 case OP_DROP_LOCAL:
                 case OP_ITER_HAS_NEXT_LOCAL:

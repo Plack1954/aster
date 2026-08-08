@@ -563,12 +563,12 @@ add_test(NAME field_move_vm
     COMMAND lang run-ir tests/field_move.as)
 set_tests_properties(field_move_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    PASS_REGULAR_EXPRESSION "drop remainder[\r\n]+payload")
+    PASS_REGULAR_EXPRESSION "payload[\r\n]+drop remainder")
 add_aster_generated_c_test(
     field_move_generated_c
     tests/field_move.as
     field_move
-    "-DEXPECTED_OUTPUT=drop remainder\npayload\n")
+    "-DEXPECTED_OUTPUT=payload\ndrop remainder\n")
 add_test(NAME automatic_copy_after_transfer_vm
     COMMAND lang run-ir tests/checker/use_after_move.as)
 set_tests_properties(automatic_copy_after_transfer_vm PROPERTIES
@@ -610,6 +610,42 @@ add_aster_generated_c_test(
     tests/ownership_observability.as
     ownership_observability
     "-DEXPECTED_OUTPUT=43\n")
+add_test(NAME projection_moves_vm
+    COMMAND lang run-ir tests/projection_moves.as)
+set_tests_properties(projection_moves_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "42[\r\n]+42[\r\n]+42[\r\n]+42")
+add_aster_generated_c_test(
+    projection_moves_generated_c
+    tests/projection_moves.as
+    projection_moves
+    "-DEXPECTED_OUTPUT=42\n42\n42\n42\n")
+add_test(NAME noncopyable_projection_moves_vm
+    COMMAND lang run-ir tests/noncopyable_projection_moves.as)
+set_tests_properties(noncopyable_projection_moves_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "42[\r\n]+42")
+add_aster_generated_c_test(
+    noncopyable_projection_moves_generated_c
+    tests/noncopyable_projection_moves.as
+    noncopyable_projection_moves
+    "-DEXPECTED_OUTPUT=42\n42\n")
+add_test(NAME ensure_index_move_later_use_rejected
+    COMMAND lang dump-ir tests/checker/ensure_index_move_later_use.as)
+set_tests_properties(ensure_index_move_later_use_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME ensure_dynamic_index_alias_rejected
+    COMMAND lang dump-ir tests/checker/ensure_dynamic_index_alias.as)
+set_tests_properties(ensure_dynamic_index_alias_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME ensure_field_move_whole_use_rejected
+    COMMAND lang dump-ir tests/checker/ensure_field_move_whole_use.as)
+set_tests_properties(ensure_field_move_whole_use_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
 add_test(NAME ensure_move_later_use_rejected
     COMMAND lang dump-ir tests/checker/ensure_move_later_use.as)
 set_tests_properties(ensure_move_later_use_rejected PROPERTIES
@@ -3031,6 +3067,14 @@ target_include_directories(ir_structure_test PRIVATE src)
 target_link_libraries(ir_structure_test PRIVATE langlib)
 lang_enable_warnings(ir_structure_test)
 add_test(NAME typed_ir_structure_and_verifier COMMAND ir_structure_test)
+
+add_executable(ownership_verifier_test tests/ownership_verifier_test.c)
+target_include_directories(ownership_verifier_test PRIVATE src)
+target_link_libraries(ownership_verifier_test PRIVATE langlib)
+lang_enable_warnings(ownership_verifier_test)
+add_test(NAME ownership_projection_verifier COMMAND ownership_verifier_test)
+set_tests_properties(ownership_projection_verifier PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set_tests_properties(typed_ir_structure_and_verifier PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
