@@ -811,6 +811,13 @@ add_aster_generated_c_test(
     async_exception_generated_c
         -DEXPECTED_OUTPUT=cleaned\nboom\n)
 add_aster_generated_c_test(
+    async_frame_liveness_generated_c_execution
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/async_frame_liveness.as
+    async_frame_liveness
+        -DEXPECTED_OUTPUT=7\n42\ndropped\n
+        -DEXPECTED_C_COMPACT_PATTERN=aster_type_1local0.*aster_task\\*v6
+        -DEXPECTED_C_ABSENT_PATTERN=frame->local1)
+add_aster_generated_c_test(
     async_object_results_generated_c_execution
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/async_object_results_generated_c.as
     async_object_results_generated_c)

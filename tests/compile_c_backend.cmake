@@ -35,6 +35,13 @@ if(DEFINED EXPECTED_C_PATTERN)
             "generated C did not contain required pattern: ${EXPECTED_C_PATTERN}")
     endif()
 endif()
+if(DEFINED EXPECTED_C_ABSENT_PATTERN)
+    file(READ "${GENERATED_C}" GENERATED_C_TEXT)
+    if(GENERATED_C_TEXT MATCHES "${EXPECTED_C_ABSENT_PATTERN}")
+        message(FATAL_ERROR
+            "generated C contained forbidden pattern: ${EXPECTED_C_ABSENT_PATTERN}")
+    endif()
+endif()
 if(DEFINED EXPECTED_C_COMPACT_PATTERN)
     file(READ "${GENERATED_C}" GENERATED_C_TEXT)
     string(REGEX REPLACE "[ \t\r\n]" "" GENERATED_C_COMPACT

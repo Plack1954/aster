@@ -193,7 +193,7 @@ static LangValue finish_frame(LangVM *vm, const BytecodeFunction *function,
     return result;
 }
 
-#define PUSH(value_) do { if (sp >= 1024U) { runtime_error(vm, instruction, "operand stack overflow"); goto fail; } stack[sp++] = (value_); } while (0)
+#define PUSH(value_) do { if (sp >= stack_capacity) { runtime_error(vm, instruction, "operand stack overflow"); goto fail; } stack[sp++] = (value_); } while (0)
 #define POP() stack[--sp]
 
 static LangValue vm_execute_function_core(
@@ -248,6 +248,8 @@ static LangValue vm_execute_function_core(
     LangValue *stack = async_frame != NULL
         ? async_frame->stack
         : vm->frame_stacks + vm->frame_count * 1024U;
+    size_t stack_capacity = async_frame != NULL
+        ? async_frame->stack_capacity : 1024U;
     Object *html_objects = async_frame != NULL
         ? async_frame->html_objects
         : vm->frame_html_objects + frame_offset;
@@ -263,6 +265,12 @@ static LangValue vm_execute_function_core(
     if (async_frame != NULL && async_frame->awaited != NULL) {
         Object *awaited = async_frame->awaited;
         async_frame->awaited = NULL;
+        if (sp >= stack_capacity) {
+            vm_runtime_error_at(
+                vm, call_span, "operand stack overflow on async resume");
+            vm_object_free(vm, awaited);
+            goto fail;
+        }
         if (awaited->as.task.state == VM_TASK_SUCCEEDED) {
             stack[sp++] = vm_value_clone(awaited->as.task.result);
         } else if (awaited->as.task.state == VM_TASK_FAULTED ||

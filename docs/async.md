@@ -104,8 +104,14 @@ blocking-I/O strategy remains pending.
 Typed IR records the
 public task
 return type, coroutine completion type, and explicit `await` instructions.
-Generated C lowers async functions to state machines. The VM stores suspended
-locals, operand stack, and instruction pointer in heap-backed frames. Both
+Generated C lowers async functions to state machines. A mandatory suspension
+liveness analysis gives the frame only locals and IR values that cross at
+least one `await`; each state saves and restores only its own live subset.
+Initialized owned locals remain live when their only later operation is
+cleanup, while unavailable locals are not hoisted merely because a later
+store checks their live flag. The VM stores suspended locals, a function-sized
+operand stack, and instruction pointer in heap-backed frames rather than
+allocating the old fixed 1,024-value stack for every task. Both
 executors support multiple pending timer tasks, continuation registration,
 immediate completion, fault capture/rethrow at `await`, and deterministic
 cleanup of a suspended frame. Buffered async HTTP copies the request body into

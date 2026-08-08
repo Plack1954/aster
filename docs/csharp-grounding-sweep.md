@@ -107,7 +107,7 @@ My overall assessment after the C# sweep is:
 | Parameter modes | Booleans plus several 32-bit argument masks | A `RefKind` value stored on every `ParameterSymbol` |
 | `ref` behavior | Currently copy-in/copy-out in both backends | Alias to the caller's storage |
 | `out` behavior | Distinct call syntax, but no all-path assignment proof yet | Definite-assignment analysis forbids reading before assignment and requires assignment before normal exit |
-| Async lowering | C frame containing every parameter, local, and IR virtual; VM frame contains all locals plus a fixed stack | State-machine rewriting with release-mode liveness analysis for hoisted variables |
+| Async lowering | Suspension-liveness-selected C frame; VM frame contains all locals plus a function-sized stack | State-machine rewriting with release-mode liveness analysis for hoisted variables |
 | Ordinary memory | Deterministic copy/drop, deep-copy containers, narrow RC, arenas | Tracing GC for managed objects; deterministic `Dispose` for external resources |
 | Native resources | Reference-counted `NativeHandle` with registered C destructor | `SafeHandle`, `IDisposable`, and extensive native C++ RAII holders |
 | Compiler context | Module/compiler data plus some process-global configuration | Explicit, largely immutable `CSharpCompilation` values with options, trees, and references |
@@ -291,26 +291,27 @@ This is a good restriction. Suspending a function while retaining a reference
 to caller stack storage would require a more complicated lifetime contract.
 Aster avoids that contract without inventing a borrow checker.
 
-### The coarse shortcut
+### The coarse shortcut found during the audit
 
 Roslyn computes variables live across `await` or `yield`. In release builds it
 hoists those variables into the generated state machine. Debug builds retain
 some extra values for debugging quality, but the release rule is explicitly
 liveness-based.
 
-Aster's generated-C async frame contains:
+At the time of this audit, Aster's generated-C async frame contained:
 
 - every parameter;
 - every local;
 - a live flag for every cleanup-tracked local;
 - every IR virtual value.
 
-At every pending `await`, it copies all of them into the frame. On resume, it
-restores all of them before dispatching to the continuation state. The frame is
-zero-initialized, so this inspection did not find an uninitialized-read defect
-in that mechanism. It is instead a potentially large space and copy cost.
+At every pending `await`, it copied all of them into the frame. On resume, it
+restored all of them before dispatching to the continuation state. The frame
+was zero-initialized, so this inspection did not find an uninitialized-read
+defect in that mechanism. It instead found a potentially large space and copy
+cost.
 
-The bytecode async path is similarly broad: it allocates storage for all
+The bytecode async path was similarly broad: it allocated storage for all
 function locals, reference slots, initialized flags, HTML tracking, and a fixed
 1,024-value operand stack per suspended operation.
 
@@ -320,6 +321,15 @@ value is live across an `await`. The remedy is conventional compiler liveness:
 compute the suspension-live set, assign frame fields only to that set, and
 persist matching live/cleanup state. No source-language ownership change is
 required.
+
+This remedy is now implemented. Generated C computes backward local/value
+liveness plus forward local availability, places only the union of
+suspension-live state in the frame, and saves and restores the exact subset for
+each `await`. The state-specific restore is essential: restoring the frame
+union unconditionally can resurrect a stale owner moved before a later
+suspension. The VM no longer allocates a fixed 1,024-value operand stack per
+task; its conservative capacity is bounded by the compiled function's bytecode
+length.
 
 ## Type syntax: Roslyn reinforces the structural case
 

@@ -22,6 +22,7 @@ typedef struct CEmitter {
     bool needs_crypto_runtime;
     size_t async_function_index;
     size_t async_await_index;
+    struct CAsyncLiveness *async_liveness;
     bool failed;
     char *css_asset_href;
 } CEmitter;

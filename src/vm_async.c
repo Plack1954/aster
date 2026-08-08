@@ -321,7 +321,11 @@ LangValue vm_start_async_function(LangVM *vm, size_t function_index,
         function->local_count, sizeof(*frame->initialized));
     frame->references = vm_allocate(
         function->local_count, sizeof(*frame->references));
-    frame->stack = vm_allocate(1024U, sizeof(*frame->stack));
+    frame->stack_capacity = function->code_count < 1024U
+        ? function->code_count + 1U : 1024U;
+    if (frame->stack_capacity == 0U) frame->stack_capacity = 1U;
+    frame->stack = vm_allocate(
+        frame->stack_capacity, sizeof(*frame->stack));
     frame->html_objects = vm_allocate(
         function->local_count, sizeof(*frame->html_objects));
     for (size_t i = 0U; i < argument_count; ++i) {

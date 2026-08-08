@@ -37,6 +37,7 @@ struct VmAsyncFrame {
     bool *initialized;
     LangValue **references;
     LangValue *stack;
+    size_t stack_capacity;
     Object *html_objects;
     uint64_t instruction_count;
     LangSpan call_span;

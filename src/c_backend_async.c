@@ -4,6 +4,400 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct CAsyncLiveness {
+    size_t await_count;
+    size_t local_count;
+    size_t value_count;
+    uint8_t *locals;
+    uint8_t *values;
+    uint8_t *frame_locals;
+    uint8_t *frame_values;
+} CAsyncLiveness;
+
+/*
+ * Async C lowering splits one verified IR function into repeated step calls.
+ * Backward liveness identifies state that crosses each suspension; forward
+ * availability removes locals which have not yet acquired a value. Cleanup
+ * operations count as uses so an otherwise-dead owner still reaches its drop.
+ */
+
+static bool async_local_reads(const CEmitter *emitter,
+                              const IrFunction *function,
+                              const IrInstruction *instruction) {
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_LOAD:
+        case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_FIELD_GET:
+        case IR_OP_LOCAL_FIELD_MOVE:
+        case IR_OP_LOCAL_FIELD_BORROW:
+        case IR_OP_LOCAL_FIELD_SET:
+        case IR_OP_LOCAL_FIELD_DEFAULT:
+        case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_SET:
+        case IR_OP_LOCAL_ENUM_IS:
+        case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
+        case IR_OP_LOCAL_ITERATOR_HAS_NEXT:
+        case IR_OP_LOCAL_ITERATOR_NEXT:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY_BEGIN:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY_APPEND:
+        case IR_OP_LOCAL_ELEMENT_CSS_VALUE:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY_END:
+        case IR_OP_LOCAL_ELEMENT_APPEND:
+        case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
+        case IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED:
+        case IR_OP_LOCAL_ELEMENT_FINISH:
+            return true;
+        case IR_OP_ELEMENT_BEGIN:
+            return instruction->index != IR_INVALID_ID;
+        case IR_OP_VALUE_DISCARD:
+            return instruction->auxiliary != 0U &&
+                   instruction->index != IR_INVALID_ID;
+        case IR_OP_LOCAL_STORE:
+        case IR_OP_LOCAL_DROP:
+        case IR_OP_LOCAL_DEFAULT:
+            return instruction->index < function->local_count &&
+                   c_backend_local_tracks_drop(
+                       emitter, function, instruction->index);
+        default:
+            return false;
+    }
+}
+
+static bool async_local_defines(const IrInstruction *instruction) {
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_STORE:
+        case IR_OP_LOCAL_DROP:
+        case IR_OP_LOCAL_DEFAULT:
+        case IR_OP_LOCAL_INVALIDATE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+enum CAsyncLocalAvailability {
+    C_ASYNC_LOCAL_UNAVAILABLE,
+    C_ASYNC_LOCAL_AVAILABLE,
+    C_ASYNC_LOCAL_MAYBE_AVAILABLE
+};
+
+static void async_update_local_availability(
+    const IrFunction *function, const IrInstruction *instruction,
+    uint8_t *state
+) {
+    if (instruction->opcode == IR_OP_PARAMETER &&
+        instruction->index < function->local_count) {
+        state[instruction->index] = C_ASYNC_LOCAL_AVAILABLE;
+        return;
+    }
+    if (instruction->index >= function->local_count) return;
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_STORE:
+        case IR_OP_LOCAL_DEFAULT:
+            state[instruction->index] = C_ASYNC_LOCAL_AVAILABLE;
+            break;
+        case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_DROP:
+        case IR_OP_LOCAL_INVALIDATE:
+            state[instruction->index] = C_ASYNC_LOCAL_UNAVAILABLE;
+            break;
+        default:
+            break;
+    }
+}
+
+static uint8_t async_meet_availability(uint8_t left, uint8_t right) {
+    return left == right ? left : C_ASYNC_LOCAL_MAYBE_AVAILABLE;
+}
+
+static void async_transfer_instruction(
+    const CEmitter *emitter, const IrFunction *function,
+    const IrInstruction *instruction, uint8_t *locals, uint8_t *values
+) {
+    if (instruction->result != IR_INVALID_ID &&
+        instruction->result < function->value_count)
+        values[instruction->result] = 0U;
+    for (size_t operand = 0U;
+         operand < instruction->operand_count; ++operand)
+        if (instruction->operands[operand] < function->value_count)
+            values[instruction->operands[operand]] = 1U;
+    if (instruction->index >= function->local_count) return;
+    if (async_local_defines(instruction))
+        locals[instruction->index] = 0U;
+    if (async_local_reads(emitter, function, instruction))
+        locals[instruction->index] = 1U;
+}
+
+static void async_add_terminator_uses(
+    const IrFunction *function, const IrTerminator *terminator,
+    uint8_t *values
+) {
+    if ((terminator->kind == IR_TERM_BRANCH ||
+         terminator->kind == IR_TERM_RETURN) &&
+        terminator->value < function->value_count)
+        values[terminator->value] = 1U;
+}
+
+static void async_merge_successors(
+    const IrFunction *function, size_t block,
+    const uint8_t *live_in_locals, const uint8_t *live_in_values,
+    uint8_t *locals, uint8_t *values
+) {
+    const IrTerminator *term = &function->blocks[block].terminator;
+    IrBlockId successors[2];
+    size_t count = 0U;
+    if ((term->kind == IR_TERM_JUMP || term->kind == IR_TERM_BRANCH) &&
+        term->target < function->block_count)
+        successors[count++] = term->target;
+    if (term->kind == IR_TERM_BRANCH &&
+        term->alternate < function->block_count)
+        successors[count++] = term->alternate;
+    for (size_t successor = 0U; successor < count; ++successor) {
+        size_t local_offset =
+            (size_t)successors[successor] * function->local_count;
+        size_t value_offset =
+            (size_t)successors[successor] * function->value_count;
+        for (size_t local = 0U; local < function->local_count; ++local)
+            locals[local] |= live_in_locals[local_offset + local];
+        for (size_t value = 0U; value < function->value_count; ++value)
+            values[value] |= live_in_values[value_offset + value];
+    }
+    async_add_terminator_uses(function, term, values);
+}
+
+static void async_liveness_dispose(CAsyncLiveness *liveness) {
+    if (liveness == NULL) return;
+    free(liveness->frame_values);
+    free(liveness->frame_locals);
+    free(liveness->values);
+    free(liveness->locals);
+    free(liveness);
+}
+
+static CAsyncLiveness *async_liveness_build(
+    CEmitter *emitter, const IrFunction *function
+) {
+    CAsyncLiveness *result = calloc(1U, sizeof(*result));
+    if (result == NULL) goto fail;
+    result->local_count = function->local_count;
+    result->value_count = function->value_count;
+    for (size_t block = 0U; block < function->block_count; ++block)
+        for (size_t i = 0U;
+             i < function->blocks[block].instruction_count; ++i)
+            if (function->blocks[block].instructions[i].opcode ==
+                IR_OP_AWAIT)
+                ++result->await_count;
+
+    size_t local_width = function->local_count == 0U
+        ? 1U : function->local_count;
+    size_t value_width = function->value_count == 0U
+        ? 1U : function->value_count;
+    size_t blocks = function->block_count == 0U
+        ? 1U : function->block_count;
+    size_t awaits = result->await_count == 0U
+        ? 1U : result->await_count;
+    if (blocks > SIZE_MAX / local_width ||
+        blocks > SIZE_MAX / value_width ||
+        awaits > SIZE_MAX / local_width ||
+        awaits > SIZE_MAX / value_width)
+        goto fail;
+    uint8_t *live_in_locals = calloc(blocks * local_width, 1U);
+    uint8_t *live_in_values = calloc(blocks * value_width, 1U);
+    uint8_t *locals = calloc(local_width, 1U);
+    uint8_t *values = calloc(value_width, 1U);
+    result->locals = calloc(awaits * local_width, 1U);
+    result->values = calloc(awaits * value_width, 1U);
+    result->frame_locals = calloc(local_width, 1U);
+    result->frame_values = calloc(value_width, 1U);
+    if (live_in_locals == NULL || live_in_values == NULL ||
+        locals == NULL || values == NULL || result->locals == NULL ||
+        result->values == NULL || result->frame_locals == NULL ||
+        result->frame_values == NULL) {
+        free(values);
+        free(locals);
+        free(live_in_values);
+        free(live_in_locals);
+        goto fail;
+    }
+
+    bool changed;
+    do {
+        changed = false;
+        for (size_t reverse = function->block_count;
+             reverse > 0U; --reverse) {
+            size_t block = reverse - 1U;
+            memset(locals, 0, local_width);
+            memset(values, 0, value_width);
+            async_merge_successors(
+                function, block, live_in_locals, live_in_values,
+                locals, values);
+            const IrBlock *ir_block = &function->blocks[block];
+            for (size_t i = ir_block->instruction_count; i > 0U; --i)
+                async_transfer_instruction(
+                    emitter, function, &ir_block->instructions[i - 1U],
+                    locals, values);
+            uint8_t *local_entry =
+                live_in_locals + block * local_width;
+            uint8_t *value_entry =
+                live_in_values + block * value_width;
+            if (memcmp(local_entry, locals, local_width) != 0) {
+                memcpy(local_entry, locals, local_width);
+                changed = true;
+            }
+            if (memcmp(value_entry, values, value_width) != 0) {
+                memcpy(value_entry, values, value_width);
+                changed = true;
+            }
+        }
+    } while (changed);
+
+    uint8_t *available_in = calloc(blocks * local_width, 1U);
+    uint8_t *available_out = calloc(blocks * local_width, 1U);
+    bool *known_in = calloc(blocks, sizeof(*known_in));
+    bool *known_out = calloc(blocks, sizeof(*known_out));
+    if (available_in == NULL || available_out == NULL ||
+        known_in == NULL || known_out == NULL) {
+        free(known_out);
+        free(known_in);
+        free(available_out);
+        free(available_in);
+        free(values);
+        free(locals);
+        free(live_in_values);
+        free(live_in_locals);
+        goto fail;
+    }
+    known_in[function->entry_block] = true;
+    do {
+        changed = false;
+        for (size_t block = 0U; block < function->block_count; ++block) {
+            if (!known_in[block]) continue;
+            memcpy(locals, available_in + block * local_width,
+                   local_width);
+            const IrBlock *ir_block = &function->blocks[block];
+            for (size_t i = 0U;
+                 i < ir_block->instruction_count; ++i)
+                async_update_local_availability(
+                    function, &ir_block->instructions[i], locals);
+            bool exit_changed = !known_out[block] ||
+                memcmp(available_out + block * local_width,
+                       locals, local_width) != 0;
+            if (!exit_changed) continue;
+            memcpy(available_out + block * local_width,
+                   locals, local_width);
+            known_out[block] = true;
+            const IrTerminator *term = &ir_block->terminator;
+            IrBlockId successors[2];
+            size_t successor_count = 0U;
+            if ((term->kind == IR_TERM_JUMP ||
+                 term->kind == IR_TERM_BRANCH) &&
+                term->target < function->block_count)
+                successors[successor_count++] = term->target;
+            if (term->kind == IR_TERM_BRANCH &&
+                term->alternate < function->block_count)
+                successors[successor_count++] = term->alternate;
+            for (size_t s = 0U; s < successor_count; ++s) {
+                uint8_t *entry = available_in +
+                    (size_t)successors[s] * local_width;
+                bool entry_changed = !known_in[successors[s]];
+                if (!known_in[successors[s]]) {
+                    memcpy(entry, locals, local_width);
+                    known_in[successors[s]] = true;
+                } else {
+                    for (size_t local = 0U;
+                         local < function->local_count; ++local) {
+                        uint8_t merged = async_meet_availability(
+                            entry[local], locals[local]);
+                        if (merged != entry[local]) {
+                            entry[local] = merged;
+                            entry_changed = true;
+                        }
+                    }
+                }
+                changed |= entry_changed;
+            }
+        }
+    } while (changed);
+
+    size_t await_index = result->await_count;
+    for (size_t reverse = function->block_count;
+         reverse > 0U; --reverse) {
+        size_t block = reverse - 1U;
+        memset(locals, 0, local_width);
+        memset(values, 0, value_width);
+        async_merge_successors(
+            function, block, live_in_locals, live_in_values,
+            locals, values);
+        const IrBlock *ir_block = &function->blocks[block];
+        for (size_t i = ir_block->instruction_count; i > 0U; --i) {
+            const IrInstruction *instruction =
+                &ir_block->instructions[i - 1U];
+            async_transfer_instruction(
+                emitter, function, instruction, locals, values);
+            if (instruction->opcode != IR_OP_AWAIT) continue;
+            --await_index;
+            uint8_t *await_locals =
+                result->locals + await_index * local_width;
+            uint8_t *await_values =
+                result->values + await_index * value_width;
+            memcpy(await_locals, locals, local_width);
+            memcpy(await_values, values, value_width);
+            for (size_t local = 0U;
+                 local < function->local_count; ++local)
+                result->frame_locals[local] |= await_locals[local];
+            for (size_t value = 0U;
+                 value < function->value_count; ++value)
+                result->frame_values[value] |= await_values[value];
+        }
+    }
+
+    await_index = 0U;
+    for (size_t block = 0U; block < function->block_count; ++block) {
+        memcpy(locals, available_in + block * local_width,
+               local_width);
+        const IrBlock *ir_block = &function->blocks[block];
+        for (size_t i = 0U;
+             i < ir_block->instruction_count; ++i) {
+            const IrInstruction *instruction = &ir_block->instructions[i];
+            if (instruction->opcode == IR_OP_AWAIT) {
+                uint8_t *await_locals =
+                    result->locals + await_index * local_width;
+                for (size_t local = 0U;
+                     local < function->local_count; ++local)
+                    if (locals[local] == C_ASYNC_LOCAL_UNAVAILABLE)
+                        await_locals[local] = 0U;
+                ++await_index;
+            }
+            async_update_local_availability(
+                function, instruction, locals);
+        }
+    }
+    memset(result->frame_locals, 0, local_width);
+    for (size_t index = 0U; index < result->await_count; ++index)
+        for (size_t local = 0U;
+             local < function->local_count; ++local)
+            result->frame_locals[local] |=
+                result->locals[index * local_width + local];
+    free(known_out);
+    free(known_in);
+    free(available_out);
+    free(available_in);
+    free(values);
+    free(locals);
+    free(live_in_values);
+    free(live_in_locals);
+    return result;
+
+fail:
+    async_liveness_dispose(result);
+    lang_diag(emitter->diagnostics, function->span,
+              "out of memory computing async suspension liveness");
+    emitter->failed = true;
+    return NULL;
+}
+
 bool c_backend_async_function_supported(
     CEmitter *emitter, const IrFunction *function) {
     if (!function->is_async) return true;
@@ -572,6 +966,9 @@ void c_backend_emit_async_frame_declaration(
     const IrFunction *function =
         &emitter->ir->functions[function_index];
     if (!function->is_async) return;
+    CAsyncLiveness *liveness =
+        async_liveness_build(emitter, function);
+    if (liveness == NULL) return;
     FILE *output = emitter->output;
     fprintf(output, "typedef struct aster_async_frame_%zu {\n", function_index);
     fputs("    size_t state;\n    aster_task *task;\n", output);
@@ -581,6 +978,7 @@ void c_backend_emit_async_frame_declaration(
         fprintf(output, " p%zu;\n", p);
     }
     for (size_t l = 0U; l < function->local_count; ++l) {
+        if (!liveness->frame_locals[l]) continue;
         fputs("    ", output);
         c_backend_emit_type(emitter, function->locals[l].type);
         fprintf(output,
@@ -593,11 +991,13 @@ void c_backend_emit_async_frame_declaration(
             fprintf(output, "    bool local%zu_live;\n", l);
     }
     for (size_t v = 0U; v < function->value_count; ++v) {
+        if (!liveness->frame_values[v]) continue;
         fputs("    ", output);
         c_backend_emit_type(emitter, function->value_types[v]);
         fprintf(output, " v%zu;\n", v);
     }
     fprintf(output, "} aster_async_frame_%zu;\n\n", function_index);
+    async_liveness_dispose(liveness);
 }
 
 void c_backend_emit_async_step_prototype(
@@ -611,9 +1011,16 @@ void c_backend_emit_async_step_prototype(
 static void emit_frame_save(CEmitter *emitter,
                             const IrFunction *function) {
     FILE *output = emitter->output;
-    for (size_t p = 0U; p < function->parameter_count; ++p)
-        fprintf(output, "        frame->p%zu = p%zu;\n", p, p);
+    CAsyncLiveness *liveness = emitter->async_liveness;
+    size_t await_index = emitter->async_await_index - 1U;
+    const uint8_t *locals = liveness->locals +
+        await_index * (liveness->local_count == 0U
+            ? 1U : liveness->local_count);
+    const uint8_t *values = liveness->values +
+        await_index * (liveness->value_count == 0U
+            ? 1U : liveness->value_count);
     for (size_t l = 0U; l < function->local_count; ++l) {
+        if (!locals[l]) continue;
         if (c_backend_local_is_borrowed_alias(
                 emitter, function, (uint32_t)l))
             fprintf(output,
@@ -625,8 +1032,47 @@ static void emit_frame_save(CEmitter *emitter,
             fprintf(output,
                     "        frame->local%zu_live = l%zu_live;\n", l, l);
     }
-    for (size_t v = 0U; v < function->value_count; ++v)
+    for (size_t v = 0U; v < function->value_count; ++v) {
+        if (!values[v]) continue;
         fprintf(output, "        frame->v%zu = v%zu;\n", v, v);
+    }
+}
+
+static void emit_frame_restore(CEmitter *emitter,
+                               const IrFunction *function,
+                               size_t await_index) {
+    FILE *output = emitter->output;
+    CAsyncLiveness *liveness = emitter->async_liveness;
+    const uint8_t *locals = liveness->locals +
+        await_index * (liveness->local_count == 0U
+            ? 1U : liveness->local_count);
+    const uint8_t *values = liveness->values +
+        await_index * (liveness->value_count == 0U
+            ? 1U : liveness->value_count);
+    /* Restore this state only. Loading the frame union would resurrect stale
+     * bits for owners moved between two different suspension points. */
+    for (size_t local = 0U; local < function->local_count; ++local) {
+        if (!locals[local]) continue;
+        if (c_backend_local_is_borrowed_alias(
+                emitter, function, (uint32_t)local))
+            fprintf(output,
+                    "            l%zu_ref = frame->local%zu;\n",
+                    local, local);
+        else
+            fprintf(output,
+                    "            l%zu = frame->local%zu;\n",
+                    local, local);
+        if (c_backend_local_tracks_drop(
+                emitter, function, (uint32_t)local))
+            fprintf(output,
+                    "            l%zu_live = frame->local%zu_live;\n",
+                    local, local);
+    }
+    for (size_t value = 0U; value < function->value_count; ++value)
+        if (values[value])
+            fprintf(output,
+                    "            v%zu = frame->v%zu;\n",
+                    value, value);
 }
 
 void c_backend_emit_async_await(
@@ -746,6 +1192,10 @@ void c_backend_emit_async_function(
     CEmitter *emitter, size_t function_index) {
     const IrFunction *function =
         &emitter->ir->functions[function_index];
+    CAsyncLiveness *liveness =
+        async_liveness_build(emitter, function);
+    if (liveness == NULL) return;
+    emitter->async_liveness = liveness;
     FILE *output = emitter->output;
     c_backend_emit_type(emitter, function->return_type);
     fprintf(output, " aster_fn_%zu(", function_index);
@@ -786,23 +1236,20 @@ void c_backend_emit_async_function(
         c_backend_emit_type(emitter, function->locals[l].type);
         if (c_backend_local_is_borrowed_alias(
                 emitter, function, (uint32_t)l)) {
-            fprintf(output,
-                    " *l%zu_ref = frame->local%zu;\n"
-                    "#define l%zu (*l%zu_ref)\n",
-                    l, l, l, l);
+            fprintf(output, " *l%zu_ref = NULL;\n", l);
+            fprintf(output, "#define l%zu (*l%zu_ref)\n", l, l);
         } else {
-            fprintf(output, " l%zu = frame->local%zu;\n", l, l);
+            fprintf(output, " l%zu = {0};\n", l);
             fprintf(output, "    (void)l%zu;\n", l);
         }
         if (c_backend_local_tracks_drop(
                 emitter, function, (uint32_t)l))
-            fprintf(output,
-                    "    bool l%zu_live = frame->local%zu_live;\n", l, l);
+            fprintf(output, "    bool l%zu_live = false;\n", l);
     }
     for (size_t v = 0U; v < function->value_count; ++v) {
         fputs("    ", output);
         c_backend_emit_type(emitter, function->value_types[v]);
-        fprintf(output, " v%zu = frame->v%zu;\n", v, v);
+        fprintf(output, " v%zu = {0};\n", v);
         fprintf(output, "    (void)v%zu;\n", v);
     }
     fputs("    switch (frame->state) {\n"
@@ -814,8 +1261,13 @@ void c_backend_emit_async_function(
             if (function->blocks[b].instructions[i].opcode == IR_OP_AWAIT) {
                 ++await_count;
                 fprintf(output,
-                        "        case %zuU: goto aster_async_%zu_resume_%zu;\n",
-                        await_count, function_index, await_count);
+                        "        case %zuU:\n",
+                        await_count);
+                emit_frame_restore(
+                    emitter, function, await_count - 1U);
+                fprintf(output,
+                        "            goto aster_async_%zu_resume_%zu;\n",
+                        function_index, await_count);
             }
     fputs("        default: aster_trap(\"invalid async frame state\");\n"
           "    }\n", output);
@@ -830,14 +1282,17 @@ void c_backend_emit_async_function(
         for (size_t i = 0U; i < block->instruction_count; ++i) {
             c_backend_emit_instruction(
                 emitter, function, &block->instructions[i]);
-            if (emitter->failed) return;
+            if (emitter->failed) goto done;
         }
         c_backend_emit_terminator(emitter, function, &block->terminator);
-        if (emitter->failed) return;
+        if (emitter->failed) goto done;
     }
     for (size_t l = 0U; l < function->local_count; ++l)
         if (c_backend_local_is_borrowed_alias(
                 emitter, function, (uint32_t)l))
             fprintf(output, "#undef l%zu\n", l);
     fputs("}\n\n", output);
+done:
+    emitter->async_liveness = NULL;
+    async_liveness_dispose(liveness);
 }

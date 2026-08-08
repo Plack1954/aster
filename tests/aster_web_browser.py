@@ -349,7 +349,10 @@ try:
         assert page.evaluate("""window.asyncNestedIdentity === document.querySelector(
             '.async-todo-component [name="asyncStatus"] strong')""")
         second_async.get_by_text("Fail save", exact=True).click()
-        page.wait_for_timeout(20)
+        for _ in range(20):
+            if errors:
+                break
+            page.wait_for_timeout(10)
         assert len(errors) == 1 and "async component save failed" in errors[0]
         errors.clear()
         second_async.get_by_text("Save slowly", exact=True).click()
