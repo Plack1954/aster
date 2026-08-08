@@ -126,6 +126,25 @@ counts executed bytecode instructions. Local adapter peepholes
 remove redundant temporary-local round trips and fallthrough jumps without
 crossing CFG boundaries.
 
+Compiler profiling on the multi-module `Aster.Web` smoke project now guards
+the large-project paths as well as microbenchmarks. On the same local release
+build, three independent `project check` processes fell from 2.03--2.13 seconds
+to 0.47--0.48 seconds, while peak RSS remained about 20 MiB. The current HTTP
+server project fell from 1.73--1.95 seconds to 0.36--0.37 seconds. The change
+uses a bounded module-wide resolution cache and an exact declaration index;
+ambiguous imported names retain their full diagnostics, and cache collisions
+fall back to ordinary lookup.
+
+Generated-C compilation of the smoke project fell from 4.36 seconds before
+this profiling pass (2.85 seconds after type lookup was fixed) to 0.79--0.81
+seconds. The verifier now intersects precomputed predecessor sets instead of
+rescanning the complete CFG for every dominator candidate, and stores its
+dominator matrix as bits rather than bytes. The emitted C is unchanged. The
+remaining roughly 48 MiB process peak is dominated by the complete typed AST
+and IR retained during emission, so reducing that requires lifetime/streaming
+work rather than weakening verification. These figures are development-machine
+measurements, not portable performance guarantees.
+
 `lang emit-c` is the first second-backend vertical slice. It emits warning-clean
 portable C17 for scalars, direct functions, checked arithmetic, CFG, copyable
 fixed arrays, structs, plain enums, and discriminated unions. Canonical IR

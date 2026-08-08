@@ -589,9 +589,24 @@ typedef struct ImportDecl {
     LangSpan span;
 } ImportDecl;
 
+typedef struct TypeLookupCacheEntry {
+    const char *module_name;
+    const char *name;
+    Decl *result;
+    Decl *second_ambiguous;
+    bool occupied;
+} TypeLookupCacheEntry;
+
 typedef struct Module {
     Decl **decls;
     size_t count;
+    /* Lazily built exact (module, type-name) lookup table.  The checker adds
+     * generated functions, but never generated type declarations, so this
+     * index remains valid for the lifetime of the parsed module. */
+    Decl **type_lookup_slots;
+    size_t type_lookup_capacity;
+    TypeLookupCacheEntry *type_lookup_cache;
+    size_t type_lookup_cache_capacity;
     ImportDecl *imports;
     size_t import_count;
     Type **type_instantiations; /* Canonical applied named types. */

@@ -483,9 +483,22 @@ static bool verify_projection_availability(
 }
 
 static void compute_dominators(const IrFunction *function,
-                               bool *reachable, bool *dominators) {
+                               bool *reachable, uint64_t *dominators,
+                               size_t words) {
     size_t count = function->block_count;
     IrBlockId *work = ir_resize(NULL, count, sizeof(*work));
+    size_t *predecessor_counts = ir_resize(
+        NULL, count, sizeof(*predecessor_counts));
+    size_t *predecessor_offsets = ir_resize(
+        NULL, count + 1U, sizeof(*predecessor_offsets));
+    size_t *predecessor_cursors = ir_resize(
+        NULL, count, sizeof(*predecessor_cursors));
+    IrBlockId *predecessors = NULL;
+    uint64_t *next_row = ir_resize(NULL, words, sizeof(*next_row));
+    uint64_t *reachable_bits = ir_resize(
+        NULL, words, sizeof(*reachable_bits));
+    memset(reachable_bits, 0, words * sizeof(*reachable_bits));
+    memset(predecessor_counts, 0, count * sizeof(*predecessor_counts));
     size_t work_count = 0U;
     reachable[function->entry_block] = true;
     work[work_count++] = function->entry_block;
@@ -503,18 +516,54 @@ static void compute_dominators(const IrFunction *function,
         }
     }
     free(work);
+    for (size_t block = 0U; block < count; ++block)
+        if (reachable[block])
+            reachable_bits[block / 64U] |=
+                UINT64_C(1) << (block % 64U);
+
+    size_t edge_count = 0U;
+    for (size_t predecessor = 0U; predecessor < count; ++predecessor) {
+        const IrTerminator *term =
+            &function->blocks[predecessor].terminator;
+        size_t successors = terminator_successor_count(term, count);
+        for (size_t edge = 0U; edge < successors; ++edge) {
+            IrBlockId successor = terminator_successor(term, edge);
+            ++predecessor_counts[successor];
+            ++edge_count;
+        }
+    }
+    predecessor_offsets[0] = 0U;
+    for (size_t block = 0U; block < count; ++block) {
+        predecessor_offsets[block + 1U] =
+            predecessor_offsets[block] + predecessor_counts[block];
+        predecessor_cursors[block] = predecessor_offsets[block];
+    }
+    predecessors = ir_resize(
+        NULL, edge_count, sizeof(*predecessors));
+    for (size_t predecessor = 0U; predecessor < count; ++predecessor) {
+        const IrTerminator *term =
+            &function->blocks[predecessor].terminator;
+        size_t successors = terminator_successor_count(term, count);
+        for (size_t edge = 0U; edge < successors; ++edge) {
+            IrBlockId successor = terminator_successor(term, edge);
+            predecessors[predecessor_cursors[successor]++] =
+                (IrBlockId)predecessor;
+        }
+    }
 
     for (size_t block = 0U; block < count; ++block) {
         if (!reachable[block]) {
-            dominators[block * count + block] = true;
+            dominators[block * words + block / 64U] |=
+                UINT64_C(1) << (block % 64U);
             continue;
         }
         if (block == function->entry_block) {
-            dominators[block * count + block] = true;
+            dominators[block * words + block / 64U] |=
+                UINT64_C(1) << (block % 64U);
             continue;
         }
-        for (size_t candidate = 0U; candidate < count; ++candidate)
-            dominators[block * count + candidate] = reachable[candidate];
+        memcpy(dominators + block * words, reachable_bits,
+               words * sizeof(*reachable_bits));
     }
 
     bool changed;
@@ -523,35 +572,35 @@ static void compute_dominators(const IrFunction *function,
         for (size_t block = 0U; block < count; ++block) {
             if (!reachable[block] || block == function->entry_block)
                 continue;
-            for (size_t candidate = 0U; candidate < count; ++candidate) {
-                bool dominates = true;
-                bool has_predecessor = false;
-                for (size_t predecessor = 0U;
-                     predecessor < count; ++predecessor) {
-                    if (!reachable[predecessor]) continue;
-                    const IrTerminator *term =
-                        &function->blocks[predecessor].terminator;
-                    size_t successors =
-                        terminator_successor_count(term, count);
-                    bool is_predecessor = false;
-                    for (size_t edge = 0U; edge < successors; ++edge)
-                        if (terminator_successor(term, edge) == block)
-                            is_predecessor = true;
-                    if (!is_predecessor) continue;
-                    has_predecessor = true;
-                    if (!dominators[predecessor * count + candidate])
-                        dominates = false;
-                }
-                if (!has_predecessor) dominates = false;
-                if (candidate == block) dominates = true;
-                size_t slot = block * count + candidate;
-                if (dominators[slot] != dominates) {
-                    dominators[slot] = dominates;
-                    changed = true;
-                }
+            bool has_predecessor = false;
+            memcpy(next_row, reachable_bits,
+                   words * sizeof(*reachable_bits));
+            for (size_t index = predecessor_offsets[block];
+                 index < predecessor_offsets[block + 1U]; ++index) {
+                size_t predecessor = predecessors[index];
+                if (!reachable[predecessor]) continue;
+                has_predecessor = true;
+                const uint64_t *predecessor_row =
+                    dominators + predecessor * words;
+                for (size_t word = 0U; word < words; ++word)
+                    next_row[word] &= predecessor_row[word];
+            }
+            if (!has_predecessor)
+                memset(next_row, 0, words * sizeof(*next_row));
+            next_row[block / 64U] |= UINT64_C(1) << (block % 64U);
+            uint64_t *row = dominators + block * words;
+            if (memcmp(row, next_row, words * sizeof(*row)) != 0) {
+                memcpy(row, next_row, words * sizeof(*row));
+                changed = true;
             }
         }
     } while (changed);
+    free(reachable_bits);
+    free(next_row);
+    free(predecessors);
+    free(predecessor_cursors);
+    free(predecessor_offsets);
+    free(predecessor_counts);
 }
 
 static bool value_available(const IrFunction *function,
@@ -559,7 +608,8 @@ static bool value_available(const IrFunction *function,
                             const size_t *definition_blocks,
                             const size_t *definition_instructions,
                             const bool *reachable,
-                            const bool *dominators,
+                            const uint64_t *dominators,
+                            size_t dominator_words,
                             IrValueId value, size_t use_block,
                             size_t use_instruction) {
     if (!ir_verify_value(function, value) || !defined[value]) return false;
@@ -569,8 +619,9 @@ static bool value_available(const IrFunction *function,
     /* Dominance is only meaningful in the entry-reachable CFG. */
     if (!reachable[use_block]) return true;
     return reachable[definition_block] &&
-           dominators[use_block * function->block_count +
-                      definition_block];
+           (dominators[use_block * dominator_words +
+                       definition_block / 64U] &
+            (UINT64_C(1) << (definition_block % 64U))) != 0U;
 }
 
 static bool copyable_type_contains_noncopyable(
@@ -1304,7 +1355,10 @@ bool lang_ir_verify_module(const IrModule *ir,
                 }
             }
         }
-        if (function->block_count > SIZE_MAX / function->block_count) {
+        size_t dominator_words =
+            (function->block_count + 63U) / 64U;
+        if (dominator_words != 0U &&
+            function->block_count > SIZE_MAX / dominator_words) {
             lang_diag(diagnostics, function_span,
                       "IR function `%s` has too many CFG blocks",
                       function->name);
@@ -1315,16 +1369,17 @@ bool lang_ir_verify_module(const IrModule *ir,
             continue;
         }
         size_t dominator_slots =
-            function->block_count * function->block_count;
+            function->block_count * dominator_words;
         bool *reachable = ir_resize(
             NULL, function->block_count, sizeof(*reachable));
-        bool *dominators = ir_resize(
+        uint64_t *dominators = ir_resize(
             NULL, dominator_slots, sizeof(*dominators));
         memset(reachable, 0,
                function->block_count * sizeof(*reachable));
         memset(dominators, 0,
                dominator_slots * sizeof(*dominators));
-        compute_dominators(function, reachable, dominators);
+        compute_dominators(
+            function, reachable, dominators, dominator_words);
         for (size_t b = 0U; b < function->block_count; ++b) {
             const IrBlock *block = &function->blocks[b];
             if (block->instruction_count != 0U &&
@@ -1370,7 +1425,8 @@ bool lang_ir_verify_module(const IrModule *ir,
                     if (!value_available(
                             function, defined, definition_blocks,
                             definition_instructions, reachable,
-                            dominators, instruction->operands[o], b, i)) {
+                            dominators, dominator_words,
+                            instruction->operands[o], b, i)) {
                         lang_diag(diagnostics, instruction->span,
                                   "IR instruction operand is undefined or does not dominate its use");
                         ok = false;
@@ -1383,7 +1439,7 @@ bool lang_ir_verify_module(const IrModule *ir,
                     if (!value_available(
                             function, defined, definition_blocks,
                             definition_instructions, reachable,
-                            dominators, term->value, b,
+                            dominators, dominator_words, term->value, b,
                             block->instruction_count) ||
                         !ir_verify_value_type(ir, function, term->value,
                                     &condition_type) ||
@@ -1398,7 +1454,7 @@ bool lang_ir_verify_module(const IrModule *ir,
                     if (!value_available(
                             function, defined, definition_blocks,
                             definition_instructions, reachable,
-                            dominators, term->value, b,
+                            dominators, dominator_words, term->value, b,
                             block->instruction_count) ||
                         !ir_verify_value_is_type(function, term->value,
                                        function->async_result_type)) {

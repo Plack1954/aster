@@ -232,8 +232,122 @@ bool visible_declaration_path_matches(
         checker, use_name, declaration_name, declaration_module);
 }
 
+static size_t type_lookup_hash(const char *module_name, const char *name) {
+    size_t hash = (size_t)1469598103934665603ULL;
+    for (const unsigned char *cursor = (const unsigned char *)module_name;
+         *cursor != '\0'; ++cursor) {
+        hash ^= *cursor;
+        hash *= (size_t)1099511628211ULL;
+    }
+    hash ^= (unsigned char)':';
+    hash *= (size_t)1099511628211ULL;
+    for (const unsigned char *cursor = (const unsigned char *)name;
+         *cursor != '\0'; ++cursor) {
+        hash ^= *cursor;
+        hash *= (size_t)1099511628211ULL;
+    }
+    return hash;
+}
+
+static void ensure_type_lookup(Module *module) {
+    if (module->type_lookup_slots != NULL) return;
+    size_t type_count = 0U;
+    for (size_t i = 0U; i < module->count; ++i)
+        if (type_declaration_name(module->decls[i]) != NULL &&
+            module->decls[i]->module_name != NULL)
+            ++type_count;
+    size_t capacity = 16U;
+    while (capacity < type_count * 2U) capacity *= 2U;
+    module->type_lookup_slots = lang_arena_alloc(
+        &module->arena, capacity * sizeof(*module->type_lookup_slots));
+    module->type_lookup_capacity = capacity;
+    const size_t mask = capacity - 1U;
+    for (size_t i = 0U; i < module->count; ++i) {
+        Decl *decl = module->decls[i];
+        const char *candidate = type_declaration_name(decl);
+        if (candidate == NULL || decl->module_name == NULL) continue;
+        size_t slot = type_lookup_hash(decl->module_name, candidate) & mask;
+        while (module->type_lookup_slots[slot] != NULL) {
+            Decl *existing = module->type_lookup_slots[slot];
+            const char *existing_name = type_declaration_name(existing);
+            if (strcmp(existing->module_name, decl->module_name) == 0 &&
+                strcmp(existing_name, candidate) == 0)
+                break; /* Preserve the first duplicate, matching the scan. */
+            slot = (slot + 1U) & mask;
+        }
+        if (module->type_lookup_slots[slot] == NULL)
+            module->type_lookup_slots[slot] = decl;
+    }
+}
+
+static Decl *find_local_type_declaration(Checker *checker,
+                                         const char *name) {
+    if (checker->current_module == NULL) return NULL;
+    ensure_type_lookup(checker->module);
+    const size_t mask = checker->module->type_lookup_capacity - 1U;
+    size_t slot = type_lookup_hash(checker->current_module, name) & mask;
+    for (;;) {
+        Decl *decl = checker->module->type_lookup_slots[slot];
+        if (decl == NULL) return NULL;
+        const char *candidate = type_declaration_name(decl);
+        if (strcmp(decl->module_name, checker->current_module) == 0 &&
+            strcmp(candidate, name) == 0)
+            return decl;
+        slot = (slot + 1U) & mask;
+    }
+}
+
+static void report_ambiguous_type(Checker *checker, const char *name,
+                                  LangSpan use_span, Decl *first,
+                                  Decl *second) {
+    LangDiagnostic *diagnostic =
+        lang_diag(checker->diagnostics, use_span,
+                  "ambiguous imported type `%s`", name);
+    lang_diag_secondary(diagnostic, first->span,
+                        "first public candidate");
+    lang_diag_secondary(diagnostic, second->span,
+                        "another public candidate");
+    lang_diag_help(diagnostic,
+                   "qualify the declaration or use a namespace alias");
+}
+
+static TypeLookupCacheEntry *type_lookup_cache_entry(Checker *checker,
+                                                      const char *name) {
+    if (checker->current_module == NULL) return NULL;
+    Module *module = checker->module;
+    if (module->type_lookup_cache == NULL) {
+        /* Direct-mapped on purpose: it bounds memory while retaining the hot
+         * repeated lookups. A collision merely falls back to the full lookup. */
+        module->type_lookup_cache_capacity = 1024U;
+        module->type_lookup_cache = lang_arena_alloc(
+            &module->arena,
+            module->type_lookup_cache_capacity *
+                sizeof(*module->type_lookup_cache));
+    }
+    size_t slot = type_lookup_hash(checker->current_module, name) &
+                  (module->type_lookup_cache_capacity - 1U);
+    return &module->type_lookup_cache[slot];
+}
+
 Decl *find_type_declaration(Checker *checker, const char *name,
                                    LangSpan use_span) {
+    TypeLookupCacheEntry *cache = type_lookup_cache_entry(checker, name);
+    if (cache != NULL && cache->occupied &&
+        strcmp(cache->module_name, checker->current_module) == 0 &&
+        strcmp(cache->name, name) == 0) {
+        if (cache->second_ambiguous != NULL)
+            report_ambiguous_type(checker, name, use_span, cache->result,
+                                  cache->second_ambiguous);
+        return cache->result;
+    }
+    Decl *local = find_local_type_declaration(checker, name);
+    if (local != NULL) {
+        if (cache != NULL) {
+            *cache = (TypeLookupCacheEntry){
+                checker->current_module, name, local, NULL, true};
+        }
+        return local;
+    }
     Decl *imported = NULL;
     Decl *first_import = NULL;
     for (size_t i = 0U; i < checker->module->count; ++i) {
@@ -251,21 +365,18 @@ Decl *find_type_declaration(Checker *checker, const char *name,
                 checker, name, candidate, decl->module_name))
             continue;
         if (imported != NULL) {
-            LangDiagnostic *diagnostic =
-                lang_diag(checker->diagnostics, use_span,
-                          "ambiguous imported type `%s`", name);
-            lang_diag_secondary(diagnostic, first_import->span,
-                                "first public candidate");
-            lang_diag_secondary(diagnostic, decl->span,
-                                "another public candidate");
-            lang_diag_help(
-                diagnostic,
-                "qualify the declaration or use a namespace alias");
+            report_ambiguous_type(checker, name, use_span, first_import, decl);
+            if (cache != NULL)
+                *cache = (TypeLookupCacheEntry){
+                    checker->current_module, name, imported, decl, true};
             return imported;
         }
         imported = decl;
         first_import = decl;
     }
+    if (cache != NULL)
+        *cache = (TypeLookupCacheEntry){
+            checker->current_module, name, imported, NULL, true};
     return imported;
 }
 
