@@ -34,6 +34,8 @@ bool c_backend_registry_native_symbol(const char *symbol);
 bool c_backend_registry_native_call(const IrInstruction *instruction);
 const IrInstruction *c_backend_find_direct_render_consumer(
     const IrFunction *function, IrValueId value);
+const IrInstruction *c_backend_find_direct_render_producer(
+    const IrFunction *function, IrValueId value);
 void c_backend_mark_function(CEmitter *emitter,
                              IrFunctionId function_id);
 bool c_backend_function_needs_normal_variant(

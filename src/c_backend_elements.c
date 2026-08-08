@@ -10,6 +10,25 @@ static bool same_source_span(LangSpan left, LangSpan right) {
            left.end == right.end;
 }
 
+static void emit_direct_builder_parts(
+    FILE *output,
+    const char *first, size_t first_length,
+    const char *second, size_t second_length,
+    const char *third, size_t third_length) {
+    fputs("    aster_builder_append(render_builder, (aster_str){"
+          "(const unsigned char *)\"", output);
+    const char *parts[] = {first, second, third};
+    const size_t lengths[] = {
+        first_length, second_length, third_length
+    };
+    for (size_t part = 0U; part < 3U; ++part)
+        for (size_t byte = 0U; byte < lengths[part]; ++byte)
+            fprintf(output, "\\x%02x",
+                    (unsigned)(unsigned char)parts[part][byte]);
+    fprintf(output, "\", %zuU});\n",
+            first_length + second_length + third_length);
+}
+
 void c_backend_emit_element_instruction(
     CEmitter *emitter, const IrFunction *function,
     const IrInstruction *instruction
@@ -28,10 +47,10 @@ void c_backend_emit_element_instruction(
                 if (!c_backend_html_tag_is_fragment(
                         instruction->symbol,
                         instruction->symbol_length)) {
-                    c_backend_emit_direct_builder_literal(output, "<", 1U);
-                    c_backend_emit_direct_builder_literal(
-                        output, instruction->symbol,
-                        instruction->symbol_length);
+                    emit_direct_builder_parts(
+                        output, "<", 1U,
+                        instruction->symbol, instruction->symbol_length,
+                        "", 0U);
                 }
                 return;
             }
@@ -73,10 +92,10 @@ void c_backend_emit_element_instruction(
                 if (value_type->shape == IR_TYPE_BOOL) {
                     fprintf(output,
                             "    if (v%" PRIu32 ") {\n", value);
-                    c_backend_emit_direct_builder_literal(output, " ", 1U);
-                    c_backend_emit_direct_builder_literal(
-                        output, instruction->symbol,
-                        instruction->symbol_length);
+                    emit_direct_builder_parts(
+                        output, " ", 1U,
+                        instruction->symbol, instruction->symbol_length,
+                        "", 0U);
                     fputs("    }\n", output);
                     return;
                 }
@@ -101,10 +120,11 @@ void c_backend_emit_element_instruction(
                                     ".tag == UINT32_C(%zu) && "
                                     "v%" PRIu32 ".payload.v%zu) {\n",
                                     value, some, value, some);
-                            c_backend_emit_direct_builder_literal(output, " ", 1U);
-                            c_backend_emit_direct_builder_literal(
-                                output, instruction->symbol,
-                                instruction->symbol_length);
+                            emit_direct_builder_parts(
+                                output, " ", 1U,
+                                instruction->symbol,
+                                instruction->symbol_length,
+                                "", 0U);
                             fputs("    }\n", output);
                             return;
                         }
@@ -112,11 +132,11 @@ void c_backend_emit_element_instruction(
                                 "    if (v%" PRIu32
                                 ".tag == UINT32_C(%zu)) {\n",
                                 value, some);
-                        c_backend_emit_direct_builder_literal(output, " ", 1U);
-                        c_backend_emit_direct_builder_literal(
-                            output, instruction->symbol,
-                            instruction->symbol_length);
-                        c_backend_emit_direct_builder_literal(output, "=\"", 2U);
+                        emit_direct_builder_parts(
+                            output, " ", 1U,
+                            instruction->symbol,
+                            instruction->symbol_length,
+                            "=\"", 2U);
                         char payload_expression[96];
                         (void)snprintf(
                             payload_expression, sizeof(payload_expression),
@@ -158,11 +178,10 @@ void c_backend_emit_element_instruction(
                         return;
                     }
                 }
-                c_backend_emit_direct_builder_literal(output, " ", 1U);
-                c_backend_emit_direct_builder_literal(
-                    output, instruction->symbol,
-                    instruction->symbol_length);
-                c_backend_emit_direct_builder_literal(output, "=\"", 2U);
+                emit_direct_builder_parts(
+                    output, " ", 1U,
+                    instruction->symbol, instruction->symbol_length,
+                    "=\"", 2U);
                 if (!c_backend_emit_direct_html_value(
                         emitter, function, value_type, value, true,
                         false)) {
@@ -253,11 +272,10 @@ void c_backend_emit_element_instruction(
         }
         case IR_OP_LOCAL_ELEMENT_PROPERTY_BEGIN:
             if (emitter->render_direct) {
-                c_backend_emit_direct_builder_literal(output, " ", 1U);
-                c_backend_emit_direct_builder_literal(
-                    output, instruction->symbol,
-                    instruction->symbol_length);
-                c_backend_emit_direct_builder_literal(output, "=\"", 2U);
+                emit_direct_builder_parts(
+                    output, " ", 1U,
+                    instruction->symbol, instruction->symbol_length,
+                    "=\"", 2U);
                 return;
             }
             fprintf(
@@ -552,13 +570,12 @@ void c_backend_emit_element_instruction(
                         emitter->direct_local_tags[instruction->index],
                         emitter->direct_local_tag_lengths[
                             instruction->index])) {
-                    c_backend_emit_direct_builder_literal(output, "</", 2U);
-                    c_backend_emit_direct_builder_literal(
-                        output,
+                    emit_direct_builder_parts(
+                        output, "</", 2U,
                         emitter->direct_local_tags[instruction->index],
                         emitter->direct_local_tag_lengths[
-                            instruction->index]);
-                    c_backend_emit_direct_builder_literal(output, ">", 1U);
+                            instruction->index],
+                        ">", 1U);
                 }
                 fprintf(
                     output,

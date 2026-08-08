@@ -443,13 +443,63 @@ const IrInstruction *c_backend_find_direct_render_consumer(
                     consumer = candidate;
                 }
         }
-    if (uses != 1U || consumer == NULL ||
-        consumer->opcode != IR_OP_CALL_NATIVE ||
-        consumer->symbol == NULL ||
-        strcmp(consumer->symbol, "Html::ToHtmlString") != 0 ||
-        consumer->operand_count != 1U)
+    if (uses != 1U || consumer == NULL) return NULL;
+    if (consumer->opcode == IR_OP_CALL_NATIVE &&
+        consumer->symbol != NULL &&
+        strcmp(consumer->symbol, "Html::ToHtmlString") == 0 &&
+        consumer->operand_count == 1U)
+        return consumer;
+    if (consumer->opcode != IR_OP_LOCAL_STORE) return NULL;
+
+    uint32_t local = consumer->index;
+    size_t stores = 0U;
+    const IrInstruction *forward = NULL;
+    for (size_t block = 0U; block < function->block_count; ++block)
+        for (size_t index = 0U;
+             index < function->blocks[block].instruction_count; ++index) {
+            const IrInstruction *candidate =
+                &function->blocks[block].instructions[index];
+            if (candidate->opcode == IR_OP_LOCAL_STORE &&
+                candidate->index == local)
+                ++stores;
+            if ((candidate->opcode == IR_OP_LOCAL_LOAD ||
+                 candidate->opcode == IR_OP_LOCAL_MOVE) &&
+                candidate->index == local) {
+                if (forward != NULL) return NULL;
+                forward = candidate;
+            }
+        }
+    if (stores != 1U || forward == NULL) return NULL;
+    return c_backend_find_direct_render_consumer(
+        function, forward->result);
+}
+
+const IrInstruction *c_backend_find_direct_render_producer(
+    const IrFunction *function, IrValueId value) {
+    const IrInstruction *producer =
+        c_backend_find_value_producer(function, value);
+    if (producer == NULL) return NULL;
+    if (producer->opcode == IR_OP_CALL_DIRECT) return producer;
+    if (producer->opcode != IR_OP_LOCAL_LOAD &&
+        producer->opcode != IR_OP_LOCAL_MOVE)
         return NULL;
-    return consumer;
+
+    const IrInstruction *store = NULL;
+    for (size_t block = 0U; block < function->block_count; ++block)
+        for (size_t index = 0U;
+             index < function->blocks[block].instruction_count; ++index) {
+            const IrInstruction *candidate =
+                &function->blocks[block].instructions[index];
+            if (candidate->opcode != IR_OP_LOCAL_STORE ||
+                candidate->index != producer->index ||
+                candidate->operand_count != 1U)
+                continue;
+            if (store != NULL) return NULL;
+            store = candidate;
+        }
+    if (store == NULL) return NULL;
+    return c_backend_find_direct_render_producer(
+        function, store->operands[0]);
 }
 
 void c_backend_emit_instruction(CEmitter *emitter,
@@ -1286,7 +1336,14 @@ void c_backend_emit_instruction(CEmitter *emitter,
                     emitter->ir, instruction->index) &&
                 c_backend_find_direct_render_consumer(
                     function, instruction->result) != NULL) {
-                fprintf(output, "    v%" PRIu32 " = NULL;\n",
+                fprintf(output,
+                        "    aster_string *direct_render_%" PRIu32
+                        " = aster_fn_%" PRIu32 "_render(",
+                        instruction->result, instruction->index);
+                emit_call_operands(
+                    emitter, function, instruction, 0U);
+                fprintf(output,
+                        ");\n    v%" PRIu32 " = NULL;\n",
                         instruction->result);
                 return;
             }

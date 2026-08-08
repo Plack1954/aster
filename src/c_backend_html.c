@@ -53,6 +53,22 @@ static size_t add_render_size(size_t left, size_t right) {
     return right > SIZE_MAX - left ? SIZE_MAX : left + right;
 }
 
+static size_t estimated_dynamic_render_size(
+    const IrType *type, bool attribute) {
+    if (type->shape == IR_TYPE_STRING_VIEW ||
+        (type->shape == IR_TYPE_BUILTIN_OBJECT &&
+         (strcmp(type->name, "string") == 0 ||
+          strcmp(type->name, "Url") == 0)))
+        return attribute ? 48U : 32U;
+    if (type->shape == IR_TYPE_SIGNED_INT ||
+        type->shape == IR_TYPE_UNSIGNED_INT)
+        return 20U;
+    if (type->shape == IR_TYPE_CHAR) return 4U;
+    if (type->shape == IR_TYPE_FLOAT) return 24U;
+    if (type->shape == IR_TYPE_BOOL) return 5U;
+    return 0U;
+}
+
 static const IrInstruction *find_local_element_begin(
     const IrFunction *function, uint32_t local) {
     for (size_t b = 0U; b < function->block_count; ++b)
@@ -118,6 +134,9 @@ static size_t direct_render_static_bytes_inner(
                         total, c_backend_html_escaped_length(
                             producer->symbol,
                             producer->symbol_length, true));
+                else
+                    total = add_render_size(
+                        total, estimated_dynamic_render_size(type, true));
                 continue;
             }
             if (instruction->opcode ==
@@ -133,8 +152,15 @@ static size_t direct_render_static_bytes_inner(
             }
             if (instruction->opcode ==
                     IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT) {
+                size_t length = instruction->symbol_length;
+                if (instruction->auxiliary == 0U &&
+                    !c_backend_local_element_is_raw_text(
+                        function, instruction->index))
+                    length = c_backend_html_escaped_length(
+                        instruction->symbol,
+                        instruction->symbol_length, false);
                 total = add_render_size(
-                    total, instruction->symbol_length);
+                    total, length);
                 continue;
             }
             if (instruction->opcode ==
@@ -149,6 +175,8 @@ static size_t direct_render_static_bytes_inner(
                     function->value_types[value]];
                 const IrInstruction *producer = c_backend_find_value_producer(
                     function, value);
+                bool attribute = instruction->opcode ==
+                    IR_OP_LOCAL_ELEMENT_PROPERTY_APPEND;
                 if (type->shape == IR_TYPE_STRING_VIEW &&
                     producer != NULL &&
                     producer->opcode == IR_OP_CONST_STRING)
@@ -156,8 +184,11 @@ static size_t direct_render_static_bytes_inner(
                         total, c_backend_html_escaped_length(
                             producer->symbol,
                             producer->symbol_length,
-                            instruction->opcode ==
-                                IR_OP_LOCAL_ELEMENT_PROPERTY_APPEND));
+                            attribute));
+                else
+                    total = add_render_size(
+                        total,
+                        estimated_dynamic_render_size(type, attribute));
                 continue;
             }
             if (instruction->opcode == IR_OP_LOCAL_ELEMENT_FINISH) {

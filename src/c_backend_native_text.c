@@ -247,7 +247,7 @@ bool c_backend_emit_native_text(
     }
     if (instruction->symbol != NULL &&
         strcmp(instruction->symbol, "Html::ToHtmlString") == 0) {
-        const IrInstruction *producer = c_backend_find_value_producer(
+        const IrInstruction *producer = c_backend_find_direct_render_producer(
             function, instruction->operands[0]);
         if (!emitter->render_direct && producer != NULL &&
             producer->opcode == IR_OP_CALL_DIRECT &&
@@ -257,11 +257,10 @@ bool c_backend_emit_native_text(
             c_backend_find_direct_render_consumer(
                 function, producer->result) == instruction) {
             fprintf(output, "    v%" PRIu32
-                    " = aster_fn_%" PRIu32 "_render(",
-                    instruction->result, producer->index);
-            emit_call_operands(
-                emitter, function, producer, 0U);
-            fputs(");\n", output);
+                    " = direct_render_%" PRIu32 ";\n"
+                    "    direct_render_%" PRIu32 " = NULL;\n",
+                    instruction->result, producer->result,
+                    producer->result);
             return true;
         }
         fprintf(output,
