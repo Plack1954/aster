@@ -488,6 +488,11 @@ add_aster_generated_c_test(
     tests/conditional_out_custom_copy.as
     conditional_out_custom_copy
     "-DEXPECTED_OUTPUT=11\n0\n21\n0\n31\n0\n")
+add_test(NAME out_reference_cleanup_vm
+    COMMAND lang run tests/out_reference_cleanup.as)
+set_tests_properties(out_reference_cleanup_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "1[\r\n]+2[\r\n]+12")
 add_test(NAME nested_custom_copy_vm
     COMMAND lang run tests/nested_custom_copy.as)
 set_tests_properties(nested_custom_copy_vm PROPERTIES

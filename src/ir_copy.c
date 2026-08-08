@@ -171,10 +171,14 @@ static IrValueId ir_emit_recursive_copy_impl(
         call->argument_modes = ir_resize(
             NULL, 1U, sizeof(*call->argument_modes));
         call->argument_modes[0] = PARAMETER_MODE_IMMUTABLE_REFERENCE;
+        /* Appending the exception probe can grow the current block's
+         * instruction array, invalidating `call`. Preserve the stable SSA
+         * value ID before any further append. */
+        IrValueId result = call->result;
         if (!emit_copy_exception_edge(
-                builder, error_cleanup, call->result, span))
+                builder, error_cleanup, result, span))
             return IR_INVALID_ID;
-        return call->result;
+        return result;
     }
     if (value_type != NULL && value_type->kind == TYPE_ARRAY) {
         size_t count = value_type->array_length;

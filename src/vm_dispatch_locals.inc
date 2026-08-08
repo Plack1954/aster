@@ -150,9 +150,15 @@
                     break;
                 if (initialized[(size_t)instruction.b]) {
                     vm->active_span = instruction_span;
-                    drop_runtime_value(
-                        vm, function, (size_t)instruction.b,
-                        LOCAL((size_t)instruction.b));
+                    /* A reference slot does not own the alias, but assignment
+                     * through it must retire the caller-owned referent. */
+                    if (references[(size_t)instruction.b] != NULL)
+                        vm_value_drop_owned(
+                            vm, LOCAL((size_t)instruction.b));
+                    else
+                        drop_runtime_value(
+                            vm, function, (size_t)instruction.b,
+                            LOCAL((size_t)instruction.b));
                 }
                 LOCAL((size_t)instruction.b) =
                     LOCAL((size_t)instruction.a);
@@ -162,10 +168,17 @@
             VM_LABEL(set_local)
             case OP_SET_LOCAL:
                 vm->active_span = instruction_span;
-                if (initialized[(size_t)instruction.a])
-                    drop_runtime_value(vm, function,
-                                       (size_t)instruction.a,
-                                       LOCAL((size_t)instruction.a));
+                if (initialized[(size_t)instruction.a]) {
+                    /* See OP_MOVE_LOCAL_TO: replacing an out/ref target owns
+                     * destruction of the value currently stored there. */
+                    if (references[(size_t)instruction.a] != NULL)
+                        vm_value_drop_owned(
+                            vm, LOCAL((size_t)instruction.a));
+                    else
+                        drop_runtime_value(vm, function,
+                                           (size_t)instruction.a,
+                                           LOCAL((size_t)instruction.a));
+                }
                 LOCAL((size_t)instruction.a) = POP();
                 initialized[(size_t)instruction.a] = true;
                 PUSH(((LangValue){.tag=LANG_VALUE_UNIT}));

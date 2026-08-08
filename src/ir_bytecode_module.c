@@ -98,6 +98,7 @@ static bool lower_function(IrBytecodeBuilder *builder) {
                       "IR bytecode backend does not yet support this local type");
             return false;
         }
+    builder->value_base = source->local_count;
     function->object_local_mask_valid = local_count <= 64U;
     for (size_t l = 0U; l < source->local_count; ++l)
         if (runtime_type_may_be_object(
@@ -132,7 +133,6 @@ static bool lower_function(IrBytecodeBuilder *builder) {
                 function->local_destructors[
                     source->local_count + instruction->result] = -2;
         }
-    builder->value_base = source->local_count;
     builder->value_source_locals = ir_bc_resize(
         NULL, source->value_count, sizeof(*builder->value_source_locals));
     for (size_t i = 0U; i < source->value_count; ++i)
