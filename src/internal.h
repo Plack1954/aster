@@ -871,6 +871,11 @@ typedef struct IrInstruction {
     uint32_t render_destination;
     const char *symbol; /* Borrowed resolved symbol/field/string data. */
     size_t symbol_length;
+    /* Lowering-only ownership transfers retain the exception context needed
+     * if their eventual semantic-copy expansion invokes user code. */
+    CleanupPlan error_cleanup;
+    IrBlockId exception_handler;
+    bool has_exception_handler;
     LangSpan span;
 } IrInstruction;
 

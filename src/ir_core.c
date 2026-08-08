@@ -844,3 +844,17 @@ void ir_emit_temporary_cleanups(IrBuilder *builder, LangSpan span) {
             drop->index = builder->temporary_cleanups[i - 1U];
     }
 }
+
+void ir_set_transfer_exception_context(
+    IrBuilder *builder, IrInstruction *instruction,
+    const CleanupPlan *error_cleanup
+) {
+    if (instruction == NULL) return;
+    if (error_cleanup != NULL)
+        instruction->error_cleanup = *error_cleanup;
+    if (builder->exception_count != 0U) {
+        instruction->has_exception_handler = true;
+        instruction->exception_handler =
+            builder->exceptions[builder->exception_count - 1U].handler;
+    }
+}

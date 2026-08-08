@@ -6,6 +6,31 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool same_assignment_place(const Expr *left, const Expr *right) {
+    if (left == NULL || right == NULL || left->kind != right->kind)
+        return false;
+    switch (left->kind) {
+        case EXPR_NAME:
+            return left->resolved_local_id != 0U &&
+                left->resolved_local_id == right->resolved_local_id;
+        case EXPR_FIELD:
+            return !left->as.field.static_field &&
+                !right->as.field.static_field &&
+                strcmp(left->as.field.field, right->as.field.field) == 0 &&
+                same_assignment_place(
+                    left->as.field.object, right->as.field.object);
+        case EXPR_INDEX:
+            return left->as.index.index->kind == EXPR_INT &&
+                right->as.index.index->kind == EXPR_INT &&
+                left->as.index.index->as.integer ==
+                    right->as.index.index->as.integer &&
+                same_assignment_place(
+                    left->as.index.object, right->as.index.object);
+        default:
+            return false;
+    }
+}
+
 IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
     IrTypeId type = ir_intern_type(builder->module, expr->type);
     IrInstruction *instruction = NULL;
@@ -84,6 +109,9 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                                          : IR_OP_LOCAL_LOAD,
                 type, NULL, 0U, expr->span);
             if (instruction != NULL) instruction->index = local;
+            if (transfer)
+                ir_set_transfer_exception_context(
+                    builder, instruction, &expr->error_cleanup);
             if (!move && instruction != NULL &&
                 load_requires_clone(expr->type)) {
                 IrValueId operand = instruction->result;
@@ -206,6 +234,9 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
         case EXPR_ASSIGN: {
             const Expr *target = expr->as.assign.target;
             TokenKind compound = expr->as.assign.compound_op;
+            if (compound == TOK_ERROR &&
+                same_assignment_place(target, expr->as.assign.value))
+                return ir_emit_unit(builder, expr->span, expr->type);
             if (target->kind == EXPR_FIELD &&
                 target->as.field.static_field) {
                 uint32_t field = ir_static_field_index(
@@ -495,7 +526,8 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             IrValueId copied;
             if (ir_type_requires_custom_copy(builder, expr->type)) {
                 copied = ir_emit_recursive_copy(
-                    builder, expr->type, operand, expr->span, true);
+                    builder, expr->type, operand, expr->span, true,
+                    &expr->error_cleanup);
             } else {
                 instruction = ir_append_instruction(
                     builder, IR_OP_VALUE_CLONE, type,
@@ -534,6 +566,7 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 ir_intern_type(builder->module, &ir_bool_type),
                 NULL, 0U, expr->span);
             if (pending == NULL) return IR_INVALID_ID;
+            pending->index = result;
             IrBlockId exceptional = ir_add_block(builder->function);
             IrBlockId continuation = ir_add_block(builder->function);
             ir_set_terminator(
@@ -594,7 +627,7 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 if (ir_type_requires_custom_copy(builder, expr->type))
                     copied = ir_emit_recursive_copy(
                         builder, expr->type, borrowed,
-                        expr->span, true);
+                        expr->span, true, &expr->error_cleanup);
                 else
                     copied = emit_plain_clone(
                         builder, expr->type, borrowed, expr->span);
@@ -618,7 +651,7 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 borrow->integer = 1U;
                 IrValueId copied = ir_emit_recursive_copy(
                     builder, expr->type, borrow->result,
-                    expr->span, false);
+                    expr->span, false, &expr->error_cleanup);
                 IrInstruction *discard = ir_append_instruction(
                     builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
                     &aggregate, 1U, expr->span);
@@ -731,6 +764,9 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                     object->type, expr->as.field.field);
                 instruction->symbol = expr->as.field.field;
                 instruction->symbol_length = strlen(instruction->symbol);
+                if (instruction->opcode == IR_OP_LOCAL_FIELD_TRANSFER)
+                    ir_set_transfer_exception_context(
+                        builder, instruction, &expr->error_cleanup);
                 if (instruction->opcode == IR_OP_LOCAL_FIELD_MOVE) {
                     IrInstruction *drop = ir_append_instruction(
                         builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
@@ -749,7 +785,7 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 if (ir_type_requires_custom_copy(builder, expr->type))
                     copied = ir_emit_recursive_copy(
                         builder, expr->type, borrowed,
-                        expr->span, true);
+                        expr->span, true, &expr->error_cleanup);
                 else
                     copied = emit_plain_clone(
                         builder, expr->type, borrowed, expr->span);
@@ -793,7 +829,7 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 }
                 IrValueId copied = ir_emit_recursive_copy(
                     builder, expr->type, borrowed,
-                    expr->span, false);
+                    expr->span, false, &expr->error_cleanup);
                 if (owns_owner) {
                     IrInstruction *discard = ir_append_instruction(
                         builder, IR_OP_VALUE_DISCARD,

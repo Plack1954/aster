@@ -474,6 +474,8 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     NULL, 0U, source->span);
                 if (transfer == NULL) break;
                 transfer->index = source_local;
+                ir_set_transfer_exception_context(
+                    builder, transfer, &source->error_cleanup);
                 source_local = ir_add_synthetic_local(
                     builder, "<deconstruction>", source_type);
                 IrValueId transferred = transfer->result;

@@ -39,6 +39,8 @@ typedef struct IrBuilder {
     size_t finalizer_count;
     uint32_t temporary_cleanups[256];
     size_t temporary_cleanup_count;
+    IrBlockId copy_exception_handler;
+    bool copy_has_exception_handler;
     bool failed;
 } IrBuilder;
 
@@ -122,6 +124,9 @@ void ir_emit_function_cleanup_except(
 bool ir_push_temporary_cleanup(
     IrBuilder *builder, uint32_t local, LangSpan span);
 void ir_emit_temporary_cleanups(IrBuilder *builder, LangSpan span);
+void ir_set_transfer_exception_context(
+    IrBuilder *builder, IrInstruction *instruction,
+    const CleanupPlan *error_cleanup);
 IrInstruction *ir_emit_local_enum_operation(
     IrBuilder *builder, IrOpcode opcode, IrTypeId result_type,
     uint32_t local, const Type *type, const char *variant,
@@ -135,7 +140,8 @@ bool ir_type_requires_custom_copy(
     IrBuilder *builder, const Type *value_type);
 IrValueId ir_emit_recursive_copy(
     IrBuilder *builder, const Type *value_type,
-    IrValueId source, LangSpan span, bool preserve_source);
+    IrValueId source, LangSpan span, bool preserve_source,
+    const CleanupPlan *error_cleanup);
 bool ir_resolve_ownership_transfers(IrBuilder *builder);
 IrValueId ir_emit_synthetic_native_call(
     IrBuilder *builder, const char *name, const Type *result_type,

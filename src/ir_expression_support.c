@@ -796,7 +796,8 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             operands, 2U, expr->span);
         if (element == NULL) return IR_INVALID_ID;
         IrValueId copied = ir_emit_recursive_copy(
-            builder, expr->type, element->result, expr->span, false);
+            builder, expr->type, element->result, expr->span, false,
+            &expr->error_cleanup);
         IrInstruction *discard = ir_append_instruction(
             builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
             &list, 1U, expr->span);
@@ -825,7 +826,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         if (element == NULL) return IR_INVALID_ID;
         IrValueId copied = ir_emit_recursive_copy(
             builder, expr->type, element->result,
-            expr->span, false);
+            expr->span, false, &expr->error_cleanup);
         IrInstruction *discard = ir_append_instruction(
             builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
             &collection, 1U, expr->span);
@@ -853,7 +854,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         if (mapped == NULL) return IR_INVALID_ID;
         IrValueId copied = ir_emit_recursive_copy(
             builder, expr->type, mapped->result,
-            expr->span, false);
+            expr->span, false, &expr->error_cleanup);
         IrInstruction *discard = ir_append_instruction(
             builder, IR_OP_VALUE_DISCARD, IR_INVALID_ID,
             &dictionary, 1U, expr->span);
@@ -883,7 +884,8 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         if (element == NULL) return IR_INVALID_ID;
         IrValueId copied = ir_type_requires_custom_copy(builder, expr->type)
             ? ir_emit_recursive_copy(
-                builder, expr->type, element->result, expr->span, false)
+                builder, expr->type, element->result, expr->span, false,
+                &expr->error_cleanup)
             : builder->module->types[result_type].copy_policy != IR_COPY_TRIVIAL
                 ? emit_plain_clone(
                     builder, expr->type, element->result, expr->span)
@@ -1018,7 +1020,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             if (borrow == NULL) return IR_INVALID_ID;
             IrValueId copied = ir_emit_recursive_copy(
                 builder, out_type, borrow->result,
-                expr->span, false);
+                expr->span, false, &expr->error_cleanup);
             emit_store_to_out_place(
                 builder, out_place, copied, expr->span);
             IrInstruction *success_value = ir_append_instruction(
@@ -1300,6 +1302,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             ir_intern_type(builder->module, &ir_bool_type),
             NULL, 0U, expr->span);
         if (pending == NULL) return IR_INVALID_ID;
+        pending->index = result;
         IrBlockId exceptional = ir_add_block(builder->function);
         IrBlockId continuation = ir_add_block(builder->function);
         ir_set_terminator(builder, IR_TERM_BRANCH, pending->result,

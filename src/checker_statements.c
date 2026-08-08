@@ -236,6 +236,12 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             return false;
         }
         case STMT_THROW: {
+            if (checker->function != NULL && checker->function->is_drop &&
+                checker->function->param_count == 1U &&
+                checker->function->params[0].checked_type != NULL &&
+                checker->function->params[0].checked_type->kind != TYPE_CLASS)
+                lang_diag(checker->diagnostics, stmt->span,
+                          "value destructors cannot throw exceptions");
             if (stmt->as.throw_value == NULL) {
                 if (checker->catch_depth == 0U) {
                     lang_diag(checker->diagnostics, stmt->span,

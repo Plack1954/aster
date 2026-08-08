@@ -335,6 +335,31 @@ add_test(NAME custom_copy_source_is_immutable
 set_tests_properties(custom_copy_source_is_immutable PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE)
+add_test(NAME throwing_destructor_rejected
+    COMMAND lang check tests/checker/throwing_destructor.as)
+set_tests_properties(throwing_destructor_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME throwing_copy_vm
+    COMMAND lang run tests/throwing_copy.as)
+set_tests_properties(throwing_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "copy failed")
+add_aster_generated_c_test(
+    throwing_copy_generated_c
+    tests/throwing_copy.as
+    throwing_copy
+    "-DEXPECTED_OUTPUT=copy failed\n11\ncopy failed\n99\n2\n1\n2\n")
+add_test(NAME exact_self_assignment_vm
+    COMMAND lang run tests/exact_self_assignment.as)
+set_tests_properties(exact_self_assignment_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "7")
+add_aster_generated_c_test(
+    exact_self_assignment_generated_c
+    tests/exact_self_assignment.as
+    exact_self_assignment
+    "-DEXPECTED_OUTPUT=7\n8\n9\n")
 add_test(NAME nested_deleted_copy_rejected
     COMMAND lang check tests/checker/nested_deleted_copy.as)
 set_tests_properties(nested_deleted_copy_rejected PROPERTIES

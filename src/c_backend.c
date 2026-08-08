@@ -1797,8 +1797,18 @@ void c_backend_emit_terminator(CEmitter *emitter,
                 fprintf(output,
                         "    if (v%" PRIu32 ") {\n",
                         terminator->value);
+                if (condition->index < function->value_count &&
+                    c_backend_type_needs_drop(
+                        emitter,
+                        function->value_types[condition->index]))
+                    fprintf(output,
+                            "        v%" PRIu32 "_live = false;\n",
+                            condition->index);
                 c_backend_emit_virtual_cleanup(
-                    emitter, function, IR_INVALID_ID, "        ", true);
+                    emitter, function,
+                    condition->index < function->value_count
+                        ? condition->index : IR_INVALID_ID,
+                    "        ", true);
                 fprintf(output,
                         "        goto b%" PRIu32 ";\n"
                         "    } else goto b%" PRIu32 ";\n",

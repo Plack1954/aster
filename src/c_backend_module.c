@@ -1189,7 +1189,24 @@ static void emit_drop_helper(
     if (type->destructor_function != IR_INVALID_ID)
         fprintf(
             emitter->output,
-            "    (void)aster_fn_%" PRIu32 "(*value);\n",
+            "    {\n"
+            "        bool saved_exception_pending = aster_exception_pending;\n"
+            "        aster_string *saved_exception_message = "
+            "aster_exception_message;\n"
+            "        const char *saved_exception_type = "
+            "aster_exception_type;\n"
+            "        aster_exception_pending = false;\n"
+            "        aster_exception_message = NULL;\n"
+            "        aster_exception_type = NULL;\n"
+            "        (void)aster_fn_%" PRIu32 "(*value);\n"
+            "        if (aster_exception_pending) {\n"
+            "            aster_trap(\"value destructor attempted to "
+            "throw\");\n"
+            "        }\n"
+            "        aster_exception_pending = saved_exception_pending;\n"
+            "        aster_exception_message = saved_exception_message;\n"
+            "        aster_exception_type = saved_exception_type;\n"
+            "    }\n",
             type->destructor_function);
     if (type->shape == IR_TYPE_STRUCT) {
         for (size_t field = type->field_count;

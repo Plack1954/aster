@@ -489,11 +489,24 @@ void vm_value_drop_owned(LangVM *vm, LangValue value) {
         size_t destructor = (size_t)(object->language_destructor - 1U);
         object->language_destructor = 0U;
         bool was_unwinding = vm->trapped;
+        bool saved_exception_pending = vm->exception_pending;
+        LangValue saved_exception = vm->exception_value;
+        vm->exception_pending = false;
+        vm->exception_value = (LangValue){.tag=LANG_VALUE_UNIT};
         vm->trapped = false;
         LangValue result = vm_execute_function(
             vm, destructor, &value, 1U, vm->active_span);
         vm_value_drop_owned(vm, result);
-        bool cleanup_failed = vm->trapped;
+        bool cleanup_failed = vm->trapped || vm->exception_pending;
+        if (vm->exception_pending) {
+            LangValue destructor_exception = vm->exception_value;
+            vm->exception_pending = false;
+            vm->exception_value = (LangValue){.tag=LANG_VALUE_UNIT};
+            vm_value_drop_owned(vm, destructor_exception);
+            fputs("fatal: destructor attempted to throw\n", stderr);
+        }
+        vm->exception_pending = saved_exception_pending;
+        vm->exception_value = saved_exception;
         if (cleanup_failed && was_unwinding)
             fputs("runtime internal error: destructor trapped during unwinding\n",
                   stderr);

@@ -200,13 +200,18 @@ static void move_instruction_metadata(IrInstruction *destination,
     destination->render_destination = source->render_destination;
     destination->symbol = source->symbol;
     destination->symbol_length = source->symbol_length;
+    destination->error_cleanup = source->error_cleanup;
+    destination->exception_handler = source->exception_handler;
+    destination->has_exception_handler = source->has_exception_handler;
     source->labels = NULL;
     source->argument_modes = NULL;
     source->native_call = NULL;
 }
 
-static IrValueId expand_transfer(IrBuilder *builder,
-                                 const IrInstruction *old) {
+static IrValueId expand_transfer(
+    IrBuilder *builder, const IrInstruction *old,
+    const IrBlockId *blocks, size_t old_block_count
+) {
     bool copy = old->integer != 0U;
     const Type *checked = old->result_type < builder->module->type_count
         ? builder->module->types[old->result_type].checked_type : NULL;
@@ -223,8 +228,19 @@ static IrValueId expand_transfer(IrBuilder *builder,
         if (source == NULL) return IR_INVALID_ID;
         source->index = old->index;
         if (!copy) return source->result;
-        return ir_emit_recursive_copy(
-            builder, checked, source->result, old->span, true);
+        IrBlockId previous_handler = builder->copy_exception_handler;
+        bool previous_has_handler = builder->copy_has_exception_handler;
+        builder->copy_has_exception_handler =
+            old->has_exception_handler &&
+            old->exception_handler < old_block_count;
+        if (builder->copy_has_exception_handler)
+            builder->copy_exception_handler = blocks[old->exception_handler];
+        IrValueId result = ir_emit_recursive_copy(
+            builder, checked, source->result, old->span, true,
+            &old->error_cleanup);
+        builder->copy_exception_handler = previous_handler;
+        builder->copy_has_exception_handler = previous_has_handler;
+        return result;
     }
 
     IrInstruction *source = ir_append_instruction(
@@ -236,9 +252,21 @@ static IrValueId expand_transfer(IrBuilder *builder,
     source->auxiliary = old->auxiliary;
     source->symbol = old->symbol;
     source->symbol_length = old->symbol_length;
-    if (copy)
-        return ir_emit_recursive_copy(
-            builder, checked, source->result, old->span, true);
+    if (copy) {
+        IrBlockId previous_handler = builder->copy_exception_handler;
+        bool previous_has_handler = builder->copy_has_exception_handler;
+        builder->copy_has_exception_handler =
+            old->has_exception_handler &&
+            old->exception_handler < old_block_count;
+        if (builder->copy_has_exception_handler)
+            builder->copy_exception_handler = blocks[old->exception_handler];
+        IrValueId copied = ir_emit_recursive_copy(
+            builder, checked, source->result, old->span, true,
+            &old->error_cleanup);
+        builder->copy_exception_handler = previous_handler;
+        builder->copy_has_exception_handler = previous_has_handler;
+        return copied;
+    }
     IrValueId result = source->result;
     IrInstruction *drop = ir_append_instruction(
         builder, IR_OP_LOCAL_DROP, IR_INVALID_ID, NULL, 0U, old->span);
@@ -321,7 +349,8 @@ bool ir_resolve_ownership_transfers(IrBuilder *builder) {
             IrValueId result;
             if (old->opcode == IR_OP_LOCAL_TRANSFER ||
                 old->opcode == IR_OP_LOCAL_FIELD_TRANSFER) {
-                result = expand_transfer(builder, old);
+                result = expand_transfer(
+                    builder, old, blocks, old_block_count);
             } else {
                 IrValueId *operands = ir_resize(
                     NULL, old->operand_count,
@@ -338,6 +367,11 @@ bool ir_resolve_ownership_transfers(IrBuilder *builder) {
                     result = IR_INVALID_ID;
                 } else {
                     move_instruction_metadata(copy, old);
+                    if (old->opcode == IR_OP_EXCEPTION_PENDING &&
+                        old->index < old_value_count)
+                        copy->index = remap_value(
+                            builder, values, old_value_count,
+                            old->index, old->span);
                     result = copy->result;
                 }
             }

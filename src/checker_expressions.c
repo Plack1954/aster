@@ -1622,7 +1622,9 @@ Type *check_expr(Checker *checker, Expr *expr) {
         case EXPR_MATCH: result = check_match_expression(checker, expr); break;
     }
 checked_expression:
-    if (expr->kind == EXPR_CALL)
+    if (expr->kind == EXPR_CALL || expr->kind == EXPR_COPY ||
+        expr->kind == EXPR_NAME || expr->kind == EXPR_FIELD ||
+        expr->kind == EXPR_INDEX)
         set_cleanup_plan(
             checker, &expr->error_cleanup,
             checker->exception_depth != 0U
