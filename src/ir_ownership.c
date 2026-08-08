@@ -40,9 +40,45 @@ static bool local_use(const IrInstruction *instruction) {
             return true;
         case IR_OP_ELEMENT_BEGIN:
             return instruction->index != IR_INVALID_ID;
+        case IR_OP_VALUE_DISCARD:
+            return instruction->auxiliary != 0U &&
+                   instruction->index != IR_INVALID_ID;
         default:
             return false;
     }
+}
+
+static bool mark_borrow_lifetime_uses(IrFunction *function) {
+    const size_t width = function->value_count == 0U
+        ? 1U : function->value_count;
+    uint32_t *borrowed_roots = ir_resize(
+        NULL, width, sizeof(*borrowed_roots));
+    if (borrowed_roots == NULL) return false;
+    for (size_t value = 0U; value < width; ++value)
+        borrowed_roots[value] = IR_INVALID_ID;
+
+    for (size_t b = 0U; b < function->block_count; ++b) {
+        IrBlock *block = &function->blocks[b];
+        for (size_t i = 0U; i < block->instruction_count; ++i) {
+            IrInstruction *instruction = &block->instructions[i];
+            if ((instruction->opcode == IR_OP_LOCAL_LOAD ||
+                 instruction->opcode == IR_OP_LOCAL_FIELD_BORROW) &&
+                instruction->result < function->value_count &&
+                instruction->index < function->local_count)
+                borrowed_roots[instruction->result] = instruction->index;
+            if (instruction->opcode == IR_OP_VALUE_DISCARD &&
+                instruction->auxiliary != 0U &&
+                instruction->operand_count == 1U &&
+                instruction->operands[0] < function->value_count) {
+                uint32_t root =
+                    borrowed_roots[instruction->operands[0]];
+                if (root != IR_INVALID_ID)
+                    instruction->index = root;
+            }
+        }
+    }
+    free(borrowed_roots);
+    return true;
 }
 
 static void transfer_block_liveness(const IrFunction *function,
@@ -231,6 +267,12 @@ static void free_old_blocks(IrBlock *blocks, size_t block_count) {
 bool ir_resolve_ownership_transfers(IrBuilder *builder) {
     IrFunction *function = builder->function;
     uint8_t *live_out = NULL;
+    if (!mark_borrow_lifetime_uses(function)) {
+        lang_diag(builder->diagnostics, function->span,
+                  "out of memory during borrow lifetime analysis");
+        builder->failed = true;
+        return false;
+    }
     if (!compute_liveness(function, &live_out)) {
         lang_diag(builder->diagnostics, function->span,
                   "out of memory during ownership analysis");

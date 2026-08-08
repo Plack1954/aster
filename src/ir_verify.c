@@ -19,6 +19,188 @@ static IrBlockId terminator_successor(const IrTerminator *term,
     return successor == 0U ? term->target : term->alternate;
 }
 
+enum IrLocalAvailability {
+    IR_LOCAL_UNAVAILABLE,
+    IR_LOCAL_AVAILABLE,
+    IR_LOCAL_MAYBE_AVAILABLE
+};
+
+static bool instruction_reads_local(const IrInstruction *instruction) {
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_LOAD:
+        case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_FIELD_GET:
+        case IR_OP_LOCAL_FIELD_MOVE:
+        case IR_OP_LOCAL_FIELD_BORROW:
+        case IR_OP_LOCAL_FIELD_SET:
+        case IR_OP_LOCAL_FIELD_DEFAULT:
+        case IR_OP_LOCAL_INDEX_GET:
+        case IR_OP_LOCAL_INDEX_SET:
+        case IR_OP_LOCAL_ENUM_IS:
+        case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
+        case IR_OP_LOCAL_ITERATOR_HAS_NEXT:
+        case IR_OP_LOCAL_ITERATOR_NEXT:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY_BEGIN:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY_APPEND:
+        case IR_OP_LOCAL_ELEMENT_CSS_VALUE:
+        case IR_OP_LOCAL_ELEMENT_PROPERTY_END:
+        case IR_OP_LOCAL_ELEMENT_APPEND:
+        case IR_OP_LOCAL_ELEMENT_APPEND_STATIC_TEXT:
+        case IR_OP_LOCAL_ELEMENT_APPEND_FORMATTED:
+        case IR_OP_LOCAL_ELEMENT_FINISH:
+            return true;
+        case IR_OP_ELEMENT_BEGIN:
+            return instruction->index != IR_INVALID_ID;
+        case IR_OP_VALUE_DISCARD:
+            return instruction->auxiliary != 0U &&
+                   instruction->index != IR_INVALID_ID;
+        default:
+            return false;
+    }
+}
+
+static void update_local_availability(
+    const IrFunction *function, const IrInstruction *instruction,
+    uint8_t *state
+) {
+    if (instruction->opcode == IR_OP_PARAMETER &&
+        instruction->index < function->local_count) {
+        state[instruction->index] = IR_LOCAL_AVAILABLE;
+        return;
+    }
+    if (instruction->index >= function->local_count) return;
+    switch (instruction->opcode) {
+        case IR_OP_LOCAL_STORE:
+        case IR_OP_LOCAL_DEFAULT:
+            state[instruction->index] = IR_LOCAL_AVAILABLE;
+            break;
+        case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
+        case IR_OP_LOCAL_DROP:
+        case IR_OP_LOCAL_INVALIDATE:
+            state[instruction->index] = IR_LOCAL_UNAVAILABLE;
+            break;
+        default:
+            break;
+    }
+}
+
+static uint8_t meet_local_availability(uint8_t left, uint8_t right) {
+    return left == right ? left : IR_LOCAL_MAYBE_AVAILABLE;
+}
+
+static bool verify_local_availability(
+    const IrFunction *function, LangDiagnostics *diagnostics
+) {
+    const size_t blocks = function->block_count;
+    const size_t locals = function->local_count;
+    const size_t width = locals == 0U ? 1U : locals;
+    if (blocks > SIZE_MAX / width) {
+        lang_diag(diagnostics, function->span,
+                  "IR function `%s` has too much ownership state",
+                  function->name);
+        return false;
+    }
+    uint8_t *entry = calloc(blocks * width, 1U);
+    uint8_t *exit = calloc(blocks * width, 1U);
+    uint8_t *scratch = calloc(width, 1U);
+    bool *known_entry = calloc(blocks, sizeof(*known_entry));
+    bool *known_exit = calloc(blocks, sizeof(*known_exit));
+    IrBlockId *work = ir_resize(NULL, blocks, sizeof(*work));
+    bool *queued = calloc(blocks, sizeof(*queued));
+    if (entry == NULL || exit == NULL || scratch == NULL ||
+        known_entry == NULL || known_exit == NULL || work == NULL ||
+        queued == NULL) {
+        free(queued);
+        free(work);
+        free(known_exit);
+        free(known_entry);
+        free(scratch);
+        free(exit);
+        free(entry);
+        lang_diag(diagnostics, function->span,
+                  "out of memory verifying IR ownership in `%s`",
+                  function->name);
+        return false;
+    }
+
+    size_t work_count = 0U;
+    known_entry[function->entry_block] = true;
+    work[work_count++] = function->entry_block;
+    queued[function->entry_block] = true;
+    while (work_count != 0U) {
+        IrBlockId block_id = work[--work_count];
+        queued[block_id] = false;
+        memcpy(scratch, entry + (size_t)block_id * width, width);
+        const IrBlock *block = &function->blocks[block_id];
+        for (size_t i = 0U; i < block->instruction_count; ++i)
+            update_local_availability(
+                function, &block->instructions[i], scratch);
+        bool changed = !known_exit[block_id] ||
+            memcmp(exit + (size_t)block_id * width,
+                   scratch, width) != 0;
+        if (!changed) continue;
+        memcpy(exit + (size_t)block_id * width, scratch, width);
+        known_exit[block_id] = true;
+        size_t successors = terminator_successor_count(
+            &block->terminator, blocks);
+        for (size_t edge = 0U; edge < successors; ++edge) {
+            IrBlockId next = terminator_successor(
+                &block->terminator, edge);
+            uint8_t *next_entry = entry + (size_t)next * width;
+            bool next_changed = !known_entry[next];
+            if (!known_entry[next]) {
+                memcpy(next_entry, scratch, width);
+                known_entry[next] = true;
+            } else {
+                for (size_t local = 0U; local < locals; ++local) {
+                    uint8_t merged = meet_local_availability(
+                        next_entry[local], scratch[local]);
+                    if (merged != next_entry[local]) {
+                        next_entry[local] = merged;
+                        next_changed = true;
+                    }
+                }
+            }
+            if (next_changed && !queued[next]) {
+                work[work_count++] = next;
+                queued[next] = true;
+            }
+        }
+    }
+
+    bool ok = true;
+    for (size_t b = 0U; b < blocks; ++b) {
+        if (!known_entry[b]) continue;
+        memcpy(scratch, entry + b * width, width);
+        const IrBlock *block = &function->blocks[b];
+        for (size_t i = 0U; i < block->instruction_count; ++i) {
+            const IrInstruction *instruction = &block->instructions[i];
+            if (instruction_reads_local(instruction) &&
+                instruction->index < locals &&
+                scratch[instruction->index] != IR_LOCAL_AVAILABLE) {
+                lang_diag(
+                    diagnostics, instruction->span,
+                    "IR `%s` reads unavailable local %u in `%s`",
+                    ir_opcode_name(instruction->opcode),
+                    instruction->index, function->name);
+                ok = false;
+            }
+            update_local_availability(function, instruction, scratch);
+        }
+    }
+
+    free(queued);
+    free(work);
+    free(known_exit);
+    free(known_entry);
+    free(scratch);
+    free(exit);
+    free(entry);
+    return ok;
+}
+
 static void compute_dominators(const IrFunction *function,
                                bool *reachable, bool *dominators) {
     size_t count = function->block_count;
@@ -891,6 +1073,8 @@ bool lang_ir_verify_module(const IrModule *ir,
         }
         free(dominators);
         free(reachable);
+        if (!verify_local_availability(function, diagnostics))
+            ok = false;
         free(definition_instructions);
         free(definition_blocks);
         free(defined);

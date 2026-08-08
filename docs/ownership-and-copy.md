@@ -72,6 +72,11 @@ A by-value parameter receives its own value. The caller's argument is copied
 when the caller needs it afterward and moved otherwise. A `ref T` or `const ref
 T` parameter borrows and never consumes its argument.
 
+A borrow remains live through the complete call. If one argument borrows a
+local and another by-value argument refers to the same local, the by-value
+argument is copied rather than moved, regardless of argument order. The callee
+therefore never observes a borrow into an emptied source slot.
+
 Returning a local is normally its last use and therefore moves. Fresh
 expressions are constructed directly in their destination where possible.
 Returning an immutable-reference parameter must copy because borrowed storage

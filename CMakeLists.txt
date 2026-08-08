@@ -526,12 +526,12 @@ add_test(NAME automatic_last_use_copy_vm
 set_tests_properties(automatic_last_use_copy_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION
-        "1[\r\n]+0[\r\n]+1[\r\n]+11[\r\n]+10[\r\n]+21[\r\n]+20[\r\n]+31[\r\n]+30[\r\n]+32[\r\n]+30[\r\n]+41[\r\n]+40")
+        "1[\r\n]+0[\r\n]+1[\r\n]+11[\r\n]+10[\r\n]+21[\r\n]+20[\r\n]+31[\r\n]+30[\r\n]+32[\r\n]+30[\r\n]+41[\r\n]+40[\r\n]+551[\r\n]+670")
 add_aster_generated_c_test(
     automatic_last_use_copy_generated_c
     tests/automatic_last_use_copy.as
     automatic_last_use_copy
-    "-DEXPECTED_OUTPUT=1\n0\n1\n11\n10\n21\n20\n31\n30\n32\n30\n41\n40\n")
+    "-DEXPECTED_OUTPUT=1\n0\n1\n11\n10\n21\n20\n31\n30\n32\n30\n41\n40\n551\n670\n")
 add_test(NAME custom_copy_raw_allocation_vm
     COMMAND lang run-ir tests/custom_copy_raw_allocation.as)
 set_tests_properties(custom_copy_raw_allocation_vm PROPERTIES

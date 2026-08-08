@@ -19,6 +19,20 @@ private CopyProbe CopyFromBorrow(const ref CopyProbe value) {
     return value;
 }
 
+private long BorrowThenOwn(
+    const ref CopyProbe borrowed,
+    CopyProbe owned
+) {
+    return borrowed.generation * 10 + owned.generation;
+}
+
+private long OwnThenBorrow(
+    CopyProbe owned,
+    const ref CopyProbe borrowed
+) {
+    return owned.generation * 10 + borrowed.generation;
+}
+
 int main() {
     CopyProbe source = new() { generation = 0 };
     CopyProbe copied = source;
@@ -58,5 +72,11 @@ int main() {
     (CopyProbe part, long marker) = pair;
     Console.WriteLine(part.generation);
     Console.WriteLine(pair.value.generation);
+
+    CopyProbe borrowThenOwn = new() { generation = 50 };
+    Console.WriteLine(BorrowThenOwn(borrowThenOwn, borrowThenOwn));
+
+    CopyProbe ownThenBorrow = new() { generation = 60 };
+    Console.WriteLine(OwnThenBorrow(ownThenBorrow, ownThenBorrow));
     return 0;
 }

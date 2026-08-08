@@ -311,6 +311,7 @@ int main(void) {
     bool rejected_bad_result_type = false;
     bool rejected_use_before_definition = false;
     bool rejected_non_dominating_value = false;
+    bool rejected_read_after_move = false;
     bool rejected_unknown_terminator = false;
     if (initially_valid && ir.function_count != 0U) {
         IrInstruction *first_instruction = NULL;
@@ -412,6 +413,31 @@ int main(void) {
                 !lang_ir_verify_module(&ir, &diagnostics);
             multiply->operands[0] = saved_operand;
         }
+        for (size_t f = 0U;
+             f < ir.function_count && !rejected_read_after_move; ++f)
+            for (size_t b = 0U;
+                 b < ir.functions[f].block_count &&
+                 !rejected_read_after_move; ++b) {
+                IrBlock *block = &ir.functions[f].blocks[b];
+                for (size_t first = 0U;
+                     first < block->instruction_count &&
+                     !rejected_read_after_move; ++first) {
+                    IrInstruction *load = &block->instructions[first];
+                    if (load->opcode != IR_OP_LOCAL_LOAD) continue;
+                    for (size_t later = first + 1U;
+                         later < block->instruction_count; ++later) {
+                        IrInstruction *use = &block->instructions[later];
+                        if (use->opcode != IR_OP_LOCAL_LOAD ||
+                            use->index != load->index)
+                            continue;
+                        load->opcode = IR_OP_LOCAL_MOVE;
+                        rejected_read_after_move =
+                            !lang_ir_verify_module(&ir, &diagnostics);
+                        load->opcode = IR_OP_LOCAL_LOAD;
+                        break;
+                    }
+                }
+            }
         if (boolean_constant != NULL && integer_type != IR_INVALID_ID) {
             IrFunction *owner = NULL;
             for (size_t f = 0U; f < ir.function_count && owner == NULL; ++f)
@@ -600,12 +626,13 @@ int main(void) {
            rejected_bad_result_type &&
            rejected_use_before_definition &&
            rejected_non_dominating_value &&
+           rejected_read_after_move &&
            rejected_unknown_terminator &&
            has_control_flow && rejected_malformed;
     if (!passed)
         fprintf(
             stderr,
-            "IR assertions: valid=%d metadata=%d/%d/%d/%d corrupt=%d/%d/%d/%d/%d/%d opcode=%d types=%d/%d dominance=%d/%d term=%d control=%d malformed=%d\n",
+            "IR assertions: valid=%d metadata=%d/%d/%d/%d corrupt=%d/%d/%d/%d/%d/%d opcode=%d types=%d/%d dominance=%d/%d ownership=%d term=%d control=%d malformed=%d\n",
             initially_valid, has_field_metadata,
             has_variant_metadata, has_plain_enum_metadata,
             has_destructor_metadata,
@@ -620,6 +647,7 @@ int main(void) {
             rejected_bad_result_type,
             rejected_use_before_definition,
             rejected_non_dominating_value,
+            rejected_read_after_move,
             rejected_unknown_terminator,
             has_control_flow, rejected_malformed);
     return passed ? 0 : 2;

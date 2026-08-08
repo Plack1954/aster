@@ -53,6 +53,12 @@ live. Borrowed locals always select copy. The rewrite expands recursive and
 user-defined copy operations before verification; unresolved transfers are
 invalid in backend input.
 
+Verification then computes definite local availability over the CFG. A local
+read is valid only when every incoming path still owns or borrows an available
+value; moves and invalidations make the slot unavailable, while stores restore
+it. Path-dependent cleanup may drop a maybe-live slot, but no later read may
+rely on that runtime cleanup state.
+
 Struct construction retains source evaluation order. Each operand carries its
 resolved declaration-field index, allowing a backend to place fields in target
 layout order without reordering initializer side effects. Local field and index
