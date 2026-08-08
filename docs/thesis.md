@@ -28,8 +28,9 @@ C or C++ syntax where it is clearer than a C# spelling, and it does not reject
 a design merely because it resembles C or C++.
 
 Aster does not adopt Rust's borrow checker, lifetime annotations, ownership
-types, or general lifetime calculus. Its local move checking is a bounded
-definite-state analysis, not a proof of pointer, alias, or reference lifetime.
+types, or general lifetime calculus. Its noncopyable-local checking and
+copyable-local liveness analysis are bounded compiler dataflow, not a proof of
+pointer, alias, or reference lifetime.
 Aster follows the C and C++ trust boundary for those concerns: ownership
 transfer, explicit copying, and destruction are language concerns, while the
 validity and lifetime of pointers, references, aliases, and borrowed views
@@ -41,8 +42,9 @@ Aster should make these properties true in ordinary application code:
 
 - destruction is deterministic and does not depend on a tracing collector;
 - immutable strings and shared native handles use narrow reference counting;
-- ordinary assignment and calls move non-trivial values, while `copy(value)`
-  explicitly requests duplication;
+- ordinary assignment and calls move non-trivial values at last use and copy
+  them only when the source remains live, while `copy(value)` forces
+  duplication;
 - allocation, noncopyable resources, and unsafe operations remain visible;
 - common read-only operations do not duplicate storage;
 - typed HTML, routing, validation, SQLite, configuration, and file processing

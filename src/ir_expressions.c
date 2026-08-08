@@ -75,8 +75,13 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 expr->type->kind != TYPE_RAW_POINTER &&
                 (expr->type->requires_cleanup || expr->type->managed ||
                  ir_type_requires_custom_copy(builder, expr->type));
+            bool transfer = move &&
+                builder->module->types[type].copy_policy !=
+                    IR_COPY_NONCOPYABLE;
             instruction = ir_append_instruction(
-                builder, move ? IR_OP_LOCAL_MOVE : IR_OP_LOCAL_LOAD,
+                builder, transfer ? IR_OP_LOCAL_TRANSFER
+                                  : move ? IR_OP_LOCAL_MOVE
+                                         : IR_OP_LOCAL_LOAD,
                 type, NULL, 0U, expr->span);
             if (instruction != NULL) instruction->index = local;
             if (!move && instruction != NULL &&
@@ -711,20 +716,25 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 uint32_t local = ir_find_local(
                     builder, object->resolved_local_id, object->span);
                 instruction = ir_append_instruction(
-                    builder, IR_OP_LOCAL_FIELD_MOVE, type,
-                    NULL, 0U, expr->span);
+                    builder,
+                    builder->module->types[type].copy_policy !=
+                            IR_COPY_NONCOPYABLE
+                        ? IR_OP_LOCAL_FIELD_TRANSFER
+                        : IR_OP_LOCAL_FIELD_MOVE,
+                    type, NULL, 0U, expr->span);
                 if (instruction == NULL) return IR_INVALID_ID;
                 instruction->index = local;
                 instruction->auxiliary = ir_field_index(
                     object->type, expr->as.field.field);
                 instruction->symbol = expr->as.field.field;
                 instruction->symbol_length = strlen(instruction->symbol);
-                IrValueId moved = instruction->result;
-                IrInstruction *drop = ir_append_instruction(
-                    builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
-                    NULL, 0U, expr->span);
-                if (drop != NULL) drop->index = local;
-                return moved;
+                if (instruction->opcode == IR_OP_LOCAL_FIELD_MOVE) {
+                    IrInstruction *drop = ir_append_instruction(
+                        builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
+                        NULL, 0U, expr->span);
+                    if (drop != NULL) drop->index = local;
+                }
+                return instruction->result;
             }
             if (expression_is_local_place(expr)) {
                 IrValueId borrowed_values[64];

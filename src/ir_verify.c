@@ -720,6 +720,7 @@ bool lang_ir_verify_module(const IrModule *ir,
                      instruction->opcode == IR_OP_LOCAL_MOVE ||
                      instruction->opcode == IR_OP_LOCAL_STORE ||
                      instruction->opcode == IR_OP_LOCAL_DROP ||
+                     instruction->opcode == IR_OP_LOCAL_INVALIDATE ||
                      instruction->opcode == IR_OP_LOCAL_FIELD_GET ||
                      instruction->opcode == IR_OP_LOCAL_FIELD_MOVE ||
                      instruction->opcode == IR_OP_LOCAL_FIELD_BORROW ||

@@ -15,9 +15,10 @@ no tracing garbage collector. Native typed HTML is part of the language.
 
 Aster does not adopt a general borrow checker or lifetime annotations. It
 leaves pointer and alias lifetime correctness to the programmer while making
-ownership transfer, explicit copying, and resource destruction deterministic.
-Non-trivial values move by default; `copy(value)` makes potentially expensive
-duplication visible.
+ownership transfer, copying, and resource destruction deterministic.
+The compiler moves non-trivial values at last use and otherwise applies their
+copy policy; `copy(value)` keeps forced, potentially expensive duplication
+visible.
 
 The compiler and runtime are implemented in C. Programs can run on the
 bytecode VM or compile to portable C17 through the same verified IR. C is
@@ -208,8 +209,8 @@ Manifest projects support named binary, library, and test targets:
 - The bytecode VM provides a fast development and differential-testing path.
 - Cleanup is deterministic across normal returns, errors, exceptions, and
   loop exits.
-- Non-trivial values move by default, and `copy(value)` explicitly invokes a
-  type's defined copy behavior.
+- Non-trivial values move at last use and otherwise use their defined copy
+  behavior; `copy(value)` explicitly forces duplication.
 - Shared external resources use cleanup-managed native handles.
 
 ## Documentation

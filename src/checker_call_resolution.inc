@@ -761,7 +761,8 @@ static_call:
                 Expr *argument = expr->as.call.arguments.items[i];
                 if (parameter_mode_is_reference(mode) ||
                     argument->type == NULL ||
-                    !type_moves_by_default(checker, argument->type))
+                    !type_moves_by_default(checker, argument->type) ||
+                    type_is_copyable(checker, argument->type))
                     continue;
                 if (argument->kind == EXPR_NAME) {
                     Local *local = find_local(

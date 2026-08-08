@@ -131,6 +131,7 @@ bool ir_type_requires_custom_copy(
 IrValueId ir_emit_recursive_copy(
     IrBuilder *builder, const Type *value_type,
     IrValueId source, LangSpan span, bool preserve_source);
+bool ir_resolve_ownership_transfers(IrBuilder *builder);
 IrValueId ir_emit_synthetic_native_call(
     IrBuilder *builder, const char *name, const Type *result_type,
     const IrValueId *operands, size_t operand_count,

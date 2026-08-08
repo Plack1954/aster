@@ -1060,10 +1060,11 @@ Type *check_expr(Checker *checker, Expr *expr) {
             if (result != &type_error &&
                 type_moves_by_default(checker, result) &&
                 checker->copy_depth == 0U &&
-                checker->borrow_depth == 0U)
+                checker->borrow_depth == 0U &&
+                !type_is_copyable(checker, result))
                 lang_diag(
                     checker->diagnostics, expr->span,
-                    "reading non-trivial array element `%s` requires `copy(...)`",
+                    "cannot copy noncopyable array element `%s`",
                     result->name);
             break;
         }
@@ -1479,7 +1480,8 @@ Type *check_expr(Checker *checker, Expr *expr) {
                           "unknown field `%s` on `%s`", expr->as.field.field, object->name);
             if (result != &type_error &&
                 type_moves_by_default(checker, result)) {
-                if (checker->copy_depth == 0U &&
+                bool copyable = type_is_copyable(checker, result);
+                if (!copyable && checker->copy_depth == 0U &&
                     checker->borrow_depth == 0U &&
                     object->kind == TYPE_OPTION &&
                     expr->as.field.object->kind == EXPR_NAME) {
@@ -1503,14 +1505,14 @@ Type *check_expr(Checker *checker, Expr *expr) {
                             checker, owner_expr->as.name);
                         bool movable = owner != NULL &&
                             owner->available && !owner->borrowed;
-                        if (owner != NULL)
+                        if (!copyable && owner != NULL)
                             checker_move_local(
                                 checker, owner, owner_expr->span);
                         expr->as.field.move_out = movable;
-                    } else {
+                    } else if (!copyable) {
                         lang_diag(
                             checker->diagnostics, expr->span,
-                            "reading non-trivial field `%s` requires `copy(...)`",
+                            "cannot copy noncopyable field `%s`",
                             expr->as.field.field);
                     }
                 }

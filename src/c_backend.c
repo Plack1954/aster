@@ -679,6 +679,16 @@ void c_backend_emit_instruction(CEmitter *emitter,
                         instruction->index);
             return;
         }
+        case IR_OP_LOCAL_INVALIDATE:
+            fprintf(output,
+                    "    memset(&l%" PRIu32
+                    ", 0, sizeof(l%" PRIu32 "));\n",
+                    instruction->index, instruction->index);
+            if (c_backend_local_tracks_drop(
+                    emitter, function, instruction->index))
+                fprintf(output, "    l%" PRIu32 "_live = false;\n",
+                        instruction->index);
+            return;
         case IR_OP_VALUE_DISCARD: {
             if (instruction->auxiliary == 1U) return;
             IrTypeId value_type =

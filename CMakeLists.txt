@@ -66,6 +66,7 @@ add_library(langlib
     src/ir_core.c
     src/ir_expression_support.c
     src/ir_copy.c
+    src/ir_ownership.c
     src/ir_expressions.c
     src/ir_module.c
     src/ir_statements.c
@@ -500,16 +501,37 @@ add_aster_generated_c_test(
     tests/field_move.as
     field_move
     "-DEXPECTED_OUTPUT=drop remainder\npayload\n")
-add_test(NAME use_after_move_rejected
-    COMMAND lang check tests/checker/use_after_move.as)
-set_tests_properties(use_after_move_rejected PROPERTIES
+add_test(NAME automatic_copy_after_transfer_vm
+    COMMAND lang run-ir tests/checker/use_after_move.as)
+set_tests_properties(automatic_copy_after_transfer_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    WILL_FAIL TRUE)
-add_test(NAME use_after_field_move_rejected
-    COMMAND lang check tests/checker/use_after_field_move.as)
-set_tests_properties(use_after_field_move_rejected PROPERTIES
+    PASS_REGULAR_EXPRESSION "0[\r\n]+0")
+add_aster_generated_c_test(
+    automatic_copy_after_transfer_generated_c
+    tests/checker/use_after_move.as
+    automatic_copy_after_transfer
+    "-DEXPECTED_OUTPUT=0\n0\n")
+add_test(NAME automatic_field_copy_vm
+    COMMAND lang run-ir tests/checker/use_after_field_move.as)
+set_tests_properties(automatic_field_copy_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    WILL_FAIL TRUE)
+    PASS_REGULAR_EXPRESSION "0[\r\n]+owned")
+add_aster_generated_c_test(
+    automatic_field_copy_generated_c
+    tests/checker/use_after_field_move.as
+    automatic_field_copy
+    "-DEXPECTED_OUTPUT=0\nowned\n")
+add_test(NAME automatic_last_use_copy_vm
+    COMMAND lang run-ir tests/automatic_last_use_copy.as)
+set_tests_properties(automatic_last_use_copy_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "1[\r\n]+0[\r\n]+1[\r\n]+11[\r\n]+10[\r\n]+21[\r\n]+20[\r\n]+31[\r\n]+30[\r\n]+32[\r\n]+30[\r\n]+41[\r\n]+40")
+add_aster_generated_c_test(
+    automatic_last_use_copy_generated_c
+    tests/automatic_last_use_copy.as
+    automatic_last_use_copy
+    "-DEXPECTED_OUTPUT=1\n0\n1\n11\n10\n21\n20\n31\n30\n32\n30\n41\n40\n")
 add_test(NAME custom_copy_raw_allocation_vm
     COMMAND lang run-ir tests/custom_copy_raw_allocation.as)
 set_tests_properties(custom_copy_raw_allocation_vm PROPERTIES
@@ -1568,6 +1590,16 @@ add_aster_generated_c_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/struct_deconstruction.as
     aster_struct_deconstruction
         "-DEXPECTED_OUTPUT=201\ncreated\n1\n201\n")
+add_test(NAME deconstruction_owned_class_fields_vm
+    COMMAND lang run-ir tests/deconstruction_owned_class_fields.as)
+set_tests_properties(deconstruction_owned_class_fields_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "41[\r\n]+42")
+add_aster_generated_c_test(
+    deconstruction_owned_class_fields_generated_c
+    tests/deconstruction_owned_class_fields.as
+    deconstruction_owned_class_fields
+    "-DEXPECTED_OUTPUT=41\n42\n")
 add_aster_generated_c_test(
     c_backend_enums_result_try_compile_and_run
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_enums.as

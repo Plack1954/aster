@@ -1,143 +1,116 @@
-# Ownership, moves, and explicit copies
+# Ownership, automatic last-use moves, and `copy`
 
-Aster makes the cheap ownership operation the default and makes potentially
-expensive duplication visible in source.
+Aster has ordinary value syntax and deterministic destruction without making
+programmers spell routine ownership transfers. The compiler copies a copyable
+value when its source is still needed and moves it when the transfer is the
+source's last use.
 
 ## Core rule
 
-Every value has a closed compiler-known copy policy. Assignment, argument
-passing, aggregate construction, and return use that policy as follows:
+Assignment, by-value arguments, aggregate construction, and returns use one
+rule:
 
-- trivially copyable values are copied;
-- values with deep, shared-retain, custom, or noncopyable policies are moved;
-- `copy(value)` explicitly requests an independent copy and never consumes its
-  source.
-
-Trivial copying cannot allocate, retain shared storage, or call user code. It
-includes scalar values, class references, raw pointers, plain enums, and
-aggregates made entirely from trivial fields. Moving a value transfers its
-existing representation without running its copy operation.
+- trivial values are copied;
+- a copyable non-trivial value is moved when its source is dead after the
+  transfer, and copied when its source remains live;
+- a noncopyable value may only be transferred from an owned source that is not
+  used again before reassignment;
+- `copy(value)` forces an independent copy and never consumes its source.
 
 ```aster
-List<int> first = new();
-first.Add(1);
+List<int> source = new();
+source.Add(1);
 
-List<int> transferred = first;       // move; no allocation or element copy
-List<int> independent = copy(transferred); // explicit deep copy
+List<int> first = source; // copies because source is used below
+Use(source);
+List<int> last = source;  // moves because this is source's last use
 ```
 
-There is no source-level `move`, rvalue-reference type, reference collapsing,
-or perfect forwarding. The ordinary value path is already the move path when a
-type has non-trivial copy cost.
+There is no source-level `move`, `take`, rvalue-reference type, reference
+collapsing, or perfect forwarding. Last-use selection is mandatory compiler
+analysis, not a backend guess and not an optional optimization.
 
-## Moved locals
+## What “last use” means
 
-Moving from a local makes that local unavailable. Reading, borrowing, or moving
-it again is a compile-time error until an assignment gives it a new value.
-Cleanup ignores an unavailable local, so every owned resource is destroyed
-exactly once.
+The typed-IR ownership pass computes local liveness over the complete control-
+flow graph. A transfer moves only when no reachable continuation reads that
+version of the source. Uses in either branch, after a merge, or on a loop back
+edge keep it live. Reassigning a local ends the previous value's lifetime, so a
+transfer before an unconditional reassignment can still move.
 
-```aster
-List<int> destination = source;
-Console.WriteLine(source.Count); // error: `source` was moved
+Scope-exit cleanup is not counted as a use. A moved slot is empty, and its
+compiler-emitted drop therefore does nothing. This preserves exactly-once
+destruction without forcing a copy merely to satisfy cleanup.
 
-source = new();
-source.Add(2);                    // valid after reassignment
-```
-
-The rule is path-sensitive. A local is available after a branch only when it is
-available on every path that reaches the following statement. A loop back edge
-must preserve the availability state with which the iteration began.
+Copy constructors are observable. Adding a later use can turn an earlier move
+into a copy and therefore invoke the type's copy operation. Code must not put
+unrelated semantic effects in a copy constructor.
 
 ## `copy(value)`
 
-`copy` is a language intrinsic, not an ordinary overloadable function. It
-accepts one value and applies the type's copy policy:
+`copy` is a language intrinsic for the uncommon case where duplication itself
+is required. It accepts one value and applies the type's copy policy:
 
-- trivial values are copied directly;
-- shared immutable or shared-handle values retain their storage;
+- trivial values copy directly;
+- immutable strings and shared handles retain their storage;
 - containers and owning aggregates recursively copy their contents;
 - a public copy constructor performs a custom copy;
 - a type with a deleted copy constructor is rejected.
 
-The result is a separately owned value. Mutating or destroying it must not
-invalidate the source. `copy` may allocate, retain storage, and execute user
-code, so the call remains visible even when optimization later removes some of
-that work.
-
 ```aster
 Buffer second = copy(first);
-Use(first);  // valid: copy did not consume first
-Use(second);
 ```
 
-## Calls and returns
+This always leaves `first` available, even when it has no later source use.
+That distinction makes `copy` useful in tests, copy-constructor-sensitive code,
+and APIs whose contract explicitly requires duplication. Ordinary code should
+normally omit it and let liveness choose the cheapest correct operation.
 
-A by-value parameter consumes a non-trivial argument. A `ref T` or `const ref
-T` parameter borrows its argument for the call and does not consume it.
-An instance-method receiver is an implicit borrow; a method does not consume
-the object merely because it was called with member syntax.
+## Calls, returns, and temporaries
 
-An async method on a value type is the exception: its receiver is moved into
-the task frame because a borrow could outlive the initiating call. Use
-`copy(value).MethodAsync()` when the caller must retain an independent value.
-Class receivers remain cheap reference values. Async functions reject `ref`,
-`const ref`, and `out` parameters rather than hiding a copy or retain.
+A by-value parameter receives its own value. The caller's argument is copied
+when the caller needs it afterward and moved otherwise. A `ref T` or `const ref
+T` parameter borrows and never consumes its argument.
 
-```aster
-void Store(Html page);                 // consumes page
-void Inspect(const ref Html page);     // borrows page
+Returning a local is normally its last use and therefore moves. Fresh
+expressions are constructed directly in their destination where possible.
+Returning an immutable-reference parameter must copy because borrowed storage
+cannot be consumed.
 
-Inspect(page); // page remains available
-Store(page);   // page is moved
-```
+## Fields and containers
 
-Returning a non-trivial local moves it into the caller. Fresh expressions are
-constructed directly in their destination whenever possible. Neither operation
-requires a deep copy.
-
-## Projections and containers
-
-A borrowed projection does not silently duplicate a non-trivial stored value.
-Use `copy(container[index])` when the stored value must remain in the container,
-or use a consuming collection operation when ownership should be removed from
-the container.
-
-A non-trivial direct field of an owned struct local can be moved out. This is a
-destructive extraction: the field is transferred, every other live field is
-cleaned up immediately, and the whole owner becomes unavailable. Aster does
-not leave a partly initialized struct behind.
+A direct field of an owned struct local follows the same liveness rule. If the
+owner is dead afterward, the field is moved out, the remaining fields are
+cleaned up, and the owner becomes empty. If the owner remains live, the field
+is copied instead.
 
 ```aster
 Envelope envelope = MakeEnvelope();
-Html body = envelope.body; // moves body; cleans the rest of envelope
-Use(envelope);             // error: `envelope` was moved
+Html body = envelope.body; // copies because envelope is used below
+Use(envelope);
+
+Html finalBody = envelope.body; // moves on the final use
 ```
 
-Use `copy(envelope.body)` instead when both the field value and the complete
-owner must remain available. A field reached through a borrowed owner, and a
-field or element stored in a container, cannot be destructively extracted.
-
-Iteration is borrowed by default when the collection remains usable. Copying an
-iterated non-trivial element must therefore be explicit.
+An index read cannot remove an element while preserving its container shape.
+It therefore copies a copyable non-trivial element. A noncopyable stored value
+must be accessed through a borrowing or consuming collection API instead.
 
 ## Classes and unsafe code
 
-Class values are non-owning references with explicit `delete`, so assigning a
-class value copies the reference. It does not clone the object. Aster does not
-insert garbage collection or reference counting for class instances.
-
-Raw pointers remain outside the ownership guarantee. `copy(pointer)` copies the
-address; it does not duplicate the pointed-to allocation. Unsafe code remains
-responsible for pointer validity, aliasing, and lifetime.
+Class values are non-owning references with explicit `delete`; assignment
+copies the reference and does not clone the object. Raw pointers likewise copy
+their address. Neither operation proves pointed-to lifetime or duplicates the
+allocation.
 
 ## Performance contract
 
-The language guarantees that ordinary transfer of a non-trivial value does not
-invoke its copy constructor, recursively copy elements, retain shared storage,
-or allocate. Those effects occur only at an explicit `copy` expression or in an
-API whose documented purpose is copying.
+For a copyable non-trivial local or direct owned field, Aster emits a move at
+last use. That path does not allocate, retain storage, recursively copy
+elements, or invoke a copy constructor. When the source must remain usable,
+the compiler emits the type's real semantic copy; it never substitutes a raw
+bit copy for a custom or recursive copy policy.
 
-The typed IR records every local load, move, copy, store, and drop explicitly.
-Both the VM and portable-C backend must implement the same ownership decisions;
-neither backend may infer an additional copy.
+The unresolved transfer exists only during lowering. Mandatory CFG liveness
+rewrites it into explicit typed-IR move or copy operations before verification
+and before either the VM or C backend sees the program.

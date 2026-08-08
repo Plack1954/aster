@@ -8,7 +8,9 @@ const char *ir_opcode_name(IrOpcode opcode) {
     static const char *names[] = {
         "parameter", "unit", "const_bool", "const_int", "const_float",
         "const_string", "const_null", "local_load", "local_move",
-        "local_store", "local_drop", "local_default", "static_field_load",
+        "local_transfer",
+        "local_store", "local_drop", "local_default", "local_invalidate",
+        "static_field_load",
         "static_field_store", "value_clone", "value_discard",
         "add_checked", "sub_checked", "mul_checked", "div_checked",
         "rem_checked", "shift_left_checked", "shift_right_checked",
@@ -21,6 +23,7 @@ const char *ir_opcode_name(IrOpcode opcode) {
         "exception_pending", "exception_match", "exception_take",
         "aggregate_make", "field_get",
         "field_set", "local_field_get", "local_field_move",
+        "local_field_transfer",
         "local_field_borrow",
         "local_field_set", "local_field_default", "index_get",
         "index_set", "local_index_get", "local_index_set",
@@ -133,10 +136,13 @@ bool ir_verify_operand_count(const IrInstruction *instruction) {
         case IR_OP_CONST_INT: case IR_OP_CONST_FLOAT:
         case IR_OP_CONST_STRING: case IR_OP_CONST_NULL:
         case IR_OP_LOCAL_LOAD: case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_TRANSFER:
         case IR_OP_LOCAL_DROP: case IR_OP_LOCAL_DEFAULT:
+        case IR_OP_LOCAL_INVALIDATE:
         case IR_OP_STATIC_FIELD_LOAD:
         case IR_OP_FUNCTION_REF:
         case IR_OP_LOCAL_FIELD_GET: case IR_OP_LOCAL_FIELD_MOVE:
+        case IR_OP_LOCAL_FIELD_TRANSFER:
         case IR_OP_LOCAL_FIELD_BORROW:
         case IR_OP_LOCAL_FIELD_DEFAULT:
         case IR_OP_LOCAL_ENUM_IS:
@@ -213,7 +219,7 @@ bool ir_verify_result_type(const IrModule *ir,
     bool produces_result;
     switch (instruction->opcode) {
         case IR_OP_LOCAL_STORE: case IR_OP_LOCAL_DROP:
-        case IR_OP_LOCAL_DEFAULT:
+        case IR_OP_LOCAL_DEFAULT: case IR_OP_LOCAL_INVALIDATE:
         case IR_OP_STATIC_FIELD_STORE:
         case IR_OP_VALUE_DISCARD: case IR_OP_EXCEPTION_SET:
         case IR_OP_FIELD_SET: case IR_OP_LOCAL_FIELD_SET:
@@ -234,6 +240,7 @@ bool ir_verify_result_type(const IrModule *ir,
         case IR_OP_CONST_INT: case IR_OP_CONST_FLOAT:
         case IR_OP_CONST_STRING: case IR_OP_CONST_NULL:
         case IR_OP_LOCAL_LOAD: case IR_OP_LOCAL_MOVE:
+        case IR_OP_LOCAL_TRANSFER:
         case IR_OP_STATIC_FIELD_LOAD:
         case IR_OP_VALUE_CLONE:
         case IR_OP_ADD_CHECKED: case IR_OP_SUB_CHECKED:
@@ -253,6 +260,7 @@ bool ir_verify_result_type(const IrModule *ir,
         case IR_OP_EXCEPTION_MATCH: case IR_OP_EXCEPTION_TAKE:
         case IR_OP_AGGREGATE_MAKE: case IR_OP_FIELD_GET:
         case IR_OP_LOCAL_FIELD_GET: case IR_OP_LOCAL_FIELD_MOVE:
+        case IR_OP_LOCAL_FIELD_TRANSFER:
         case IR_OP_LOCAL_FIELD_BORROW: case IR_OP_INDEX_GET:
         case IR_OP_LOCAL_INDEX_GET: case IR_OP_LOCAL_ENUM_IS:
         case IR_OP_LOCAL_ENUM_PAYLOAD_MOVE:
@@ -391,6 +399,10 @@ bool ir_verify_instruction_signature(
         local_index < function->local_count
         ? &function->locals[local_index] : NULL;
     switch (instruction->opcode) {
+        case IR_OP_LOCAL_TRANSFER:
+        case IR_OP_LOCAL_FIELD_TRANSFER:
+            /* Frontend-only opcodes must be gone before verification. */
+            return false;
         case IR_OP_PARAMETER:
             return instruction->index < function->parameter_count &&
                    instruction->result_type ==
@@ -405,6 +417,7 @@ bool ir_verify_instruction_signature(
             return instruction->symbol != NULL;
         case IR_OP_LOCAL_DROP:
         case IR_OP_LOCAL_DEFAULT:
+        case IR_OP_LOCAL_INVALIDATE:
             return local != NULL;
         case IR_OP_VALUE_DISCARD:
             return ir_verify_value_type(ir, function, instruction->operands[0], NULL);

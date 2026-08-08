@@ -660,6 +660,8 @@ bool lang_ir_lower_module(Module *module,
                     IR_INVALID_ID, IR_INVALID_ID, source->span);
             }
         }
+        if (!builder.failed)
+            (void)ir_resolve_ownership_transfers(&builder);
         if (builder.failed) {
             ir->lowering_module = NULL;
             ir->lowering_diagnostics = NULL;

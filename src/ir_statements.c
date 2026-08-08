@@ -462,6 +462,26 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
             uint32_t source_local = ir_find_local(
                 builder, source->resolved_local_id, source->span);
             const Decl *structure = source->type->declaration;
+            IrTypeId source_type = ir_intern_type(
+                builder->module, source->type);
+            bool nontrivial = source->type->kind != TYPE_CLASS &&
+                source->type->kind != TYPE_RAW_POINTER &&
+                (source->type->requires_cleanup || source->type->managed ||
+                 ir_type_requires_custom_copy(builder, source->type));
+            if (nontrivial) {
+                IrInstruction *transfer = ir_append_instruction(
+                    builder, IR_OP_LOCAL_TRANSFER, source_type,
+                    NULL, 0U, source->span);
+                if (transfer == NULL) break;
+                transfer->index = source_local;
+                source_local = ir_add_synthetic_local(
+                    builder, "<deconstruction>", source_type);
+                IrValueId transferred = transfer->result;
+                IrInstruction *store = ir_append_instruction(
+                    builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+                    &transferred, 1U, source->span);
+                if (store != NULL) store->index = source_local;
+            }
             for (size_t field = 0U;
                  field < stmt->as.destructure.count; ++field) {
                 Type *field_type =
@@ -492,6 +512,13 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                     builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
                     &value, 1U, stmt->span);
                 if (store != NULL) store->index = destination;
+            }
+            if (nontrivial) {
+                IrInstruction *invalidate = ir_append_instruction(
+                    builder, IR_OP_LOCAL_INVALIDATE, IR_INVALID_ID,
+                    NULL, 0U, stmt->span);
+                if (invalidate != NULL)
+                    invalidate->index = source_local;
             }
             break;
         }

@@ -40,6 +40,19 @@ fresh owning temporary. Cloning the latter consumes and destroys the original
 temporary after producing the clone; cloning a local view leaves its owner
 unchanged.
 
+`local_invalidate` clears a fully consumed local without invoking its drop
+policy. It is used after deconstruction has transferred the aggregate's fields,
+so later cleanup cannot run the aggregate destructor over ownership that now
+belongs to the destination locals.
+
+During frontend lowering only, copyable non-trivial local and direct-field
+reads may temporarily be represented as unresolved transfers. A mandatory
+backward liveness analysis over the complete CFG rewrites each transfer to
+`local_move` at last use or to the type's semantic copy when the source remains
+live. Borrowed locals always select copy. The rewrite expands recursive and
+user-defined copy operations before verification; unresolved transfers are
+invalid in backend input.
+
 Struct construction retains source evaluation order. Each operand carries its
 resolved declaration-field index, allowing a backend to place fields in target
 layout order without reordering initializer side effects. Local field and index

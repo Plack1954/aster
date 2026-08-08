@@ -1390,6 +1390,7 @@ data only from an explicitly trusted nginx peer. nginx configuration and
 certificate renewal belong to host administration. A systemd restart drains
 the old H2O process gracefully but has a brief listener handoff until Aster Web
 adds an explicitly justified zero-downtime mechanism.
+
 ## Use bounded C++-style copy control for user-owned values
 
 Decision: add implicit recursive copy, a user-defined copy constructor, and a
@@ -1419,3 +1420,33 @@ alias copy; an explicit `new T(existing)` may separately invoke a class copy
 constructor. Compiler-internal moves and return elision remain implementation
 details. Aster does not initially add copy-assignment operators, move
 constructors, lifetime annotations, a borrow checker, or move-only defaults.
+
+## Select moves from typed-IR last-use analysis
+
+Decision: treat an ordinary copyable non-trivial local or direct owned-field
+read as an unresolved transfer. A mandatory typed-IR control-flow pass moves at
+last use and emits the type's semantic copy when the source remains live.
+Retain `copy(value)` only as a request to force duplication.
+
+Context: the earlier move-by-default rule made cheap transfers predictable but
+forced `copy(...)` into ordinary value code whenever a source happened to be
+used again. Nim demonstrates the useful language rule: ordinary value syntax,
+copy when necessary, and sink/move at the final use. Swift's ownership-aware
+SIL demonstrates the compiler architecture: make ownership decisions explicit
+in typed IR before backend lowering.
+
+Alternatives: keep source-level explicit copies everywhere, add `move` or
+`take`, make all assignments unconditional copies, or let each backend infer
+ownership independently.
+
+Reason: whole-function liveness has the information programmers should not
+have to spell. It preserves maximal performance on the dead-source path while
+retaining normal value semantics when the source is reused. Reusing the
+existing recursive/custom-copy lowering prevents a raw clone from bypassing a
+user copy constructor.
+
+Consequences: adding a later source use may make an earlier transfer invoke an
+observable copy constructor. Borrowed parameters always copy when converted to
+owned results. Cleanup drops do not count as uses because moved slots are
+empty. Frontend-only transfer instructions are rejected if they survive into
+verified IR; the VM and C backend receive only explicit moves and copies.

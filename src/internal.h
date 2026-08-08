@@ -700,9 +700,12 @@ typedef enum IrOpcode {
     IR_OP_CONST_NULL,
     IR_OP_LOCAL_LOAD,
     IR_OP_LOCAL_MOVE,
+    /* Lowering-only: resolved to a move or a semantic copy before verify. */
+    IR_OP_LOCAL_TRANSFER,
     IR_OP_LOCAL_STORE,
     IR_OP_LOCAL_DROP,
     IR_OP_LOCAL_DEFAULT,
+    IR_OP_LOCAL_INVALIDATE,
     IR_OP_STATIC_FIELD_LOAD,
     IR_OP_STATIC_FIELD_STORE,
     IR_OP_VALUE_CLONE,
@@ -747,6 +750,8 @@ typedef enum IrOpcode {
     IR_OP_FIELD_SET,
     IR_OP_LOCAL_FIELD_GET,
     IR_OP_LOCAL_FIELD_MOVE,
+    /* Lowering-only: resolved before the IR leaves the frontend. */
+    IR_OP_LOCAL_FIELD_TRANSFER,
     IR_OP_LOCAL_FIELD_BORROW,
     IR_OP_LOCAL_FIELD_SET,
     IR_OP_LOCAL_FIELD_DEFAULT,

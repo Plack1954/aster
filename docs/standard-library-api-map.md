@@ -330,7 +330,8 @@ Keys are currently limited to scalar, character, `string`, and raw-pointer
 types with defined built-in equality. The VM and generated C keep dense
 key/value storage plus an open-addressed hash index, giving average constant-
 time key lookup while retaining deterministic cleanup. Dictionary assignment
-moves the dictionary; `copy(dictionary)` explicitly duplicates keys and values.
+moves at last use and otherwise duplicates keys and values;
+`copy(dictionary)` forces duplication.
 `Keys` and `Values` remain pending because .NET exposes live read-only
 collection views. Aster will not disguise copied `List<T>` snapshots under
 those names. `KeyAt` and `ValueAt` are bounded Aster extensions used for

@@ -410,6 +410,14 @@ void lower_instruction(IrBytecodeBuilder *builder,
                 builder, OP_DEFAULT_LOCAL, index, 0,
                 instruction->span);
             return;
+        case IR_OP_LOCAL_INVALIDATE:
+            if (!as_i32(builder, instruction->index,
+                        instruction->span, &index))
+                return;
+            (void)emit_instruction(
+                builder, OP_INVALIDATE_LOCAL, index, 0,
+                instruction->span);
+            return;
         case IR_OP_VALUE_CLONE:
             move_value(
                 builder, instruction->operands[0], instruction->span);

@@ -437,7 +437,8 @@ Type *checker_check_name(Checker *checker, Expr *expr) {
                       "`out` parameter `%s` cannot be read before assignment",
                       local->name);
         if (checker_require_available(checker, local, expr->span) &&
-            type_moves_by_default(checker, local->type))
+            type_moves_by_default(checker, local->type) &&
+            !type_is_copyable(checker, local->type))
             checker_move_local(checker, local, expr->span);
         return local->type;
     }

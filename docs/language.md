@@ -190,9 +190,11 @@ public void Router.Add(ref Router self, Route route) {
 ```
 
 `self` must be the first parameter of a type-qualified function. An ordinary
-by-value parameter copies a trivial value and consumes a non-trivial value.
-`ref` is the C#-shaped mutable reference form and `const ref` is an immutable
-borrow. A moved named value is unavailable until it is reassigned.
+by-value parameter copies a trivial value. For a copyable non-trivial argument,
+the compiler copies when the caller uses the source afterward and moves at its
+last use; a noncopyable argument is consumed. `ref` is the C#-shaped mutable
+reference form and `const ref` is an immutable borrow. A destructively moved
+noncopyable named value is unavailable until it is reassigned.
 
 Classes may implement nominal interfaces using the C# inheritance-list form,
 and interfaces may inherit multiple interfaces. Interface members are
@@ -282,9 +284,9 @@ has a distinct type and LIFO surface while sharing the established contiguous
 collection implementation.
 
 `Add(value)`, ordinary assignment, and by-value calls move non-trivial values
-and leave trivial sources available. `copy(value)` explicitly requests an
-independent value. The VM and generated C implement the same policy for
-strings, lists, arrays, structs, and union payloads.
+at last use and otherwise apply the type's copy operation. `copy(value)`
+explicitly forces an independent value. The VM and generated C implement the
+same decisions for strings, lists, arrays, structs, and union payloads.
 
 The integer types `sbyte`, `short`, `int`, `long`, `byte`, `ushort`, `uint`, `ulong`,
 `nint`, and `nuint` have distinct static identities. Arithmetic traps when
@@ -391,8 +393,9 @@ private struct BufferOwner {
 }
 ```
 
-`copy(owner)` invokes this constructor. Ordinary initialization, assignment,
-and by-value parameters move `BufferOwner`; explicit
+`copy(owner)` always invokes this constructor. Ordinary initialization,
+assignment, and by-value parameters invoke it only when the source remains
+live; otherwise they move `BufferOwner`. Explicit
 `new BufferOwner(existing)` remains an ordinary constructor call. The source
 cannot be mutated through `const ref`.
 
@@ -424,16 +427,16 @@ index from the copied keys. User structs are not currently admissible
 `Dictionary` or `HashSet` keys because those collections require built-in
 equality; consequently a user-defined custom copy constructor can presently
 participate in a dictionary value, but not a set or dictionary key.
-Reads from fields, fixed arrays, `List`, `Queue`, `Stack`, and `Dictionary`
-borrow stored non-trivial values unless ownership can be destructively removed.
-Use `copy(...)` when an independent result is required. Returning a `const ref`
-parameter as an owned non-trivial value likewise requires an explicit copy.
-Conditional read APIs borrow storage while producing their documented result;
-they do not silently introduce a deep copy.
+Reads from fields move at the owning local's last use and otherwise copy a
+copyable field. Fixed-array and collection index reads cannot change container
+shape, so they copy copyable non-trivial elements. Noncopyable elements require
+a borrowing or consuming API. Returning a `const ref` parameter as an owned
+non-trivial value copies because borrowed storage cannot be consumed.
 
 `string` is Aster's single immutable UTF-8 string type. Assignment, argument
-passing, and returns move its reference-counted handle. `copy(value)` retains
-the shared allocation, and borrowed reads do neither. Native adapters may use
+passing, and returns move its reference-counted handle at last use and retain
+it when the source remains live. `copy(value)` forces a retain, and borrowed
+reads do neither. Native adapters may use
 temporary pointer-and-length views internally; those views are not a second
 language type.
 
@@ -530,12 +533,14 @@ UTF-8 validation. Invalid indexing traps in the development VM; range copying
 returns a typed error.
 
 `new()` uses its surrounding `List<T>` type. `Add` mutates a list and can store
-a fresh element directly; passing an existing non-trivial value moves it.
+a fresh element directly; passing an existing non-trivial value moves it at
+last use and otherwise copies it.
 `Count` reads the list, and `foreach` borrows it and its elements by default.
-`list.Get(index)` performs checked borrowed indexing; use `copy(list[index])`
-when an independent non-trivial element is required.
+`list.Get(index)` performs checked borrowed indexing; an owned `list[index]`
+result automatically copies a copyable non-trivial element.
 
-Ordinary aggregate parameters consume non-trivial values:
+Ordinary aggregate parameters receive a move at the argument's last use and a
+copy when the caller continues using a copyable argument:
 
 ```text
 private nuint Inspect(List<long> values) {

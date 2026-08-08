@@ -95,14 +95,6 @@
             lang_diag(checker->diagnostics, expr->span,
                       "`Queue::Peek` cannot copy noncopyable element type `%s`",
                       queue->element->name);
-        else if (!dequeue &&
-                 type_moves_by_default(checker, queue->element) &&
-                 checker->copy_depth == 0U &&
-                 checker->borrow_depth == 0U)
-            lang_diag(
-                checker->diagnostics, expr->span,
-                "reading non-trivial Queue element `%s` requires `copy(...)`",
-                queue->element->name);
         return queue->element;
     }
     if (strcmp(name, "Queue::TryDequeue") == 0 ||
@@ -217,14 +209,6 @@
             lang_diag(checker->diagnostics, expr->span,
                       "`Stack::Peek` cannot copy noncopyable element type `%s`",
                       stack->element->name);
-        else if (!pop &&
-                 type_moves_by_default(checker, stack->element) &&
-                 checker->copy_depth == 0U &&
-                 checker->borrow_depth == 0U)
-            lang_diag(
-                checker->diagnostics, expr->span,
-                "reading non-trivial Stack element `%s` requires `copy(...)`",
-                stack->element->name);
         return stack->element;
     }
     if (strcmp(name, "Stack::TryPop") == 0 ||

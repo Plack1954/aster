@@ -144,7 +144,8 @@ bool check_stmt(Checker *checker, Stmt *stmt) {
             Local *source_local = find_local(
                 checker, value_expr->as.name);
             if (source_local != NULL &&
-                type_moves_by_default(checker, aggregate))
+                type_moves_by_default(checker, aggregate) &&
+                !type_is_copyable(checker, aggregate))
                 checker_move_local(
                     checker, source_local, value_expr->span);
             const Decl *structure = aggregate->declaration;
