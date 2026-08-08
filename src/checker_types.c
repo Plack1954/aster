@@ -1,5 +1,6 @@
 #include "checker_internal.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -163,6 +164,138 @@ static bool declaration_path_matches(const char *path,
                qualifier_length) == 0;
 }
 
+static size_t import_lookup_hash(const char *owner_module,
+                                 const char *target_module) {
+    size_t hash = (size_t)1469598103934665603ULL;
+    const char *parts[] = {owner_module, "::", target_module};
+    for (size_t part = 0U; part < 3U; ++part)
+        for (const unsigned char *cursor =
+                 (const unsigned char *)parts[part];
+             *cursor != '\0'; ++cursor) {
+            hash ^= *cursor;
+            hash *= (size_t)1099511628211ULL;
+        }
+    return hash;
+}
+
+static void ensure_import_lookup(Module *module) {
+    if (module->import_lookup_heads != NULL) return;
+    size_t buckets = 16U;
+    while (module->import_count > buckets / 2U) buckets *= 2U;
+    module->import_lookup_heads = lang_arena_alloc(
+        &module->arena, buckets * sizeof(*module->import_lookup_heads));
+    module->import_lookup_tails = lang_arena_alloc(
+        &module->arena, buckets * sizeof(*module->import_lookup_tails));
+    module->import_lookup_nodes = lang_arena_alloc(
+        &module->arena,
+        (module->import_count == 0U ? 1U : module->import_count) *
+            sizeof(*module->import_lookup_nodes));
+    module->import_lookup_bucket_count = buckets;
+    for (size_t i = 0U; i < module->import_count; ++i) {
+        const ImportDecl *declaration = &module->imports[i];
+        if (declaration->owner_module == NULL ||
+            declaration->module_path == NULL)
+            continue;
+        size_t bucket = import_lookup_hash(
+            declaration->owner_module, declaration->module_path) &
+            (buckets - 1U);
+        size_t link = ++module->import_lookup_node_count;
+        module->import_lookup_nodes[link - 1U] =
+            (ImportLookupNode){declaration, 0U};
+        size_t tail = module->import_lookup_tails[bucket];
+        if (tail == 0U)
+            module->import_lookup_heads[bucket] = link;
+        else
+            module->import_lookup_nodes[tail - 1U].next = link;
+        module->import_lookup_tails[bucket] = link;
+    }
+}
+
+static size_t import_lookup_first_uncached(
+    const Module *module, const char *owner_module,
+    const char *target_module) {
+    size_t bucket = import_lookup_hash(owner_module, target_module) &
+        (module->import_lookup_bucket_count - 1U);
+    for (size_t link = module->import_lookup_heads[bucket];
+         link != 0U;
+         link = module->import_lookup_nodes[link - 1U].next) {
+        const ImportDecl *declaration =
+            module->import_lookup_nodes[link - 1U].declaration;
+        if (strcmp(declaration->owner_module, owner_module) == 0 &&
+            strcmp(declaration->module_path, target_module) == 0)
+            return link;
+    }
+    return 0U;
+}
+
+static size_t import_lookup_pointer_hash(const char *owner_module,
+                                         const char *target_module) {
+    uintptr_t owner = (uintptr_t)owner_module;
+    uintptr_t target = (uintptr_t)target_module;
+    owner ^= owner >> 17U;
+    target ^= target >> 13U;
+    return (size_t)(owner ^ (target + (target << 6U) + (target >> 2U)));
+}
+
+static void grow_import_lookup_cache(Module *module) {
+    size_t capacity = module->import_lookup_cache_capacity == 0U
+        ? 16U : module->import_lookup_cache_capacity * 2U;
+    ImportLookupCacheEntry *entries = lang_arena_alloc(
+        &module->arena, capacity * sizeof(*entries));
+    for (size_t i = 0U; i < module->import_lookup_cache_capacity; ++i) {
+        ImportLookupCacheEntry entry = module->import_lookup_cache[i];
+        if (!entry.occupied) continue;
+        size_t slot = import_lookup_pointer_hash(
+            entry.owner_module, entry.target_module) & (capacity - 1U);
+        while (entries[slot].occupied) slot = (slot + 1U) & (capacity - 1U);
+        entries[slot] = entry;
+    }
+    module->import_lookup_cache = entries;
+    module->import_lookup_cache_capacity = capacity;
+}
+
+static size_t import_lookup_first(Module *module, const char *owner_module,
+                                  const char *target_module) {
+    ensure_import_lookup(module);
+    if (module->import_lookup_cache_capacity == 0U ||
+        (module->import_lookup_cache_count + 1U) * 2U >=
+            module->import_lookup_cache_capacity)
+        grow_import_lookup_cache(module);
+    size_t slot = import_lookup_pointer_hash(owner_module, target_module) &
+        (module->import_lookup_cache_capacity - 1U);
+    while (module->import_lookup_cache[slot].occupied) {
+        const ImportLookupCacheEntry *entry =
+            &module->import_lookup_cache[slot];
+        if (entry->owner_module == owner_module &&
+            entry->target_module == target_module)
+            return entry->first_link;
+        slot = (slot + 1U) &
+            (module->import_lookup_cache_capacity - 1U);
+    }
+    size_t first = import_lookup_first_uncached(
+        module, owner_module, target_module);
+    module->import_lookup_cache[slot] = (ImportLookupCacheEntry){
+        owner_module, target_module, first, true};
+    ++module->import_lookup_cache_count;
+    return first;
+}
+
+static size_t import_lookup_next(const Module *module, size_t link,
+                                 const char *owner_module,
+                                 const char *target_module) {
+    if (link == 0U || link > module->import_lookup_node_count) return 0U;
+    for (link = module->import_lookup_nodes[link - 1U].next;
+         link != 0U;
+         link = module->import_lookup_nodes[link - 1U].next) {
+        const ImportDecl *declaration =
+            module->import_lookup_nodes[link - 1U].declaration;
+        if (strcmp(declaration->owner_module, owner_module) == 0 &&
+            strcmp(declaration->module_path, target_module) == 0)
+            return link;
+    }
+    return 0U;
+}
+
 bool imported_declaration_matches(const Checker *checker,
                                          const char *use_name,
                                          const char *declaration_name,
@@ -170,14 +303,15 @@ bool imported_declaration_matches(const Checker *checker,
     if (checker->current_module == NULL || declaration_module == NULL)
         return false;
     bool targeted_module = false;
-    for (size_t i = 0U; i < checker->module->import_count; ++i) {
-        const ImportDecl *import_decl = &checker->module->imports[i];
-        if (import_decl->owner_module == NULL ||
-            strcmp(import_decl->owner_module,
-                   checker->current_module) != 0 ||
-            strcmp(import_decl->module_path,
-                   declaration_module) != 0)
-            continue;
+    for (size_t link = import_lookup_first(
+             checker->module, checker->current_module,
+             declaration_module);
+         link != 0U;
+         link = import_lookup_next(
+             checker->module, link, checker->current_module,
+             declaration_module)) {
+        const ImportDecl *import_decl =
+            checker->module->import_lookup_nodes[link - 1U].declaration;
         targeted_module = true;
         if (import_decl->item_count != 0U) {
             for (size_t item = 0U;

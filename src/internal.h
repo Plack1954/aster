@@ -589,6 +589,18 @@ typedef struct ImportDecl {
     LangSpan span;
 } ImportDecl;
 
+typedef struct ImportLookupNode {
+    const ImportDecl *declaration;
+    size_t next; /* One-based node index; zero ends the chain. */
+} ImportLookupNode;
+
+typedef struct ImportLookupCacheEntry {
+    const char *owner_module;
+    const char *target_module;
+    size_t first_link;
+    bool occupied;
+} ImportLookupCacheEntry;
+
 typedef struct TypeLookupCacheEntry {
     const char *module_name;
     const char *name;
@@ -625,6 +637,15 @@ typedef struct Module {
     size_t function_lookup_indexed_declaration_count;
     ImportDecl *imports;
     size_t import_count;
+    /* Exact (owner module, imported module) chains, built on first lookup. */
+    size_t *import_lookup_heads;
+    size_t *import_lookup_tails;
+    size_t import_lookup_bucket_count;
+    ImportLookupNode *import_lookup_nodes;
+    size_t import_lookup_node_count;
+    ImportLookupCacheEntry *import_lookup_cache;
+    size_t import_lookup_cache_count;
+    size_t import_lookup_cache_capacity;
     Type **type_instantiations; /* Canonical applied named types. */
     size_t type_instantiation_count;
     LangArena arena;
