@@ -1082,6 +1082,8 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     uint32_t *borrowed_temporary_locals = ir_resize(
         NULL, argument_count, sizeof(*borrowed_temporary_locals));
     size_t borrowed_temporary_count = 0U;
+    uint32_t *prepared_argument_locals = ir_resize(
+        NULL, argument_count, sizeof(*prepared_argument_locals));
     IrValueId *borrowed_place_values = ir_resize(
         NULL, argument_count * 64U,
         sizeof(*borrowed_place_values));
@@ -1091,6 +1093,8 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         memset(
             borrowed_place_counts, 0,
             argument_count * sizeof(*borrowed_place_counts));
+    for (size_t i = 0U; i < argument_count; ++i)
+        prepared_argument_locals[i] = IR_INVALID_ID;
     size_t offset = 0U;
     const Type *indirect_function_type = indirect
         ? expr->as.call.callee->type : NULL;
@@ -1148,6 +1152,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
                     builder, owner_local, argument->span)) {
                 free(operands);
                 free(borrowed_temporary_locals);
+                free(prepared_argument_locals);
                 free(borrowed_place_values);
                 free(borrowed_place_counts);
                 builder->temporary_cleanup_count =
@@ -1157,9 +1162,48 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             borrowed_temporary_locals[borrowed_temporary_count++] =
                 owner_local;
         } else {
-            operands[offset + i] =
-                ir_lower_expr(builder, argument);
+            IrValueId value = ir_lower_expr(builder, argument);
+            IrTypeId argument_type = ir_intern_type(
+                builder->module, argument->type);
+            if (argument->type->requires_cleanup ||
+                argument->type->managed) {
+                uint32_t owner_local = ir_add_synthetic_local(
+                    builder, "<prepared-argument>", argument_type);
+                IrInstruction *store = ir_append_instruction(
+                    builder, IR_OP_LOCAL_STORE, IR_INVALID_ID,
+                    &value, 1U, argument->span);
+                if (store != NULL) store->index = owner_local;
+                if (!ir_push_temporary_cleanup(
+                        builder, owner_local, argument->span)) {
+                    free(operands);
+                    free(borrowed_temporary_locals);
+                    free(prepared_argument_locals);
+                    free(borrowed_place_values);
+                    free(borrowed_place_counts);
+                    builder->temporary_cleanup_count =
+                        temporary_cleanup_base;
+                    return IR_INVALID_ID;
+                }
+                prepared_argument_locals[i] = owner_local;
+                operands[offset + i] = IR_INVALID_ID;
+            } else {
+                operands[offset + i] = value;
+            }
         }
+    }
+    /* Argument evaluation is the prepare phase.  Keep each owned value in a
+     * cleanup-tracked local until every argument has succeeded, then commit
+     * ownership to the callee with adjacent, non-throwing moves. */
+    for (size_t i = 0U; i < argument_count; ++i) {
+        uint32_t local = prepared_argument_locals[i];
+        if (local == IR_INVALID_ID) continue;
+        IrInstruction *move = ir_append_instruction(
+            builder, IR_OP_LOCAL_MOVE,
+            builder->function->locals[local].type,
+            NULL, 0U, expr->as.call.arguments.items[i]->span);
+        if (move != NULL) move->index = local;
+        operands[offset + i] = move != NULL
+            ? move->result : IR_INVALID_ID;
     }
     bool native = target != NULL && target->kind == DECL_FUNCTION &&
                   target->as.function.is_extern;
@@ -1175,6 +1219,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     free(operands);
     if (call == NULL) {
         free(borrowed_temporary_locals);
+        free(prepared_argument_locals);
         free(borrowed_place_values);
         free(borrowed_place_counts);
         builder->temporary_cleanup_count = temporary_cleanup_base;
@@ -1237,6 +1282,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     }
     builder->temporary_cleanup_count = temporary_cleanup_base;
     free(borrowed_temporary_locals);
+    free(prepared_argument_locals);
     for (size_t i = 0U; i < argument_count; ++i)
         discard_local_place_borrows(
             builder, &borrowed_place_values[i * 64U],

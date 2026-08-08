@@ -33,10 +33,11 @@ analysis, not a backend guess and not an optional optimization.
 ## What “last use” means
 
 The typed-IR ownership pass computes local liveness over the complete control-
-flow graph. A transfer moves only when no reachable continuation reads that
-version of the source. Uses in either branch, after a merge, or on a loop back
-edge keep it live. Reassigning a local ends the previous value's lifetime, so a
-transfer before an unconditional reassignment can still move.
+flow graph. A transfer moves only at the last observable use of that ownership
+incarnation: no reachable continuation may read it directly or through a live
+overlapping safe borrow. Uses in either branch, after a merge, or on a loop
+back edge keep it live. Reassigning a local ends the previous value's lifetime,
+so a transfer before an unconditional reassignment can still move.
 
 Scope-exit cleanup is not counted as a use. A moved slot is empty, and its
 compiler-emitted drop therefore does nothing. This preserves exactly-once
@@ -76,6 +77,12 @@ A borrow remains live through the complete call. If one argument borrows a
 local and another by-value argument refers to the same local, the by-value
 argument is copied rather than moved, regardless of argument order. The callee
 therefore never observes a borrow into an emptied source slot.
+
+Call ownership transfer is transactional. During left-to-right argument
+evaluation, every prepared owning argument remains caller-owned and registered
+for exceptional cleanup. Only after every argument succeeds does a non-throwing
+commit move those values into the callee parameters. An exception in a later
+argument therefore destroys every earlier prepared value exactly once.
 
 Returning a local is normally its last use and therefore moves. Fresh
 expressions are constructed directly in their destination where possible.

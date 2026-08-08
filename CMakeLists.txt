@@ -325,6 +325,11 @@ add_test(NAME deleted_copy_constructor_rejected
 set_tests_properties(deleted_copy_constructor_rejected PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     WILL_FAIL TRUE)
+add_test(NAME noncopyable_repeated_argument_rejected
+    COMMAND lang check tests/checker/noncopyable_repeated_argument.as)
+set_tests_properties(noncopyable_repeated_argument_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
 add_test(NAME custom_copy_source_is_immutable
     COMMAND lang check tests/checker/custom_copy_mutates_source.as)
 set_tests_properties(custom_copy_source_is_immutable PROPERTIES
@@ -526,12 +531,12 @@ add_test(NAME automatic_last_use_copy_vm
 set_tests_properties(automatic_last_use_copy_vm PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     PASS_REGULAR_EXPRESSION
-        "1[\r\n]+0[\r\n]+1[\r\n]+11[\r\n]+10[\r\n]+21[\r\n]+20[\r\n]+31[\r\n]+30[\r\n]+32[\r\n]+30[\r\n]+41[\r\n]+40[\r\n]+551[\r\n]+670")
+        "1[\r\n]+0[\r\n]+1[\r\n]+11[\r\n]+10[\r\n]+21[\r\n]+20[\r\n]+31[\r\n]+30[\r\n]+32[\r\n]+30[\r\n]+41[\r\n]+40[\r\n]+551[\r\n]+670[\r\n]+771[\r\n]+890[\r\n]+1000")
 add_aster_generated_c_test(
     automatic_last_use_copy_generated_c
     tests/automatic_last_use_copy.as
     automatic_last_use_copy
-    "-DEXPECTED_OUTPUT=1\n0\n1\n11\n10\n21\n20\n31\n30\n32\n30\n41\n40\n551\n670\n")
+    "-DEXPECTED_OUTPUT=1\n0\n1\n11\n10\n21\n20\n31\n30\n32\n30\n41\n40\n551\n670\n771\n890\n1000\n")
 add_test(NAME custom_copy_raw_allocation_vm
     COMMAND lang run-ir tests/custom_copy_raw_allocation.as)
 set_tests_properties(custom_copy_raw_allocation_vm PROPERTIES
@@ -1609,6 +1614,12 @@ add_aster_generated_c_test(
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_backend_cleanup.as
     aster_c_backend_cleanup
         "-DEXPECTED_OUTPUT=2\n1\n3\n4\n5\n6\n7\n70\n8\n80\n9\n90\n91\n100\n10\n")
+add_test(NAME deterministic_cleanup_vm
+    COMMAND lang run-ir tests/c_backend_cleanup.as)
+set_tests_properties(deterministic_cleanup_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "2[\r\n]+1[\r\n]+3[\r\n]+4[\r\n]+5[\r\n]+6[\r\n]+7[\r\n]+70[\r\n]+8[\r\n]+80[\r\n]+9[\r\n]+90[\r\n]+91[\r\n]+100[\r\n]+10")
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     function(add_c_backend_cleanup_leak_test edge)
         add_aster_generated_c_test(

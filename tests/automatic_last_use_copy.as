@@ -33,6 +33,24 @@ private long OwnThenBorrow(
     return owned.generation * 10 + borrowed.generation;
 }
 
+private long BorrowFieldThenOwn(
+    const ref CopyProbe borrowed,
+    CopyPair owned
+) {
+    return borrowed.generation * 10 + owned.value.generation;
+}
+
+private long OwnThenBorrowField(
+    CopyPair owned,
+    const ref CopyProbe borrowed
+) {
+    return owned.value.generation * 10 + borrowed.generation;
+}
+
+private long OwnTwice(CopyProbe first, CopyProbe second) {
+    return first.generation * 10 + second.generation;
+}
+
 int main() {
     CopyProbe source = new() { generation = 0 };
     CopyProbe copied = source;
@@ -78,5 +96,20 @@ int main() {
 
     CopyProbe ownThenBorrow = new() { generation = 60 };
     Console.WriteLine(OwnThenBorrow(ownThenBorrow, ownThenBorrow));
+
+    CopyPair borrowFieldThenOwn = new() {
+        value = new() { generation = 70 }, marker = 0
+    };
+    Console.WriteLine(BorrowFieldThenOwn(
+        borrowFieldThenOwn.value, borrowFieldThenOwn));
+
+    CopyPair ownThenBorrowField = new() {
+        value = new() { generation = 80 }, marker = 0
+    };
+    Console.WriteLine(OwnThenBorrowField(
+        ownThenBorrowField, ownThenBorrowField.value));
+
+    CopyProbe ownTwice = new() { generation = 90 };
+    Console.WriteLine(OwnTwice(ownTwice, ownTwice));
     return 0;
 }
