@@ -90,8 +90,21 @@ static uint8_t meet_local_availability(uint8_t left, uint8_t right) {
     return left == right ? left : IR_LOCAL_MAYBE_AVAILABLE;
 }
 
+static bool verifier_local_requires_cleanup(
+    const IrModule *ir, const IrFunction *function, size_t local
+) {
+    if (function->locals[local].borrowed ||
+        (function->is_destructor && local == 0U))
+        return false;
+    IrTypeId id = function->locals[local].type;
+    if (id >= ir->type_count) return false;
+    const IrType *type = &ir->types[id];
+    return type->requires_cleanup || type->managed;
+}
+
 static bool verify_local_availability(
-    const IrFunction *function, LangDiagnostics *diagnostics
+    const IrModule *ir, const IrFunction *function,
+    LangDiagnostics *diagnostics
 ) {
     const size_t blocks = function->block_count;
     const size_t locals = function->local_count;
@@ -189,6 +202,18 @@ static bool verify_local_availability(
             }
             update_local_availability(function, instruction, scratch);
         }
+        if (block->terminator.kind == IR_TERM_RETURN ||
+            block->terminator.kind == IR_TERM_PROPAGATE_EXCEPTION)
+            for (size_t local = 0U; local < locals; ++local)
+                if (verifier_local_requires_cleanup(
+                        ir, function, local) &&
+                    scratch[local] != IR_LOCAL_UNAVAILABLE) {
+                    lang_diag(
+                        diagnostics, block->terminator.span,
+                        "IR exit leaves owning local %zu live in `%s`",
+                        local, function->name);
+                    ok = false;
+                }
     }
 
     free(queued);
@@ -1073,7 +1098,7 @@ bool lang_ir_verify_module(const IrModule *ir,
         }
         free(dominators);
         free(reachable);
-        if (!verify_local_availability(function, diagnostics))
+        if (!verify_local_availability(ir, function, diagnostics))
             ok = false;
         free(definition_instructions);
         free(definition_blocks);

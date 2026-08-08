@@ -57,7 +57,9 @@ Verification then computes definite local availability over the CFG. A local
 read is valid only when every incoming path still owns or borrows an available
 value; moves and invalidations make the slot unavailable, while stores restore
 it. Path-dependent cleanup may drop a maybe-live slot, but no later read may
-rely on that runtime cleanup state.
+rely on that runtime cleanup state. Every cleanup-owning local must also be
+unavailable on every normal-return and propagated-exception edge; otherwise
+the IR is rejected before reaching a backend.
 
 Struct construction retains source evaluation order. Each operand carries its
 resolved declaration-field index, allowing a backend to place fields in target

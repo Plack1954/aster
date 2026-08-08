@@ -820,3 +820,27 @@ void ir_emit_function_cleanup_except(
 void ir_emit_function_cleanup(IrBuilder *builder, LangSpan span) {
     ir_emit_function_cleanup_except(builder, span, IR_INVALID_ID);
 }
+
+bool ir_push_temporary_cleanup(
+    IrBuilder *builder, uint32_t local, LangSpan span
+) {
+    if (builder->temporary_cleanup_count >= 256U) {
+        lang_diag(builder->diagnostics, span,
+                  "IR temporary cleanup nesting limit exceeded");
+        builder->failed = true;
+        return false;
+    }
+    builder->temporary_cleanups[
+        builder->temporary_cleanup_count++] = local;
+    return true;
+}
+
+void ir_emit_temporary_cleanups(IrBuilder *builder, LangSpan span) {
+    for (size_t i = builder->temporary_cleanup_count; i > 0U; --i) {
+        IrInstruction *drop = ir_append_instruction(
+            builder, IR_OP_LOCAL_DROP, IR_INVALID_ID,
+            NULL, 0U, span);
+        if (drop != NULL)
+            drop->index = builder->temporary_cleanups[i - 1U];
+    }
+}

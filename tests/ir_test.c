@@ -312,6 +312,7 @@ int main(void) {
     bool rejected_use_before_definition = false;
     bool rejected_non_dominating_value = false;
     bool rejected_read_after_move = false;
+    bool rejected_live_owning_exit = false;
     bool rejected_unknown_terminator = false;
     if (initially_valid && ir.function_count != 0U) {
         IrInstruction *first_instruction = NULL;
@@ -438,6 +439,36 @@ int main(void) {
                     }
                 }
             }
+        for (size_t f = 0U;
+             f < ir.function_count && !rejected_live_owning_exit; ++f) {
+            IrFunction *function = &ir.functions[f];
+            if (function->is_destructor) continue;
+            for (size_t b = 0U;
+                 b < function->block_count &&
+                 !rejected_live_owning_exit; ++b) {
+                IrBlock *block = &function->blocks[b];
+                if (block->terminator.kind != IR_TERM_RETURN &&
+                    block->terminator.kind !=
+                        IR_TERM_PROPAGATE_EXCEPTION)
+                    continue;
+                for (size_t i = block->instruction_count; i > 0U; --i) {
+                    IrInstruction *drop = &block->instructions[i - 1U];
+                    if (drop->opcode != IR_OP_LOCAL_DROP ||
+                        drop->index >= function->local_count ||
+                        function->locals[drop->index].borrowed)
+                        continue;
+                    IrTypeId type = function->locals[drop->index].type;
+                    if (type >= ir.type_count ||
+                        !ir.types[type].requires_cleanup)
+                        continue;
+                    drop->opcode = IR_OP_LOCAL_DEFAULT;
+                    rejected_live_owning_exit =
+                        !lang_ir_verify_module(&ir, &diagnostics);
+                    drop->opcode = IR_OP_LOCAL_DROP;
+                    break;
+                }
+            }
+        }
         if (boolean_constant != NULL && integer_type != IR_INVALID_ID) {
             IrFunction *owner = NULL;
             for (size_t f = 0U; f < ir.function_count && owner == NULL; ++f)
@@ -627,12 +658,13 @@ int main(void) {
            rejected_use_before_definition &&
            rejected_non_dominating_value &&
            rejected_read_after_move &&
+           rejected_live_owning_exit &&
            rejected_unknown_terminator &&
            has_control_flow && rejected_malformed;
     if (!passed)
         fprintf(
             stderr,
-            "IR assertions: valid=%d metadata=%d/%d/%d/%d corrupt=%d/%d/%d/%d/%d/%d opcode=%d types=%d/%d dominance=%d/%d ownership=%d term=%d control=%d malformed=%d\n",
+            "IR assertions: valid=%d metadata=%d/%d/%d/%d corrupt=%d/%d/%d/%d/%d/%d opcode=%d types=%d/%d dominance=%d/%d ownership=%d/%d term=%d control=%d malformed=%d\n",
             initially_valid, has_field_metadata,
             has_variant_metadata, has_plain_enum_metadata,
             has_destructor_metadata,
@@ -648,6 +680,7 @@ int main(void) {
             rejected_use_before_definition,
             rejected_non_dominating_value,
             rejected_read_after_move,
+            rejected_live_owning_exit,
             rejected_unknown_terminator,
             has_control_flow, rejected_malformed);
     return passed ? 0 : 2;

@@ -540,19 +540,22 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                 builder, IR_TERM_BRANCH, pending->result,
                 exceptional, continuation, expr->span);
             builder->current = exceptional;
-            ir_emit_cleanup(
-                builder, &expr->error_cleanup, expr->span);
-            if (builder->exception_count != 0U)
+            if (builder->exception_count != 0U) {
+                ir_emit_temporary_cleanups(builder, expr->span);
+                ir_emit_cleanup(
+                    builder, &expr->error_cleanup, expr->span);
                 ir_set_terminator(
                     builder, IR_TERM_JUMP, IR_INVALID_ID,
                     builder->exceptions[
                         builder->exception_count - 1U].handler,
                     IR_INVALID_ID, expr->span);
-            else
+            } else {
+                ir_emit_function_cleanup(builder, expr->span);
                 ir_set_terminator(
                     builder, IR_TERM_PROPAGATE_EXCEPTION,
                     IR_INVALID_ID, IR_INVALID_ID,
                     IR_INVALID_ID, expr->span);
+            }
             builder->current = continuation;
             return result;
         }

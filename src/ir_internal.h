@@ -37,6 +37,8 @@ typedef struct IrBuilder {
     size_t exception_count;
     IrFinalizerContext finalizers[32];
     size_t finalizer_count;
+    uint32_t temporary_cleanups[256];
+    size_t temporary_cleanup_count;
     bool failed;
 } IrBuilder;
 
@@ -117,6 +119,9 @@ void ir_emit_element_exit_cleanup(IrBuilder *builder,
 void ir_emit_function_cleanup(IrBuilder *builder, LangSpan span);
 void ir_emit_function_cleanup_except(
     IrBuilder *builder, LangSpan span, uint32_t excluded_local);
+bool ir_push_temporary_cleanup(
+    IrBuilder *builder, uint32_t local, LangSpan span);
+void ir_emit_temporary_cleanups(IrBuilder *builder, LangSpan span);
 IrInstruction *ir_emit_local_enum_operation(
     IrBuilder *builder, IrOpcode opcode, IrTypeId result_type,
     uint32_t local, const Type *type, const char *variant,

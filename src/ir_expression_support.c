@@ -1073,6 +1073,8 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         }
     }
     size_t argument_count = expr->as.call.arguments.count;
+    size_t temporary_cleanup_base =
+        builder->temporary_cleanup_count;
     bool indirect = expr->as.call.callee->resolved_local_id != 0U;
     size_t operand_count = argument_count + (indirect ? 1U : 0U);
     IrValueId *operands = ir_resize(
@@ -1142,6 +1144,16 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
             if (load != NULL) load->index = owner_local;
             operands[offset + i] = load != NULL
                 ? load->result : IR_INVALID_ID;
+            if (!ir_push_temporary_cleanup(
+                    builder, owner_local, argument->span)) {
+                free(operands);
+                free(borrowed_temporary_locals);
+                free(borrowed_place_values);
+                free(borrowed_place_counts);
+                builder->temporary_cleanup_count =
+                    temporary_cleanup_base;
+                return IR_INVALID_ID;
+            }
             borrowed_temporary_locals[borrowed_temporary_count++] =
                 owner_local;
         } else {
@@ -1165,6 +1177,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         free(borrowed_temporary_locals);
         free(borrowed_place_values);
         free(borrowed_place_counts);
+        builder->temporary_cleanup_count = temporary_cleanup_base;
         return IR_INVALID_ID;
     }
     call->argument_mode_count = argument_count;
@@ -1222,6 +1235,7 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         if (drop != NULL)
             drop->index = borrowed_temporary_locals[i - 1U];
     }
+    builder->temporary_cleanup_count = temporary_cleanup_base;
     free(borrowed_temporary_locals);
     for (size_t i = 0U; i < argument_count; ++i)
         discard_local_place_borrows(
@@ -1245,16 +1259,22 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
         ir_set_terminator(builder, IR_TERM_BRANCH, pending->result,
                           exceptional, continuation, expr->span);
         builder->current = exceptional;
-        ir_emit_cleanup(builder, &expr->error_cleanup, expr->span);
-        if (builder->exception_count != 0U)
+        if (builder->exception_count != 0U) {
+            ir_emit_temporary_cleanups(builder, expr->span);
+            ir_emit_cleanup(builder, &expr->error_cleanup, expr->span);
             ir_set_terminator(
                 builder, IR_TERM_JUMP, IR_INVALID_ID,
                 builder->exceptions[builder->exception_count - 1U].handler,
                 IR_INVALID_ID, expr->span);
-        else
+        } else {
+            /* A propagation edge leaves the function, so clean every local
+             * the lowerer has created so far.  Checker cleanup plans are
+             * intentionally lexical and cannot name lowering-only locals. */
+            ir_emit_function_cleanup(builder, expr->span);
             ir_set_terminator(
                 builder, IR_TERM_PROPAGATE_EXCEPTION, IR_INVALID_ID,
                 IR_INVALID_ID, IR_INVALID_ID, expr->span);
+        }
         builder->current = continuation;
     }
     return result;

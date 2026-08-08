@@ -647,18 +647,22 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                 builder, IR_OP_EXCEPTION_SET, IR_INVALID_ID,
                 &value, 1U, stmt->span);
             (void)set;
-            ir_emit_cleanup(builder, &stmt->exit_cleanup, stmt->span);
-            if (builder->exception_count != 0U)
+            if (builder->exception_count != 0U) {
+                ir_emit_temporary_cleanups(builder, stmt->span);
+                ir_emit_cleanup(
+                    builder, &stmt->exit_cleanup, stmt->span);
                 ir_set_terminator(
                     builder, IR_TERM_JUMP, IR_INVALID_ID,
                     builder->exceptions[
                         builder->exception_count - 1U].handler,
                     IR_INVALID_ID, stmt->span);
-            else
+            } else {
+                ir_emit_function_cleanup(builder, stmt->span);
                 ir_set_terminator(
                     builder, IR_TERM_PROPAGATE_EXCEPTION,
                     IR_INVALID_ID, IR_INVALID_ID, IR_INVALID_ID,
                     stmt->span);
+            }
             break;
         }
         case STMT_TRY: {
@@ -730,8 +734,7 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                             builder->exception_count - 1U].handler,
                         IR_INVALID_ID, stmt->span);
                 } else {
-                    ir_emit_cleanup(
-                        builder, &stmt->exit_cleanup, stmt->span);
+                    ir_emit_function_cleanup(builder, stmt->span);
                     ir_set_terminator(
                         builder, IR_TERM_PROPAGATE_EXCEPTION,
                         IR_INVALID_ID, IR_INVALID_ID, IR_INVALID_ID,
@@ -799,19 +802,22 @@ void ir_lower_stmt(IrBuilder *builder, const Stmt *stmt) {
                 builder->current = exceptional_finally;
                 ir_lower_stmt(builder, stmt->as.try_.finally_body);
                 if (!ir_current_terminated(builder)) {
-                    ir_emit_cleanup(
-                        builder, &stmt->exit_cleanup, stmt->span);
-                    if (builder->exception_count != 0U)
+                    if (builder->exception_count != 0U) {
+                        ir_emit_temporary_cleanups(builder, stmt->span);
+                        ir_emit_cleanup(
+                            builder, &stmt->exit_cleanup, stmt->span);
                         ir_set_terminator(
                             builder, IR_TERM_JUMP, IR_INVALID_ID,
                             builder->exceptions[
                                 builder->exception_count - 1U].handler,
                             IR_INVALID_ID, stmt->span);
-                    else
+                    } else {
+                        ir_emit_function_cleanup(builder, stmt->span);
                         ir_set_terminator(
                             builder, IR_TERM_PROPAGATE_EXCEPTION,
                             IR_INVALID_ID, IR_INVALID_ID,
                             IR_INVALID_ID, stmt->span);
+                    }
                 }
             }
             builder->current = merge;

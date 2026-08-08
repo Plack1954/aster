@@ -398,12 +398,6 @@ Type *check_expr(Checker *checker, Expr *expr) {
             break;
         case EXPR_CALL:
             result = checker_check_call(checker, expr);
-            set_cleanup_plan(
-                checker, &expr->error_cleanup,
-                checker->exception_depth != 0U
-                    ? checker->exception_local_bases[
-                        checker->exception_depth - 1U]
-                    : 0U);
             break;
         case EXPR_ASSIGN: {
             bool discard_assignment =
@@ -1628,6 +1622,13 @@ Type *check_expr(Checker *checker, Expr *expr) {
         case EXPR_MATCH: result = check_match_expression(checker, expr); break;
     }
 checked_expression:
+    if (expr->kind == EXPR_CALL)
+        set_cleanup_plan(
+            checker, &expr->error_cleanup,
+            checker->exception_depth != 0U
+                ? checker->exception_local_bases[
+                    checker->exception_depth - 1U]
+                : 0U);
     expr->type = result;
     return result;
 }
