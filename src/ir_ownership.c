@@ -147,7 +147,7 @@ static bool compute_liveness(IrFunction *function,
     return true;
 }
 
-static bool mark_transfer_decisions(IrFunction *function,
+static bool mark_transfer_decisions(IrBuilder *builder, IrFunction *function,
                                     const uint8_t *live_out) {
     const size_t locals = function->local_count;
     const size_t width = locals == 0U ? 1U : locals;
@@ -160,10 +160,34 @@ static bool mark_transfer_decisions(IrFunction *function,
             IrInstruction *instruction = &block->instructions[i - 1U];
             if (instruction->index >= locals) continue;
             if (instruction->opcode == IR_OP_LOCAL_TRANSFER ||
-                instruction->opcode == IR_OP_LOCAL_FIELD_TRANSFER)
-                instruction->integer =
-                    function->locals[instruction->index].borrowed ||
-                    live[instruction->index] != 0U;
+                instruction->opcode == IR_OP_LOCAL_FIELD_TRANSFER) {
+                bool borrowed =
+                    function->locals[instruction->index].borrowed;
+                bool later_use = live[instruction->index] != 0U;
+                bool copy = borrowed || later_use;
+                instruction->integer = copy;
+                if (instruction->require_move && copy) {
+                    LangDiagnostic *diagnostic = lang_diag(
+                        builder->diagnostics, instruction->span,
+                        "`ensure_move` failed: `%s` requires a semantic copy",
+                        function->locals[instruction->index].name);
+                    lang_diag_note(
+                        diagnostic, borrowed
+                            ? "the source is borrowed"
+                            : "the source is used later on a reachable path");
+                    builder->failed = true;
+                }
+                (void)ir_record_ownership_decision(
+                    builder,
+                    copy ? IR_OWNERSHIP_COPY : IR_OWNERSHIP_MOVE,
+                    borrowed ? IR_OWNERSHIP_BORROWED_SOURCE :
+                    later_use ? IR_OWNERSHIP_LATER_USE :
+                                IR_OWNERSHIP_LAST_USE,
+                    instruction->span, instruction->result_type,
+                    instruction->index,
+                    instruction->opcode == IR_OP_LOCAL_FIELD_TRANSFER
+                        ? instruction->symbol : NULL);
+            }
             if (local_kill(instruction->opcode))
                 live[instruction->index] = 0U;
             else if (local_use(instruction))
@@ -307,7 +331,7 @@ bool ir_resolve_ownership_transfers(IrBuilder *builder) {
         builder->failed = true;
         return false;
     }
-    if (!mark_transfer_decisions(function, live_out)) {
+    if (!mark_transfer_decisions(builder, function, live_out)) {
         free(live_out);
         lang_diag(builder->diagnostics, function->span,
                   "out of memory during ownership analysis");
@@ -315,6 +339,35 @@ bool ir_resolve_ownership_transfers(IrBuilder *builder) {
         return false;
     }
     free(live_out);
+
+    if (function->assert_no_semantic_copies) {
+        for (size_t i = 0U;
+             i < function->ownership_decision_count; ++i) {
+            const IrOwnershipDecision *decision =
+                &function->ownership_decisions[i];
+            if (decision->kind != IR_OWNERSHIP_COPY) continue;
+            LangDiagnostic *diagnostic = lang_diag(
+                builder->diagnostics, decision->span,
+                "semantic copy violates `assert_no_semantic_copies`");
+            lang_diag_secondary(
+                diagnostic, function->no_semantic_copies_span,
+                "function-level no-copy assertion is here");
+            lang_diag_note(
+                diagnostic,
+                decision->reason == IR_OWNERSHIP_EXPLICIT_COPY
+                    ? "the copy was explicitly requested"
+                    : decision->reason == IR_OWNERSHIP_BORROWED_SOURCE
+                    ? "the source is borrowed"
+                    : decision->reason == IR_OWNERSHIP_LATER_USE
+                    ? "the source is used later on a reachable path"
+                    : decision->reason == IR_OWNERSHIP_COLLECTION_CALLBACK
+                    ? "a collection callback or result requires an independent element"
+                    : "this operation requires semantic duplication");
+            builder->failed = true;
+            break;
+        }
+    }
+    if (builder->failed) return false;
 
     IrBlock *old_blocks = function->blocks;
     size_t old_block_count = function->block_count;

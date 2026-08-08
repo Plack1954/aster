@@ -176,6 +176,13 @@ static void print_expr(const Expr *expr, int depth) {
             puts("copy");
             print_expr(expr->as.copy.value, depth + 1);
             break;
+        case EXPR_ENSURE_MOVE:
+            puts("ensure_move");
+            print_expr(expr->as.copy.value, depth + 1);
+            break;
+        case EXPR_ASSERT_NO_COPIES:
+            puts("assert_no_semantic_copies");
+            break;
         case EXPR_TRY:
             puts("try");
             print_expr(expr->as.try_.value, depth + 1);

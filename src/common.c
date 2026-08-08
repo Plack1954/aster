@@ -806,18 +806,26 @@ static int process_source(LangSource *source, bool check_only,
     bool need_ir = !check_only ||
         (dump_kind != NULL &&
          (strcmp(dump_kind, "ir") == 0 ||
+          strcmp(dump_kind, "ownership") == 0 ||
+          strcmp(dump_kind, "copies") == 0 ||
           strcmp(dump_kind, "bytecode") == 0 ||
           strcmp(dump_kind, "ir-bytecode") == 0));
     bool emit_c =
         dump_kind != NULL && strcmp(dump_kind, "c") == 0;
     if (ok && dump_kind != NULL &&
-        strcmp(dump_kind, "ir") == 0) {
+        (strcmp(dump_kind, "ir") == 0 ||
+         strcmp(dump_kind, "ownership") == 0 ||
+         strcmp(dump_kind, "copies") == 0)) {
         LangTargetInfo target;
         lang_target_host(&target);
         ok = lang_ir_lower_module(
             &module, &target, &diagnostics, &ir);
         if (ok) ok = lang_ir_verify_module(&ir, &diagnostics);
-        if (ok) lang_ir_dump_module(&ir);
+        if (ok && strcmp(dump_kind, "ir") == 0)
+            lang_ir_dump_module(&ir);
+        else if (ok)
+            lang_ir_dump_ownership(
+                &ir, source, strcmp(dump_kind, "copies") == 0);
     } else if (ok && (need_ir || emit_c)) {
         LangTargetInfo target;
         lang_target_host(&target);

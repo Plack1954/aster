@@ -71,6 +71,10 @@ IrInstruction *ir_append_instruction(
     IrBuilder *builder, IrOpcode opcode, IrTypeId result_type,
     const IrValueId *operands, size_t operand_count, LangSpan span);
 bool ir_current_terminated(const IrBuilder *builder);
+bool ir_record_ownership_decision(
+    IrBuilder *builder, IrOwnershipDecisionKind kind,
+    IrOwnershipReason reason, LangSpan span, IrTypeId type,
+    uint32_t local, const char *field);
 uint32_t ir_add_synthetic_local(IrBuilder *builder,
                                 const char *name, IrTypeId type);
 uint32_t ir_find_local(IrBuilder *builder, size_t binding_id,

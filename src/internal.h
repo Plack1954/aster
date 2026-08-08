@@ -178,7 +178,8 @@ typedef enum ExprKind {
     EXPR_INT, EXPR_FLOAT, EXPR_STRING, EXPR_INTERPOLATION,
     EXPR_BOOL, EXPR_NULL, EXPR_NAME,
     EXPR_BINARY, EXPR_UNARY, EXPR_CALL, EXPR_ASSIGN,
-    EXPR_COPY, EXPR_TRY, EXPR_AWAIT, EXPR_CAST,
+    EXPR_COPY, EXPR_ENSURE_MOVE, EXPR_ASSERT_NO_COPIES,
+    EXPR_TRY, EXPR_AWAIT, EXPR_CAST,
     EXPR_ARRAY, EXPR_INDEX, EXPR_FIELD,
     EXPR_STRUCT, EXPR_ELEMENT, EXPR_IF, EXPR_MATCH
 } ExprKind;
@@ -876,6 +877,7 @@ typedef struct IrInstruction {
     CleanupPlan error_cleanup;
     IrBlockId exception_handler;
     bool has_exception_handler;
+    bool require_move;
     LangSpan span;
 } IrInstruction;
 
@@ -902,6 +904,29 @@ typedef struct IrLocal {
     bool borrowed;
 } IrLocal;
 
+typedef enum IrOwnershipDecisionKind {
+    IR_OWNERSHIP_MOVE,
+    IR_OWNERSHIP_COPY
+} IrOwnershipDecisionKind;
+
+typedef enum IrOwnershipReason {
+    IR_OWNERSHIP_LAST_USE,
+    IR_OWNERSHIP_LATER_USE,
+    IR_OWNERSHIP_BORROWED_SOURCE,
+    IR_OWNERSHIP_EXPLICIT_COPY,
+    IR_OWNERSHIP_REQUIRED_COPY,
+    IR_OWNERSHIP_COLLECTION_CALLBACK
+} IrOwnershipReason;
+
+typedef struct IrOwnershipDecision {
+    IrOwnershipDecisionKind kind;
+    IrOwnershipReason reason;
+    LangSpan span;
+    IrTypeId type;
+    uint32_t local;
+    const char *field;
+} IrOwnershipDecision;
+
 typedef struct IrFunction {
     const char *name;
     const char *module_name;
@@ -925,6 +950,10 @@ typedef struct IrFunction {
     size_t block_count;
     size_t block_capacity;
     IrBlockId entry_block;
+    IrOwnershipDecision *ownership_decisions;
+    size_t ownership_decision_count;
+    size_t ownership_decision_capacity;
+    LangSpan no_semantic_copies_span;
     LangSpan render_root_span;
     const char *css_scope_attribute;
     IrStaticCss *static_css;
@@ -941,6 +970,7 @@ typedef struct IrFunction {
     bool is_async;
     bool is_abstract;
     bool is_virtual;
+    bool assert_no_semantic_copies;
     IrFunctionId virtual_root;
 } IrFunction;
 
@@ -997,6 +1027,8 @@ bool lang_ir_lower_module(Module *module,
 bool lang_ir_verify_module(const IrModule *ir,
                            LangDiagnostics *diagnostics);
 void lang_ir_dump_module(const IrModule *ir);
+void lang_ir_dump_ownership(const IrModule *ir, const LangSource *source,
+                            bool copies_only);
 void lang_ir_free_module(IrModule *ir);
 
 typedef enum OpCode {

@@ -494,6 +494,8 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             return ir_emit_unit(builder, expr->span, expr->type);
         }
         case EXPR_COPY: {
+            bool semantic = type < builder->module->type_count &&
+                builder->module->types[type].copy_policy != IR_COPY_TRIVIAL;
             IrValueId operand;
             const Expr *source = expr->as.copy.value;
             bool local_place = expression_is_local_place(source);
@@ -521,8 +523,19 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
                   strcmp(source->as.call.callee->as.name,
                          "Dictionary::KeyAt") == 0 ||
                   strcmp(source->as.call.callee->as.name,
-                         "Dictionary::ValueAt") == 0))))
+                         "Dictionary::ValueAt") == 0)))) {
+                if (semantic)
+                    (void)ir_record_ownership_decision(
+                        builder, IR_OWNERSHIP_COPY,
+                        IR_OWNERSHIP_EXPLICIT_COPY,
+                        source->span, type, IR_INVALID_ID, NULL);
                 return operand;
+            }
+            if (semantic)
+                (void)ir_record_ownership_decision(
+                    builder, IR_OWNERSHIP_COPY,
+                    IR_OWNERSHIP_EXPLICIT_COPY, expr->span, type,
+                    IR_INVALID_ID, NULL);
             IrValueId copied;
             if (ir_type_requires_custom_copy(builder, expr->type)) {
                 copied = ir_emit_recursive_copy(
@@ -550,6 +563,32 @@ IrValueId ir_lower_expr(IrBuilder *builder, const Expr *expr) {
             }
             return copied;
         }
+        case EXPR_ENSURE_MOVE: {
+            IrValueId value = ir_lower_expr(builder, expr->as.copy.value);
+            if (value == IR_INVALID_ID) return value;
+            IrBlock *block = &builder->function->blocks[builder->current];
+            bool found = false;
+            for (size_t i = block->instruction_count; i > 0U; --i) {
+                IrInstruction *candidate = &block->instructions[i - 1U];
+                if (candidate->result != value) continue;
+                if (candidate->opcode == IR_OP_LOCAL_TRANSFER ||
+                    candidate->opcode == IR_OP_LOCAL_FIELD_TRANSFER) {
+                    candidate->require_move = true;
+                    found = true;
+                }
+                break;
+            }
+            if (!found) {
+                lang_diag(builder->diagnostics, expr->span,
+                          "`ensure_move` requires an ownership transfer");
+                builder->failed = true;
+            }
+            return value;
+        }
+        case EXPR_ASSERT_NO_COPIES:
+            builder->function->assert_no_semantic_copies = true;
+            builder->function->no_semantic_copies_span = expr->span;
+            return ir_emit_unit(builder, expr->span, expr->type);
         case EXPR_TRY:
             return lower_try(builder, expr);
         case EXPR_AWAIT:

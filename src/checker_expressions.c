@@ -914,6 +914,20 @@ Type *check_expr(Checker *checker, Expr *expr) {
             }
             break;
         }
+        case EXPR_ENSURE_MOVE: {
+            Expr *value = expr->as.copy.value;
+            result = check_expr(checker, value);
+            if (value->kind != EXPR_NAME && value->kind != EXPR_FIELD)
+                lang_diag(checker->diagnostics, expr->span,
+                          "`ensure_move` requires a direct local or field");
+            if (!type_is_copyable(checker, result))
+                lang_diag(checker->diagnostics, expr->span,
+                          "`ensure_move` requires a copyable owned value");
+            break;
+        }
+        case EXPR_ASSERT_NO_COPIES:
+            result = &type_unit;
+            break;
         case EXPR_TRY: {
             Type *operand = check_expr(checker, expr->as.try_.value);
             set_cleanup_plan(checker, &expr->error_cleanup, 0U);

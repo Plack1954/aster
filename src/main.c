@@ -17,6 +17,8 @@ static void usage(FILE *stream) {
         "  dump-types file.as   print inferred types\n"
         "  dump-layout file.as  print target type layouts\n"
         "  dump-ir file.as      print typed control-flow IR\n"
+        "  --expand-ownership file.as print post-lowering moves and copies\n"
+        "  --explain-copies file.as explain every semantic copy\n"
         "  dump-ir-bytecode file.as disassemble IR-lowered bytecode\n"
         "  emit-c file.as       emit portable C17 from typed IR\n"
         "  emit-c-site file.as ASSET_DIR\n"
@@ -260,6 +262,10 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "dump-types") == 0) return lang_run_file(argv[2], true, "types");
     if (strcmp(argv[1], "dump-layout") == 0) return lang_run_file(argv[2], true, "layout");
     if (strcmp(argv[1], "dump-ir") == 0) return lang_run_file(argv[2], true, "ir");
+    if (strcmp(argv[1], "--expand-ownership") == 0)
+        return lang_run_file(argv[2], true, "ownership");
+    if (strcmp(argv[1], "--explain-copies") == 0)
+        return lang_run_file(argv[2], true, "copies");
     if (strcmp(argv[1], "dump-ir-bytecode") == 0)
         return lang_run_file(argv[2], true, "ir-bytecode");
     if (strcmp(argv[1], "emit-c") == 0)

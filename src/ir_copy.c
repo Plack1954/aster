@@ -151,7 +151,7 @@ static IrValueId commit_staged_component(
     return move->result;
 }
 
-IrValueId ir_emit_recursive_copy(
+static IrValueId ir_emit_recursive_copy_impl(
     IrBuilder *builder, const Type *value_type,
     IrValueId source, LangSpan span, bool preserve_source,
     const CleanupPlan *error_cleanup
@@ -778,4 +778,18 @@ IrValueId ir_emit_recursive_copy(
         if (discard != NULL) discard->auxiliary = 1U;
     }
     return result;
+}
+
+IrValueId ir_emit_recursive_copy(
+    IrBuilder *builder, const Type *value_type,
+    IrValueId source, LangSpan span, bool preserve_source,
+    const CleanupPlan *error_cleanup
+) {
+    IrTypeId type = ir_intern_type(builder->module, value_type);
+    (void)ir_record_ownership_decision(
+        builder, IR_OWNERSHIP_COPY, IR_OWNERSHIP_REQUIRED_COPY,
+        span, type, IR_INVALID_ID, NULL);
+    return ir_emit_recursive_copy_impl(
+        builder, value_type, source, span, preserve_source,
+        error_cleanup);
 }

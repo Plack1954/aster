@@ -642,6 +642,32 @@ const char *checker_static_call_path(Checker *checker, Expr *expr) {
 
 Type *checker_check_call(Checker *checker, Expr *expr) {
     if (expr->as.call.callee->kind == EXPR_NAME &&
+        (strcmp(expr->as.call.callee->as.name, "ensure_move") == 0 ||
+         strcmp(expr->as.call.callee->as.name, "assert_move") == 0)) {
+        if (expr->as.call.arguments.count != 1U) {
+            lang_diag(checker->diagnostics, expr->span,
+                      "`%s` expects exactly one value",
+                      expr->as.call.callee->as.name);
+            return &type_error;
+        }
+        Expr *value = expr->as.call.arguments.items[0];
+        expr->kind = EXPR_ENSURE_MOVE;
+        expr->as.copy.value = value;
+        return check_expr(checker, expr);
+    }
+    if (expr->as.call.callee->kind == EXPR_NAME &&
+        strcmp(expr->as.call.callee->as.name,
+               "assert_no_semantic_copies") == 0) {
+        if (expr->as.call.arguments.count != 0U) {
+            lang_diag(checker->diagnostics, expr->span,
+                      "`assert_no_semantic_copies` expects no arguments");
+            return &type_error;
+        }
+        expr->kind = EXPR_ASSERT_NO_COPIES;
+        expr->type = &type_unit;
+        return &type_unit;
+    }
+    if (expr->as.call.callee->kind == EXPR_NAME &&
         strcmp(expr->as.call.callee->as.name, "copy") == 0) {
         if (expr->as.call.arguments.count != 1U) {
             lang_diag(

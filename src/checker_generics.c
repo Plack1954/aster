@@ -610,8 +610,11 @@ static Expr *clone_generic_expr(Module *module, const Expr *source) {
                 clone_generic_expr(module, source->as.assign.value);
             break;
         case EXPR_COPY:
+        case EXPR_ENSURE_MOVE:
             result->as.copy.value =
                 clone_generic_expr(module, source->as.copy.value);
+            break;
+        case EXPR_ASSERT_NO_COPIES:
             break;
         case EXPR_TRY:
             result->as.try_.value =

@@ -54,6 +54,43 @@ void *ir_resize(void *pointer, size_t count, size_t size) {
     return result;
 }
 
+bool ir_record_ownership_decision(
+    IrBuilder *builder, IrOwnershipDecisionKind kind,
+    IrOwnershipReason reason, LangSpan span, IrTypeId type,
+    uint32_t local, const char *field
+) {
+    IrFunction *function = builder->function;
+    for (size_t i = 0U; i < function->ownership_decision_count; ++i) {
+        IrOwnershipDecision *existing = &function->ownership_decisions[i];
+        if (existing->kind == kind &&
+            existing->span.start == span.start &&
+            existing->span.end == span.end) {
+            if (existing->reason == IR_OWNERSHIP_REQUIRED_COPY)
+                existing->reason = reason;
+            return true;
+        }
+    }
+    if (function->ownership_decision_count ==
+        function->ownership_decision_capacity) {
+        size_t next = function->ownership_decision_capacity == 0U
+            ? 8U : function->ownership_decision_capacity * 2U;
+        function->ownership_decisions = ir_resize(
+            function->ownership_decisions, next,
+            sizeof(*function->ownership_decisions));
+        function->ownership_decision_capacity = next;
+    }
+    IrOwnershipDecision *decision =
+        &function->ownership_decisions[
+            function->ownership_decision_count++];
+    decision->kind = kind;
+    decision->reason = reason;
+    decision->span = span;
+    decision->type = type;
+    decision->local = local;
+    decision->field = field;
+    return true;
+}
+
 static IrTypeShape type_shape(const Type *type) {
     if (type == NULL || type->kind == TYPE_ERROR) return IR_TYPE_ERROR;
     switch (type->kind) {
@@ -617,6 +654,12 @@ IrInstruction *ir_append_instruction(IrBuilder *builder,
                                          const IrValueId *operands,
                                          size_t operand_count,
                                          LangSpan span) {
+    if (opcode == IR_OP_VALUE_CLONE &&
+        result_type < builder->module->type_count &&
+        builder->module->types[result_type].copy_policy != IR_COPY_TRIVIAL)
+        (void)ir_record_ownership_decision(
+            builder, IR_OWNERSHIP_COPY, IR_OWNERSHIP_REQUIRED_COPY,
+            span, result_type, IR_INVALID_ID, NULL);
     IrBlock *block = &builder->function->blocks[builder->current];
     if (block->terminator.kind != IR_TERM_NONE) {
         lang_diag(builder->diagnostics, span,

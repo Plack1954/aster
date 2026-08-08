@@ -600,6 +600,43 @@ add_aster_generated_c_test(
     tests/automatic_last_use_copy.as
     automatic_last_use_copy
     "-DEXPECTED_OUTPUT=1\n0\n1\n11\n10\n21\n20\n31\n30\n32\n30\n41\n40\n551\n670\n771\n890\n1000\n")
+add_test(NAME ownership_observability_vm
+    COMMAND lang run-ir tests/ownership_observability.as)
+set_tests_properties(ownership_observability_vm PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION "43")
+add_aster_generated_c_test(
+    ownership_observability_generated_c
+    tests/ownership_observability.as
+    ownership_observability
+    "-DEXPECTED_OUTPUT=43\n")
+add_test(NAME ensure_move_later_use_rejected
+    COMMAND lang dump-ir tests/checker/ensure_move_later_use.as)
+set_tests_properties(ensure_move_later_use_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME no_semantic_copies_assertion_rejected
+    COMMAND lang dump-ir tests/checker/assert_no_semantic_copies.as)
+set_tests_properties(no_semantic_copies_assertion_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME no_callback_copies_assertion_rejected
+    COMMAND lang dump-ir tests/checker/assert_no_callback_copies.as)
+set_tests_properties(no_callback_copies_assertion_rejected PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    WILL_FAIL TRUE)
+add_test(NAME expand_ownership_cli
+    COMMAND lang --expand-ownership tests/ownership_report.as)
+set_tests_properties(expand_ownership_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "move `moved`.*reason=last-use.*copy `retained`.*reason=later-use")
+add_test(NAME explain_copies_cli
+    COMMAND lang --explain-copies tests/ownership_report.as)
+set_tests_properties(explain_copies_cli PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    PASS_REGULAR_EXPRESSION
+        "copy `retained`.*reason=later-use")
 add_test(NAME custom_copy_raw_allocation_vm
     COMMAND lang run-ir tests/custom_copy_raw_allocation.as)
 set_tests_properties(custom_copy_raw_allocation_vm PROPERTIES

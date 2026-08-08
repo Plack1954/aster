@@ -195,6 +195,88 @@ void lang_ir_dump_module(const IrModule *ir) {
     }
 }
 
+static const char *ownership_reason_name(IrOwnershipReason reason) {
+    switch (reason) {
+        case IR_OWNERSHIP_LAST_USE: return "last-use";
+        case IR_OWNERSHIP_LATER_USE: return "later-use";
+        case IR_OWNERSHIP_BORROWED_SOURCE: return "borrowed-source";
+        case IR_OWNERSHIP_EXPLICIT_COPY: return "explicit-copy";
+        case IR_OWNERSHIP_REQUIRED_COPY: return "required-copy";
+        case IR_OWNERSHIP_COLLECTION_CALLBACK:
+            return "collection-callback";
+    }
+    return "unknown";
+}
+
+static int compare_ownership_decisions(const void *left,
+                                       const void *right) {
+    const IrOwnershipDecision *a =
+        *(const IrOwnershipDecision *const *)left;
+    const IrOwnershipDecision *b =
+        *(const IrOwnershipDecision *const *)right;
+    if (a->span.start < b->span.start) return -1;
+    if (a->span.start > b->span.start) return 1;
+    if (a->span.end < b->span.end) return -1;
+    if (a->span.end > b->span.end) return 1;
+    return 0;
+}
+
+void lang_ir_dump_ownership(const IrModule *ir, const LangSource *source,
+                            bool copies_only) {
+    size_t shown = 0U;
+    for (size_t f = 0U; f < ir->function_count; ++f) {
+        const IrFunction *function = &ir->functions[f];
+        const IrOwnershipDecision **ordered = malloc(
+            function->ownership_decision_count * sizeof(*ordered));
+        if (ordered == NULL && function->ownership_decision_count != 0U) {
+            fputs("fatal: out of memory while reporting ownership\n", stderr);
+            return;
+        }
+        for (size_t i = 0U;
+             i < function->ownership_decision_count; ++i)
+            ordered[i] = &function->ownership_decisions[i];
+        qsort(ordered, function->ownership_decision_count,
+              sizeof(*ordered), compare_ownership_decisions);
+        bool heading = false;
+        for (size_t i = 0U;
+             i < function->ownership_decision_count; ++i) {
+            const IrOwnershipDecision *decision =
+                ordered[i];
+            if (copies_only && decision->kind != IR_OWNERSHIP_COPY)
+                continue;
+            if (!heading) {
+                printf("function %s%s%s:\n",
+                       function->module_name != NULL
+                           ? function->module_name : "",
+                       function->module_name != NULL ? "::" : "",
+                       function->name);
+                heading = true;
+            }
+            size_t line, column, begin, end;
+            lang_source_line_info(
+                source, decision->span.start,
+                &line, &column, &begin, &end);
+            const char *type = decision->type < ir->type_count
+                ? ir->types[decision->type].name : "<unknown>";
+            const char *local =
+                decision->local < function->local_count
+                ? function->locals[decision->local].name : "<value>";
+            printf("  %s `%s%s%s` type=`%s` reason=%s at %s:%zu:%zu\n",
+                   decision->kind == IR_OWNERSHIP_COPY ? "copy" : "move",
+                   local, decision->field != NULL ? "." : "",
+                   decision->field != NULL ? decision->field : "",
+                   type, ownership_reason_name(decision->reason),
+                   lang_source_path_at(source, decision->span.start),
+                   line, column);
+            ++shown;
+        }
+        free(ordered);
+    }
+    if (shown == 0U)
+        fputs(copies_only ? "no semantic copies\n"
+                          : "no ownership transfers\n", stdout);
+}
+
 void lang_ir_free_module(IrModule *ir) {
     for (size_t f = 0U; f < ir->function_count; ++f) {
         IrFunction *function = &ir->functions[f];
@@ -214,6 +296,7 @@ void lang_ir_free_module(IrModule *ir) {
             free(block->instructions);
         }
         free(function->parameters);
+        free(function->ownership_decisions);
         free(function->static_css);
         free(function->locals);
         free(function->value_types);

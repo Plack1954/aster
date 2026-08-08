@@ -1276,6 +1276,37 @@ IrValueId lower_call(IrBuilder *builder, const Expr *expr) {
     }
     const char *call_symbol = call->symbol != NULL
         ? call->symbol : callee_name;
+    bool list_callback = call_symbol != NULL &&
+        (strcmp(call_symbol, "List::Exists") == 0 ||
+         strcmp(call_symbol, "List::FindAll") == 0 ||
+         strcmp(call_symbol, "List::FindIndex") == 0 ||
+         strcmp(call_symbol, "List::FindLastIndex") == 0 ||
+         strcmp(call_symbol, "List::RemoveAll") == 0 ||
+         strcmp(call_symbol, "List::ForEach") == 0 ||
+         strcmp(call_symbol, "List::TrueForAll") == 0);
+    if (list_callback && expr->as.call.arguments.count >= 2U) {
+        const Type *list_type = expr->as.call.arguments.items[0]->type;
+        const Type *callback_type = expr->as.call.arguments.items[1]->type;
+        const Type *element_type = list_type != NULL
+            ? list_type->element : NULL;
+        bool callback_copies = callback_type != NULL &&
+            callback_type->kind == TYPE_FUNCTION &&
+            callback_type->argument_count != 0U &&
+            callback_type->parameter_modes[0] == PARAMETER_MODE_VALUE;
+        bool result_copies =
+            strcmp(call_symbol, "List::FindAll") == 0;
+        if ((callback_copies || result_copies) &&
+            element_type != NULL) {
+            IrTypeId element_ir = ir_intern_type(
+                builder->module, element_type);
+            if (builder->module->types[element_ir].copy_policy !=
+                IR_COPY_TRIVIAL)
+                (void)ir_record_ownership_decision(
+                    builder, IR_OWNERSHIP_COPY,
+                    IR_OWNERSHIP_COLLECTION_CALLBACK,
+                    expr->span, element_ir, IR_INVALID_ID, NULL);
+        }
+    }
     IrValueId result = call->result;
     for (size_t i = borrowed_temporary_count; i > 0U; --i) {
         IrInstruction *drop = ir_append_instruction(

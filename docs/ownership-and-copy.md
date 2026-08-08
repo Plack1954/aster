@@ -135,3 +135,30 @@ bit copy for a custom or recursive copy policy.
 The unresolved transfer exists only during lowering. Mandatory CFG liveness
 rewrites it into explicit typed-IR move or copy operations before verification
 and before either the VM or C backend sees the program.
+
+## Performance assertions and inspection
+
+`ensure_move(value)` asserts that a direct local or field is transferred by
+move. `assert_move(value)` is an equivalent spelling intended for tests. Both
+return the value normally and generate no runtime work. Compilation fails with
+the blocking reason when a live borrow or reachable later use requires a copy.
+
+`assert_no_semantic_copies()` is a function-level test assertion. If any path
+in the containing function contains an explicit or compiler-selected semantic
+copy, compilation identifies the copy site and the assertion site. It is
+intended for focused hot-path regression tests, not routine application code.
+
+Two compiler reports expose the result of the same mandatory ownership pass
+used by both backends:
+
+```text
+lang --expand-ownership file.as
+lang --explain-copies file.as
+```
+
+The first lists every move and semantic copy with its type, source location,
+and reason. The second lists only copies. Stable reason codes include
+`last-use`, `later-use`, `borrowed-source`, `explicit-copy`, and
+`required-copy`; collection callback copies use `collection-callback`. These
+reports describe language-level ownership decisions;
+they do not guess from optimized C or machine code.
