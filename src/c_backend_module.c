@@ -773,13 +773,17 @@ static void emit_direct_render_wrapper(
         emitter->ir, index);
     emit_direct_render_signature(emitter, index, false);
     fprintf(emitter->output,
+            "    static ASTER_THREAD_LOCAL size_t cached_capacity = %zuU;\n"
             "    aster_string_builder *render_builder = "
-            "aster_builder_with_capacity(%zuU);\n",
+            "aster_builder_with_capacity(cached_capacity);\n",
             initial_capacity);
     fprintf(emitter->output, "    aster_fn_%zu_append(render_builder", index);
     for (size_t p = 0U; p < function->parameter_count; ++p)
         fprintf(emitter->output, ", p%zu", p);
-    fputs(");\n    return aster_builder_finish(render_builder);\n"
+    fputs(");\n"
+          "    if (render_builder->capacity > cached_capacity)\n"
+          "        cached_capacity = render_builder->capacity;\n"
+          "    return aster_builder_finish(render_builder);\n"
           "}\n\n", emitter->output);
 }
 
