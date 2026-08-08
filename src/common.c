@@ -10,8 +10,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #if defined(_WIN32)
+#include <direct.h>
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -72,6 +74,21 @@ typedef struct ModuleLoader {
 
 static char *configured_stdlib_root;
 static char *configured_executable_path;
+
+typedef struct ProjectCacheHeader {
+    char magic[8];
+    uint64_t fingerprint[2];
+    uint64_t payload_fingerprint[2];
+    uint64_t payload_size;
+    uint32_t version;
+    uint32_t kind;
+} ProjectCacheHeader;
+
+enum {
+    PROJECT_CACHE_VERSION = 2U,
+    PROJECT_CACHE_CHECK = 1U,
+    PROJECT_CACHE_C = 2U
+};
 
 static char *heap_strndup(const char *text, size_t length);
 
@@ -951,6 +968,296 @@ static bool load_program_source(
     return true;
 }
 
+static void cache_hash_update(uint64_t hash[2], const void *data,
+                              size_t length) {
+    const unsigned char *bytes = data;
+    for (size_t i = 0U; i < length; ++i) {
+        hash[0] ^= bytes[i];
+        hash[0] *= UINT64_C(1099511628211);
+        hash[1] ^= (uint64_t)(bytes[i] + 1U);
+        hash[1] *= UINT64_C(14029467366897019727);
+        hash[1] ^= hash[1] >> 29U;
+    }
+}
+
+static bool compiler_fingerprint(uint64_t fingerprint[2]) {
+    static bool attempted;
+    static bool available;
+    static uint64_t cached[2];
+    if (!attempted) {
+        attempted = true;
+        char *path = running_executable_path();
+        FILE *file = path != NULL ? fopen(path, "rb") : NULL;
+        free(path);
+        if (file != NULL) {
+            cached[0] = UINT64_C(1469598103934665603);
+            cached[1] = UINT64_C(7809847782465536322);
+            unsigned char buffer[16384];
+            size_t count;
+            while ((count = fread(buffer, 1U, sizeof(buffer), file)) != 0U)
+                cache_hash_update(cached, buffer, count);
+            available = ferror(file) == 0;
+            (void)fclose(file);
+        }
+    }
+    if (!available) return false;
+    fingerprint[0] = cached[0];
+    fingerprint[1] = cached[1];
+    return true;
+}
+
+static char *project_cache_directory(void) {
+    const char *explicit_directory = getenv("ASTER_CACHE_DIR");
+    if (explicit_directory != NULL)
+        return explicit_directory[0] != '\0'
+            ? heap_strndup(explicit_directory,
+                           strlen(explicit_directory))
+            : NULL;
+#if defined(_WIN32)
+    const char *local = getenv("LOCALAPPDATA");
+    return local != NULL && local[0] != '\0'
+        ? join_path3(local, "aster", "") : NULL;
+#else
+    const char *xdg = getenv("XDG_CACHE_HOME");
+    if (xdg != NULL && xdg[0] != '\0')
+        return join_path3(xdg, "aster", "");
+    const char *home = getenv("HOME");
+    return home != NULL && home[0] != '\0'
+        ? join_path3(home, ".cache/aster", "") : NULL;
+#endif
+}
+
+static bool ensure_directory_tree(char *path) {
+    if (path == NULL || path[0] == '\0') return false;
+    for (char *cursor = path + 1U; *cursor != '\0'; ++cursor) {
+        if (*cursor != '/' && *cursor != '\\') continue;
+#if defined(_WIN32)
+        if (cursor == path + 2U && path[1] == ':') continue;
+#endif
+        char separator = *cursor;
+        *cursor = '\0';
+#if defined(_WIN32)
+        int status = _mkdir(path);
+#else
+        int status = mkdir(path, 0777);
+#endif
+        *cursor = separator;
+        if (status != 0 && errno != EEXIST) return false;
+    }
+#if defined(_WIN32)
+    int status = _mkdir(path);
+#else
+    int status = mkdir(path, 0777);
+#endif
+    return status == 0 || errno == EEXIST;
+}
+
+static bool project_cache_trace_enabled(void) {
+    const char *trace = getenv("ASTER_CACHE_TRACE");
+    return trace != NULL && trace[0] != '\0' && strcmp(trace, "0") != 0;
+}
+
+static bool project_cache_key(const LangSource *source,
+                              const char *project_root,
+                              bool require_entrypoint, bool strict_imports,
+                              uint32_t kind, uint64_t fingerprint[2],
+                              char **out_path) {
+    uint64_t compiler[2];
+    char *directory = project_cache_directory();
+    if (directory == NULL || !compiler_fingerprint(compiler) ||
+        !ensure_directory_tree(directory)) {
+        free(directory);
+        return false;
+    }
+    fingerprint[0] = UINT64_C(1469598103934665603);
+    fingerprint[1] = UINT64_C(7809847782465536322);
+    cache_hash_update(fingerprint, compiler, sizeof(compiler));
+    cache_hash_update(fingerprint, &kind, sizeof(kind));
+    cache_hash_update(fingerprint, &require_entrypoint,
+                      sizeof(require_entrypoint));
+    cache_hash_update(fingerprint, &strict_imports, sizeof(strict_imports));
+    cache_hash_update(fingerprint, source->text, source->length);
+    for (size_t i = 0U; i < source->segment_count; ++i) {
+        const LangSourceSegment *segment = &source->segments[i];
+        cache_hash_update(fingerprint, &segment->start,
+                          sizeof(segment->start));
+        cache_hash_update(fingerprint, &segment->end, sizeof(segment->end));
+        cache_hash_update(fingerprint, segment->path,
+                          strlen(segment->path) + 1U);
+    }
+    uint64_t identity[2] = {
+        UINT64_C(1469598103934665603), UINT64_C(7809847782465536322)};
+    cache_hash_update(identity, project_root, strlen(project_root) + 1U);
+    cache_hash_update(identity, source->path, strlen(source->path) + 1U);
+    cache_hash_update(identity, &kind, sizeof(kind));
+    char filename[64];
+    (void)snprintf(filename, sizeof(filename),
+                   "%016" PRIx64 "%016" PRIx64 "-%s.cache",
+                   identity[0], identity[1],
+                   kind == PROJECT_CACHE_C ? "c" : "check");
+    *out_path = join_path3(directory, filename, "");
+    free(directory);
+    return true;
+}
+
+static bool copy_stream_bytes(FILE *input, FILE *output,
+                              uint64_t byte_count) {
+    unsigned char buffer[16384];
+    while (byte_count != 0U) {
+        size_t request = byte_count < sizeof(buffer)
+            ? (size_t)byte_count : sizeof(buffer);
+        size_t count = fread(buffer, 1U, request, input);
+        if (count != request || fwrite(buffer, 1U, count, output) != count)
+            return false;
+        byte_count -= count;
+    }
+    return true;
+}
+
+static bool stream_size_and_rewind(FILE *stream, uint64_t *size) {
+    if (fseek(stream, 0L, SEEK_END) != 0) return false;
+    long end = ftell(stream);
+    if (end < 0L || fseek(stream, 0L, SEEK_SET) != 0) return false;
+    *size = (uint64_t)end;
+    return true;
+}
+
+static bool stream_fingerprint_and_rewind(FILE *stream,
+                                          uint64_t fingerprint[2]) {
+    fingerprint[0] = UINT64_C(1469598103934665603);
+    fingerprint[1] = UINT64_C(7809847782465536322);
+    unsigned char buffer[16384];
+    size_t count;
+    while ((count = fread(buffer, 1U, sizeof(buffer), stream)) != 0U)
+        cache_hash_update(fingerprint, buffer, count);
+    bool ok = ferror(stream) == 0 && fseek(stream, 0L, SEEK_SET) == 0;
+    clearerr(stream);
+    return ok;
+}
+
+static bool project_cache_read(const char *path,
+                               const uint64_t fingerprint[2],
+                               uint32_t kind, FILE *output) {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) return false;
+    ProjectCacheHeader header;
+    bool valid = fread(&header, sizeof(header), 1U, file) == 1U &&
+        memcmp(header.magic, "ASTCACHE", sizeof(header.magic)) == 0 &&
+        header.version == PROJECT_CACHE_VERSION && header.kind == kind &&
+        header.fingerprint[0] == fingerprint[0] &&
+        header.fingerprint[1] == fingerprint[1] &&
+        (kind != PROJECT_CACHE_CHECK || header.payload_size == 0U);
+    if (valid && kind == PROJECT_CACHE_C) {
+        uint64_t file_size = 0U;
+        uint64_t payload_fingerprint[2];
+        valid = stream_size_and_rewind(file, &file_size) &&
+            header.payload_size <= UINT64_MAX - sizeof(header) &&
+            file_size == sizeof(header) + header.payload_size &&
+            fseek(file, (long)sizeof(header), SEEK_SET) == 0 &&
+            stream_fingerprint_and_rewind(file, payload_fingerprint) &&
+            payload_fingerprint[0] == header.payload_fingerprint[0] &&
+            payload_fingerprint[1] == header.payload_fingerprint[1] &&
+            fseek(file, (long)sizeof(header), SEEK_SET) == 0 &&
+            output != NULL &&
+            copy_stream_bytes(file, output, header.payload_size);
+    }
+    (void)fclose(file);
+    return valid;
+}
+
+static bool project_cache_write(const char *path,
+                                const uint64_t fingerprint[2],
+                                uint32_t kind, FILE *payload) {
+    char temporary[4096];
+#if defined(_WIN32)
+    unsigned long process_id = (unsigned long)GetCurrentProcessId();
+#else
+    unsigned long process_id = (unsigned long)getpid();
+#endif
+    int length = snprintf(temporary, sizeof(temporary), "%s.tmp.%lu",
+                          path, process_id);
+    if (length < 0 || (size_t)length >= sizeof(temporary)) return false;
+    uint64_t payload_size = 0U;
+    uint64_t payload_fingerprint[2] = {0U, 0U};
+    if (payload != NULL &&
+        (!stream_size_and_rewind(payload, &payload_size) ||
+         !stream_fingerprint_and_rewind(payload, payload_fingerprint)))
+        return false;
+    FILE *file = fopen(temporary, "wb");
+    if (file == NULL) return false;
+    ProjectCacheHeader header = {
+        .magic={'A','S','T','C','A','C','H','E'},
+        .fingerprint={fingerprint[0], fingerprint[1]},
+        .payload_fingerprint={
+            payload_fingerprint[0], payload_fingerprint[1]},
+        .payload_size=payload_size,
+        .version=PROJECT_CACHE_VERSION,
+        .kind=kind
+    };
+    bool ok = fwrite(&header, sizeof(header), 1U, file) == 1U &&
+        (payload == NULL || copy_stream_bytes(payload, file, payload_size)) &&
+        fflush(file) == 0;
+    if (fclose(file) != 0) ok = false;
+    if (ok) {
+#if defined(_WIN32)
+        (void)remove(path);
+#endif
+        if (rename(temporary, path) != 0) ok = false;
+    }
+    if (!ok) (void)remove(temporary);
+    if (payload != NULL) (void)fseek(payload, 0L, SEEK_SET);
+    return ok;
+}
+
+static int process_project_source_cached(
+    LangSource *source, const char *project_root, bool check_only,
+    const char *dump_kind, bool require_entrypoint, bool strict_imports,
+    size_t argument_count, const char *const *arguments, FILE *emit_output,
+    const char *css_directory) {
+    bool plain_check = check_only && dump_kind == NULL;
+    bool emit_c = check_only && dump_kind != NULL &&
+                  strcmp(dump_kind, "c") == 0 && css_directory == NULL;
+    if (project_root == NULL || (!plain_check && !emit_c))
+        return process_source(
+            source, check_only, dump_kind, require_entrypoint,
+            strict_imports, argument_count, arguments, emit_output,
+            css_directory);
+    uint32_t kind = emit_c ? PROJECT_CACHE_C : PROJECT_CACHE_CHECK;
+    uint64_t fingerprint[2];
+    char *cache_path = NULL;
+    bool cacheable = project_cache_key(
+        source, project_root, require_entrypoint, strict_imports, kind,
+        fingerprint, &cache_path);
+    if (cacheable && project_cache_read(
+            cache_path, fingerprint, kind, emit_output)) {
+        if (project_cache_trace_enabled())
+            fprintf(stderr, "aster cache: hit %s\n",
+                    emit_c ? "project C" : "project check");
+        free(cache_path);
+        return 0;
+    }
+    if (project_cache_trace_enabled())
+        fprintf(stderr, "aster cache: miss %s\n",
+                emit_c ? "project C" : "project check");
+    FILE *captured = emit_c ? tmpfile() : NULL;
+    FILE *destination = captured != NULL ? captured : emit_output;
+    int status = process_source(
+        source, check_only, dump_kind, require_entrypoint, strict_imports,
+        argument_count, arguments, destination, css_directory);
+    if (status == 0 && cacheable && (!emit_c || captured != NULL))
+        (void)project_cache_write(
+            cache_path, fingerprint, kind, captured);
+    if (status == 0 && captured != NULL) {
+        uint64_t captured_size = 0U;
+        if (!stream_size_and_rewind(captured, &captured_size) ||
+            !copy_stream_bytes(captured, emit_output, captured_size))
+            status = 1;
+    }
+    if (captured != NULL) (void)fclose(captured);
+    free(cache_path);
+    return status;
+}
+
 int lang_run_file(const char *path, bool check_only, const char *dump_kind) {
     return lang_run_file_args(path, check_only, dump_kind, 0U, NULL);
 }
@@ -1002,8 +1309,8 @@ int lang_run_file_with_roots_args(
         fprintf(stderr, "error: %s\n", error);
         return 1;
     }
-    int status = process_source(
-        &source, check_only, dump_kind, require_entrypoint,
+    int status = process_project_source_cached(
+        &source, project_root, check_only, dump_kind, require_entrypoint,
         source_root != NULL, argument_count, arguments, stdout, NULL);
     lang_source_free(&source);
     return status;
@@ -1062,9 +1369,9 @@ int lang_emit_c_with_roots_to_file(
         fprintf(stderr, "error: %s\n", error);
         return 1;
     }
-    int status = process_source(
-        &source, true, "c", require_entrypoint, source_root != NULL,
-        0U, NULL, output, NULL);
+    int status = process_project_source_cached(
+        &source, project_root, true, "c", require_entrypoint,
+        source_root != NULL, 0U, NULL, output, NULL);
     lang_source_free(&source);
     return status;
 }

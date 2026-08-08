@@ -145,6 +145,16 @@ and IR retained during emission, so reducing that requires lifetime/streaming
 work rather than weakening verification. These figures are development-machine
 measurements, not portable performance guarantees.
 
+Successful project checks and generated-C emissions now also persist one
+content-addressed result per project operation across compiler processes. The
+fingerprint covers the exact compiler executable, combined reachable source,
+module paths, entry-point policy, and strict-import mode; edits and compiler
+rebuilds therefore miss without trusting timestamps. Failed checks are never
+cached, and cache files are replaced atomically. With a warm cache, the same
+smoke check takes about 0.02 seconds and 8.8 MiB RSS, while replaying its 15 MiB
+generated C takes about 0.05 seconds and 8.5 MiB RSS, including verification of
+the cached payload fingerprint.
+
 `lang emit-c` is the first second-backend vertical slice. It emits warning-clean
 portable C17 for scalars, direct functions, checked arithmetic, CFG, copyable
 fixed arrays, structs, plain enums, and discriminated unions. Canonical IR

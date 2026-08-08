@@ -2010,6 +2010,11 @@ add_test(NAME project_library_check
 set_tests_properties(project_library_check PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+add_test(NAME project_incremental_cache
+    COMMAND ${CMAKE_COMMAND}
+        -DLANG_EXECUTABLE=$<TARGET_FILE:lang>
+        -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/project_cache_test
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/project_cache.cmake)
 add_test(NAME project_local_dependency_run
     COMMAND lang project run tests/local_dependency/App.asproj)
 set_tests_properties(project_local_dependency_run PROPERTIES

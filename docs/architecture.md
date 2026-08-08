@@ -114,6 +114,22 @@ core runtime contain no cryptographic algorithms and do not link OpenSSL.
 Differential coverage compares generated C and VM output, cleanup, traps, and
 exit status.
 
+## Project compilation cache
+
+Successful `project check` and `project emit-c` operations use a persistent
+per-user cache. Cache validity is based on content rather than timestamps and
+includes the exact running compiler binary, the complete loaded source graph,
+module paths, and semantic project mode. A compiler rebuild or any reachable
+source edit invalidates the entry. Diagnostics are never cached: an invalid
+project is checked again on every invocation until it succeeds.
+
+The default directory is `$XDG_CACHE_HOME/aster`, `$HOME/.cache/aster`, or the
+platform local application-data directory. `ASTER_CACHE_DIR` selects another
+directory; setting it to an empty string disables persistent caching.
+`ASTER_CACHE_TRACE=1` reports project cache hits and misses on standard error.
+Writes use a process-specific temporary followed by an atomic replacement, and
+each project/operation identity retains only its current result.
+
 ## Typed IR foundation
 
 The first Aster IR is a control-flow graph with typed virtual values and
