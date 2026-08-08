@@ -576,23 +576,37 @@ static void emit_function_variant(
     const IrFunction *function = &emitter->ir->functions[index];
     bool previous_render_into = emitter->render_into;
     bool previous_render_direct = emitter->render_direct;
+    bool previous_direct_straight_line =
+        emitter->direct_straight_line;
     const char **previous_direct_local_tags =
         emitter->direct_local_tags;
     size_t *previous_direct_local_tag_lengths =
         emitter->direct_local_tag_lengths;
+    bool *previous_direct_local_open =
+        emitter->direct_local_open;
     const char **direct_local_tags = NULL;
     size_t *direct_local_tag_lengths = NULL;
+    bool *direct_local_open = NULL;
     LangSpan previous_render_root_span =
         emitter->render_root_span;
+    bool direct_straight_line = render_direct &&
+        function->block_count == 1U &&
+        function->blocks[0].terminator.kind == IR_TERM_RETURN;
     if (render_direct && function->local_count != 0U) {
         direct_local_tags = calloc(
             function->local_count, sizeof(*direct_local_tags));
         direct_local_tag_lengths = calloc(
             function->local_count, sizeof(*direct_local_tag_lengths));
+        if (direct_straight_line)
+            direct_local_open = calloc(
+                function->local_count, sizeof(*direct_local_open));
         if (direct_local_tags == NULL ||
-            direct_local_tag_lengths == NULL) {
+            direct_local_tag_lengths == NULL ||
+            (direct_straight_line &&
+             direct_local_open == NULL)) {
             free(direct_local_tags);
             free(direct_local_tag_lengths);
+            free(direct_local_open);
             c_backend_unsupported(
                 emitter, function->render_root_span,
                 "direct HTML render allocation");
@@ -621,10 +635,17 @@ static void emit_function_variant(
     }
     emitter->render_into = render_into;
     emitter->render_direct = render_direct;
+    emitter->direct_straight_line = direct_straight_line;
     emitter->direct_local_tags = direct_local_tags;
     emitter->direct_local_tag_lengths = direct_local_tag_lengths;
+    emitter->direct_local_open = direct_local_open;
     emitter->render_root_span =
         render_into ? function->render_root_span : (LangSpan){0};
+    if (render_direct) {
+        emitter->direct_pending_bytes = NULL;
+        emitter->direct_pending_length = 0U;
+        emitter->direct_pending_capacity = 0U;
+    }
     if (render_direct)
         emit_direct_append_signature(emitter, index, false);
     else if (render_into)
@@ -669,7 +690,8 @@ static void emit_function_variant(
                     "    bool l%zu_live = false;\n", l);
         if (render_direct && emitter->ir->types[
                 function->locals[l].type].shape ==
-                IR_TYPE_ELEMENT_BUILDER)
+                IR_TYPE_ELEMENT_BUILDER &&
+            !emitter->direct_straight_line)
             fprintf(emitter->output,
                     "    bool l%zu_direct_open = false;\n", l);
     }
@@ -709,11 +731,17 @@ static void emit_function_variant(
             if (emitter->failed) {
                 free(direct_local_tags);
                 free(direct_local_tag_lengths);
+                free(direct_local_open);
+                free(emitter->direct_pending_bytes);
+                emitter->direct_pending_bytes = NULL;
                 emitter->render_into = previous_render_into;
                 emitter->render_direct = previous_render_direct;
+                emitter->direct_straight_line =
+                    previous_direct_straight_line;
                 emitter->direct_local_tags = previous_direct_local_tags;
                 emitter->direct_local_tag_lengths =
                     previous_direct_local_tag_lengths;
+                emitter->direct_local_open = previous_direct_local_open;
                 emitter->render_root_span =
                     previous_render_root_span;
                 return;
@@ -731,11 +759,17 @@ static void emit_function_variant(
         if (emitter->failed) {
             free(direct_local_tags);
             free(direct_local_tag_lengths);
+            free(direct_local_open);
+            free(emitter->direct_pending_bytes);
+            emitter->direct_pending_bytes = NULL;
             emitter->render_into = previous_render_into;
             emitter->render_direct = previous_render_direct;
+            emitter->direct_straight_line =
+                previous_direct_straight_line;
             emitter->direct_local_tags = previous_direct_local_tags;
             emitter->direct_local_tag_lengths =
                 previous_direct_local_tag_lengths;
+            emitter->direct_local_open = previous_direct_local_open;
             emitter->render_root_span =
                 previous_render_root_span;
             return;
@@ -750,11 +784,16 @@ static void emit_function_variant(
     fputs("}\n\n", emitter->output);
     free(direct_local_tags);
     free(direct_local_tag_lengths);
+    free(direct_local_open);
+    free(emitter->direct_pending_bytes);
+    emitter->direct_pending_bytes = NULL;
     emitter->render_into = previous_render_into;
     emitter->render_direct = previous_render_direct;
+    emitter->direct_straight_line = previous_direct_straight_line;
     emitter->direct_local_tags = previous_direct_local_tags;
     emitter->direct_local_tag_lengths =
         previous_direct_local_tag_lengths;
+    emitter->direct_local_open = previous_direct_local_open;
     emitter->render_root_span =
         previous_render_root_span;
 }

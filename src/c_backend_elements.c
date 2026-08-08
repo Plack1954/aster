@@ -47,10 +47,11 @@ void c_backend_emit_element_instruction(
                 if (!c_backend_html_tag_is_fragment(
                         instruction->symbol,
                         instruction->symbol_length)) {
-                    emit_direct_builder_parts(
-                        output, "<", 1U,
-                        instruction->symbol, instruction->symbol_length,
-                        "", 0U);
+                    c_backend_queue_direct_builder_literal(
+                        emitter, "<", 1U);
+                    c_backend_queue_direct_builder_literal(
+                        emitter, instruction->symbol,
+                        instruction->symbol_length);
                 }
                 return;
             }
@@ -89,6 +90,7 @@ void c_backend_emit_element_instruction(
             const IrInstruction *producer =
                 c_backend_find_value_producer(function, value);
             if (emitter->render_direct) {
+                c_backend_flush_direct_builder_literals(emitter);
                 if (value_type->shape == IR_TYPE_BOOL) {
                     fprintf(output,
                             "    if (v%" PRIu32 ") {\n", value);
@@ -272,6 +274,7 @@ void c_backend_emit_element_instruction(
         }
         case IR_OP_LOCAL_ELEMENT_PROPERTY_BEGIN:
             if (emitter->render_direct) {
+                c_backend_flush_direct_builder_literals(emitter);
                 emit_direct_builder_parts(
                     output, " ", 1U,
                     instruction->symbol, instruction->symbol_length,
@@ -359,6 +362,12 @@ void c_backend_emit_element_instruction(
                 c_backend_emit_direct_close_open(emitter, instruction->index);
                 if (child_type->shape == IR_TYPE_BUILTIN_OBJECT &&
                     strcmp(child_type->name, "Html") == 0) {
+                    const IrInstruction *producer =
+                        c_backend_find_value_producer(function, child);
+                    if (producer != NULL &&
+                        producer->opcode == IR_OP_LOCAL_ELEMENT_FINISH)
+                        return;
+                    c_backend_flush_direct_builder_literals(emitter);
                     fprintf(output,
                             "    if (v%" PRIu32 " != (aster_html *)"
                             "render_builder) {\n"
@@ -506,8 +515,8 @@ void c_backend_emit_element_instruction(
                 if (emitter->render_direct) {
                     c_backend_emit_direct_close_open(
                         emitter, instruction->index);
-                    c_backend_emit_direct_builder_literal(
-                        output, instruction->symbol,
+                    c_backend_queue_direct_builder_literal(
+                        emitter, instruction->symbol,
                         instruction->symbol_length);
                 } else {
                     fprintf(output,
@@ -526,21 +535,31 @@ void c_backend_emit_element_instruction(
                 c_backend_emit_direct_close_open(emitter, instruction->index);
                 if (c_backend_local_element_is_raw_text(
                         function, instruction->index)) {
-                    c_backend_emit_direct_builder_literal(
-                        output, instruction->symbol,
+                    c_backend_queue_direct_builder_literal(
+                        emitter, instruction->symbol,
                         instruction->symbol_length);
                 } else {
-                    size_t escaped_length = c_backend_html_escaped_length(
-                        instruction->symbol,
-                        instruction->symbol_length, false);
-                    fputs(
-                        "    aster_builder_append(render_builder, "
-                        "(aster_str){",
-                        output);
-                    c_backend_emit_html_escaped_byte_string(
-                        output, instruction->symbol,
-                        instruction->symbol_length, false);
-                    fprintf(output, ", %zuU});\n", escaped_length);
+                    size_t start = 0U;
+                    for (size_t byte = 0U;
+                         byte < instruction->symbol_length; ++byte) {
+                        const char *replacement = NULL;
+                        if (instruction->symbol[byte] == '&')
+                            replacement = "&amp;";
+                        else if (instruction->symbol[byte] == '<')
+                            replacement = "&lt;";
+                        else if (instruction->symbol[byte] == '>')
+                            replacement = "&gt;";
+                        if (replacement == NULL) continue;
+                        c_backend_queue_direct_builder_literal(
+                            emitter, instruction->symbol + start,
+                            byte - start);
+                        c_backend_queue_direct_builder_literal(
+                            emitter, replacement, strlen(replacement));
+                        start = byte + 1U;
+                    }
+                    c_backend_queue_direct_builder_literal(
+                        emitter, instruction->symbol + start,
+                        instruction->symbol_length - start);
                 }
                 return;
             }
@@ -570,18 +589,27 @@ void c_backend_emit_element_instruction(
                         emitter->direct_local_tags[instruction->index],
                         emitter->direct_local_tag_lengths[
                             instruction->index])) {
-                    emit_direct_builder_parts(
-                        output, "</", 2U,
+                    c_backend_queue_direct_builder_literal(
+                        emitter, "</", 2U);
+                    c_backend_queue_direct_builder_literal(
+                        emitter,
                         emitter->direct_local_tags[instruction->index],
                         emitter->direct_local_tag_lengths[
-                            instruction->index],
-                        ">", 1U);
+                            instruction->index]);
+                    c_backend_queue_direct_builder_literal(
+                        emitter, ">", 1U);
                 }
                 fprintf(
                     output,
-                    "    v%" PRIu32 " = (aster_html *)render_builder;\n"
-                    "    l%" PRIu32 "_direct_open = false;\n",
-                    instruction->result, instruction->index);
+                    "    v%" PRIu32 " = (aster_html *)render_builder;\n",
+                    instruction->result);
+                if (emitter->direct_straight_line &&
+                    emitter->direct_local_open != NULL)
+                    emitter->direct_local_open[instruction->index] = false;
+                else
+                    fprintf(output,
+                            "    l%" PRIu32 "_direct_open = false;\n",
+                            instruction->index);
                 return;
             }
             fprintf(output,

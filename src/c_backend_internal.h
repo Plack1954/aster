@@ -15,8 +15,13 @@ typedef struct CEmitter {
     LangSpan render_root_span;
     bool render_into;
     bool render_direct;
+    bool direct_straight_line;
     const char **direct_local_tags;
     size_t *direct_local_tag_lengths;
+    bool *direct_local_open;
+    unsigned char *direct_pending_bytes;
+    size_t direct_pending_length;
+    size_t direct_pending_capacity;
     bool needs_native_runtime;
     bool needs_http_client_runtime;
     bool needs_crypto_runtime;
@@ -175,6 +180,9 @@ bool c_backend_emit_html_interpolation_value(
     bool attribute, bool css_value);
 void c_backend_emit_direct_builder_literal(
     FILE *output, const char *data, size_t length);
+void c_backend_queue_direct_builder_literal(
+    CEmitter *emitter, const char *data, size_t length);
+void c_backend_flush_direct_builder_literals(CEmitter *emitter);
 void c_backend_emit_direct_close_open(CEmitter *emitter,
                                       uint32_t local);
 

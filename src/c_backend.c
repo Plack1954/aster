@@ -614,18 +614,24 @@ void c_backend_emit_instruction(CEmitter *emitter,
             if (emitter->render_direct &&
                 emitter->ir->types[local_type].shape ==
                     IR_TYPE_ELEMENT_BUILDER) {
+                bool fragment = emitter->direct_local_tags != NULL &&
+                    emitter->direct_local_tags[instruction->index] != NULL &&
+                    c_backend_html_tag_is_fragment(
+                        emitter->direct_local_tags[instruction->index],
+                        emitter->direct_local_tag_lengths[
+                            instruction->index]);
                 fprintf(output,
-                        "    l%" PRIu32 " = v%" PRIu32 ";\n"
-                        "    l%" PRIu32 "_direct_open = %s;\n",
-                        instruction->index, instruction->operands[0],
-                        instruction->index,
-                        emitter->direct_local_tags != NULL &&
-                        emitter->direct_local_tags[instruction->index] != NULL &&
-                        c_backend_html_tag_is_fragment(
-                            emitter->direct_local_tags[instruction->index],
-                            emitter->direct_local_tag_lengths[
-                                instruction->index])
-                            ? "false" : "true");
+                        "    l%" PRIu32 " = v%" PRIu32 ";\n",
+                        instruction->index, instruction->operands[0]);
+                if (emitter->direct_straight_line &&
+                    emitter->direct_local_open != NULL)
+                    emitter->direct_local_open[instruction->index] =
+                        !fragment;
+                else
+                    fprintf(output,
+                            "    l%" PRIu32 "_direct_open = %s;\n",
+                            instruction->index,
+                            fragment ? "false" : "true");
                 return;
             }
             if (reference_local &&
@@ -671,9 +677,13 @@ void c_backend_emit_instruction(CEmitter *emitter,
             if (emitter->render_direct &&
                 emitter->ir->types[local_type].shape ==
                     IR_TYPE_ELEMENT_BUILDER) {
-                fprintf(output,
-                        "    l%" PRIu32 "_direct_open = false;\n",
-                        instruction->index);
+                if (emitter->direct_straight_line &&
+                    emitter->direct_local_open != NULL)
+                    emitter->direct_local_open[instruction->index] = false;
+                else
+                    fprintf(output,
+                            "    l%" PRIu32 "_direct_open = false;\n",
+                            instruction->index);
                 return;
             }
             if (c_backend_local_tracks_drop(
@@ -1307,6 +1317,7 @@ void c_backend_emit_instruction(CEmitter *emitter,
                 instruction->index < emitter->ir->function_count &&
                 c_backend_function_supports_direct_render(
                     emitter->ir, instruction->index)) {
+                c_backend_flush_direct_builder_literals(emitter);
                 if (instruction->render_destination != IR_INVALID_ID) {
                     c_backend_emit_direct_close_open(
                         emitter, instruction->render_destination);
@@ -1845,6 +1856,8 @@ void c_backend_emit_terminator(CEmitter *emitter,
             emitter, function, terminator);
         return;
     }
+    if (emitter->render_direct)
+        c_backend_flush_direct_builder_literals(emitter);
     switch (terminator->kind) {
         case IR_TERM_JUMP:
             fprintf(output, "    goto b%" PRIu32 ";\n",

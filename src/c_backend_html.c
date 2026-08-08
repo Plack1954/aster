@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 const IrInstruction *c_backend_find_element_append_consumer(
@@ -426,7 +427,63 @@ void c_backend_emit_direct_builder_literal(
     fprintf(output, ", %zuU});\n", length);
 }
 
+void c_backend_flush_direct_builder_literals(CEmitter *emitter) {
+    if (emitter->direct_pending_length == 0U) return;
+    c_backend_emit_direct_builder_literal(
+        emitter->output,
+        (const char *)emitter->direct_pending_bytes,
+        emitter->direct_pending_length);
+    emitter->direct_pending_length = 0U;
+}
+
+void c_backend_queue_direct_builder_literal(
+    CEmitter *emitter, const char *data, size_t length) {
+    if (!emitter->direct_straight_line) {
+        c_backend_emit_direct_builder_literal(
+            emitter->output, data, length);
+        return;
+    }
+    if (length > SIZE_MAX - emitter->direct_pending_length) {
+        c_backend_unsupported(
+            emitter, emitter->render_root_span,
+            "a direct HTML static region this large");
+        return;
+    }
+    size_t needed = emitter->direct_pending_length + length;
+    if (needed > emitter->direct_pending_capacity) {
+        size_t capacity = emitter->direct_pending_capacity == 0U
+            ? 64U : emitter->direct_pending_capacity;
+        while (capacity < needed && capacity <= SIZE_MAX / 2U)
+            capacity *= 2U;
+        if (capacity < needed) capacity = needed;
+        unsigned char *grown = realloc(
+            emitter->direct_pending_bytes, capacity);
+        if (grown == NULL) {
+            c_backend_unsupported(
+                emitter, emitter->render_root_span,
+                "direct HTML static region allocation");
+            return;
+        }
+        emitter->direct_pending_bytes = grown;
+        emitter->direct_pending_capacity = capacity;
+    }
+    if (length != 0U)
+        memcpy(emitter->direct_pending_bytes +
+                   emitter->direct_pending_length,
+               data, length);
+    emitter->direct_pending_length = needed;
+}
+
 void c_backend_emit_direct_close_open(CEmitter *emitter, uint32_t local) {
+    if (emitter->direct_straight_line &&
+        emitter->direct_local_open != NULL) {
+        if (emitter->direct_local_open[local]) {
+            c_backend_queue_direct_builder_literal(
+                emitter, ">", 1U);
+            emitter->direct_local_open[local] = false;
+        }
+        return;
+    }
     fprintf(
         emitter->output,
         "    if (l%" PRIu32 "_direct_open) {\n"
@@ -440,6 +497,7 @@ void c_backend_emit_direct_close_open(CEmitter *emitter, uint32_t local) {
 static bool emit_direct_html_expression(
     CEmitter *emitter, const IrType *type, const char *expression,
     bool attribute, bool raw_text, bool consume) {
+    c_backend_flush_direct_builder_literals(emitter);
     if (type->shape == IR_TYPE_STRING_VIEW) {
         if (raw_text)
             fprintf(emitter->output,
